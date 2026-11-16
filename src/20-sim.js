@@ -48,7 +48,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
       undo: [], stroke: null, strokeDepth: 0, labs: [], hatcheries: [], bunkers: [], platforms: [], labNear: new Uint8Array(NN), platTile: new Uint8Array(NN),
       dangerEsc: 0, hunters: {}, resAcc: 0, labOnline: false, undoBusy: false,
-      allLabs: [], allHatch: [], allBunkers: [], allPlat: [], sea: null, seaNear: null
+      allLabs: [], allHatch: [], allBunkers: [], allPlat: [], sea: null, seaNear: null,
+      comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: [], inWorld: false
     };
   }
 
@@ -159,7 +160,49 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
       nb[t] = m;
     }
+    var comp = RT.comp; comp.fill(0);
+    var cn = 0, bq = RT.queue;
+    for (var p = 0; p < pt.length; p++) {
+      var st0 = pt[p]; if (comp[st0]) continue;
+      cn++; comp[st0] = cn;
+      var qh = 0, qt = 0; bq[qt++] = st0;
+      while (qh < qt) {
+        var u = bq[qh++], m2 = nb[u];
+        if ((m2 & 1) && !comp[u - N]) { comp[u - N] = cn; bq[qt++] = u - N; }
+        if ((m2 & 2) && !comp[u + 1]) { comp[u + 1] = cn; bq[qt++] = u + 1; }
+        if ((m2 & 4) && !comp[u + N]) { comp[u + N] = cn; bq[qt++] = u + N; }
+        if ((m2 & 8) && !comp[u - 1]) { comp[u - 1] = cn; bq[qt++] = u - 1; }
+      }
+    }
+    RT.compN = cn;
+    var gc = [];
+    for (var gk = 0; gk < 2; gk++) {
+      var gt = (GATE_I0 + gk) + GATE_J * N;
+      if (comp[gt] && gc.indexOf(comp[gt]) < 0) gc.push(comp[gt]);
+    }
+    RT.gateComps = gc;
     RT.pathVer++; RT.fields = {};
+  }
+
+  function refreshReach() {
+    var cn = RT.compN || 0;
+    if (!RT.reachComp || RT.reachComp.length <= cn) RT.reachComp = new Uint8Array(cn + 16);
+    else RT.reachComp.fill(0);
+    var gc = RT.gateComps || [];
+    for (var k = 0; k < gc.length; k++) RT.reachComp[gc[k]] = 1;
+    if (Z.Monorail && Z.Monorail.markReachable) Z.Monorail.markReachable(RT.reachComp, RT.comp);
+  }
+  function isParkConnected(t) {
+    if (t < 0 || t >= NN) return false;
+    var c = RT.comp[t];
+    return !!(c && RT.reachComp && RT.reachComp[c]);
+  }
+  function canGuestReach(fromT, toT) {
+    var fc = fromT >= 0 && fromT < NN ? RT.comp[fromT] : 0;
+    var tc = toT >= 0 && toT < NN ? RT.comp[toT] : 0;
+    if (!fc || !tc) return false;
+    if (fc === tc) return true;
+    return !!(Z.Monorail && Z.Monorail.canReachComp && Z.Monorail.canReachComp(fc, tc, RT.comp));
   }
 
   function bfs(sources) {
@@ -307,9 +350,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
   }
   function buildingConnected(o) {
-    var f = getField('exit'); if (!f) return false;
+    if (!RT.reachComp) refreshReach();
     var adj = o.kind === 'building' ? frontPathTiles(o) : adjacentPathTiles(o);
-    for (var k = 0; k < adj.length; k++) if (f[adj[k]] < INF) return true;
+    for (var k = 0; k < adj.length; k++) if (isParkConnected(adj[k])) return true;
     return false;
   }
 
@@ -318,8 +361,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, o, a, b;
     RT.labs = []; RT.hatcheries = []; RT.bunkers = []; RT.platforms = [];
     RT.labNear.fill(0); RT.platTile.fill(0);
-    var f = getField('exit');
-    function conn(ob) { if (!f) return false; var fr = frontPathTiles(ob); for (var q = 0; q < fr.length; q++) if (f[fr[q]] < INF) return true; return false; }
+    if (!RT.reachComp) refreshReach();
+    function conn(ob) { var fr = frontPathTiles(ob); for (var q = 0; q < fr.length; q++) if (isParkConnected(fr[q])) return true; return false; }
     for (k = 0; k < RT.allLabs.length; k++) {
       o = RT.allLabs[k]; if (!conn(o)) continue;
       RT.labs.push(o);
@@ -669,19 +712,39 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   // ====================== ACTIONS ======================
   function isGateTile(i, j) { return j === GATE_J && (i === GATE_I0 || i === GATE_I0 + 1); }
 
-  function afterWorldChange(navChanged) {
-    RT.sea = null;   // island: sea mask is derived from terrain + elev
-    if (navChanged) rebuildNav();
-    rebuildObjects();
-    RT.fields = {};
+  function refreshConnectivity() {
+    if (RT.inWorld) return;
+    var prevPlat = RT.platforms.map(function (p) { return p.o.id; }).join(',');
+    refreshReach();
     refreshFacilities();
-    if (Z.Moats) Z.Moats.update();   // moats package: ditch networks, water supply (before enclosures are rebuilt)
-    if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before enclosures: electric fences read it)
-    recomputeEnclosures();
-    if (Z.Realms) Z.Realms.update();   // realms package: towers, plants, tank supply, zone cover (after enclosures are known)
-    if (Z.Monorail) Z.Monorail.update();   // monorail package: track graph, lines, pylons, enclosures overlooked (after enclosures are known)
-    if (Z.Safari) Z.Safari.update();   // safari package: zones, routes, gates (after enclosures and realms are known)
+    var nextPlat = RT.platforms.map(function (p) { return p.o.id; }).join(',');
+    if (nextPlat !== prevPlat) {
+      recomputeEnclosures();
+      if (Z.Realms) Z.Realms.update();
+    }
     RT.rbDirty = true;
+  }
+
+  function afterWorldChange(navChanged) {
+    RT.inWorld = true;
+    try {
+      RT.sea = null;   // island: sea mask is derived from terrain + elev
+      if (navChanged) rebuildNav();
+      rebuildObjects();
+      RT.fields = {};
+      if (Z.Monorail && Z.Monorail.updateGraph) Z.Monorail.updateGraph();   // monorail graph before reach/facilities
+      refreshReach();
+      refreshFacilities();
+      if (Z.Moats) Z.Moats.update();   // moats package: ditch networks, water supply (before enclosures are rebuilt)
+      if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before enclosures: electric fences read it)
+      recomputeEnclosures();
+      if (Z.Realms) Z.Realms.update();   // realms package: towers, plants, tank supply, zone cover (after enclosures are known)
+      if (Z.Monorail) Z.Monorail.update();   // monorail package: track graph, lines, pylons, enclosures overlooked (after enclosures are known)
+      if (Z.Safari) Z.Safari.update();   // safari package: zones, routes, gates (after enclosures and realms are known)
+      RT.rbDirty = true;
+    } finally {
+      RT.inWorld = false;
+    }
   }
 
   // ---- undo journal ----
@@ -1597,6 +1660,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
+    g.rleave = 0;
   }
   function removeGuest(g) {
     releaseGuest(g);
@@ -1612,8 +1676,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function startLeaving(g) {
     if (g.state === 'leave') return;
     releaseGuest(g);
-    g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
     g.thoughtT = 0; g.tcool = 0; say(g, 'leaving');
+    var fx = getField('exit');
+    if (fx && fx[g.ti] < INF) {
+      g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
+      return;
+    }
+    if (Z.Monorail && Z.Monorail.leaveVia && Z.Monorail.leaveVia(g)) return;
+    g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
   }
 
   function objCentre(o) {
@@ -1696,9 +1766,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   // pick one viewing tile along the fence line: close to the guest and the enclosure, but not already crowded
   function gxPickSpot(g, e) {
-    var vt = e.viewTiles, fx = getField('exit'), best = -1, bs = 1e9, gi = g.ti % N, gj = (g.ti - gi) / N, k;
+    var vt = e.viewTiles, best = -1, bs = 1e9, gi = g.ti % N, gj = (g.ti - gi) / N, k;
     for (k = 0; k < vt.length; k++) {
-      var t = vt[k]; if (fx && fx[t] === INF) continue;
+      var t = vt[k]; if (!canGuestReach(g.ti, t)) continue;
       var ti = t % N, tj = (t - ti) / N, occ = RT.gstand[t] + RT.gtarg[t], cap = RT.platTile[t] ? 6 : 2;
       var sc = (Math.abs(ti - gi) + Math.abs(tj - gj)) * 0.45 + gxEncDist(e, t) * 2.2 + occ * 4 + rng.next() * 3.5 + (occ >= cap ? 60 : 0) - (RT.platTile[t] ? 6 : 0);
       if (g.lastSpot === t) sc += 5;
@@ -1724,9 +1794,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var le = encById(lg.gid); if (le && gxGoExhibit(g, le)) return true;
       }
     }
+    var gc = RT.comp[g.ti], reachMap = null;
+    if (gc) {
+      if (Z.Monorail && Z.Monorail.reachableComps) reachMap = Z.Monorail.reachableComps(gc, RT.comp);
+      else { reachMap = {}; reachMap[gc] = true; }
+    }
     for (k = 0; k < encs.length; k++) {
       var e = encs[k], E = RT.encx[e.id], wt = 0;
-      if (E && E.nAn > 0 && e.viewTiles.length) {
+      var okR = false;
+      if (E && E.nAn > 0 && e.viewTiles.length && reachMap) {
+        for (var vi = 0; vi < e.viewTiles.length; vi++) if (reachMap[RT.comp[e.viewTiles[vi]]]) { okR = true; break; }
+      }
+      if (okR) {
         wt = (8 + E.appeal) * (0.2 + 0.8 * (e.platform ? 1 : e.see));
         var newSp = 0; for (var s = 0; s < e.species.length; s++) if (!g.seen[e.species[s]]) newSp++;
         wt *= g.seenEnc[e.id] ? 0.1 : 5 + newSp * 0.5;
@@ -1766,9 +1845,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   // a handful of pleasant spots around the park for strolling guests
   function gxLandmarks() {
-    var pt = RT.pathTiles, lm = RT.glm = [], k, n = Math.min(60, pt.length), cands = [], fx = getField('exit');
+    var pt = RT.pathTiles, lm = RT.glm = [], k, n = Math.min(60, pt.length), cands = [];
     RT.glmPv = RT.pathVer;
-    for (k = 0; k < n; k++) { var t = pt[Math.floor(rng.next() * pt.length)]; if (fx && fx[t] === INF) continue; cands.push({ t: t, s: RT.gaes[t] + rng.next() * 4 }); }
+    for (k = 0; k < n; k++) { var t = pt[Math.floor(rng.next() * pt.length)]; if (!isParkConnected(t)) continue; cands.push({ t: t, s: RT.gaes[t] + rng.next() * 4 }); }
     cands.sort(function (a, b) { return b.s - a.s; });
     for (k = 0; k < cands.length && lm.length < 14; k++) {
       var ti = cands[k].t % N, tj = (cands[k].t - ti) / N, ok = true;
@@ -2109,33 +2188,40 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'ride') { if (g.sfv) { if (Z.Safari) Z.Safari.rideTick(g, a); } else if (Z.Monorail) Z.Monorail.rideTick(g, a); return; }   // monorail package: viewing, resting, getting off
     // closing time / leaving
     if (g.state !== 'leave') {
-      var leave = false;
-      if (!S.open || S.time >= CLOSE_T - 0.004) leave = true;
-      else if (g.stay <= 0) {
-        // still keen and still things unseen: stay a little longer (twice at most, never past closing)
-        if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
-        else leave = true;
+      if (g.rleave) {
+        if (g.state === 'walk' && !g.gt) { g.rleave = 0; startLeaving(g); return; }
       } else {
-        if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, hr * rng.range(0.35, 1.0)); }
-        if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
-        else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;      // went home hungry
-        else if (g.energy < 6 && g.nbt > 0) leave = true;
-        else if (S.time > CLOSE_T - 0.14) {
-          var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = 0;
-          if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01 - (g.lj === undefined ? (g.lj = rng.range(0, 0.07)) : g.lj)) leave = true;
+        var leave = false;
+        if (!S.open || S.time >= CLOSE_T - 0.004) leave = true;
+        else if (g.stay <= 0) {
+          // still keen and still things unseen: stay a little longer (twice at most, never past closing)
+          if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
+          else leave = true;
+        } else {
+          if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, hr * rng.range(0.35, 1.0)); }
+          if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
+          else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;      // went home hungry
+          else if (g.energy < 6 && g.nbt > 0) leave = true;
+          else if (S.time > CLOSE_T - 0.14) {
+            var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = isParkConnected(g.ti) ? 35 : 0;
+            if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01 - (g.lj === undefined ? (g.lj = rng.range(0, 0.07)) : g.lj)) leave = true;
+          }
         }
+        if (leave) { startLeaving(g); return; }
       }
-      if (leave) { startLeaving(g); return; }
     } else {
       // stuck check
       var fx = getField('exit');
-      if (fx && fx[g.ti] === INF) { g.isl += a; if (g.isl > 12) { removeGuest(g); return false; } }
+      if (!fx || fx[g.ti] === INF) {
+        if (Z.Monorail && Z.Monorail.leaveVia && Z.Monorail.leaveVia(g)) return;
+        g.isl += a; if (g.isl > 12) { removeGuest(g); return false; }
+      } else g.isl = 0;
       gxWatchdog(g, a);
       return;
     }
     // stranded
     var fx2 = getField('exit');
-    if (!fx2 || fx2[g.ti] === INF) { g.isl += a; if (g.isl > 25) { removeGuest(g); return false; } } else g.isl = 0;
+    if (!isParkConnected(g.ti) && (!fx2 || fx2[g.ti] === INF)) { g.isl += a; if (g.isl > 25) { removeGuest(g); return false; } } else g.isl = 0;
     if (RT.dangerEsc > 0 && g.state === 'walk' && Z.Monorail && Z.Monorail.refuge(g)) return;   // monorail package: a working line is the safe way out
     // escaped animals
     if (g.state !== 'flee' && !g.shel && RT.escaped.length) {
@@ -2844,14 +2930,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     s.route = r; s.ri = 0; return true;
   }
 
+  function encReachesComp(e, c) {
+    if (!c) return true;
+    for (var k = 0; k < e.viewTiles.length; k++) if (RT.comp[e.viewTiles[k]] === c) return true;
+    return false;
+  }
+
   function assignTask(s) {
     if (!staffOnPath(s)) return;
-    var k, a, e;
+    var k, a, e, sc0 = RT.comp[s.ti];
     if (RT.escaped.length && (s.type === 'security' || (s.type === 'keeper' && RT.secCount === 0))) { if (tryRecapture(s)) return; }
     if (s.type === 'keeper') {
       var range = (RT.hasHut ? 48 : 32) * TILE, hx = cxOf(s.home), hz = czOf(s.home), best = null, bs = 0;
       for (k = 0; k < S.enclosures.length; k++) {
-        e = S.enclosures[k]; if (!e.animals.length || !e.viewTiles.length) continue;
+        e = S.enclosures[k]; if (!e.animals.length || !e.viewTiles.length || !encReachesComp(e, sc0)) continue;
         if (claimed('e' + e.id, s)) continue;
         var need = (1 - e.foodLevel) * 1.2 + (1 - e.waterLevel) + e.poop * 0.25;
         if (!(e.foodLevel < 0.6 || e.waterLevel < 0.5 || e.poop >= 2)) continue;
@@ -2870,7 +2962,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     } else if (s.type === 'vet') {
       for (k = 0; k < S.animals.length; k++) {
         a = S.animals[k]; if (!a.sick || !a.enc || (a.claim && a.claim !== s.id && RT.sById.has(a.claim))) continue;
-        e = RT.eMap[a.enc]; if (!e || !e.viewTiles.length) continue;
+        e = RT.eMap[a.enc]; if (!e || !e.viewTiles.length || !encReachesComp(e, sc0)) continue;
         var vs2 = new Set(e.viewTiles), r2 = findRoute(s.ti, function (t) { return vs2.has(t); });
         if (r2) { a.claim = s.id; s.tk = { k: 'vet', a: a.id, ph: 'go', t: 0, ex: 0, ez: 0 }; s.route = r2; s.ri = 0; s.task = 'Treating ' + a.name; return; }
       }
@@ -2886,7 +2978,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     } else if (s.type === 'guide') {
       var cands = [];
-      for (k = 0; k < S.enclosures.length; k++) if (S.enclosures[k].animals.length && S.enclosures[k].viewTiles.length) cands.push(S.enclosures[k]);
+      for (k = 0; k < S.enclosures.length; k++) if (S.enclosures[k].animals.length && S.enclosures[k].viewTiles.length && encReachesComp(S.enclosures[k], sc0)) cands.push(S.enclosures[k]);
       if (cands.length) {
         e = cands[Math.floor(rng.next() * cands.length)];
         var vs3 = new Set(e.viewTiles), r3 = findRoute(s.ti, function (t) { return vs3.has(t); });
@@ -4240,7 +4332,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, seaMask: seaMask, heightAt: heightAt, cliffT: cliffT,
     objFootprint: objFootprint, footprint: footprint, frontPathTiles: frontPathTiles, encById: encById, aDanger: aDanger, tileOf: tileOf, cxOf: cxOf, czOf: czOf, getField: getField, INF: INF,
     startLeaving: startLeaving, gxPlace: gxPlace, gxHr: gxHr, objCentre: objCentre, removeGuest: removeGuest, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
-    openNow: openNow, WX: function () { return WX; }, isUnlocked: function (k, id) { return isUnlocked(k, id); }
+    openNow: openNow, WX: function () { return WX; }, isUnlocked: function (k, id) { return isUnlocked(k, id); },
+    isParkConnected: isParkConnected, compOf: function (t) { return RT.comp[t]; }, gateComps: function () { return RT.gateComps; }, refreshConnectivity: refreshConnectivity
   };
 
   Z.safariCtx = {   // safari package: what the sim needs beyond Z.monoCtx
@@ -4274,7 +4367,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     S.animals.forEach(function (a) { RT.aById.set(a.id, a); });
     S.guests.forEach(function (g) { RT.gById.set(g.id, g); if (!RT.groupLead.has(g.group)) RT.groupLead.set(g.group, g.id); });
     S.staff.forEach(function (s) { RT.sById.set(s.id, s); });
-    rebuildNav(); rebuildObjects(); refreshFacilities();
+    rebuildNav(); rebuildObjects(); refreshReach(); refreshFacilities();
   }
 
   // ====================== MAP GENERATION ======================
