@@ -4,7 +4,8 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA;
-  var Res = UI.Research = {}, R = null, SUBS = [['lab', 'Lab', 'flask'], ['amber', 'Amber', 'gem'], ['genomes', 'Genomes', 'dna'], ['equip', 'Equipment', 'gear'], ['team', 'Team', 'person'], ['splice', 'Splicing', 'dna']];
+  var Res = UI.Research = {}, R = null, SUBS = [['lab', 'Lab', 'flask'], ['amber', 'Amber', 'gem'], ['genomes', 'Genomes', 'dna'], ['donors', 'Gene bank', 'vial'], ['equip', 'Equipment', 'gear'], ['team', 'Team', 'person'], ['splice', 'Splicing', 'dna']];
+  Res.ext = {};   // filled by 62-research-dna.js: bench(c, sm), team(c, sm), donors(sm), splice(sm)
   var sub = 'lab', flow = null, spliceFlow = null, body = null, lastKey = '', unseen = 0, rootEl = null;
 
   function RS() { return Z.Sim.research; }
@@ -38,6 +39,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       h('span.rchip.' + st[1], { text: st[0] }),
       h('span.rchip', { html: ic('vial') + sm.samples + '/' + sm.sampleCap + ' samples' }),
       h('span.rchip', { html: ic('person') + sm.freeScientists + '/' + sm.scientists + ' free' }),
+      sm.batches ? h('span.rchip' + (sm.sequencingHint ? '.bad' : ''), { html: ic('dna') + sm.batches + ' batch' + (sm.batches === 1 ? '' : 'es') + ' to sequence' }) : null,
       h('span.rchip' + (sm.funding > 0 ? '.fund' : ''), { html: ic('coin') + 'Donations ' + fmt(sm.funding) }));
   }
 
@@ -58,11 +60,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       var xpNeed = 30 + (s.skill | 0) * 20;
       c.appendChild(h('div.rcard.sci',
         h('div.rrow', h('b', { text: s.name }), h('span', { html: pips(s.skill) + ' ' + (+s.skill).toFixed(1) })),
-        h('div.rsub', { text: job ? (job.kind === 'splice' ? 'Splicing ' + (UI.byId(D.traits, job.trait) || {}).name + ' into ' + (sp(job.species) || {}).name : 'Extracting from ' + (site(job.site) || {}).name + ' amber') + ' - ' + Math.ceil(job.t) + ' h left' : 'Free. ' + (s.xp | 0) + ' xp' }),
+        h('div.rsub', { text: job ? (job.kind === 'hybrid' ? 'Cross-splicing ' + (sp(job.a) || {}).name + ' × ' + (sp(job.b) || {}).name : job.kind === 'splice' ? 'Splicing ' + (UI.byId(D.traits, job.trait) || {}).name + ' into ' + (sp(job.species) || {}).name : 'Extracting from ' + (site(job.site) || {}).name + ' amber') + ' - ' + Math.ceil(job.t) + ' h left' : (/^Sequencing/.test(s.task || '') ? s.task : 'Free') + '. ' + (s.xp | 0) + ' xp' }),
         job ? h('div.rbar', h('i', { style: 'width:' + Math.round(frac * 100) + '%' })) : null,
         job ? h('div.rrow', h('button.btn.sm.alt', { text: 'Cancel', on: { click: function () { var x = RS().cancelJob(job.id); UI.toast(x.ok ? 'Experiment cancelled. The sample is back in the store.' : x.msg, x.ok ? 'info' : 'bad'); render(); } } })) : null));
     });
-    // other jobs (splices without staff listed above are shown above too)
+    if (Res.ext.bench) Res.ext.bench(c, sm);   // sequencing bench (62-research-dna.js)
     // samples
     c.appendChild(h('div.rsect', { text: 'Samples awaiting extraction (' + sm.samples + '/' + sm.sampleCap + ')' }));
     if (!r.samples.length) { c.appendChild(note('No samples. Buy amber in the Amber tab or send an expedition.')); c.appendChild(h('button.btn.sm.gold', { html: ic('gem') + 'Browse amber', on: { click: function () { Res.open('amber'); } } })); }
@@ -152,12 +154,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   function genomeBar(g) { return UI.genomeBar(g, false); }
   function genomesTab(sm) {
     var c = h('div.rtab'), grid = h('div.rgrid'), foc = sm.focus;
-    c.appendChild(note('Raise a genome to 50% to hatch it. Reach 80% to splice in traits. Tap a card for details.'));
-    var list = D.animals.map(function (a) { return { a: a, g: RS().genomeInfo(a.id), h: RS().hatchOdds(a.id) }; }).sort(function (x, y) { return y.g.genome - x.g.genome || x.a.rarity - y.a.rarity; });
+    c.appendChild(note('Raise a genome to 50% to hatch it. Reach 80% to splice in genes or cross it with another species. Extractions recover fragments; sequencing turns them into genome. Tap a card for details.'));
+    var list = D.animals.filter(function (a) { return !a.modern; }).map(function (a) { return { a: a, g: RS().genomeInfo(a.id), h: RS().hatchOdds(a.id) }; }).sort(function (x, y) { return y.g.genome - x.g.genome || x.a.rarity - y.a.rarity; });
     list.forEach(function (x) {
       var g = x.g.genome, known = g > 0, trs = (x.g.traits || []).map(function (t) { return (UI.byId(D.traits, t) || {}).name; }).join(', ');
       var card = h('div.rcard.gcard' + (g >= 50 ? '' : '.lockd'), { on: { click: function () { UI.snd('click'); UI.Panel.species(x.a.id); } } },
-        thumb(x.a.id, 96), h('div.gi', h('b', { text: known ? x.a.name : '???' }), h('span.rsub', { html: known ? x.a.period + ' ' + dots(x.a.rarity, 5) : (site(x.a.site) || {}).name }),
+        thumb(x.a.id, 96), h('div.gi', h('b', { text: known ? x.a.name : '???' }), h('span.rsub', { html: known ? (x.a.hybrid ? 'Hybrid ' : x.a.period + ' ') + dots(x.a.rarity, 5) : (site(x.a.site) || {}).name }),
           h('div.genrow', genomeBar(g), h('b.num', { text: Math.round(g) + '%' })),
           g >= 50 ? h('span.rsub', { text: 'Hatch ' + pct(x.h.chance) + (x.h.guaranteed ? ' (guaranteed)' : '') }) : h('span.rsub', { text: 'Needs 50% to hatch' }),
           trs ? h('span.rsub', { text: 'Traits: ' + trs }) : null,
@@ -186,9 +188,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   // -------------------------------------------------------------- TEAM
   function teamTab(sm) {
     var c = h('div.rtab'), st = S(), r = st.research;
+    if (Res.ext.team) Res.ext.team(c, sm);   // who is sequencing what (62-research-dna.js)
     c.appendChild(h('div.rsect', { text: 'Your scientists (' + sm.scientists + '/' + sm.capacity + ' desks)' }));
     st.staff.filter(function (x) { return x.type === 'scientist'; }).forEach(function (s) {
-      c.appendChild(h('div.rcard', h('div.rrow', h('b', { text: s.name }), h('span', { html: pips(s.skill) + ' ' + (+s.skill).toFixed(1) })), h('div.rrow', h('span.rsub', { text: fmt(s.wage) + ' / day, ' + (s.xp | 0) + ' xp' }),
+      c.appendChild(h('div.rcard', h('div.rrow', h('b', { text: s.name }), h('span', { html: pips(s.skill) + ' ' + (+s.skill).toFixed(1) })), h('div.rsub', { text: s.task || '' }), h('div.rrow', h('span.rsub', { text: fmt(s.wage) + ' / day, ' + (s.xp | 0) + ' xp' }),
         h('button.btn.sm.alt', { text: 'Fire', on: { click: function () { var b = this; if (!b._a) { b._a = 1; b.textContent = 'Really?'; setTimeout(function () { b._a = 0; b.textContent = 'Fire'; }, 2500); } else { Z.Sim.fireStaff(s.id); render(); } } } }))));
     });
     c.appendChild(h('div.rsect', { text: 'Candidates' }));
@@ -205,7 +208,8 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // -------------------------------------------------------------- SPLICE
   function spliceTab(sm) {
-    var c = h('div.rtab'), elig = D.animals.filter(function (a) { return genome(a.id) >= 80; });
+    if (Res.ext.splice) return Res.ext.splice(sm);   // gene picker + hybrid creator (62-research-dna.js)
+    var c = h('div.rtab'), elig = D.animals.filter(function (a) { return !a.modern && genome(a.id) >= 80; });
     if (!elig.length) { c.appendChild(note('Splicing opens when a genome reaches 80%.')); return c; }
     c.appendChild(note('Splice a trait into a species. A critical failure costs 3-6% genome.'));
     elig.forEach(function (a) {
@@ -219,7 +223,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     });
     if (spliceFlow) {
       var o = RS().spliceOdds(spliceFlow.s, spliceFlow.t), tr = UI.byId(D.traits, spliceFlow.t), box = h('div.rflow');
-      box.appendChild(h('b.serif', { style: 'font-size:17px', text: 'Splice ' + tr.name + ' into ' + sp(spliceFlow.s).name })); box.appendChild(h('div.oddscard', oddsBar(o), h('div.orow', h('span.l.succ', { text: 'Success ' + pct(o.success) }), h('span.l.fail', { text: 'Fail ' + pct(o.fail) }), h('span.l.crit', { text: 'Setback ' + pct(o.critical) })), breakdown(o.breakdown || []),
+      box.appendChild(h('b.serif', { style: 'font-size:17px', text: 'Splice ' + tr.name + ' into ' + sp(spliceFlow.s).name })); box.appendChild(h('div.oddscard', oddsBar(o), h('div.orow', h('span.l.succ', { text: 'Success ' + pct(o.success) }), h('span.l.fail', { text: 'Fail ' + pct(o.fail) }), h('span.l.crit', { text: 'Critical ' + pct(o.critical) })), breakdown(o.breakdown || []),
         h('div.rrow', h('span', { text: 'Cost' }), h('b', { text: fmt(o.cost) })), h('div.rrow', h('span', { text: 'Time' }), h('b', { text: Math.round(o.hours) + ' h' })), fundNote(o.fundingUsed)));
       if (!o.canStart) box.appendChild(whyRow(o.why));
       box.appendChild(h('div.btnrow', h('button.btn.gold' + (o.canStart ? '' : '.dis'), { text: 'Start splice', on: { click: function () { var x = RS().startSplice(spliceFlow.s, spliceFlow.t); if (x.ok) { UI.toast('Splice started', 'good'); spliceFlow = null; render(); } else UI.toast(x.msg, 'bad'); } } }), h('button.btn.alt', { text: 'Cancel', on: { click: function () { spliceFlow = null; render(); } } })));
@@ -229,10 +233,11 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
 
   // -------------------------------------------------------------- shell
-  function visibleSubs() { return SUBS.filter(function (s) { return s[0] !== 'splice' || D.animals.some(function (a) { return genome(a.id) >= 80; }); }); }
+  function visibleSubs() { return SUBS.filter(function (s) { return (s[0] !== 'splice' || D.animals.some(function (a) { return !a.modern && genome(a.id) >= 80; })) && (s[0] !== 'donors' || Res.ext.donors); }); }
   function stateKey() {
     var sm = RS().summary(), r = S().research;
-    return JSON.stringify([sub, !!flow, flow && flow.staff, !!spliceFlow, sm.labOnline, Math.round(sm.labOfflineHours), sm.samples, sm.freeScientists, sm.scientists, sm.funding, r.jobs.map(function (j) { return j.id + ':' + Math.ceil(j.t); }), r.market.length, r.market.map(function (m) { return m.id; }), r.candidates.map(function (m) { return m.id; }), Math.floor(S().money / 250), sm.focus, S().day, sm.eggs]);
+    var sq = RS().sequencing(), dk = Res.ext.key ? Res.ext.key() : '';
+    return JSON.stringify([sub, dk, visibleSubs().length, sq.hint, sq.batches.map(function (b) { return b.id + ':' + Math.floor(b.pct * 40) + ':' + b.workers.length + ':' + b.boosts + ':' + b.position; }), sq.attemptsLeft, r.donorStock.length, !!flow, flow && flow.staff, !!spliceFlow, sm.labOnline, Math.round(sm.labOfflineHours), sm.samples, sm.freeScientists, sm.scientists, sm.funding, r.jobs.map(function (j) { return j.id + ':' + Math.ceil(j.t); }), r.market.length, r.market.map(function (m) { return m.id; }), r.candidates.map(function (m) { return m.id; }), Math.floor(S().money / 250), sm.focus, S().day, sm.eggs]);
   }
   function render() {
     if (!body || !body.isConnected) return;
@@ -246,7 +251,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       bar.appendChild(b);
     });
     body.appendChild(bar); body.appendChild(header(sm));
-    var t = ({ lab: labTab, amber: amberTab, genomes: genomesTab, equip: equipTab, team: teamTab, splice: spliceTab })[sub];
+    var t = ({ lab: labTab, amber: amberTab, genomes: genomesTab, donors: function (sm) { return Res.ext.donors ? Res.ext.donors(sm) : h('div.rtab'); }, equip: equipTab, team: teamTab, splice: spliceTab })[sub];
     body.appendChild(t(sm));
     body.scrollTop = keep; lastKey = stateKey();
   }
@@ -273,19 +278,24 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.el.bRes.classList.toggle('pulse', !!txt);
   }
   Res.tick = function () { try { updBadge(); } catch (e) { } };
+  Res.render = render;
 
   // -------------------------------------------------------------- reveal cards
   var queue = [], cardEl = null, cardTimer = 0;
   function ensureLayer() { if (rootEl) return; rootEl = h('div#reveal'); document.getElementById('ui').appendChild(rootEl); }
+  var DNA_SVG = '<svg viewBox="0 0 80 80" width="84" height="84"><g fill="none" stroke-linecap="round" stroke-width="5"><path d="M26 8c0 18 28 18 28 36S26 62 26 72" stroke="#17555a"/><path d="M54 8c0 18-28 18-28 36s28 18 28 28" stroke="#f2a81d"/></g><g stroke="#5a3306" stroke-width="3"><path d="M32 18h16M30 32h20M30 56h20M32 68h16"/></g></svg>';
   var SHARDS = '<svg viewBox="0 0 80 80" width="84" height="84"><g stroke="#5a3306" stroke-width="2" stroke-linejoin="round"><path d="M40 8l14 18-12 6z" fill="#f2a81d"/><path d="M54 26l16 12-18 10z" fill="#d98a10"/><path d="M42 32l10 16-20 8z" fill="#ffd36a"/><path d="M14 36l20-6 8 26z" fill="#e8b84a"/><path d="M32 56l24-8-6 22z" fill="#b86a0a"/><path d="M20 58l12-2 6 14z" fill="#f2a81d"/></g></svg>';
   var HAZARD = '<svg viewBox="0 0 80 80" width="84" height="84"><path d="M40 8L74 68H6z" fill="#ffd23a" stroke="#3b2204" stroke-width="4" stroke-linejoin="round"/><path d="M40 28v22M40 58v2" stroke="#3b2204" stroke-width="6" stroke-linecap="round"/></svg>';
-  function push(card) { queue.push(card); if (!cardEl) next(); }
+  // while the tutorial card is up, result cards wait (nothing may cover the map during the tutorial); the toast and Research badge still tell the player
+  var kickT = 0;
+  function kick() { clearTimeout(kickT); if (cardEl) return; if (UI.Tutorial && UI.Tutorial.active && UI.Tutorial.active()) { kickT = setTimeout(kick, 1000); return; } next(); }
+  function push(card) { queue.push(card); kick(); }
   function next() {
     ensureLayer(); clearTimeout(cardTimer);
     var c = queue.shift(); if (!c) { cardEl = null; rootEl.innerHTML = ''; return; }
     rootEl.innerHTML = '';
     var art = h('div.rv-art');
-    if (c.species) art.appendChild(thumb(c.species, 128, c.plain)); else art.innerHTML = c.svg || '';
+    if (c.species) { var rt = thumb(c.species, 128, c.plain); art.appendChild(rt); if (UI.Portrait && !rt.classList.contains('sil')) UI.Portrait.mount(rt, { species: c.species, size: 96 }); } else art.innerHTML = c.svg || '';
     var el = h('div.rvcard.' + c.cls,
       h('button.x', { html: ic('close'), 'aria-label': 'Dismiss', on: { click: function () { UI.snd('click'); next(); } } }),
       h('div.vial', { html: '<svg viewBox="0 0 40 60" width="46" height="70"><rect x="12" y="2" width="16" height="6" rx="2" fill="#8a6a3a"/><path d="M14 8h12v32a6 6 0 01-12 0z" fill="#fffbe8" stroke="#3b2204" stroke-width="2"/><path d="M14 30h12v10a6 6 0 01-12 0z" fill="#f2a81d"/></svg>' }),
@@ -302,12 +312,32 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.on('market', function () { if (body && body.isConnected) render(); });
     b.on('experiment', function (e) {
       if (!e) return; var spd = e.species && sp(e.species); seen();
-      var o = e.outcome;
-      if (o === 'success') push({ cls: 'good', species: e.species, title: e.sold ? 'Genome already complete' : '+' + Math.round(e.gain) + '% ' + spd.name + ' genome', text: e.sold ? 'You sold the data to museums for ' + fmt(e.sold) + '.' : 'Now ' + Math.round(e.genome) + '% complete.' + (e.genome >= 50 && e.genome - e.gain < 50 ? ' It can now hatch!' : ''), open: ['See genomes', function () { Res.open('genomes'); }] });
-      else if (o === 'contaminated') push({ cls: 'neutral', svg: SHARDS, title: 'Contaminated sample', text: 'Only insect DNA. Harmless, but no gain.', more: e.pity ? 'Lessons learned: next try is a little luckier.' : '' });
-      else if (o === 'critical') push({ cls: 'bad', svg: HAZARD, title: 'Containment breach!', text: 'The lab is sealed for 24 hours. Clean-up bill ' + fmt(e.bill || 0) + '.' });
+      var o = e.outcome, job = e.job || {}, bt = e.batch;
+      if (job.kind === 'hybrid') {
+        if (o === 'success' && e.hybrid) push({ cls: 'good', species: e.hybrid.id, plain: true, title: 'New species: ' + e.hybrid.name, text: sp(job.a).name + ' × ' + sp(job.b).name + '. Its genome is ' + Math.round(e.genome) + '% and improves with good husbandry. It can be hatched now.', more: 'Hybrids draw big crowds but need stronger fences and cost more to keep.', open: ['See genomes', function () { Res.open('genomes'); }] });
+        else push({ cls: o === 'critical' ? 'bad' : 'neutral', svg: o === 'critical' ? HAZARD : SHARDS, title: o === 'critical' ? 'The cross collapsed!' : 'The cross did not take', text: 'Genome material was wasted: -' + ((e.loss || [0])[0]).toFixed(1) + '% and -' + ((e.loss || [0, 0])[1]).toFixed(1) + '% on the two parents.' });
+        return;
+      }
+      if (job.kind === 'splice') {
+        var td = UI.byId(D.traits, e.trait || job.trait) || {};
+        if (o === 'success') push({ cls: 'good', species: e.species, plain: true, title: 'New trait: ' + td.name, text: 'Every ' + (spd ? spd.name : 'animal') + ' hatched from now on carries it.' + (td.effect ? ' ' + td.effect : ''), open: ['See splicing', function () { Res.open('splice'); }] });
+        else if (o === 'critical') push({ cls: 'bad', svg: HAZARD, title: 'The splice went wrong', text: 'The ' + (spd ? spd.name : '') + ' sequence was damaged: genome -' + (e.loss || 0).toFixed(1) + '%.' });
+        else push({ cls: 'neutral', svg: SHARDS, title: 'The splice did not take', text: 'The cells were lost and the reagents are gone.' });
+        return;
+      }
+      if (o === 'success' && bt) push({ cls: 'good', species: e.species, title: bt.frags + ' ' + spd.name + ' fragments', text: (bt.quality === 'excellent' ? 'A superb extraction: ' : '') + 'Integrity ' + Math.round(bt.integrity * 100) + '%. They are queued for sequencing. Idle scientists will work through them.', more: 'Tap Help sequence on the Lab tab to speed it up.', open: ['Open the bench', function () { Res.open('lab'); }] });
+      else if (o === 'success') push({ cls: 'good', species: e.species, title: e.sold ? 'Genome already complete' : '+' + Math.round(e.gain) + '% ' + spd.name + ' genome', text: e.sold ? 'You sold the data to museums for ' + fmt(e.sold) + '.' : 'Now ' + Math.round(e.genome) + '% complete.' + (e.genome >= 50 && e.genome - e.gain < 50 ? ' It can now hatch!' : ''), open: ['See genomes', function () { Res.open('genomes'); }] });
+      else if (o === 'contaminated') push({ cls: 'neutral', svg: SHARDS, title: 'Contaminated sample', text: bt ? 'Mostly insect DNA, but ' + bt.frags + ' ' + (spd ? spd.name : '') + ' fragments were rescued. Their integrity is poor (' + Math.round(bt.integrity * 100) + '%).' : 'Only insect DNA. Harmless, but no gain.', more: e.pity ? 'Lessons learned: next try is a little luckier.' : '' });
+      else if (o === 'critical') push({ cls: 'bad', svg: HAZARD, title: 'Containment breach!', text: 'The lab is sealed for 12 hours. Clean-up bill ' + fmt(e.bill || 0) + '.' });
       else if (o === 'salvaged') push({ cls: 'neutral', svg: SHARDS, title: 'Failed, but salvaged', text: 'The cryo store saved a degraded sample.', more: 'Lessons learned: next try is a little luckier.' });
       else push({ cls: 'bad', svg: SHARDS, title: 'The amber shattered', text: 'No usable DNA this time.', more: e.pity ? 'Lessons learned: +' + Math.min(20, e.pity * 5) + '% on the next extraction.' : '' });
+    });
+    b.on('sequenced', function (e) {
+      if (!e) return; seen();
+      if (e.donor) { var dn = (Z.DATA.donors || []).filter(function (d) { return d.id === e.donor; })[0] || {}; push({ cls: 'good', svg: DNA_SVG, title: (dn.name || 'Donor') + ' DNA ready', text: e.doses + ' sample' + (e.doses > 1 ? 's' : '') + ' sequenced. You can now splice the ' + (UI.byId(D.traits, dn.gene) || {}).name + ' gene.', open: ['Open splicing', function () { Res.open('splice'); }] }); return; }
+      var spd = sp(e.species);
+      if (e.sold) push({ cls: 'neutral', species: e.species, title: 'Genome already complete', text: 'The finished sequence was sold to museums for ' + fmt(e.sold) + '.' });
+      else push({ cls: 'good', species: e.species, title: 'Sequencing complete: +' + e.gain.toFixed(1) + '% ' + spd.name, text: 'Integrity ' + Math.round(e.batch.integrity * 100) + '%. The genome is now ' + Math.round(e.genome) + '% complete.' + (e.unlocked ? ' It can now hatch!' : ''), open: ['See genomes', function () { Res.open('genomes'); }] });
     });
     b.on('unlock', function (e) { if (e && e.species) { var s = sp(e.species); UI.banner({ title: 'New species: ' + s.name, text: 'Genome 50%. You can now hatch it.', kind: 'good', jump: function () { Res.open('genomes'); } }); UI.snd('unlock'); } });
     b.on('hatch', function (e) {
@@ -320,4 +350,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.on('reset', function () { queue = []; cardEl = null; clearTimeout(cardTimer); if (rootEl) rootEl.innerHTML = ''; flow = null; spliceFlow = null; unseen = 0; badgeKey = ''; });
   }
   Res.init = function () { hook(); ensureLayer(); };
+  // helpers shared with 62-research-dna.js
+  Res.U = { h: h, ic: ic, fmt: fmt, sp: sp, site: site, pct: pct, pips: pips, dots: dots, thumb: thumb, note: note, whyRow: whyRow, oddsBar: oddsBar, breakdown: breakdown, fundNote: fundNote, gem: gem, push: push, labFix: labFix };
 })();
+
+

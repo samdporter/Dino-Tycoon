@@ -7,7 +7,8 @@ const vm = require('node:vm');
 const root = path.resolve(__dirname, '..');
 function game() {
   const ctx = vm.createContext({ console, btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary') });
-  for (const f of ['00-data.js', '10-core.js', '20-sim.js']) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  const simFiles = fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
+  for (const f of simFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
   return ctx.Z;
 }
 test('simulation actions and typed terrain survive saving/loading', () => {
@@ -46,4 +47,81 @@ test('same seed and action sequence are deterministic', () => {
     for (let n=0;n<100;n++) z.Sim.tick(0.1);
   }
   assert.equal(a.Sim.save(), b.Sim.save());
+});
+test('v3 island maps, moats, power, realms, monorail, safari and DNA persist across save/load', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 42, map: 'fern_meadow', difficulty: 'easy' });
+  assert.equal(Boolean(z.Sim.isIsland()), true);
+  assert.ok(z.Sim.seaMask().some(v => v > 0));
+  assert.ok(z.Sim.moats && z.Sim.monorail && z.Sim.power && z.Sim.realms && z.Sim.news && z.Sim.safari);
+  const saved = z.Sim.save();
+  z.Sim.newGame({ seed: 99, map: 'crater_lake' });
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.state.map.id, 'fern_meadow');
+  assert.equal(Boolean(z.Sim.isIsland()), true);
+});
+test('legacy v2 save without v3 arrays loads cleanly and keeps inland map', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 101 });
+  const v2Like = JSON.parse(z.Sim.save());
+  delete v2Like.s.ditch;
+  delete v2Like.s.moatTip;
+  delete v2Like.s.rail;
+  delete v2Like.s.mono;
+  delete v2Like.s.safari;
+  delete v2Like.s.power;
+  delete v2Like.s.realms;
+  delete v2Like.s.news;
+  if (v2Like.s.map) delete v2Like.s.map.island;
+  v2Like.s.money = 54321;
+  assert.equal(z.Sim.load(JSON.stringify(v2Like)), true);
+  assert.equal(z.state.money, 54321);
+  assert.equal(Boolean(z.Sim.isIsland()), false);
+});
+test('dinosaurs detour around rocks, trees, and cliffs, and walk through bushes', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 42, money: 100000 });
+  // Clear starting objects inside an enclosure area [10..16, 20..26]
+  for (let j = 19; j <= 27; j++) for (let i = 9; i <= 17; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+  }
+  for (let i = 10; i <= 16; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 20 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 27 }, 'reinforced');
+  }
+  for (let j = 20; j <= 26; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 10, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 17, j }, 'reinforced');
+  }
+  // Place a wall of boulders, trees, and a cliff across j=23 (from i=11 to i=15), leaving i=10 and i=16 open
+  assert.equal(z.Sim.placeObject('boulder', 12, 23, 0).ok, true);
+  assert.equal(z.Sim.placeObject('ginkgo', 13, 23, 0).ok, true);
+  assert.equal(z.Sim.placeObject('rock_pile', 14, 23, 0).ok, true);
+  assert.equal(z.Sim.placeObject('pine', 15, 23, 0).ok, true);
+  // Make tile (11, 23) a steep cliff using corner (12, 23) so tile (10, 23) stays flat
+  z.state.elev[12 + 23 * (z.N + 1)] = 5;
+  z.state.elev[12 + 24 * (z.N + 1)] = 5;
+  // Place walkable bushes on the open pass at (10, 23) and (16, 23)
+  assert.equal(z.Sim.placeObject('bush', 10, 23, 0).ok, true);
+  assert.equal(z.Sim.placeObject('fern', 16, 23, 0).ok, true);
+
+  // Place a carcass feeder at (13, 25) south of the obstacle wall, and spawn a raptor at (13, 21) north of the wall
+  assert.equal(z.Sim.placeObject('carcass_feeder', 13, 25, 0).ok, true);
+  const dino = z.Sim.spawnAnimal('velociraptor', 13, 21);
+  dino.hunger = 80;
+  dino.st = 0;
+
+  let reachedEat = false;
+  for (let step = 0; step < 400; step++) {
+    z.Sim.tick(0.05);
+    const ti = Math.floor(dino.x / z.TILE), tj = Math.floor(dino.z / z.TILE);
+    // Must never enter the boulder, tree, rock_pile, or cliff tiles
+    assert.notEqual(`${ti},${tj}`, '11,23');
+    assert.notEqual(`${ti},${tj}`, '12,23');
+    assert.notEqual(`${ti},${tj}`, '13,23');
+    assert.notEqual(`${ti},${tj}`, '14,23');
+    if (dino.state === 'eat') { reachedEat = true; break; }
+  }
+  assert.equal(reachedEat, true, 'Dinosaur should detour around rock/tree/cliff wall through bushes to eat');
 });

@@ -1,5 +1,14 @@
 # Verification report — 16 November 2026
 
+## Dino Tycoon v3 integration
+
+Dino Tycoon v3 (`Dino_Tycoon_v3.html` / `Dino_Tycoon_v3_source.zip`) was ported into the multi-file repository layout (`index.html`, `styles/`, `src/00-data.js` through `src/90-main.js`, plus `src/15-storage.js`), preserving the dual-backend `Z.Storage` persistence service (`localStorage` + `IndexedDB`), Export/Import save backup controls, and the Dino Tycoon / Zoo Tycoon title switcher (`styles/tycoon-menu.css`).
+
+- **Node logic, lifecycle, v3 systems and storage tests (`node --test tests/*.test.cjs`)**: 26 passed (including v3 island maps, moats, power grid, realms, monorail, safari, DNA lab, legacy v2 inland save compatibility, Dino and Zoo animal pathfinding/obstacle detouring, candidate fallback recovery, and Zoo save isolation).
+- **Headless v3 simulation suites (`simtest.js`, `examples-test.js`, `soak.js`)**: All passed against the integrated `src/` modules, including all four Masterclass scenarios (`careful`, `reckless`, `moats`, `lab`) and the 15-row build/undo/bulldoze matrix + multi-day soak tests.
+- **Python HTTP server tests (`python3 -m unittest discover -s tests -p test_server.py`)**: 3 passed, verifying `/` and `/index.html` (all 55 `src/*.js` scripts, `styles/game.css`, `styles/tycoon-menu.css`, `vendor/three.r128.min.js`), `/zoo.html` (all 12 `src/zoo/*.js` scripts), cache headers, and private-file/traversal blocking.
+- **Playwright end-to-end browser tests (`tests/test_browser.py`)**: 16 passed in **Chromium** and 16 passed in **WebKit** across both desktop (`1280×900`) and phone (`390×844` touch emulation) viewports, covering title/setup rendering, save/reload/Continue, JSON export/import and rollback, `pagehide` and 10-second autosave, legacy `localStorage` migration, `IndexedDB` fallback, phone touch emulation and HUD layout bounds, v3 modal tabs (`power`, `news`, `res`, `ani`, `guide`, `set`), 3D portraits, DNA minigames, 14-step tutorial, Masterclass save protection, and Dino/Zoo save separation.
+
 ## Dino / Zoo menu update
 
 The updated Wild Acres Zoo was extracted into `styles/zoo.css` and 12 scripts under `src/zoo/`. Comparison against the supplied HTML confirmed identical CSS and game code, with only the approved title navigation added. The embedded Three.js matches the existing vendor library after whitespace removal. All JavaScript files pass syntax checks.

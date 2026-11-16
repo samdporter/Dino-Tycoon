@@ -56,13 +56,16 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function $q(s, r) { return r.querySelector(s); }
   function thumbBox(kind, id, size, fb) { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px' }); UI.lazyThumb(d, kind, id, fb || '', size || 96, true); return d; }
+  Panel.kit = { frame: frame, bars: bars, confirmBtn: confirmBtn, thumbBox: thumbBox, find: find, setCur: function (c) { cur = c; } };   // for sibling packages (monorail) that draw their own panels
 
   Panel.open = function (kind, id) {
     if (UI.tool) return;
     try { Z.World.highlightEnclosure(null); Z.World.setPreview(null); } catch (e) { }
     var ok = false;
     if (kind === 'animal') ok = openAnimal(id); else if (kind === 'enclosure') ok = openEnc(id); else if (kind === 'guest') ok = openGuest(id);
-    else if (kind === 'object') ok = openObject(id); else if (kind === 'staff') ok = openStaff(id);
+    else if (kind === 'object') ok = (UI.Mono && UI.Mono.open(kind, id)) || (UI.Safari && UI.Safari.open(kind, id)) || openObject(id); else if (kind === 'staff') ok = openStaff(id);
+    else if ((kind === 'safari_veh' || kind === 'wild') && UI.Safari) ok = UI.Safari.open(kind, id);   // safari package: vehicle and wild visitor panels
+    else if (kind === 'train' && UI.Mono) ok = UI.Mono.open(kind, id);   // monorail package: station panel (objects) and train panel
     if (ok) { UI.sel = { kind: kind, id: id }; el.panel.scrollTop = 0; }
   };
   Panel.update = function () {
@@ -77,7 +80,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function openAnimal(id) {
     var a = find(Z.state.animals, id); if (!a) return false;
-    var sp = UI.sp(a.species), f = frame(thumbBox('animal', a.species, 96, sp.emoji), a.name, sp.name);
+    var sp = UI.sp(a.species), ph = h('div', { style: 'width:100%;height:100%' }, thumbBox('animal', a.species, 96, sp.emoji)), f = frame(ph, a.name, sp.name);
+    if (UI.Portrait) UI.Portrait.mount(ph, { species: a.species, animal: a });
     var b = f.body, hb = h('div', { style: 'display:flex;align-items:center;gap:10px' });
     var mood = h('div', { style: 'font:700 28px var(--serif);min-width:64px' }), moodTxt = h('div', { style: 'font-size:12.5px;color:var(--ink2);line-height:1.3;flex:1' });
     hb.appendChild(mood); hb.appendChild(moodTxt); b.appendChild(hb);
@@ -125,11 +129,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     rn.appendChild(inp); rn.appendChild(h('button.btn.sm', { html: ic('check') + 'Save', on: { click: function () { var r = Z.Sim.renameEnclosure(id, inp.value); if (r.ok) { f.title.textContent = inp.value.trim(); UI.toast('Enclosure renamed', 'good'); } rn.style.display = 'none'; UI.snd('click'); } } }));
     var env = bars([['clean', 'Cleanliness'], ['food', 'Food'], ['water', 'Water']]); b.appendChild(env.el);
     var fenceTxt = h('div.kv'); b.appendChild(fenceTxt);
+    var moatBox = UI.Moats ? UI.Moats.encBlock(id) : null; if (moatBox) b.appendChild(moatBox.el);
+    var rlBox = UI.Realms ? UI.Realms.encBlock(id) : null; if (rlBox) b.appendChild(rlBox.el);   // realms package
+    var pwBox = UI.Power ? UI.Power.encBlock(id) : null; if (pwBox) b.appendChild(pwBox.el);   // power package: electric fence state
+    var sfBox = UI.Safari ? UI.Safari.encBlock(id) : null; if (sfBox) b.appendChild(sfBox.el);   // safari package: zone status, corridor, lockdown
     var spBox = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(spBox);
     var iss = h('div'); b.appendChild(iss); var issKey = [], spKey = '';
     b.appendChild(rn);
     b.appendChild(h('div.btnrow',
-      h('button.btn.sm', { html: ic('egg') + 'Hatch', on: { click: function () { Panel.hide(); UI.openCat('hatch', true); } } }),
+      h('button.btn.sm', { html: ic('egg') + 'Hatch', on: { click: function () { Panel.hide(); if (UI.Realms) UI.Realms.hatchFor(id); UI.openCat('hatch', true); } } }),
       h('button.btn.sm.alt', { html: ic('pencil') + 'Rename', on: { click: function () { rn.style.display = rn.style.display === 'none' ? 'flex' : 'none'; inp.focus(); } } }),
       h('button.btn.sm.alt', { html: ic('target') + 'Centre', on: { click: function () { Z.World.focus(e.cx, e.cz); } } })));
     cur = {
@@ -140,7 +148,8 @@ window.Z = window.Z || {}; var Z = window.Z;
         env.set('clean', 1 - UI.clamp(en.poop / (en.area / 3 + 3), 0, 1)); env.set('food', en.foodLevel); env.set('water', en.waterLevel);
         var fn = D.fences.filter(function (x) { return x.strength === en.minFence; })[0];
         var worst = 0; en.species.forEach(function (s) { worst = Math.max(worst, UI.sp(s).minFence); });
-        fenceTxt.innerHTML = '<span>Weakest fence strength</span><b style="color:' + (en.minFence < worst ? 'var(--bad)' : 'inherit') + '">' + en.minFence + (worst ? ' / needs ' + worst : '') + '</b>';
+        if (en.kind) fenceTxt.style.display = 'none'; else fenceTxt.innerHTML = '<span>Weakest fence strength</span><b style="color:' + (en.minFence < worst ? 'var(--bad)' : 'inherit') + '">' + en.minFence + (worst ? ' / needs ' + worst : '') + '</b>';
+        if (moatBox) { moatBox.update(); if (en.kind) moatBox.el.style.display = 'none'; } if (pwBox) pwBox.update(); if (rlBox) rlBox.update(); if (sfBox) sfBox.update();
         var key = en.species.join(',') + '|' + en.animals.length + '|' + Object.keys(r.species).map(function (s) { return s + Math.round(r.species[s].suitability * 100); }).join(',');
         if (key !== spKey) {
           spKey = key; spBox.innerHTML = '';
@@ -224,6 +233,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       pv.textContent = UI.fmt2(o.price); pr(); hint.textContent = priceHint(o.price, def.price);
     }
     b.appendChild(stats);
+    if (isB && def.realm && UI.Realms && UI.Realms.objectBlock && (def.realm === 'tower' && def.id === 'tagging_tower' || def.realm === 'plant')) { var rlo = UI.Realms.objectBlock(id); b.appendChild(rlo.el); var prevR = sciUpd; sciUpd = function () { rlo.update(); }; }
+    if (isB && def.moat && UI.Moats) { var mo = UI.Moats.objectBlock(id); b.appendChild(mo.el); var prevS = sciUpd; sciUpd = function () { mo.update(); }; }
+    if (isB && UI.Power && (def.needsPower || def.gen || def.powerNode || def.battery)) { var pwo = UI.Power.objectBlock(id); b.appendChild(pwo.el); var prevP = sciUpd; sciUpd = function () { if (prevP) prevP(); pwo.update(); }; }   // power package
     if (isB && def.type === 'science') {
       var sci = h('div.scibox'); b.appendChild(sci);
       b.appendChild(h('button.btn.sm.gold', { style: 'margin:6px 0', html: ic('flask') + (o.type === 'hatchery' ? 'Open hatchery research' : 'Open the lab'), on: { click: function () { UI.Research.open(o.type === 'hatchery' ? 'genomes' : 'lab'); } } }));
@@ -290,8 +302,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   Panel.species = function (id) {
     var sp = UI.sp(id), S = Z.state; if (!sp) return;
     var R = Z.Sim.research, gi = R.genomeInfo(id), ho = R.hatchOdds(id), locked = gi.genome < 50;
+    if (sp.modern) { gi = { genome: 100, quality: 'Wild', traits: [] }; locked = true; }   // modern wildlife: never hatched
     var box = h('div.sbox');
-    var th = h('div', { style: 'width:104px;height:104px;border-radius:16px;background:radial-gradient(circle at 50% 35%,#fffdf2,var(--paper3));border:2px solid rgba(58,42,26,.25);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:44px' }, thumbBox('animal', id, 192, sp.emoji));
+    var th = h('div', { style: 'width:120px;height:120px;border-radius:16px;background:radial-gradient(circle at 50% 35%,#fffdf2,var(--paper3));border:2px solid rgba(58,42,26,.25);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:44px' }, thumbBox('animal', id, 192, sp.emoji));
+    if (UI.Portrait && gi.genome > 0) UI.Portrait.mount(th, { species: id, size: 120 });
     if (gi.genome <= 0) th.classList.add('sil');
     var top = h('div', { style: 'display:flex;gap:12px;align-items:center' }, th,
       h('div', { style: 'flex:1;min-width:0' }, h('h3.serif', { style: 'margin:0;font-size:24px;line-height:1.1', text: gi.genome > 0 ? sp.name : 'Unknown species' }),
@@ -299,19 +313,22 @@ window.Z = window.Z || {}; var Z = window.Z;
         h('div', { style: 'font:700 13px var(--sans);margin-top:4px;color:var(--moss3)', text: gi.quality + ' genome' })),
       h('button.x', { html: ic('close'), style: 'align-self:flex-start;width:40px;height:40px;margin:-4px -6px 0 0', 'aria-label': 'Close', on: { click: Panel.closeSheet } }));
     box.appendChild(top);
-    box.appendChild(h('div.genrow', genomeBar(gi.genome, true), h('b.num', { text: Math.round(gi.genome) + '%' })));
-    box.appendChild(h('div.genleg', h('span', { text: 'Hatch at 50%' }), h('span', { text: 'Splice at 80%' })));
+    if (!sp.modern) { box.appendChild(h('div.genrow', genomeBar(gi.genome, true), h('b.num', { text: Math.round(gi.genome) + '%' })));
+    box.appendChild(h('div.genleg', h('span', { text: 'Hatch at 50%' }), h('span', { text: 'Splice at 80%' }))); }
     if (gi.genome > 0) box.appendChild(h('div.fact', { text: sp.fact }));
     if (gi.traits && gi.traits.length) box.appendChild(h('div.chips', gi.traits.map(function (t) { var td = UI.byId(D.traits, t); return h('span.chip', { text: (td ? td.name : t) }); })));
     // hatch status
     var stat = h('div.hatchbox');
-    if (locked) {
+    if (sp.modern) {
+      stat.appendChild(h('div.fact', { text: 'A wild animal of today. It wanders in by itself and cannot be hatched.' }));
+    } else if (locked) {
       stat.appendChild(h('div.bn.alert', { style: 'padding:8px;margin:0;animation:none', html: ic('lock') + ' Research needed: ' + Math.round(gi.genome) + '/50%' }));
       stat.appendChild(h('button.btn.sm.gold', { html: ic('flask') + 'Open research', on: { click: function () { Panel.closeSheet(); UI.Research.open('genomes'); } } }));
     } else {
       stat.appendChild(h('div.kv', h('span', { text: 'Hatch chance' }), h('b', { text: Math.round(ho.chance * 100) + '%' + (ho.guaranteed ? ' (guaranteed)' : '') })));
-      stat.appendChild(h('div.kv', h('span', { text: 'Egg cost' }), h('b', { text: fmt(ho.cost) })));
-      stat.appendChild(h('div.kv', h('span', { text: 'Incubation' }), h('b', { text: Math.round(ho.hours) + ' game hours' })));
+      var lv = Z.Realms && Z.Realms.live(sp);
+      stat.appendChild(h('div.kv', h('span', { text: lv ? 'Gestation cost' : 'Egg cost' }), h('b', { text: fmt(ho.cost) })));
+      stat.appendChild(h('div.kv', h('span', { text: lv ? 'Gestation' : 'Incubation' }), h('b', { text: Math.round(ho.hours) + ' game hours' })));
       if (R.summary().funding > 0) stat.appendChild(h('div.fundnote', { text: fmt(Math.min(ho.cost, R.summary().funding)) + ' of this is paid by science donations' }));
       if (ho.breakdown && ho.breakdown.length) stat.appendChild(h('div.bdn', ho.breakdown.map(function (x) { return h('span', { text: x.label + ' ' + (x.value >= 0 && x !== ho.breakdown[0] ? '+' : '') + Math.round(x.value * 100) + '%' }); })));
     }
@@ -326,6 +343,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     row('Company', h('span', { text: sp.social[0] === sp.social[1] ? 'Lives alone' : 'In groups of ' + sp.social[0] + (sp.social[1] > 20 ? '+' : ' to ' + sp.social[1]) }));
     var fn = D.fences.slice().sort(function (a, b) { return a.cost - b.cost; }).filter(function (x) { return x.strength >= sp.minFence; })[0];
     row('Fence', h('span', { text: 'Strength ' + sp.minFence + '+ (' + (fn ? fn.name.toLowerCase() : 'strong') + (sp.minFence > 1 ? ' or stronger' : '') + ')' }));
+    if (UI.Moats && !(UI.Realms && sp.realm)) row('Moat', UI.Moats.speciesRow(sp));
+    if (UI.Realms) UI.Realms.speciesRows(sp, row);
     row('Extras', h('div.chips', sp.needsWater ? h('span.chip', { text: 'Pond or pool' }) : null, sp.needsShelter ? h('span.chip', { text: 'Shelter' }) : null, sp.needsRocks ? h('span.chip', { text: 'Rocks' }) : null, (!sp.needsWater && !sp.needsShelter && !sp.needsRocks) ? h('span.chip', { text: 'Nothing special' }) : null));
     row('Appeal', h('div', { style: 'display:flex;align-items:center;gap:8px' }, bar(sp.appeal / 60), h('b', { text: sp.appeal })));
     if (sp.predator) row('Warning', h('span', { style: 'color:var(--bad);font-weight:700', text: 'Predator. Keep it apart from other species' + (sp.danger >= 2 ? ' and use strong fences.' : '.') }));
@@ -334,7 +353,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!locked) {
       box.appendChild(h('div.sect', { text: 'Where shall it hatch?' }));
       var list = h('div', { style: 'display:flex;flex-direction:column;gap:6px' });
-      var encs = S.enclosures.slice();
+      var encs = S.enclosures.slice(); if (UI.Realms) encs = UI.Realms.sortEncs(encs, id);
       if (!ho.canStart && ho.why) {
         var fx = WHY_FIX[(Z.Sim.addAnimal(id, 0, 0, { dry: true }) || {}).code];
         list.appendChild(h('div.bn.alert', { style: 'padding:8px;margin:0;animation:none', text: ho.why }));
@@ -362,19 +381,21 @@ window.Z = window.Z || {}; var Z = window.Z;
   Panel.confirmEgg = function (id, i, j, done) {
     var sp = UI.sp(id), R = Z.Sim.research, ho = R.hatchOdds(id), dry = Z.Sim.addAnimal(id, i, j, { dry: true });
     var box = h('div.sbox.small');
-    box.appendChild(h('h3.serif', { style: 'margin:0 0 4px', text: 'Lay a ' + sp.name + ' egg?' }));
+    box.appendChild(h('h3.serif', { style: 'margin:0 0 4px', text: (Z.Realms && Z.Realms.live(sp) ? 'Start a ' + sp.name + ' pregnancy?' : 'Lay a ' + sp.name + ' egg?') }));
     box.appendChild(h('div.kv', h('span', { text: 'Hatch chance' }), h('b', { text: Math.round((dry.chance || ho.chance) * 100) + '%' + (ho.guaranteed ? ' (guaranteed)' : '') })));
-    box.appendChild(h('div.kv', h('span', { text: 'Egg cost' }), h('b', { text: fmt(dry.cost !== undefined ? dry.cost : ho.cost) })));
-    box.appendChild(h('div.kv', h('span', { text: 'Incubation' }), h('b', { text: Math.round(dry.hours || ho.hours) + ' game hours' })));
+    var lv2 = Z.Realms && Z.Realms.live(sp);
+    box.appendChild(h('div.kv', h('span', { text: lv2 ? 'Gestation cost' : 'Egg cost' }), h('b', { text: fmt(dry.cost !== undefined ? dry.cost : ho.cost) })));
+    box.appendChild(h('div.kv', h('span', { text: lv2 ? 'Gestation' : 'Incubation' }), h('b', { text: Math.round(dry.hours || ho.hours) + ' game hours' })));
     box.appendChild(h('div.fact', { text: 'A failed egg refunds 30% of its cost. The hatchling will carry your ' + Math.round(R.genomeInfo(id).genome) + '% genome quality.' }));
+    if (dry.ok && dry.warn) box.appendChild(h('div.bn.alert', { style: 'padding:8px;margin:4px 0;animation:none', text: 'Warning: ' + dry.warn }));
     if (!dry.ok) {
       box.appendChild(h('div.bn.alert', { style: 'padding:8px;margin:0;animation:none', text: dry.msg || 'Cannot lay an egg here' }));
       var fx = WHY_FIX[dry.code]; if (fx) box.appendChild(h('button.btn.sm.gold', { text: fx[0], on: { click: fx[1] } }));
     }
     box.appendChild(h('div.btnrow', { style: 'margin-top:6px' },
-      h('button.btn' + (dry.ok ? '.gold' : '.dis'), { html: ic('egg') + 'Lay egg', on: { click: function () {
+      h('button.btn' + (dry.ok ? '.gold' : '.dis'), { html: ic('egg') + (Z.Realms && Z.Realms.live(sp) ? 'Start' : 'Lay egg'), on: { click: function () {
         Z.Sim.beginStroke('egg'); var r = Z.Sim.addAnimal(id, i, j); Z.Sim.endStroke();
-        if (r.ok) { UI.snd('cash'); UI.toast('Egg laid. It hatches in about ' + Math.round(r.hours) + ' h.', 'good'); Panel.closeSheet(); if (done) done(r); }
+        if (r.ok) { UI.snd('cash'); UI.toast((Z.Realms && Z.Realms.live(sp) ? 'Gestation started. Birth in about ' : 'Egg laid. It hatches in about ') + Math.round(r.hours) + ' h.', 'good'); Panel.closeSheet(); if (done) done(r); }
         else { UI.snd('bad'); UI.toast(r.msg || 'Cannot lay an egg here', 'bad'); }
       } } }),
       h('button.btn.alt', { text: 'Cancel', on: { click: function () { Panel.closeSheet(); } } })));
@@ -392,3 +413,5 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { ok: false, msg: fail };
   }
 })();
+
+

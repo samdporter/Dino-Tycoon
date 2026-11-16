@@ -137,32 +137,62 @@ window.Z = window.Z || {}; var Z = window.Z;
     dinos: 'A quick look at each species: where it likes to roam, what it eats and what it needs.'
   };
 
+  // open the Guide tab on a section: 'plants' 'adds' 'dinos' 'moats' 'sea' 'air' 'tags' 'monorail' 'safari' 'mc'
+  Guide.openSection = function (key) { Guide.want = key; UI.openModal('guide'); };
+  var css = document.createElement('style'); css.setAttribute('data-guide', '1');
+  css.textContent = '.gd-index{background:rgba(255,255,255,.5);border:1px solid rgba(58,42,26,.18);border-radius:12px;overflow:hidden}.gd-idxh{width:100%;min-height:44px;display:flex;align-items:center;gap:4px;padding:0 12px;font:700 14px var(--sans);text-align:left}.gd-idxh b{flex:1;font-weight:600;color:var(--moss3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.gd-idxb{padding:0 10px 8px}.gd-idxg small{display:block;font:700 10.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:8px 2px 4px}.gd-idxr{display:flex;flex-wrap:wrap;gap:6px}' +
+    '.gd-idxr button{min-height:40px;padding:0 14px;border-radius:20px;background:var(--paper2);border:2px solid rgba(58,42,26,.25);font:700 13px var(--sans)}.gd-idxr button.on{background:var(--moss);color:var(--paper);border-color:var(--moss3)}';
+  document.head.appendChild(css);
   Guide.build = function (b) {
     var model = buildModel();
     var seg = h('div.seg.gd-seg'), intro = h('div.gd-intro'), body = h('div.gd-body');
     var sections = [
       ['plants', 'Plants', function () { return model.plants.map(plantCard); }],
-      ['adds', 'Additions', function () { return model.additions.map(additionCard); }],
+      ['adds', 'Enclosure extras', function () { return model.additions.map(additionCard); }],
       ['dinos', 'Dinosaurs', function () { return model.species.map(speciesCard); }]
     ];
+    if (UI.Moats && UI.Moats.guideSection) sections.push(UI.Moats.guideSection());
+    if (UI.Realms && UI.Realms.guideSection) UI.Realms.guideSection().forEach(function (g) { sections.push(g); });
+    if (UI.Mono && UI.Mono.guideSection) sections.push(UI.Mono.guideSection());   // monorail package
+    if (UI.Safari && UI.Safari.guideSection) sections.push(UI.Safari.guideSection());   // safari package
+    if (UI.Masterclass && UI.Masterclass.guideBlock) sections.push(['mc', 'Masterclass', function () { return [UI.Masterclass.guideBlock()]; }, 'Example games played on the real simulation, with captions that say what is being done and why.']);   // Masterclass package
     var btns = {};
     function show(key) {
       sections.forEach(function (s) { btns[s[0]].className = s[0] === key ? 'on' : ''; });
       var sec = sections.filter(function (s) { return s[0] === key; })[0];
-      intro.textContent = INTROS[key];
+      intro.textContent = sec[3] || INTROS[key];
+      var hb = idxHead.querySelector('b'); if (hb) hb.textContent = ': ' + sec[1];
       body.innerHTML = '';
       var list = sec[2]();
       if (!list.length) { body.appendChild(h('div.fact', { text: 'Nothing to show yet.' })); return; }
       body.appendChild(h('div.gd-grid', list));
     }
-    sections.forEach(function (s) {
-      btns[s[0]] = h('button', { text: s[1], on: { click: function () { UI.snd && UI.snd('click'); show(s[0]); } } });
-      seg.appendChild(btns[s[0]]);
+    // contents: grouped, wrapping buttons (40px tall) instead of one long scrolling strip; folds up after a pick
+    var GROUPS = [['The park', ['plants', 'adds', 'dinos']], ['Habitats', ['moats', 'sea', 'air', 'tags']], ['Guests and transport', ['monorail', 'safari']], ['Learn', ['mc']]];
+    var idx = h('div.gd-index'), idxHead = h('button.gd-idxh', { 'aria-expanded': 'true' }), idxBody = h('div.gd-idxb');
+    function fold(on) { idxBody.style.display = on ? 'none' : ''; idxHead.setAttribute('aria-expanded', on ? 'false' : 'true'); idxHead.querySelector('i').textContent = on ? '\u25be' : '\u25b4'; }
+    idxHead.appendChild(h('span', { text: 'Contents' })); idxHead.appendChild(h('b', { text: '' })); idxHead.appendChild(h('i', { text: '\u25b4' }));
+    idxHead.addEventListener('click', function () { UI.snd && UI.snd('click'); fold(idxBody.style.display !== 'none'); });
+    var used = {};
+    function addBtn(row, sct) {
+      used[sct[0]] = 1;
+      btns[sct[0]] = h('button', { text: sct[1], on: { click: function () { UI.snd && UI.snd('click'); show(sct[0]); fold(true); body.scrollIntoView && body.scrollIntoView({ block: 'nearest' }); } } });
+      row.appendChild(btns[sct[0]]);
+    }
+    GROUPS.forEach(function (g) {
+      var list = sections.filter(function (sct) { return g[1].indexOf(sct[0]) >= 0; }); if (!list.length) return;
+      var row = h('div.gd-idxr'); list.forEach(function (sct) { addBtn(row, sct); });
+      idxBody.appendChild(h('div.gd-idxg', h('small', { text: g[0] }), row));
     });
-    b.appendChild(h('div.gd-top', seg));
+    var rest = sections.filter(function (sct) { return !used[sct[0]]; });
+    if (rest.length) { var row2 = h('div.gd-idxr'); rest.forEach(function (sct) { addBtn(row2, sct); }); idxBody.appendChild(h('div.gd-idxg', h('small', { text: 'More' }), row2)); }
+    idx.appendChild(idxHead); idx.appendChild(idxBody);
+    b.appendChild(h('div.gd-top', idx));
     b.appendChild(intro);
     b.appendChild(body);
-    show('plants');
+    var first = Guide.want && btns[Guide.want] ? Guide.want : 'plants'; Guide.want = null;
+    show(first); fold(first !== 'plants' ? true : false);
     return null;
   };
 })();

@@ -48,7 +48,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
       undo: [], stroke: null, strokeDepth: 0, labs: [], hatcheries: [], bunkers: [], platforms: [], labNear: new Uint8Array(NN), platTile: new Uint8Array(NN),
       dangerEsc: 0, hunters: {}, resAcc: 0, labOnline: false, undoBusy: false,
-      allLabs: [], allHatch: [], allBunkers: [], allPlat: []
+      allLabs: [], allHatch: [], allBunkers: [], allPlat: [], sea: null, seaNear: null
     };
   }
 
@@ -75,7 +75,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function okr(cost, extra) { var r = { ok: true, cost: cost || 0 }; if (extra) for (var k in extra) r[k] = extra[k]; return r; }
   function fmt(n) { n = Math.round(n); return (n < 0 ? '-' : '') + '£' + Math.abs(n).toLocaleString('en-GB'); }
   function isNight() { return S.time < 0.24 || S.time >= 0.9; }
-  function openNow() { return S.open && S.time >= OPEN_T && S.time < CLOSE_T; }
+  function openNow() { return S.open && S.time >= OPEN_T && S.time < CLOSE_T && !(Z.News && Z.News.closed()); }   // news package: the authorities can close the park for a day
   function lc(s) { return s.toLowerCase(); }
   function plural(sp) { var n = sp.name; var l = lc(n); if (/s$/.test(l)) return n; if (/ey$/.test(l) || /o$/.test(l) && l === 'hippopotamus') return n + 's'; if (/y$/.test(l)) return n.slice(0, -1) + 'ies'; if (/(ch|sh|x)$/.test(l)) return n + 'es'; if (/^(wolf)$/.test(l)) return 'Wolves'; if (/ish$/.test(l)) return n; return n + 's'; }
 
@@ -88,6 +88,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function earn(amount, cat, x, z) {
     if (!amount) return;
     if (cat === 'tickets' || cat === 'food' || cat === 'shops' || cat === 'donations') { if (DIFF.income !== 1) amount = Math.round(amount * DIFF.income * 100) / 100; }   // difficulty: guest income
+    if (cat === 'shops' && Z.News) amount = Math.round(amount * Z.News.merchMul() * 100) / 100;   // news package: merchandise spikes after a scare
     S.money += amount; S.finance.today[cat] = (S.finance.today[cat] || 0) + amount;
     bus.emit('money', x !== undefined ? { delta: amount, x: x, z: z } : { delta: amount });
   }
@@ -288,11 +289,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         else if (def.type === 'toilet') bt.toilet.push(o);
         else if (def.type === 'shop' || def.type === 'ride' || def.type === 'info' || def.type === 'science') { if (o.type !== 'emergency_bunker') bt.fun.push(o); }
         if (o.type === 'research_lab') RT.allLabs.push(o); else if (o.type === 'hatchery') RT.allHatch.push(o);
-        else if (o.type === 'emergency_bunker') RT.allBunkers.push(o); else if (o.type === 'viewing_platform') RT.allPlat.push(o);
+        else if (o.type === 'emergency_bunker') RT.allBunkers.push(o); else if (o.type === 'viewing_platform' || def.plat) RT.allPlat.push(o);   // realms package: galleries, grandstand, canopy tower
         if (o.type === 'keeper_hut') RT.hasHut = true; if (o.type === 'vet_clinic') RT.hasVet = true; if (o.type === 'education_centre') RT.hasEdu = true;
       } else {
         def = SC[o.type]; if (o.type === 'fossil_skeleton') RT.skeletons++;
-        solid = def.kind === 'tree' || def.kind === 'rock' || o.type === 'climbing_frame' || o.type === 'tyre_swing';
+        solid = def.kind === 'tree' || def.kind === 'rock';
         shelter = def.kind === 'shelter';
         if (o.type === 'bench') bt.bench.push(o); else if (o.type === 'bin') bt.bin.push(o);
         else if (def.inEnclosure === false) solid = true;
@@ -360,6 +361,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var oldTE = S.tileEnc.slice(), oldById = {}, k, t;
     for (k = 0; k < S.enclosures.length; k++) oldById[S.enclosures[k].id] = S.enclosures[k];
     var lab = new Int16Array(NN), regions = [], stack = RT.queue;
+    if (S.ditch) for (t = 0; t < NN; t++) if (S.ditch[t]) lab[t] = -2;   // ditch tiles are barrier tiles: never part of an enclosure
+    if (Z.Realms) Z.Realms.markBarrier(lab, regions);   // realms package: tank/dome/zone tiles and sea pens
     for (var s0 = 0; s0 < NN; s0++) {
       if (lab[s0]) continue;
       var sp = 0, leak = false, tiles = [];
@@ -407,9 +410,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var sx = 0, sz = 0;
       for (k = 0; k < tiles2.length; k++) { t = tiles2[k]; S.tileEnc[t] = enc.id; sx += cxOf(t); sz += czOf(t); }
       enc.cx = sx / tiles2.length; enc.cz = sz / tiles2.length;
+      if (Z.Realms) { if (tiles2.kind) Z.Realms.stampPen(enc, tiles2); else Z.Realms.unstamp(enc); }   // realms package
       enc.animals = []; enc.species = []; enc.suitability = enc.suitability || {};
       newEncs.push(enc);
     }
+    if (Z.Realms) Z.Realms.defEncs(newEncs, oldById);   // realms package
     S.enclosures = newEncs;
     RT.eMap = {}; for (k = 0; k < newEncs.length; k++) RT.eMap[newEncs[k].id] = newEncs[k];
     for (r = 0; r < newEncs.length; r++) buildEncGeom(newEncs[r]);
@@ -417,15 +422,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k], at = tileOf(a.x, a.z), ne = S.tileEnc[at];
       if (a.state === 'escaped' || !a.enc) {
-        if (ne) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; }
+        if (ne && (!Z.Realms || Z.Realms.homeOK(a, RT.eMap[ne]))) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; a.wx = 0; a.wz = 0; a.aroute = null; if (Z.Realms) Z.Realms.landed(a); }
       } else if (ne !== a.enc) {
+        if (ne && Z.Realms && !Z.Realms.homeOK(a, RT.eMap[ne])) ne = 0;   // realms package: a sea/air animal never settles in the wrong kind of enclosure
         if (ne) a.enc = ne;
         else {
-          var oldE = a.enc; a.home = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = '';
+          var oldE = a.enc; a.home = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null;
           S.stats.escapes++; msg('The ' + SP[a.species].name.toLowerCase() + ' ' + a.name + ' has wandered out of its enclosure!', 'bad');
           onEscape(a); bus.emit('escape', a);
         }
       }
+      if (a.enc && !aok(a, at)) { var he = RT.eMap[a.enc]; if (he && (!Z.Realms || !he.kind)) relocateAnimal(a, he); }
     }
     refreshEncAnimals();
     for (r = 0; r < newEncs.length; r++) encStats(newEncs[r]);
@@ -441,7 +448,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (sd.waterEdge) {
       var i = o.i, j = o.j;
       for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) {
-        var x = i + di, y = j + dj; if (Z.inb(x, y) && S.terrain[x + y * N] === WATER) return true;
+        var x = i + di, y = j + dj; if (Z.inb(x, y) && S.terrain[x + y * N] === WATER && !seaMask()[x + y * N]) return true;
       }
       return false;
     }
@@ -450,14 +457,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function buildEncGeom(enc) {
     var E = { feed: -1, drink: [], water: [], shelter: [], toy: [], carc: [], out: [], pred: 0, tr: {}, plat: {}, terr: new Array(D.terrain.length), fol: {}, trees: 0, rocks: 0, shelters: 0, aes: 0, blocked: 0, cliffs: 0, relief: 0, thrive: 0, struggle: 0,
       vis: 0, happy: 60, babies: 0, appeal: 0, nAn: 0, bySp: {} };
-    var k, t, d, tiles = enc.tiles;
+    var k, t, d, tiles = enc.tiles, SEA = seaMask();
     for (k = 0; k < E.terr.length; k++) E.terr[k] = 0;
-    var minS = 99, seeSum = 0, cnt = 0, slopeSum = 0;
+    var minS = 99, minLit = 99, seeSum = 0, cnt = 0, slopeSum = 0;
     var best = 1e9, bi = -1;
     for (k = 0; k < tiles.length; k++) {
       t = tiles[k]; var i = t % N, j = (t - i) / N;
       E.terr[S.terrain[t]]++;
-      if (S.terrain[t] === WATER) E.water.push(t);
+      if (S.terrain[t] === WATER && !SEA[t]) E.water.push(t);   // island: only fresh water counts for drinking (see notes/island.md)
       if (RT.shelter[t]) E.shelter.push(t);
       var oid = S.tileObj[t];
       if (oid) {
@@ -483,8 +490,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
         var nt = (ni < 0 || nj < 0 || ni >= N || nj >= N) ? -1 : ni + nj * N;
         if (nt >= 0 && S.tileEnc[nt] === enc.id) continue;
-        var fd = D.fences[f - 1];
-        if (fd.strength < minS) minS = fd.strength;
+        var fd = D.fences[f - 1], fsr = fd.strength;
+        if (fd.electric && Z.Power) { fsr = Z.Power.fenceStrength(fd, i, j); E.elec = (E.elec || 0) + 1; if (fsr < fd.strength) { E.dead = (E.dead || 0) + 1; if (fsr < (E.minDead === undefined ? 99 : E.minDead)) E.minDead = fsr; } else if (fsr < (E.minLive === undefined ? 99 : E.minLive)) E.minLive = fsr; }   // power package: electric fences are strong only while powered
+        else if (fd.strength < (E.minPlain === undefined ? 99 : E.minPlain)) E.minPlain = fd.strength;
+        if (fd.strength < minLit) minLit = fd.strength;
+        if (fsr < minS) minS = fsr;
         seeSum += fd.seeThrough ? 1 : (fd.height <= 1.3 ? 0.5 : 0.05); cnt++;
         if (nt >= 0) E.out.push(nt);
       }
@@ -496,13 +506,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // drinking tiles: land tiles next to water
     if (E.water.length) {
       for (k = 0; k < tiles.length; k++) {
-        t = tiles[k]; if (S.terrain[t] === WATER || RT.block[t]) continue;
+        t = tiles[k]; if (S.terrain[t] === WATER || RT.block[t] || cliffT(t)) continue;
         var ii = t % N, jj = (t - ii) / N;
-        if ((ii > 0 && S.terrain[t - 1] === WATER) || (ii < N - 1 && S.terrain[t + 1] === WATER) || (jj > 0 && S.terrain[t - N] === WATER) || (jj < N - 1 && S.terrain[t + N] === WATER)) E.drink.push(t);
+        if ((ii > 0 && S.terrain[t - 1] === WATER && !SEA[t - 1]) || (ii < N - 1 && S.terrain[t + 1] === WATER && !SEA[t + 1]) || (jj > 0 && S.terrain[t - N] === WATER && !SEA[t - N]) || (jj < N - 1 && S.terrain[t + N] === WATER && !SEA[t + N])) E.drink.push(t);
       }
     }
     enc.minFence = minS === 99 ? 5 : minS;
+    E.minLit = minLit === 99 ? 5 : minLit;   // power package: strength if every electric fence were live
     enc.see = cnt ? seeSum / cnt : 1;
+    if (Z.Moats) Z.Moats.encGeom(enc, E, cnt, seeSum);
+    if (Z.Realms) Z.Realms.encGeom(enc, E, cnt, seeSum);   // realms package: tank/pen/dome/zone geometry   // moats package: ditch boundary lines, moat drinking water, view bonus (may adjust enc.see)
     // view tiles: path tiles within 3 tiles of the enclosure
     var st = ++RT.stampN, stamp = RT.stamp, q = RT.queue, prev = RT.prev, qh = 0, qt = 0, vt = [];
     for (k = 0; k < tiles.length; k++) { stamp[tiles[k]] = st; prev[tiles[k]] = 0; q[qt++] = tiles[k]; }
@@ -527,6 +540,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       enc.platform = true;
       for (d = 0; d < pl.front.length; d++) { E.plat[pl.front[d]] = 1; if (vt.indexOf(pl.front[d]) < 0) vt.push(pl.front[d]); }
     }
+    if (Z.Moats) Z.Moats.encView(enc, vt);   // guests can watch across a moat
+    if (Z.Realms) Z.Realms.encView(enc, vt, E);   // realms package: tunnels, galleries, grandstand
     enc.viewTiles = vt;
     RT.encx[enc.id] = E;
   }
@@ -545,11 +560,24 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   var ISSUE_TERR = {};
   // suitability weights (relative; water/shelter/rocks/carcass apply only to species that need them)
   var HW = { terrain: 0.22, space: 0.2, foliage: 0.12, water: 0.14, shelter: 0.1, rocks: 0.06, social: 0.1, clean: 0.06, carcass: 0.05, enrichment: 0.05 };
+  // donor genes shift what a species needs from its enclosure: extra liked ground (arctic coat) and stronger fences (fx.fence). Applies when every animal of the species here carries the gene.
+  var GT_CACHE = {};
+  function geneTerrain(sp, trs, nHere) {
+    if (!trs) return sp.terrainPrefs;
+    var key = '', add = null, id, x, t;
+    for (id in trs) { x = TR[id] && TR[id].fx; if (x && x.terrain && trs[id] >= nHere) { key += id + ','; add = add || {}; for (t in x.terrain) add[t] = (add[t] || 0) + x.terrain[t]; } }
+    if (!add) return sp.terrainPrefs;
+    key = sp.id + '|' + key; if (GT_CACHE[key]) return GT_CACHE[key];
+    var out = {}; for (t in sp.terrainPrefs) out[t] = sp.terrainPrefs[t]; for (t in add) out[t] = (out[t] || 0) + add[t];
+    return (GT_CACHE[key] = out);
+  }
+  function geneFence(trs, nHere) { var d = 0, id; if (trs) for (id in trs) if (trs[id] >= nHere && TR[id] && TR[id].fx && TR[id].fx.fence) d += TR[id].fx.fence; return d; }
   function suitFor(enc, E, spId, n) {
+    if (Z.Realms && enc.kind) { var rsu = Z.Realms.suit(enc, E, spId, n); if (rsu) return rsu; }   // realms package: sea and air rules
     var sp = SP[spId], area = enc.area, k, iss = [];
     if (n < 1) n = 1;
     // terrain
-    var prefs = sp.terrainPrefs, hasWaterPref = prefs.water > 0, tot = 0, tcounts = E.terr;
+    var prefs = geneTerrain(sp, E.tr[spId], E.bySp[spId] || 1), hasWaterPref = prefs.water > 0, tot = 0, tcounts = E.terr;
     for (k = 0; k < tcounts.length; k++) { if (k === WATER && !hasWaterPref) continue; tot += tcounts[k]; }
     var l1 = 0, psum = 0, id;
     for (id in prefs) if (id !== 'water' || hasWaterPref) psum += prefs[id];
@@ -579,8 +607,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // water
     var water = 1, wN = 0, wW = 0;
     if (sp.needsWater) {
-      wN = Math.max(2, Math.ceil(area * 0.06)); water = clamp(E.water.length / wN, 0, 1); wW = HW.water;
-      if (water < 0.8) iss.push(E.water.length ? 'Needs more water' : 'Needs water');
+      wN = Math.max(2, Math.ceil(area * 0.06)); water = clamp((E.water.length + (E.moatN || 0)) / wN, 0, 1); wW = HW.water;
+      if (water < 0.8) iss.push(E.water.length + (E.moatN || 0) ? 'Needs more water' : 'Needs water');
     }
     var shelter = 1, sW = 0;
     if (sp.needsShelter) {
@@ -608,8 +636,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var wts = HW.terrain + HW.space + HW.foliage + wW + sW + rW + HW.social + HW.clean + cW + HW.enrichment;
     var v = (terrain * HW.terrain + space * HW.space + foliage * HW.foliage + water * wW + shelter * sW + rocks * rW + social * HW.social + clean * HW.clean + carc * cW + enrich * HW.enrichment) / wts;
     v = clamp(v, 0, 1);
-    var mf = sp.minFence - (trs && trs.docile >= nHere ? 1 : 0);
+    var mf = Math.min(5, sp.minFence + geneFence(trs, nHere)) - (trs && trs.docile >= nHere ? 1 : 0);
     if (enc.minFence < mf) iss.push('Fence is too weak (needs strength ' + mf + ')');
+    if (Z.Moats) { var mw = Z.Moats.advice(enc, spId, trs, nHere); if (mw) iss.unshift(mw); }   // moats package: ditch too narrow / shallow / swimmer
+    if (Z.Realms && enc.kind) v = clamp(v * Z.Realms.fixIssues(enc, iss), 0, 1);   // realms package: virtual land zones
     return { value: v, terrain: terrain, space: space, foliage: foliage, water: water, shelter: shelter, rocks: rocks, social: social, clean: clean, carcass: carc, enrichment: enrich, minFence: mf, issues: iss };
   }
 
@@ -640,11 +670,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function isGateTile(i, j) { return j === GATE_J && (i === GATE_I0 || i === GATE_I0 + 1); }
 
   function afterWorldChange(navChanged) {
+    RT.sea = null;   // island: sea mask is derived from terrain + elev
     if (navChanged) rebuildNav();
     rebuildObjects();
     RT.fields = {};
     refreshFacilities();
+    if (Z.Moats) Z.Moats.update();   // moats package: ditch networks, water supply (before enclosures are rebuilt)
+    if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before enclosures: electric fences read it)
     recomputeEnclosures();
+    if (Z.Realms) Z.Realms.update();   // realms package: towers, plants, tank supply, zone cover (after enclosures are known)
+    if (Z.Monorail) Z.Monorail.update();   // monorail package: track graph, lines, pylons, enclosures overlooked (after enclosures are known)
+    if (Z.Safari) Z.Safari.update();   // safari package: zones, routes, gates (after enclosures and realms are known)
     RT.rbDirty = true;
   }
 
@@ -684,6 +720,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!inMap(x, y)) { outside++; continue; }
       var t = x + y * N;
       if (S.terrain[t] === ti) continue;
+      if (seaMask()[t]) continue;   // the open sea cannot be painted over
+      if (ti === WATER && S.ditch[t]) continue;   // fill a ditch in before flooding it
       if (ti === WATER && (S.path[t] || (S.tileObj[t] && RT.oById.get(S.tileObj[t]) && RT.oById.get(S.tileObj[t]).type !== 'ice_floe'))) continue;
       list.push(t); cost += D.terrain[ti].cost; n++;
       if (x < i0) i0 = x; if (y < j0) j0 = y; if (x > i1) i1 = x; if (y > j1) j1 = y;
@@ -720,8 +758,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       target = clamp(Math.round(target), ELEV_MIN, ELEV_MAX);
     }
     // locked corners: next to a building, the entrance plaza, or outside the land
+    var SEAN = seaNear(), SEAM = seaMask();
     function locked(ci, cj) {
       if (ci < m.i0 || cj < m.j0 || ci > m.i1 + 1 || cj > m.j1 + 1) return true;
+      if (cornerSea(ci, cj, SEAM)) return true;   // island: the sea floor is not editable
       for (var b = -1; b <= 0; b++) for (var a = -1; a <= 0; a++) {
         var x = ci + a, y = cj + b; if (!Z.inb(x, y)) continue;
         if (entranceTile(x, y)) return true;
@@ -749,6 +789,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         h1 = Math.round(h0 + (sum / cn - h0) * (sharp ? 1 : Math.min(1, 0.4 + w)));
       }
       h1 = clamp(h1, ELEV_MIN, ELEV_MAX);
+      if (h1 < 0 && cornerSea(ci, cj, SEAN)) h1 = Math.min(h0, 0) < 0 ? h0 : 0;   // island: land beside the sea never drops below sea level
       if (h1 !== h0) { cs.push(c); old[c] = h0; nw[c] = h1; }
     }
     // paths may never be steeper than slope 2: drop corner changes that would do it (repeat until stable)
@@ -787,21 +828,23 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var dry = dryOf(arguments);
     var pid = PI_[pathId]; if (!pid) return fail('Unknown path type');
     if (!inMap(i, j)) return fail('Outside your land');
-    var t = i + j * N;
-    if (S.terrain[t] === WATER) return fail('Needs flat dry land');
-    if (cliffT(t)) return fail('Too steep \u2014 level the ground first');
+    if (Z.Realms && D.paths[pid - 1].walk) return fail('Use the Marine, Aviary or Tagging build tabs for that walkway');   // realms package
+    var t = i + j * N, bridge = Z.Moats ? Z.Moats.bridgeCheck(i, j) : null;   // moats package: a path over a ditch or fresh water is a bridge (max span, higher cost)
+    if (bridge && bridge.msg) return fail(bridge.msg);
+    if (S.terrain[t] === WATER && !bridge) return fail('Needs flat dry land');
+    if (cliffT(t) && !bridge) return fail('Too steep \u2014 level the ground first');
     if (S.tileObj[t]) return fail('Something is in the way');
     if (S.tileEnc[t]) return fail("Can't lay paths inside an enclosure");
     if (S.path[t] === pid) return fail('Already paved');
-    var cost = D.paths[pid - 1].cost;
+    var cost = bridge ? Z.Moats.bridgeCost(pid) : D.paths[pid - 1].cost;
     if (S.money < cost) return fail('Not enough money');
-    if (dry) return okr(cost);
+    if (dry) return okr(cost, bridge ? { bridge: true } : null);
     var oldp = S.path[t];
     S.path[t] = pid; spend(cost, 'construction');
     jBegin('Path'); jOp({ k: 'path', t: t, old: oldp, nw: pid, net: cost }); jEnd();
     bus.emit('path', { i0: i, j0: j, i1: i, j1: j });
     afterWorldChange(true);
-    return okr(cost);
+    return okr(cost, bridge ? { bridge: true } : null);
   }
 
   function edgeTiles(edge) {
@@ -816,6 +859,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!((a >= 0 && inMap(a % N, Math.floor(a / N))) || (b >= 0 && inMap(b % N, Math.floor(b / N))))) return 'Outside your land';
     if (a >= 0 && b >= 0 && S.path[a] && S.path[b]) return "Can't fence across a path";
     if (a >= 0 && b >= 0 && S.tileObj[a] && S.tileObj[a] === S.tileObj[b]) return 'Blocked by a building';
+    if (a >= 0 && b >= 0 && S.ditch[a] && S.ditch[b]) return "Can't fence inside a ditch";
     return null;
   }
   function placeFence(edge, fenceId, opts) {
@@ -889,14 +933,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var t = (fp.i0 + a) + (fp.j0 + b) * N;
       if (S.tileObj[t]) return fail('Something is already here');
       if (S.path[t]) return fail('Clear the path first');
-      if (S.terrain[t] === WATER && type !== 'ice_floe') return fail('Needs flat dry land');
+      if (S.ditch[t]) return fail('Fill the ditch in first');
+      if (S.terrain[t] === WATER && type !== 'ice_floe' && !(def.aquatic && S.tileEnc[t])) return fail('Needs flat dry land');   // realms package: kelp, reefs and feeders go in the water
+      if (Z.Realms && dk.kind === 'scenery') { var rsc = Z.Realms.sceneryCheck(def, t); if (rsc) return fail(rsc); }   // realms package
       if (S.tileEnc[t]) inEnc = true;
     }
     if ((fp.w > 1 || fp.h > 1) && fenceInside(fp)) return fail('Blocked by a fence');
     if (dk.kind === 'building') {
-      if (!footprintFlat(fp, 1)) return fail('Too steep \u2014 level the ground first');
+      if (!footprintFlat(fp, def.realm === 'gallery' ? 3.2 : 1)) return fail('Too steep \u2014 level the ground first');
       if (inEnc) return fail("Buildings can't go inside an enclosure");
-      if (!frontHasPath(fp)) warn = 'Entrance not on a path yet';
+      if (!def.utility && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
+      if (def.mono && Z.Monorail) { var mn = Z.Monorail.placeCheck(type, fp); if (mn && mn.msg) return fail(mn.msg); if (mn && mn.warn) warn = mn.warn; }   // monorail package: a station needs a path at its entrance
+      if (def.moat && Z.Moats) { var mc = Z.Moats.placeCheck(type, fp); if (mc && mc.msg) return fail(mc.msg); if (mc && mc.warn) warn = mc.warn; }   // moats package: pump beside water, ditch contact
+      if (def.safari && Z.Safari) { var sfc = Z.Safari.placeCheck(type, fp); if (sfc && sfc.msg) return fail(sfc.msg); if (sfc && sfc.warn && !warn) warn = sfc.warn; }   // safari package: depot needs a path, harbour needs water
+      if (def.needsPower && Z.Power) { var pc = Z.Power.placeCheck(def, fp); if (pc && pc.warn) warn = (warn ? warn + '. ' : '') + (def.mono ? 'Not on the power grid: the station and its trains stay stopped until a substation or cable covers it' : pc.warn); }   // power package: outside every substation's radius (QA: also when the entrance warning is showing; monorail wording)
     } else {
       if (inEnc && def.inEnclosure === false) return fail("Can't place that inside an enclosure");
       if ((type === 'bench' || type === 'bin') && !adjacentPathExists(fp)) return fail('Place it next to a path');
@@ -961,6 +1011,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       afterWorldChange(true);
       return okr(-refund2);
     }
+    if (Z.Realms && S.tileEnc[t]) { var rbz = Z.Realms.bulldozeTile(i, j, dry); if (rbz) return rbz; }   // realms package: remove a tank / dome / zone
+    if (S.rail[t] && Z.Monorail && Z.Monorail.hasTrack(t)) return Z.Monorail.removeTiles([t], dry ? { dry: true } : null);   // monorail package: remove a bare piece of track
+    if (S.ditch[t] && Z.Moats) return Z.Moats.fill(i, j, dry ? { dry: true } : null);   // moats package: fill the ditch in (50% refund)
     return fail('Nothing to remove here');
   }
 
@@ -1013,7 +1066,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (W.path[t] !== op.nw) return 'The path has changed since, so this cannot be undone';
         if (op.old > 0) {
           if (W.occ[t]) return 'Something now stands on that tile';
-          if (W.terrain[t] === WATER) return 'That tile is now water';
+          if (W.terrain[t] === WATER && seaMask()[t]) return 'That tile is now sea';
           if (S.tileEnc[t]) return 'That tile is inside an enclosure now';
           if (slopeOfT(t, W.elev) > 2) return 'That ground is too steep now';
           var ti = t % N, tj = (t - ti) / N;
@@ -1021,6 +1074,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
               (tj > 0 && W.path[t - N] && W.fenceX[t]) || (tj < N - 1 && W.path[t + N] && W.fenceX[t + N])) return 'A fence is in the way';
         }
         W.path[t] = op.old; return null;
+      case 'x': return op.chk ? op.chk(W) : null;   // generic plug-in op {k:'x', chk(W), ap(), net} (monorail package)
+      case 'ditch':   // moats package
+        for (k = 0; k < op.ts.length; k++) {
+          t = op.ts[k];
+          if (W.ditch[t] !== op.nw[k]) return 'The ditch has changed since, so this cannot be undone';
+          if (op.old[k] > 0 && (W.occ[t] || W.path[t])) return 'Something now stands where the ditch would return';
+          W.ditch[t] = op.old[k];
+        }
+        return null;
       case 'fence': {
         var arr = op.axis === 'x' ? W.fenceX : W.fenceZ;
         if (arr[op.ix] !== op.nw) return 'The fence has changed since, so this cannot be undone';
@@ -1066,7 +1128,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var n = RT.undo.length; if (!n) return fail('Nothing to undo');
     var st = RT.undo[n - 1], k, t;
     if (st.net < 0 && S.money < -st.net) return fail('Not enough money to undo that (' + fmt(-st.net) + ' needed)');
-    var W = { elev: S.elev.slice(), terrain: S.terrain.slice(), path: S.path.slice(), fenceX: S.fenceX.slice(), fenceZ: S.fenceZ.slice(), occ: S.tileObj.slice(), gone: {} };
+    var W = { elev: S.elev.slice(), terrain: S.terrain.slice(), path: S.path.slice(), fenceX: S.fenceX.slice(), fenceZ: S.fenceZ.slice(), occ: S.tileObj.slice(), ditch: S.ditch.slice(), gone: {} };
     var bad = null, hasFence = false;
     for (k = st.ops.length - 1; k >= 0 && !bad; k--) { bad = undoCheck(st.ops[k], W); if (st.ops[k].k === 'fence') hasFence = true; }
     if (!bad && hasFence) {
@@ -1096,6 +1158,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           for (var q4 = 0; q4 < op.cs.length; q4++) S.elev[op.cs[q4]] = op.old[q4];
           var e0 = op.box; ebox = ebox ? [Math.min(ebox[0], e0[0]), Math.min(ebox[1], e0[1]), Math.max(ebox[2], e0[2]), Math.max(ebox[3], e0[3])] : e0.slice();
           navChanged = true; break;
+        }
+        case 'x': { if (op.ap) op.ap(); navChanged = true; break; }   // monorail package
+        case 'ditch': {
+          for (var q5 = 0; q5 < op.ts.length; q5++) S.ditch[op.ts[q5]] = op.old[q5];
+          var d0 = op.box; box = box ? [Math.min(box[0], d0[0]), Math.min(box[1], d0[1]), Math.max(box[2], d0[2]), Math.max(box[3], d0[3])] : d0.slice();
+          break;
         }
         case 'path': S.path[op.t] = op.old; if (!op.old) S.dirt[op.t] = 0; navChanged = true; bus.emit('path', { i0: op.t % N, j0: Math.floor(op.t / N), i1: op.t % N, j1: Math.floor(op.t / N) }); break;
         case 'fence': (op.axis === 'x' ? S.fenceX : S.fenceZ)[op.ix] = op.old; navChanged = true; fenceEv.push({ axis: op.axis, i: op.i, j: op.j }); break;
@@ -1142,13 +1210,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return rng.pick(D.animalNames);
   }
   function hasTrait(a, id) { return !!(a.traits && a.traits.indexOf(id) >= 0); }
-  function aQ(a) { return a.genomeQ === undefined ? 100 : a.genomeQ; }
-  function aDanger(a) { var d = SP[a.species].danger; return hasTrait(a, 'docile') ? Math.max(0, d - 1) : d; }
-  function aMinFence(a) { var m = SP[a.species].minFence; return hasTrait(a, 'docile') ? Math.max(1, m - 1) : m; }
-  function aLife(a) { return SP[a.species].lifespan * (0.7 + 0.005 * aQ(a)) * (hasTrait(a, 'robust') ? 1.2 : 1); }
-  function aAppeal(a) { return SP[a.species].appeal * (a.baby ? 1.5 : 1) * (0.8 + 0.004 * aQ(a)) * (hasTrait(a, 'vivid') ? 1.25 : 1); }
-  function aSickMul(a) { return (1.5 - aQ(a) / 100) * (hasTrait(a, 'robust') ? 0.7 : 1); }
-  function aBreedMul(a) { return (0.5 + aQ(a) / 100) * (hasTrait(a, 'fertile') ? 1.5 : 1); }
+  // Donor-gene effects (D.traits[].fx, see 00-data.js DNA package), aggregated once per animal and cached on a non-enumerable property (never saved).
+  var FX0 = { appeal: 0, nightAppeal: 0, q: 0, sick: 1, life: 1, speed: 1, upkeep: 1, breed: 1, fence: 0, danger: 0, sterile: false, swim: false };
+  function fxOf(a) {
+    var tr = a.traits; if (!tr || !tr.length) return FX0;
+    if (a._fx && a._fxn === tr.length) return a._fx;
+    var f = { appeal: 0, nightAppeal: 0, q: 0, sick: 1, life: 1, speed: 1, upkeep: 1, breed: 1, fence: 0, danger: 0, sterile: false, swim: false }, k, x;
+    for (k = 0; k < tr.length; k++) {
+      x = TR[tr[k]] && TR[tr[k]].fx; if (!x) continue;
+      f.appeal += x.appeal || 0; f.nightAppeal += x.nightAppeal || 0; f.q += x.q || 0; f.fence += x.fence || 0; f.danger += x.danger || 0;
+      f.sick *= x.sick || 1; f.life *= x.life || 1; f.speed *= x.speed || 1; f.upkeep *= x.upkeep || 1; f.breed *= x.breed || 1;
+      if (x.sterile) f.sterile = true; if (x.swim) f.swim = true;
+    }
+    Object.defineProperty(a, '_fx', { value: f, writable: true, configurable: true, enumerable: false });
+    Object.defineProperty(a, '_fxn', { value: tr.length, writable: true, configurable: true, enumerable: false });
+    return f;
+  }
+  // 0 by day .. 1 in full dark (same curve as the world's sky: sun elevation from the time of day)
+  function nightK() { var t = S.time - Math.floor(S.time), e = Math.sin((t - 0.25) * TAU), u = clamp((e + 0.22) / 0.26, 0, 1); return 1 - u * u * (3 - 2 * u); }
+  function aQ(a) { var q = a.genomeQ === undefined ? 100 : a.genomeQ; return a.traits && a.traits.length ? clamp(q + fxOf(a).q, 0, 100) : q; }
+  function aDanger(a) { var d = SP[a.species].danger + (a.traits && a.traits.length ? fxOf(a).danger : 0); d = hasTrait(a, 'docile') ? d - 1 : d; return clamp(d, 0, 4); }
+  function aMinFence(a) { var m = Math.min(5, SP[a.species].minFence + (a.traits && a.traits.length ? fxOf(a).fence : 0)); return hasTrait(a, 'docile') ? Math.max(1, m - 1) : m; }
+  function aLife(a) { return SP[a.species].lifespan * (0.7 + 0.005 * aQ(a)) * (hasTrait(a, 'robust') ? 1.2 : 1) * fxOf(a).life; }
+  function aAppeal(a) { var f = fxOf(a); return SP[a.species].appeal * (a.baby ? 1.5 : 1) * (0.8 + 0.004 * aQ(a)) * (hasTrait(a, 'vivid') ? 1.25 : 1) * Math.max(0.3, 1 + f.appeal + (f.nightAppeal ? f.nightAppeal * nightK() : 0)); }
+  function aSickMul(a) { return (1.5 - aQ(a) / 100) * (hasTrait(a, 'robust') ? 0.7 : 1) * fxOf(a).sick; }
+  function aBreedMul(a) { var f = fxOf(a); return f.sterile ? 0 : (0.5 + aQ(a) / 100) * (hasTrait(a, 'fertile') ? 1.5 : 1) * f.breed; }
   function makeAnimal(spId, enc, x, z, baby, sex, q, traits) {
     var sp = SP[spId];
     var a = {
@@ -1173,6 +1259,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var enc = encOfTile(t);
     if (!enc) return 'Dinosaurs must be placed inside a fenced enclosure';
     if (RT.block[t]) return 'Something is in the way';
+    if (Z.Realms) { var rsc = Z.Realms.spotCheck(sp, enc, t); if (rsc !== undefined) return rsc; }   // realms package: sea/air/virtual rules replace the land rules
     if (cliffT(t)) return 'Too steep for dinosaurs';
     if (S.terrain[t] === WATER && !sp.needsWater) return "That dinosaur can't swim";
     var bad = compatible(enc, sp.id); if (bad) return bad;
@@ -1186,6 +1273,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function addAnimal(speciesId, i, j, opts) {
     var dry = dryOf(arguments);
     var sp = SP[speciesId]; if (!sp) return fail('Unknown species');
+    if (sp.modern) return fail('Modern animals cannot be hatched');
     var R = S.research, g = genomeOf(speciesId);
     function bad(code, m) { var r = fail(m); r.code = code; r.why = m; return r; }
     if (g < 50) return bad('genome', 'The lab has only pieced together ' + Math.floor(g) + '% of the ' + sp.name + ' genome. It needs 50% to attempt a hatch.');
@@ -1199,12 +1287,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (S.money < ecost) return bad('money', 'Not enough money (' + fmt(ecost) + ' needed)');
     var od = hatchOdds(speciesId);
     var extra = { chance: od.chance, hours: od.hours, egg: true };
+    if (Z.Moats) { var mwn = Z.Moats.advice(encOfTile(t), speciesId); if (mwn) extra.warn = mwn; }
+    { var ee = encOfTile(t); if (ee && ee.viewTiles && !ee.viewTiles.length && !extra.warn) extra.warn = 'No path or pier within 3 tiles: keepers could not reach this enclosure to feed it. Lay one first.'; }   // QA   // moats package: warn before the egg is laid
     if (dry) return okr(ecost, extra);
     var egg = { id: newId(), species: speciesId, i: i, j: j, t: od.hours, total: od.hours, chance: od.chance, paid: ecost, guaranteed: !!od.guaranteed };
     if (od.guaranteed) R.guaranteed--;
     R.eggs.push(egg);
     spend(ecost, 'animals');
-    msg('An egg has been set in the incubator: ' + sp.name + '. Hatching in ' + Math.round(od.hours) + ' hours.', 'good', false);
+    if (Z.Realms && Z.Realms.live(sp)) msg('A ' + sp.name + ' is gestating in the hatchery pool (it gives birth to live young). Birth in ' + Math.round(od.hours) + ' hours.', 'good', false); else   // realms package: live-bearers
+      msg('An egg has been set in the incubator: ' + sp.name + '. Hatching in ' + Math.round(od.hours) + ' hours.', 'good', false);
     bus.emit('eggLaid', egg); bus.emit('research');
     extra.id = egg.id; extra.eggId = egg.id;
     return okr(ecost, extra);
@@ -1232,10 +1323,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!inMap(i, j)) return fail('Outside your land');
     var t = i + j * N, enc = encOfTile(t); if (!enc) return fail('Dinosaurs must be placed inside a fenced enclosure');
     if (RT.block[t]) return fail('Something is in the way');
-    if (cliffT(t)) return fail('Too steep for dinosaurs');
     var sp = SP[a.species];
-    if (S.terrain[t] === WATER && !sp.needsWater) return fail("That dinosaur can't swim");
-    if (enc.id !== a.enc) {
+    var rmc = Z.Realms ? Z.Realms.moveCheck(sp, enc, t, enc.id === a.enc) : undefined;   // realms package
+    if (typeof rmc === 'string') return fail(rmc);
+    if (rmc === undefined && cliffT(t)) return fail('Too steep for dinosaurs');
+    if (rmc === undefined && S.terrain[t] === WATER && !sp.needsWater) return fail("That dinosaur can't swim");
+    if (rmc === undefined && enc.id !== a.enc) {
       var bad = compatible(enc, a.species); if (bad) return fail(bad);
       var n = 0; for (var k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === a.species) n++;
       if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped');
@@ -1243,6 +1336,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (dry) return okr(0);
     var oldE = a.enc ? encById(a.enc) : null;
     a.x = cxOf(t); a.z = czOf(t); a.enc = enc.id; a.state = 'idle'; a.tg = ''; a.st = 1; a.speed = 0; a.tx = a.x; a.tz = a.z;
+    if (Z.Realms) Z.Realms.landed(a);   // realms package
     refreshEncAnimals(); encStats(enc); if (oldE) encStats(oldE);
     return okr(0);
   }
@@ -1251,7 +1345,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function hireStaff(type, i, j, opts) {
     var dry = dryOf(arguments);
     var def = STF[type]; if (!def) return fail('Unknown staff type');
-    if (type === 'scientist') return fail('Scientists are hired from the Research panel (candidates change every few days)');
+    if (type === 'scientist') return fail('Scientists are hired from the Team tab in Research (candidates change every few days)');
     if (S.staff.length >= 40) return fail('Staff limit reached');
     if (typeof i !== 'number') { i = GATE_I0; j = N - 4; }
     else if (Z.inb(i, j) && !inMap(i, j)) return fail('Outside your land');
@@ -1352,7 +1446,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!seen[a.species] && a.enc) { seen[a.species] = 1; spCount++; } }
     RT.speciesCount = spCount;
     var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) ap += aAppeal(q); } RT.appeal = ap;
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9;
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + (Z.Monorail ? Z.Monorail.valueBonus() : 0);   // monorail package: a working line adds to what a ticket is worth
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
@@ -1413,6 +1507,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     g.px += g.lo * 0.5; g.pz = czOf(t);
     var pay = S.ticketPrice;
     gxPlan(g, hr, pay);
+    if (Z.News) Z.News.tagGuest(g);   // news package: thrill-seekers vs families
     S.guests.push(g); RT.gById.set(g.id, g);
     earn(pay, 'tickets', g.x, N * TILE - 1);
     S.stats.guestsTotal++; S.stats.guestsToday = (S.stats.guestsToday || 0) + 1;
@@ -1422,6 +1517,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function releaseGuest(g) {
+    if (g.state === 'ride' && g.sfv && Z.Safari) Z.Safari.release(g);   // safari package: step off the truck or boat
+    else if (g.state === 'ride' && Z.Monorail) Z.Monorail.release(g);   // monorail package: step off the train (alights at the nearest path)
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -1485,6 +1582,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var o = list[k], def = BD[o.type];
       if (kind === 'cover') { if (!gxIndoor(o) || def.type === 'science') continue; }
       else if (gxKind(o) !== kind) continue;
+      if (Z.Power && !Z.Power.usable(o)) continue;   // power package: dark shops and stopped rides lose their customers
       if (kind === 'act' && g.seenB[o.id]) continue;
       var price = o.price === undefined ? def.price : o.price;
       if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
@@ -1536,7 +1634,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function gxGoExhibit(g, e) {
     var t = gxPickSpot(g, e);
     if (t < 0) return false;
-    var f = getField('t' + t); if (!f || !(f[g.ti] < INF)) return false;
+    var f = getField('t' + t);
+    if (Z.Monorail && Z.Monorail.shortcut(g, t, e, f)) return true;   // monorail package: a long walk is replaced by a ride
+    if (!f || !(f[g.ti] < INF)) return false;
     g.gt = 'enc'; g.gid = e.id; g.dk = 't' + t; g.spot = t; g.ni = -1; g.gAge = 0; RT.gtarg[t]++;
     return true;
   }
@@ -1587,6 +1687,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         A[x + y * N] += sd.aesthetic / (1 + Math.abs(di) + Math.abs(dj));
       }
     }
+    if (Z.Power) Z.Power.gaes(A);   // power package: diesel generators are noisy and ugly
   }
   // a handful of pleasant spots around the park for strolling guests
   function gxLandmarks() {
@@ -1639,6 +1740,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (al.treat > 0 && g.happiness > 55 && rng.chance(0.12) && pickBuilding(g, bt.food, 'treat')) return;
       if ((al.act > 0 || rng.chance(0.1)) && rng.chance(0.3) && pickBuilding(g, bt.fun, 'act')) return;
     }
+    if (Z.Monorail && Z.Monorail.choose(g)) return;   // monorail package: tour ride
+    if (Z.Safari && Z.Safari.choose(g)) return;   // safari package: truck or boat ride
     if (g.strollNext) { g.strollNext = 0; if (gxStroll(g)) return; }
     if (!g.done && pickExhibit(g)) return;
     if (g.fun < 40) say(g, 'bored');
@@ -1724,6 +1827,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (gt === 'bld') {
       var o = RT.oById.get(g.gid);
       if (!o) { g.gt = ''; return; }
+      if (BD[o.type].safari && Z.Safari) { Z.Safari.arrive(g, o); return; }   // safari package: queue at the depot or jetty
+      if (BD[o.type].mono && Z.Monorail) { Z.Monorail.arrive(g, o); return; }   // monorail package: queue on the platform
       var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] }), def = BD[o.type];
       var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
       if (q.use < def.capacity && q.q.length === 0) { gxPlace(g, false); startUse(g, o); }
@@ -1864,7 +1969,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function revalidateGuest(g) {
     g.pv = RT.pathVer;
     var t = tileOf(g.x, g.z);
-    if (g.gt === 'out' || g.state === 'sit') return;
+    if (g.gt === 'out' || g.state === 'sit' || g.state === 'ride') return;
     if (S.path[t]) { if (g.ti !== t && g.ni < 0) g.ti = t; if (g.ni >= 0 && !S.path[g.ni]) g.ni = -1; if (!S.path[g.ti]) g.ti = t; g.ni = g.ni >= 0 && S.path[g.ni] ? g.ni : -1; return; }
     // nearest path tile
     var i = t % N, j = (t - i) / N, best = -1, bd = 1e9;
@@ -1926,6 +2031,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!anyCover || rng.chance(0.2)) g.stay = Math.min(g.stay, hr * rng.range(0.1, 0.7));
       }
     } else { g.wxd = 0; g.cov = 0; }
+    if (g.state === 'ride') { if (g.sfv) { if (Z.Safari) Z.Safari.rideTick(g, a); } else if (Z.Monorail) Z.Monorail.rideTick(g, a); return; }   // monorail package: viewing, resting, getting off
     // closing time / leaving
     if (g.state !== 'leave') {
       var leave = false;
@@ -1955,6 +2061,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // stranded
     var fx2 = getField('exit');
     if (!fx2 || fx2[g.ti] === INF) { g.isl += a; if (g.isl > 25) { removeGuest(g); return false; } } else g.isl = 0;
+    if (RT.dangerEsc > 0 && g.state === 'walk' && Z.Monorail && Z.Monorail.refuge(g)) return;   // monorail package: a working line is the safe way out
     // escaped animals
     if (g.state !== 'flee' && !g.shel && RT.escaped.length) {
       for (k = 0; k < RT.escaped.length; k++) {
@@ -2010,7 +2117,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'watch') { g.idle = 0; watchTick(g, a); }
     else if (g.state === 'queue') {
       g.idle = 0; g.wt += a;
-      if (g.wt > 22) {
+      if (g.wt > Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0)) {   // monorail package: platforms are allowed a longer wait
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
         g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 2; g.nbuy = hr * 0.2; say(g, 'crowded');
       }
@@ -2042,6 +2149,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var q = (E.happy / 100) * 0.6 + 0.4 * Math.min(1, E.vis / Math.max(1, E.nAn));
     q *= 0.6 + 0.4 * see;
     if (onPlat) { q = Math.min(1.3, q * 1.3); g.mood += 1.2 * a; }
+    if (Z.Realms && e.kind) { q = Math.min(1.8, q * Z.Realms.viewMul(e, E, g)); Z.Realms.watchThought(g, e, E); }   // realms package: tunnels, galleries, zones
     g.fun = Math.min(100, g.fun + 7 * a * q); g.mood += 2.4 * a * q;
     g.wat += a;
     if (!g.seenEnc[e.id] && g.wat >= 1.5) { g.seenEnc[e.id] = 1; g.nSeen++; g.mood += 4; }
@@ -2111,6 +2219,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length && k < nxt.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
+      if (s === 'ride') continue;   // monorail package: riders are up in the carriages
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -2139,17 +2248,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var mk = S.marketing.active ? 1.7 : 1;
     var an = nAn > 0 ? 1 : 0.2;
     // per real second; scaled so the number of visitors per GAME day does not change with the length of the day
-    return base * priceF * rep * mk * an * (150 / DAY_SECONDS) * WX.arrivals * DIFF.arrivals;
+    return base * priceF * rep * mk * an * (150 / DAY_SECONDS) * WX.arrivals * DIFF.arrivals * (Z.News ? Z.News.arrivalMul() : 1);   // news package: stories raise or sink arrivals
   }
 
   // ====================== ANIMALS ======================
-  function swimmer(sp) { return !!sp.needsWater; }
+  function swimmer(sp, a) { return !!sp.needsWater || !!(a && a.traits && a.traits.length && fxOf(a).swim); }
   function aok(a, t) {
-    if (RT.block[t]) return false;
+    if (RT.block[t] || S.ditch[t]) return false;   // ditches (and guest bridges over them) are never walkable by animals
     if (cliffT(t)) return false;
-    if (a.enc) { if (S.tileEnc[t] !== a.enc) return false; }
+    if (a.enc) { if (S.tileEnc[t] !== a.enc && !a.bolt) return false; }   // realms package: a bolting animal leaves a downed geofence
     else if (S.tileEnc[t]) return false;
-    if (S.terrain[t] === WATER && !swimmer(SP[a.species])) return false;
+    if (S.terrain[t] === WATER && !swimmer(SP[a.species], a)) return false;
     return true;
   }
   function canGo(a, x0, z0, x1, z1) {
@@ -2157,26 +2266,147 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var i0 = Math.floor(x0 / TILE), j0 = Math.floor(z0 / TILE), i1 = Math.floor(x1 / TILE), j1 = Math.floor(z1 / TILE);
     if (i0 === i1 && j0 === j1) return true;
     if (!aok(a, i1 + j1 * N)) return false;
-    if (a.enc) {
-      if (i1 !== i0) { if (S.fenceZ[Math.max(i0, i1) + j0 * (N + 1)]) return false; }
-      else if (j1 !== j0) { if (S.fenceX[i0 + Math.max(j0, j1) * N]) return false; }
+    if (i1 !== i0) { if (S.fenceZ[Math.max(i0, i1) + j0 * (N + 1)]) return false; }
+    else if (j1 !== j0) { if (S.fenceX[i0 + Math.max(j0, j1) * N]) return false; }
+    return true;
+  }
+  function canStepTile(a, t, d) {
+    var i = t % N, j = (t - i) / N;
+    var ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+    if (ni < 0 || nj < 0 || ni >= N || nj >= N) return false;
+    if (fenceAt(i, j, d)) return false;
+    return aok(a, ni + nj * N);
+  }
+  function pickPassable(a, arr) {
+    if (!arr || !arr.length) return -1;
+    for (var k = 0; k < 6; k++) {
+      var t = arr[Math.floor(rng.next() * arr.length)];
+      if (aok(a, t)) return t;
+    }
+    for (var q = 0; q < arr.length; q++) if (aok(a, arr[q])) return arr[q];
+    return -1;
+  }
+  function steerAnimal(a) {
+    var t0 = tileOf(a.x, a.z), d, nt;
+    if (a.tg === 'wander' || (a.state === 'escaped' && !a.lg)) {
+      var cur = t0, prev = a.prevT >= 0 ? a.prevT : -1, wroute = [];
+      for (var s = 0; s < 3; s++) {
+        var cands = [], fall = [];
+        for (d = 0; d < 4; d++) {
+          if (!canStepTile(a, cur, d)) continue;
+          nt = cur + DT4[d];
+          if (nt !== prev) cands.push(nt); else fall.push(nt);
+        }
+        var pool = cands.length ? cands : fall;
+        if (!pool.length) break;
+        var nxt = pool[Math.floor(rng.next() * pool.length)];
+        wroute.push(nxt);
+        prev = cur; cur = nxt;
+      }
+      if (!wroute.length) return false;
+      a.prevT = t0;
+      var lastW = wroute[wroute.length - 1];
+      a.tx = cxOf(lastW) + rng.range(-0.4, 0.4);
+      a.tz = czOf(lastW) + rng.range(-0.4, 0.4);
+      var firstW = wroute[0];
+      a.wx = cxOf(firstW) + rng.range(-0.35, 0.35);
+      a.wz = czOf(firstW) + rng.range(-0.35, 0.35);
+      a.aroute = wroute.length > 1 ? wroute.slice(1) : null;
+      return true;
+    }
+    var goalT = tileOf(a.tx, a.tz);
+    var st = ++RT.stampN, stamp = RT.stamp, q = RT.queue, prevArr = RT.prev, h = 0, tl = 0;
+    q[tl++] = t0; stamp[t0] = st; prevArr[t0] = -1;
+    var bestT = -1, bestD = 1e9;
+    while (h < tl && tl < 160) {
+      var t = q[h++];
+      if (t === goalT) { bestT = t; break; }
+      if (t !== t0) {
+        var bdx = cxOf(t) - a.tx, bdz = czOf(t) - a.tz, bdd = bdx * bdx + bdz * bdz;
+        if (t === a.prevT) bdd += 64;
+        if (bdd < bestD) { bestD = bdd; bestT = t; }
+      }
+      for (d = 0; d < 4; d++) {
+        if (!canStepTile(a, t, d)) continue;
+        nt = t + DT4[d];
+        if (stamp[nt] === st) continue;
+        stamp[nt] = st; prevArr[nt] = t; q[tl++] = nt;
+      }
+    }
+    if (bestT < 0 || bestT === t0) return false;
+    var route = [], c = bestT;
+    while (c !== t0 && prevArr[c] >= 0) { route.push(c); c = prevArr[c]; }
+    if (!route.length) return false;
+    route.reverse();
+    a.prevT = t0;
+    var first = route[0];
+    a.wx = cxOf(first) + rng.range(-0.35, 0.35);
+    a.wz = czOf(first) + rng.range(-0.35, 0.35);
+    var chasing = a.tg === 'hunt' || (a.state === 'escaped' && a.lg);
+    a.aroute = (!chasing && route.length > 1) ? route.slice(1) : null;
+    if (!chasing && bestT !== goalT) {
+      var last = route[route.length - 1];
+      a.tx = cxOf(last) + rng.range(-0.4, 0.4);
+      a.tz = czOf(last) + rng.range(-0.4, 0.4);
     }
     return true;
   }
   // moves toward (tx,tz); returns true when arrived or given up
   function animalMove(a, dt, spd) {
-    var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.3) { a.speed = 0; return true; }
-    var step = Math.min(spd * dt, d), nx = a.x + dx / d * step, nz = a.z + dz / d * step, moved = false;
-    if (nx !== a.x && canGo(a, a.x, a.z, nx, a.z)) { a.x = nx; moved = true; }
-    if (nz !== a.z && canGo(a, a.x, a.z, a.x, nz)) { a.z = nz; moved = true; }
-    if (!moved) { a.stuck += dt; a.speed = 0; if (a.stuck > 1.2) { a.stuck = 0; return true; } return false; }
+    var ct = tileOf(a.x, a.z);
+    if (a.curT !== ct) { a.prevT = a.curT !== undefined ? a.curT : ct; a.curT = ct; }
+    var gx = a.wx ? a.wx : a.tx, gz = a.wz ? a.wz : a.tz;
+    var dx = gx - a.x, dz = gz - a.z, d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.3) {
+      if (a.wx) {
+        if (a.aroute && a.aroute.length) {
+          var nt = a.aroute.shift();
+          a.wx = cxOf(nt) + rng.range(-0.35, 0.35);
+          a.wz = czOf(nt) + rng.range(-0.35, 0.35);
+        } else { a.wx = 0; a.wz = 0; }
+        gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
+        dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
+        if (d < 0.3) { a.speed = 0; a.detours = 0; return true; }
+      } else { a.speed = 0; a.detours = 0; return true; }
+    }
+    var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
+    var vx = dx / d * step, vz = dz / d * step;
+    var okX = Math.abs(dx) > 1e-4 && canGo(a, ox, oz, ox + vx, oz);
+    var nx = okX ? ox + vx : ox;
+    var okZ = Math.abs(dz) > 1e-4 && canGo(a, nx, oz, nx, oz + vz);
+    if (okX && okZ) {
+      a.x = nx; a.z = oz + vz;
+    } else if (okX && Math.abs(dx) > 0.25) {
+      var sx = ox + (dx > 0 ? 1 : -1) * Math.min(step, Math.abs(dx));
+      if (canGo(a, ox, oz, sx, oz)) a.x = sx; else a.x = nx;
+    } else if (okZ && Math.abs(dz) > 0.25) {
+      var sz = oz + (dz > 0 ? 1 : -1) * Math.min(step, Math.abs(dz));
+      if (canGo(a, ox, oz, ox, sz)) a.z = sz; else a.z = oz + vz;
+    }
+    var mx = a.x - ox, mz = a.z - oz, md = Math.sqrt(mx * mx + mz * mz);
+    if (md < step * 0.35 && step > 1e-4) {
+      a.stuck += dt;
+      if (a.stuck > 0.08) {
+        a.stuck = 0;
+        a.detours = (a.detours || 0) + 1;
+        if (a.detours <= 8 && steerAnimal(a)) {
+          a.speed = spd;
+          a.heading = turn(a.heading, Math.atan2((a.wx || a.tx) - a.x, (a.wz || a.tz) - a.z), dt * 8);
+          return false;
+        }
+        a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.speed = 0;
+        return true;
+      }
+      a.speed = 0;
+      return false;
+    }
     a.stuck = 0; a.speed = spd;
-    a.heading = turn(a.heading, Math.atan2(dx, dz), dt * 5);
+    a.heading = turn(a.heading, Math.atan2(mx, mz), dt * 6);
     return false;
   }
   function setTargetTile(a, t) {
     a.tx = cxOf(t) + rng.range(-0.6, 0.6); a.tz = czOf(t) + rng.range(-0.6, 0.6);
+    a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
   }
   function relocateAnimal(a, enc) {
     var best = -1, bd = 1e9, k;
@@ -2185,7 +2415,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var dx = cxOf(t) - a.x, dz = czOf(t) - a.z, d = dx * dx + dz * dz;
       if (d < bd) { bd = d; best = t; }
     }
-    if (best >= 0) { a.x = cxOf(best); a.z = czOf(best); a.tx = a.x; a.tz = a.z; }
+    if (best >= 0) { a.x = cxOf(best); a.z = czOf(best); a.tx = a.x; a.tz = a.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; }
   }
   function randomEncTile(a, enc, near) {
     for (var k = 0; k < 8; k++) {
@@ -2214,14 +2444,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     pred.hunger = Math.max(0, pred.hunger - 70); pred.state = 'eat'; pred.st = rng.range(5, 7); pred.tg = ''; pred.speed = 0; pred.hid = 0; pred.kill = 1;
   }
   function huntStep(a, dt, enc, E, sp) {
-    var pr = RT.aById.get(a.hid);
+    var pr = RT.aById.get(a.hid) || (a.hid >= 1000000 && Z.Safari ? Z.Safari.wildById(a.hid) : null);   // safari package: the prey may be a wild visitor
     if (!pr || pr.enc !== a.enc || pr.state === 'escaped') { a.tg = ''; a.state = 'idle'; a.st = 1; a.speed = 0; return; }
     a.hunt = (a.hunt || 0) + dt; a.tx = pr.x; a.tz = pr.z;
     var dx = pr.x - a.x, dz = pr.z - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 1.3 + sp.length * 0.12) { killPrey(a, pr); return; }
+    if (d < 1.3 + sp.length * 0.12) { if (pr.wild) Z.Safari.killWild(a, pr); else killPrey(a, pr); return; }
     if (a.hunt > 40) { a.tg = ''; a.state = 'idle'; a.st = rng.range(3, 6); a.speed = 0; return; }
     a.state = 'run';
-    animalMove(a, dt, sp.speed * 1.7 * 1.12);
+    animalMove(a, dt, sp.speed * fxOf(a).speed * 1.7 * 1.12);
   }
   function fleeFrom(a, enc, hx, hz) {
     var best = -1, bd = -1;
@@ -2247,18 +2477,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var target = -1, pry = null;
     if (isNight() || a.energy < 18) {
       a.tg = 'sleep';
-      if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = E.shelter[Math.floor(rng.next() * E.shelter.length)];
+      if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = pickPassable(a, E.shelter);
       if (target < 0 || (tileOf(a.x, a.z) === target)) { a.state = 'sleep'; a.speed = 0; a.tg = ''; return; }
+    } else if (sp.predator && !a.baby && a.hunger > 45 && Z.Safari && (pry = Z.Safari.findPrey(a, enc)) && rng.chance(0.85)) {   // safari package: wild animals that wandered into a connected zone
+      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.stuck = 0; return;
     } else if (sp.predator && !a.baby && a.hunger > 45 && E.nAn > 1 && E.pred < E.nAn && (pry = findPrey(a, enc)) && rng.chance(0.85)) {
-      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.stuck = 0; return;
-    } else if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = sp.predator && E.carc.length ? E.carc[Math.floor(rng.next() * E.carc.length)] : E.feed; }
+      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.stuck = 0; return;
+    } else if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = sp.predator && E.carc.length ? pickPassable(a, E.carc) : E.feed; }
     else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
       a.tg = 'drink';
-      target = E.drink.length ? E.drink[Math.floor(rng.next() * E.drink.length)] : (E.water.length && swimmer(sp) ? E.water[Math.floor(rng.next() * E.water.length)] : E.feed);
-    } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = E.toy[Math.floor(rng.next() * E.toy.length)]; }
-    else if (E.water.length && swimmer(sp) && rng.chance(0.18)) { a.tg = 'swim'; target = E.water[Math.floor(rng.next() * E.water.length)]; }
+      target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp, a) ? pickPassable(a, E.water) : E.feed);
+    } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = pickPassable(a, E.toy); }
+    else if (E.water.length && swimmer(sp, a) && rng.chance(0.18)) { a.tg = 'swim'; target = pickPassable(a, E.water); }
     else { a.tg = 'wander'; target = randomEncTile(a, enc, 14); }
-    if (target < 0) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
+    if (target < 0 || !aok(a, target)) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
     setTargetTile(a, target);
     a.state = (a.tg === 'wander' && rng.chance(0.06)) || (a.baby && rng.chance(0.15)) ? 'run' : 'walk';
     a.stuck = 0;
@@ -2294,6 +2526,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     a.pt -= dt;
     if (a.pt <= 0 && !a.baby) { a.pt = rng.range(55, 95); enc.poop = Math.min(enc.poop + 1, Math.floor(enc.area * 0.5) + 4); }
+    if (Z.Safari && enc.kind && Z.Safari.hunt(a, dt, enc, E, sp)) return;   // safari package: sea and air predators hunting wild visitors
+    if (Z.Realms && enc.kind && Z.Realms.move(a, dt, enc, E, sp)) return;   // realms package: sea and air AI, bolting from a downed geofence
     var inWater = S.terrain[tileOf(a.x, a.z)] === WATER;
     a.y = inWater ? -0.3 : 0;
     if (E.pred && !sp.predator && !a.baby) {
@@ -2324,16 +2558,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         break;
       case 'walk': case 'run': case 'swim': {
         if (a.tg === 'hunt') { huntStep(a, dt, enc, E, sp); break; }
-        var spd = sp.speed * (a.baby ? 0.8 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
+        var spd = sp.speed * fxOf(a).speed * (a.baby ? 0.8 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
         if (inWater && a.state !== 'swim') spd *= 0.7;
         if (animalMove(a, dt, spd)) {
           var tg = a.tg;
           if (tg === 'eat') { a.state = 'eat'; a.st = rng.range(3.5, 6); }
           else if (tg === 'drink') { a.state = 'drink'; a.st = rng.range(2.5, 4.5); }
           else if (tg === 'play') { a.state = 'play'; a.st = rng.range(4, 8); }
-          else if (tg === 'swim') { a.state = 'swim'; a.st = rng.range(5, 10); setTargetTile(a, E.water[Math.floor(rng.next() * E.water.length)]); a.tg = 'swimming'; }
+          else if (tg === 'swim') {
+            var wt = pickPassable(a, E.water);
+            if (wt >= 0) { a.state = 'swim'; a.st = rng.range(5, 10); setTargetTile(a, wt); a.tg = 'swimming'; }
+            else { a.state = 'idle'; a.st = 1; }
+          }
           else if (tg === 'swimming') { a.state = 'idle'; a.st = 1; }
           else if (tg === 'sleep') { a.state = 'sleep'; a.tg = ''; a.speed = 0; }
+          else if (tg === 'wander' && !isNight() && a.energy > 30 && rng.chance(0.4)) {
+            var nt2 = randomEncTile(a, enc, 10);
+            if (nt2 >= 0) { setTargetTile(a, nt2); a.state = 'walk'; }
+            else { a.state = 'idle'; a.st = rng.range(1.5, 6); }
+          }
           else { a.state = 'idle'; a.st = rng.range(1.5, 6); }
           if (a.state !== 'swim' && a.state !== 'walk') a.speed = 0;
           if (a.state === 'swim' && tg === 'swimming') a.state = 'idle';
@@ -2351,7 +2594,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       case 'drink':
         a.speed = 0; a.st -= dt;
         if (a.st <= 0) {
-          a.thirst = 0; if (!E.water.length) enc.waterLevel = Math.max(0, enc.waterLevel - 0.08);
+          a.thirst = 0; if (!E.water.length && !E.moatN) enc.waterLevel = Math.max(0, enc.waterLevel - 0.08);
           a.state = 'idle'; a.st = rng.range(1, 3);
         }
         break;
@@ -2363,9 +2606,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- escapes ----
-  function doEscape(a, enc) {
+  // via (moats package): {t: landing tile on the far side of the ditch, how: 'leapt'|'waded through'|'swum across'} - the animal crosses the moat at that spot
+  function doEscape(a, enc, via) {
     var E = RT.encx[enc.id], sp = SP[a.species], k, t = -1;
-    for (k = 0; k < 6 && E.out.length; k++) {
+    if (via && via.t >= 0) t = via.t;
+    for (k = 0; t < 0 && k < 6 && E.out.length; k++) {
       var c = E.out[Math.floor(rng.next() * E.out.length)];
       if (!RT.block[c] && !S.tileEnc[c] && S.terrain[c] !== WATER) { t = c; break; }
     }
@@ -2375,7 +2620,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     a.x = cxOf(t) + rng.range(-0.5, 0.5); a.z = czOf(t) + rng.range(-0.5, 0.5); a.tx = a.x; a.tz = a.z; a.speed = 0;
     refreshEncAnimals(); encStats(enc);
     S.stats.escapes++;
-    msg('Escape! ' + a.name + ' the ' + sp.name.toLowerCase() + ' has broken out of ' + enc.name + '!' + (aDanger(a) >= 2 ? ' Guests are in danger.' : ''), 'bad');
+    msg('Escape! ' + a.name + ' the ' + sp.name.toLowerCase() + (via && via.how ? ' has ' + via.how + ' ' : ' has broken out of ') + enc.name + '!' + (aDanger(a) >= 2 ? ' Guests are in danger.' : ''), 'bad');
     onEscape(a);
     bus.emit('escape', a);
   }
@@ -2384,7 +2629,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!enc) {
       var bd = 1e9; for (var k = 0; k < S.enclosures.length; k++) {
         var e = S.enclosures[k], dx = e.cx - a.x, dz = e.cz - a.z, d = dx * dx + dz * dz;
-        if (d < bd && !compatible(e, a.species)) { bd = d; enc = e; }
+        if (d < bd && !compatible(e, a.species) && (!Z.Realms || Z.Realms.realmOK(e, a.species))) { bd = d; enc = e; }
       }
     }
     if (!enc) {
@@ -2401,13 +2646,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     bus.emit('recapture', a);
   }
   function escapedStep(a, dt, sp) {
+    if (Z.Safari && a.sfOut && Z.Safari.outStep(a, dt, sp)) return;   // safari package: heading for the causeway, the open sea or the sky
+    if (Z.Realms && a.er && Z.Realms.escapedStep(a, dt, sp)) return;   // realms package: loose marine/flying animals
     a.esc = (a.esc || 0) + dt;
     a.hunger = Math.min(100, a.hunger + 0.1 * dt); a.thirst = Math.min(100, a.thirst + 0.1 * dt);
     if (a.held) { a.speed = 0; return; }
     var adg = aDanger(a), limit = adg >= 2 ? (RT.secCount > 0 ? 100 : 200) : (RT.secCount > 0 || RT.keeperCount > 0 ? 300 : 150);
     if (a.hurtT > 0) a.hurtT -= dt;
     if (a.esc > limit) { recapture(a, 'The response team'); return; }
-    var spdE = sp.speed * 1.1;
+    var spdE = sp.speed * fxOf(a).speed * 1.1;
     if (adg >= 2) {
       // a loose big predator picks out the nearest guest who has not taken cover and runs them down
       a.lk = (a.lk || 0) - dt;
@@ -2420,13 +2667,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         a.lg = bg ? bg.id : 0;
       }
       var tg = a.lg ? RT.gById.get(a.lg) : null;
-      if (tg && !tg.shel) { a.tx = tg.x; a.tz = tg.z; spdE = sp.speed * 1.35; a.state = 'escaped'; animalMove(a, dt, spdE); return; }
+      if (tg && !tg.shel) { a.tx = tg.x; a.tz = tg.z; spdE = sp.speed * fxOf(a).speed * 1.35; a.state = 'escaped'; animalMove(a, dt, spdE); return; }
     }
     var arrived = animalMove(a, dt, spdE);
     if (arrived) {
       if (RT.pathTiles.length) {
         var t = RT.pathTiles[Math.floor(rng.next() * RT.pathTiles.length)];
-        a.tx = cxOf(t) + rng.range(-2.5, 2.5); a.tz = czOf(t) + rng.range(-2.5, 2.5);
+        setTargetTile(a, t);
       }
     }
     a.state = 'escaped';
@@ -2435,11 +2682,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function escapeRoll() {
     for (var e = 0; e < S.enclosures.length; e++) {
       var enc = S.enclosures[e]; if (!enc.animals.length) continue;
+      if (Z.Realms && enc.kind) { Z.Realms.escapeRoll(enc); continue; }   // realms package: tank/pen/dome/zone rolls
       var eff = enc.breach > 0 ? 0 : enc.minFence;
       for (var k = enc.animals.length - 1; k >= 0; k--) {
         var a = RT.aById.get(enc.animals[k]); if (!a || a.baby) continue;
         var sp = SP[a.species], def = aMinFence(a) - eff;
+        if (Z.Moats) {   // moats package: per species, the weakest ditch segment decides; a crossing is a physical leap/wade/swim at that spot
+          var mx = Z.Moats.escapeCheck(enc, a);
+          if (mx && rng.next() < mx.p * (1.3 - a.happiness / 160) * (a.state === 'sleep' ? 0.3 : 1) * WX.escape) { doEscape(a, enc, mx); continue; }
+        }
         if (def <= 0) continue;
+        if (Z.Power && Z.Power.ownsEscape(enc)) continue;   // power package: a dead electric fence is tested animal by animal (Power.secondly), not by this roll
         var pd = Math.min(0.9, 0.18 + 0.17 * def) * (1.25 - a.happiness / 150);
         var ph = 1 - Math.pow(1 - pd, 1 / 24);
         if (a.state === 'sleep') ph *= 0.3;
@@ -2499,6 +2752,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function tryRecapture(s) {
     for (var k = 0; k < RT.escaped.length; k++) {
       var a = RT.escaped[k];
+      if (a.er && a.er.realm !== 'land') continue;   // realms package: boats and drone teams handle these
       if (s.type !== 'security' && aDanger(a) >= 2) continue;
       if (a.claim && a.claim !== s.id && RT.sById.has(a.claim)) continue;
       a.claim = s.id;
@@ -2650,7 +2904,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           if (walkTo(s, a.x, a.z, dt, staffSpeed(s) * 1.1)) { tk.ph = 'work'; tk.t = s.type === 'security' ? 2 : 3.5; a.held = 1; }
         } else {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
-          if (tk.t <= 0) { a.held = 0; var who = s.type === 'security' ? 'Security' : s.name + ' the keeper'; s.tk = null; s.wt = 0.5; recapture(a, who); }
+          if (tk.t <= 0) { a.held = 0; var who = s.type === 'security' ? 'Security' : s.name + ' the ranger'; s.tk = null; s.wt = 0.5; recapture(a, who); }
         }
         break;
       default: s.tk = null;
@@ -2672,13 +2926,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var guests = clamp(((gNow * 0.5 + RT.ghEMA * 0.5) - 40) / 50, 0, 1);
     var ref = Math.max(20, S.stats.peakGuests || 0), bt = RT.byType;
     var fac = (Math.min(1, bt.food.length / Math.ceil(ref / 40)) + Math.min(1, bt.drink.length / Math.ceil(ref / 50)) + Math.min(1, bt.toilet.length / Math.ceil(ref / 40)) +
-      Math.min(1, bt.bench.length / Math.ceil(ref / 30)) + Math.min(1, bt.bin.length / Math.ceil(ref / 25)) + Math.min(1, bt.fun.length / (1 + Math.floor(ref / 80)))) / 6;
+      Math.min(1, bt.bench.length / Math.ceil(ref / 30)) + Math.min(1, bt.bin.length / Math.ceil(ref / 25)) + Math.min(1, (bt.fun.length + (Z.Monorail ? Z.Monorail.funCount() : 0)) / (1 + Math.floor(ref / 80)))) / 6;   // monorail package: a working line counts as a ride
     var pathN = RT.pathTiles.length, dirtyFrac = RT.dirtyCount / Math.max(8, pathN * 0.3);
     var cleanP = 1 - Math.min(1, dirtyFrac), cleanE = 1, ce = 0;
     for (k = 0; k < S.enclosures.length; k++) { var e = S.enclosures[k]; if (e.animals.length) { cleanE += 0; ce += clamp(1 - e.poop / (e.area / 3 + 3), 0, 1); } }
     var nEncA = 0; for (k = 0; k < S.enclosures.length; k++) if (S.enclosures[k].animals.length) nEncA++;
     var clean = nEncA ? 0.5 * cleanP + 0.5 * ce / nEncA : cleanP;
-    var aes = 0; for (k = 0; k < S.objects.length; k++) { var o = S.objects[k]; if (o.kind === 'scenery') aes += SC[o.type].aesthetic; }
+    var aes = (Z.Moats ? Z.Moats.aesthetic() : 0) + (Z.Power ? Z.Power.aesthetic() : 0); for (k = 0; k < S.objects.length; k++) { var o = S.objects[k]; if (o.kind === 'scenery') aes += SC[o.type].aesthetic; }
     var scenery = Math.min(1, aes / 120);
     var stars = 5 * (0.42 * animalsC + 0.13 * welfare + 0.13 * guests + 0.12 * fac + 0.08 * clean + 0.10 * scenery);
     stars -= 0.6 * (S.panic || 0);
@@ -2722,6 +2976,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       case 'guests': return S.stats.guestsTotal >= gl.target;
       case 'animals': return S.animals.length >= gl.target;
       case 'rating': return S.rating >= gl.target;
+      case 'realm': return !!Z.Realms && Z.Realms.goalMet(gl);   // realms package
       case 'money': return S.money >= gl.target;
       case 'species': { var s = {}, c = 0; for (k = 0; k < S.animals.length; k++) if (!s[S.animals[k].species]) { s[S.animals[k].species] = 1; c++; } return c >= gl.target; }
       case 'babies': return S.stats.babiesBorn >= gl.target;
@@ -2734,7 +2989,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var pc = 0;
         for (k = 0; k < S.animals.length; k++) {
           var a = S.animals[k], sp = SP[a.species]; if (!sp.predator || !a.enc || a.state === 'escaped') continue;
-          var e = RT.eMap[a.enc]; if (e && e.minFence >= aMinFence(a)) pc++;
+          var e = RT.eMap[a.enc]; if (e && e.minFence >= aMinFence(a) && (!Z.Moats || Z.Moats.holds(e, a))) pc++;
         }
         return pc >= gl.target;
       }
@@ -2742,6 +2997,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       case 'genome': { var mx = 0; for (var id2 in R.genomes) mx = Math.max(mx, R.genomes[id2]); return mx >= gl.target; }
       case 'unlocked': { var u = 0; for (var id3 in R.genomes) if (R.genomes[id3] >= RC.unlockGenome) u++; return u >= gl.target; }
       case 'traits': { var tt = 0; for (var id4 in R.traits) tt += R.traits[id4].length; return tt >= gl.target; }
+      case 'sequenced': return (R.stats.seqDone || 0) >= gl.target;
+      case 'puzzles': return (R.stats.puzzles || 0) >= gl.target;
+      case 'genes': return (R.stats.genes || 0) >= gl.target;
+      case 'hybrids': return (R.hybrids ? R.hybrids.length : 0) >= gl.target;
+      case 'moat': return !!(Z.Moats && Z.Moats.goalMet());
+      case 'safari': return !!Z.Safari && Z.Safari.goalMet(gl);   // safari package
+      case 'monoRiders': return S.mono.stats.riders >= gl.target;   // monorail package
+      case 'powerBackup': return !!Z.Power && Z.Power.hasBackup();   // power package
+      case 'monoEnclosures': return !!Z.Monorail && Z.Monorail.mostOverlooked() >= gl.target;
     }
     return false;
   }
@@ -2859,7 +3123,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function hourlyWeather() {
     var w = S.weather;
     if (w.type === 'storm' && rng.chance(0.12 * w.intensity)) {
-      var cand = S.enclosures.filter(function (e) { return e.animals.length && !(e.breach > 0); });
+      var cand = S.enclosures.filter(function (e) { return e.animals.length && !(e.breach > 0) && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); });
       if (cand.length) { var e = rng.pick(cand); e.breach = 1; msg('Lightning has brought down a fence panel at ' + e.name + '. It is open to the elements until repaired, so the dinosaurs could slip out!', 'bad'); }
     }
   }
@@ -2893,14 +3157,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var eff = ev.effect || {}, hasA = S.animals.length > 0;
     if (evActive(ev.id)) return false;
     switch (eff.type) {
-      case 'weather': return S.weather.type !== eff.weather && (!eff.breach || S.enclosures.some(function (e) { return e.animals.length; }));
+      case 'weather': return S.weather.type !== eff.weather && (!eff.breach || S.enclosures.some(function (e) { return e.animals.length && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); }));
       case 'celebrity': case 'schoolTrip': case 'viral': case 'inspection': return hasA && S.open;
       case 'donation': return S.rating >= 0.5;
       case 'binFire': return RT.pathTiles.length > 0;
       case 'vaccine': return hasA;
       case 'amber': return !evActive('amber_boom') && !evActive('amber_slump') && S.research.market.length > 0;
       case 'staffIllness': return ilStaff().length > 0;
-      case 'powerCut': return RT.labs.length > 0 && S.research.labOffline <= 0;
+      case 'powerCut': return S.day > 7 && RT.labs.length > 0 && S.research.labOffline <= 0 && !(Z.Power && Z.Power.outageActive());
     }
     return true;
   }
@@ -2922,7 +3186,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var wt = eff.weather, inten = Math.round(rng.range(0.85, 1) * 100) / 100, wh = wt === 'heatwave' ? rng.range(9, 13) : wt === 'storm' ? rng.range(3, 4.5) : rng.range(4, 6.5);
         wh = Math.round(wh * 2) / 2;
         var e1 = null;
-        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length; }); if (cand.length) { e1 = rng.pick(cand); e1.breach = 1; } }
+        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); }); if (cand.length) { e1 = rng.pick(cand); e1.breach = 1; } }
         if (S.weather.type === wt) { setWeather(wt, inten, wh); }
         else setWeather(wt, inten, wh, text);
         if (e1) msg('A fence panel at ' + e1.name + ' has been knocked down. Its dinosaurs could slip out until the repair crew finishes at midnight.', 'bad');
@@ -2980,12 +3244,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         text = st.name + ', one of your ' + role + 's, has gone home with a stomach bug and is off sick for about a day. Their duties will go undone.'; kind = 'bad'; break;
       }
       case 'powerCut': {
+        if (Z.Power) { Z.Power.eventCut(eff.hours); text += ' Everything on the island is on the cable: fences, pumps, lab and lights. A backup generator and batteries keep the essentials running.'; kind = 'bad'; break; }   // power package: a real grid outage
         var R2 = S.research; R2.labOffline = Math.max(R2.labOffline, eff.hours); R2.labNote = 'power cut';
         addActive(ev, 'powerCut', 'Research lab offline for ' + eff.hours + ' hours.', eff.hours, {});
         text += ' It will be offline for about ' + eff.hours + ' hours and running experiments are on hold.'; kind = 'bad';
         bus.emit('research'); break;
       }
     }
+    if (Z.News) Z.News.onEvent(ev, eff, kind);   // news package: celebrity, donation, inspection, viral... can make the papers
     msg(text, kind);
     return ev;
   }
@@ -2997,7 +3263,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     refreshEncAnimals();
     RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.dangerEsc = 0;
     for (k = 0; k < S.animals.length; k++) if (S.animals[k].state === 'escaped') { RT.escaped.push(S.animals[k]); if (aDanger(S.animals[k]) >= 2) RT.dangerEsc++; }
-    if (S.panic > 0) S.panic = Math.max(0, S.panic - 0.003);
+    if (S.panic > 0) S.panic = Math.max(0, S.panic - 0.003 - (Z.Monorail ? Z.Monorail.panicRelief() : 0));   // monorail package: a working line calms the park faster
     if (RT.dangerEsc > 0 && !RT.lockdown) { RT.lockdown = true; msg('The gates are closed to new visitors until the dangerous dinosaur is back in its enclosure.', 'bad', false); }
     else if (RT.dangerEsc === 0 && RT.lockdown) { RT.lockdown = false; msg('The dinosaur is secure. The gates are open again.', 'good', false); }
     for (k = 0; k < S.staff.length; k++) {
@@ -3014,6 +3280,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (gs.length > S.stats.peakGuests) S.stats.peakGuests = gs.length;
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     expireEvents();
+    if (Z.Power) Z.Power.secondly();   // power package: supply, demand, shedding, outages, fence tests
+    if (Z.Realms) Z.Realms.secondly();   // realms package: water quality, tags, geofence, shows, tunnel guests
+    if (Z.Safari) Z.Safari.secondly();   // safari package: connected zones, wildlife arrivals, escapes to the mainland
+    if (Z.News) Z.News.secondly();   // news package: effects expire, heat decays, watchers
     if (!openNow() && RT.pendingSpawn > 0) RT.pendingSpawn = 0;
     // thunderstorm: guests head for the exit
     if (WX.type === 'storm' && gs.length) { var pl = 0.02 * WX.intensity; for (k = gs.length - 1; k >= 0; k--) if (gs[k].state !== 'leave' && rng.chance(pl)) startLeaving(gs[k]); }
@@ -3038,7 +3308,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           RT.advice['f' + key] = S.day;
           msg('The ' + lc(plural(sp)) + ' could escape! Their fence is too weak (needs strength ' + br.minFence + ').', 'bad');
         }
+        if (Z.Moats && RT.advice['m' + key] !== S.day) { var ma = Z.Moats.advice(e, spId); if (ma) { RT.advice['m' + key] = S.day; msg(ma + ' (' + e.name + ')', 'bad'); } }
       }
+      if (!e.viewTiles.length && RT.advice['na' + e.id] !== S.day && (!RT.advice['na' + e.id] || S.day - RT.advice['na' + e.id] >= 3)) { RT.advice['na' + e.id] = S.day; msg(e.name + ': keepers cannot reach it (no path' + (e.kind || e.realm === 'sea' ? ', pier or walkway' : '') + ' within 3 tiles), so its animals will starve. Lay a path beside it.', 'bad'); }
       if (e.foodLevel < 0.2 && RT.keeperCount === 0 && RT.advice['food' + e.id] !== S.day) { RT.advice['food' + e.id] = S.day; msg('Food is running out at ' + e.name + '. Hire a ranger to refill it.', 'bad'); }
     }
     RT.t2++;
@@ -3108,12 +3380,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function newDay() {
     var k, a, up = 0;
     // costs
-    for (k = 0; k < S.animals.length; k++) up += (SP[S.animals[k].species] ? SP[S.animals[k].species].upkeep : 10) * (S.animals[k].baby ? 0.5 : 1);
+    for (k = 0; k < S.animals.length; k++) up += (SP[S.animals[k].species] ? SP[S.animals[k].species].upkeep : 10) * (S.animals[k].baby ? 0.5 : 1) * fxOf(S.animals[k]).upkeep;
     for (k = 0; k < S.objects.length; k++) if (S.objects[k].kind === 'building') up += BD[S.objects[k].type].upkeep;
     var wages = 0; for (k = 0; k < S.staff.length; k++) wages += S.staff[k].type === 'scientist' ? (S.staff[k].wage || 40) : STF[S.staff[k].type].wage;
-    up = Math.round(up * DIFF.costs); wages = Math.round(wages * DIFF.costs);
+    up = Math.round(up * DIFF.costs); wages = Math.round(wages * DIFF.costs * (Z.News ? Z.News.wageMul() : 1));   // news package: wage demands after bad press
     if (up) spend(up, 'upkeep'); if (wages) spend(wages, 'wages');
+    if (Z.Power) Z.Power.newDay();   // power package: fuel bill, cable fee, sabotage roll
+    if (Z.Realms) Z.Realms.newDay();   // realms package: tank/dome/zone upkeep, tag upkeep, zone hold counter
+    if (Z.News) Z.News.newDay();   // news package: insurance, sponsors, inspections, awards, daily stories
     if (S.loan > 0) { var intr = Math.round(S.loan * (DIFF.interest || 0.004)); if (intr) spend(intr, 'other'); }
+    if (Z.Monorail) Z.Monorail.newDay();   // monorail package: train upkeep, daily station figures
+    if (Z.Safari) Z.Safari.newDay();   // safari package: vehicle upkeep, daily figures
     var t = S.finance.today;
     var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
     var profit = income - costs;
@@ -3188,6 +3465,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var gs = S.guests;
     for (k = gs.length - 1; k >= 0; k--) { if (k < gs.length) guestStep(gs[k], dt); }
     updateQueues();
+    if (Z.Monorail) Z.Monorail.step(dt);   // monorail package: trains, boarding, riders
+    if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
     var sf = S.staff;
@@ -3228,7 +3507,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function scientists() { var o = []; for (var k = 0; k < S.staff.length; k++) if (S.staff[k].type === 'scientist') o.push(S.staff[k]); return o; }
   function labCapacity() { return RT.labs.length * (RC.labCap + eqLevel('lab_bench')); }
   function sampleCap() { return RC.baseSampleCap + RC.cryoCap * eqLevel('cryo_store'); }
-  function labOnline() { return RT.labs.length > 0 && S.research.labOffline <= 0; }
+  function labOnline() { return RT.labs.length > 0 && S.research.labOffline <= 0 && !(Z.Power && Z.Power.labDown()); }   // power package: no power, no lab
   function rlog(text, kind, toast) {
     var R = S.research; R.log.push({ day: S.day, text: text, kind: kind || 'info' }); if (R.log.length > 60) R.log.shift();
     msg(text, kind || 'info', toast);
@@ -3291,6 +3570,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return pool.map(function (id, i) { return { species: id, name: SP[id].name, rarity: SP[id].rarity, share: w[i] / tot, genome: R.genomes[id], focus: R.focusSp === id }; });
   }
   function drawSpecies(siteId, grade) {
+    if (RT.force && RT.force.species && SP[RT.force.species]) { var fsp = RT.force.species; RT.force.species = null; rng.next(); return fsp; }   // test hook (Masterclass scripts): forceNext('species', id)
     var od = siteOdds(siteId, grade), r = rng.next(), acc = 0;
     for (var k = 0; k < od.length; k++) { acc += od[k].share; if (r < acc) return od[k].species; }
     return od[od.length - 1].species;
@@ -3340,6 +3620,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function labWhy() {
     if (!RT.allLabs.length) return 'You need a research lab';
     if (!RT.labs.length) return "The research lab isn't connected to a path (its front must touch one)";
+    if (Z.Power && Z.Power.labDown()) return Z.Power.labWhy();
     if (S.research.labOffline > 0) return (S.research.labNote === 'power cut' ? 'A power cut has knocked out the lab (' : 'The lab is being decontaminated (') + Math.ceil(S.research.labOffline) + ' hours left)';
     return null;
   }
@@ -3373,6 +3654,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (lw) why = lw;
     else if (!sci) why = freeScientists().length ? 'That scientist is busy' : (scientists().length ? 'All scientists are busy' : 'Hire a scientist first');
     else if (S.money < cashCost) why = 'Not enough money for reagents (' + fmt(cost) + ')';
+    else if (Z.DNA && Z.DNA.queueFull()) why = 'The sequencing backlog is full (' + Z.DNA.queueCap() + ' batches). Let the team catch up first.';
     var hours = jobHours(RC.hours[g - 1], sci);
     return { success: round3(ok), contaminated: round3(cont), critical: round3(crit), salvage: round3(salv), fail: round3(1 - ok - cont - crit - salv), hours: hours, cost: cost, fundingUsed: fundingUsed, cashCost: cashCost,
       canStart: !why, why: why || '', breakdown: bd, criticalBreakdown: cbd, workChance: round3(pS), gainTypical: RC.gain[g - 1], pity: round3(pity), site: smp.site, grade: g,
@@ -3424,15 +3706,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var gain = Math.max(1, RC.gain[job.grade - 1] * (1 - g0 / RC.gainDiminish) * rng.range(0.8, 1.2)); gain = Math.min(gain, 100 - g0);
       gain = Math.round(gain * 10) / 10;
       if (g0 >= 99.95) { gain = 0; var sold = Math.round(priceFor(job.site, job.grade) * 0.5); R.funding += sold; res.sold = sold; }   // whole site already sequenced: the data is sold to museums
-      var ng = addGenome(spId, gain);
-      R.stats.successes++; res.species = spId; res.gain = gain; res.genome = ng; R.pity = 0;
+      var batch = null, ng = g0;
+      if (Z.DNA && !res.sold) batch = Z.DNA.makeBatch({ species: spId, site: job.site, grade: job.grade, outcome: 'success', skill: sci ? sci.skill : 1 });   // DNA package: fragments wait for sequencing
+      else ng = addGenome(spId, gain);
+      R.stats.successes++; res.species = spId; res.gain = batch ? batch.gain : gain; res.genome = ng; res.batch = batch; R.pity = 0;
       var lines = ['Eureka! ' + nm + ' recovered ' + SP[spId].name + ' DNA from the amber', 'Success! ' + nm + ' extracted clean ' + SP[spId].name + ' sequences', nm + ' has decoded fresh ' + SP[spId].name + ' genes'];
       if (res.sold) rlog('Every species from ' + site.name + ' is already fully sequenced, so ' + nm + ' sold the data to museums for ' + fmt(res.sold) + ' of research funding.', 'good');
+      else if (batch) rlog(nm + ' recovered ' + batch.frags + ' ' + SP[spId].name + ' DNA fragments' + (batch.quality === 'excellent' ? ' of superb quality' : '') + '. They are queued for sequencing.', 'good');
       else rlog(rng.pick(lines) + ': genome +' + gain.toFixed(1) + '% (now ' + Math.floor(ng) + '%).', 'good');
       xpUp(sci, RC.xpOk + job.grade * 2);
     } else if (outcome === 'contaminated') {
       R.pity = (R.pity || 0) + 1; R.stats.contaminated++; R.stats.failures++;
-      rlog(nm + "'s sample turned out to be almost entirely insect DNA. Nothing usable, but at least the mosquito is well documented.", 'info');
+      if (Z.DNA) {
+        var cb = Z.DNA.makeBatch({ species: drawSpecies(job.site, job.grade), site: job.site, grade: job.grade, outcome: 'contaminated', skill: sci ? sci.skill : 1 }); res.batch = cb; res.species = cb.species;
+        rlog(nm + "'s sample was mostly insect DNA (the mosquito is very well documented), but " + cb.frags + ' ' + SP[cb.species].name + ' fragments were rescued. Their integrity is poor.', 'info');
+      } else rlog(nm + "'s sample turned out to be almost entirely insect DNA. Nothing usable, but at least the mosquito is well documented.", 'info');
       xpUp(sci, RC.xpCont);
     } else if (outcome === 'critical') {
       R.pity = (R.pity || 0) + 1; R.stats.criticals++; R.stats.failures++;
@@ -3451,31 +3739,34 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       rlog(nm + "'s extraction failed - the amber crumbled and the sample is lost.", 'info');
       xpUp(sci, RC.xpFail);
     }
-    bus.emit('experiment', { job: job, outcome: outcome, species: res.species, gain: res.gain, genome: res.genome, bill: res.bill, sold: res.sold, pity: R.pity || 0 });
+    bus.emit('experiment', { job: job, outcome: outcome, species: res.species, gain: res.gain, genome: res.genome, bill: res.bill, sold: res.sold, pity: R.pity || 0, batch: res.batch || null });
   }
 
   // ---- splicing ----
-  function spliceOdds(speciesId, traitId, staffId) {
-    var R = S.research, sp = SP[speciesId], tr = TR[traitId];
+  function spliceOdds(speciesId, traitId, staffId, opts) {
+    var R = S.research, sp = SP[speciesId], tr = TR[traitId], guide = opts && typeof opts.guide === 'number' ? clamp(opts.guide, 0, 1) : 0;
     var empty = { success: 0, critical: 0, fail: 1, hours: 0, cost: 0, canStart: false, why: '', breakdown: [], genomeLoss: [3, 6] };
     if (!sp) { empty.why = 'Unknown species'; return empty; }
     if (!tr) { empty.why = 'Unknown trait'; return empty; }
     var sci = sciPick(staffId), skill = sci ? sci.skill : 1, g = R.genomes[speciesId], owned = R.traits[speciesId].length;
     var seqL = eqLevel('sequencer'), cleanL = eqLevel('clean_room'), bd = [];
     var gb = clamp((g - RC.spliceMinGenome) * RC.spliceGenomeSlope, 0, 0.2);
-    var raw = RC.spliceBase + gb + RC.skillPerPoint * (skill - 1) + RC.seqBonus[seqL] - RC.spliceTraitPenalty * owned;
+    var raw = RC.spliceBase + gb + RC.skillPerPoint * (skill - 1) + RC.seqBonus[seqL] - RC.spliceTraitPenalty * owned + 0.14 * guide;
     var pS = clamp(raw, 0.05, 0.85);
     bd.push({ label: 'Base chance', value: RC.spliceBase });
     bd.push({ label: 'Genome ' + Math.floor(g) + '% complete', value: round3(gb) });
     bd.push({ label: 'Scientist skill ' + skill.toFixed(1), value: round3(RC.skillPerPoint * (skill - 1)) });
     if (seqL) bd.push({ label: 'Genome sequencer ' + roman(seqL), value: RC.seqBonus[seqL] });
     if (owned) bd.push({ label: owned + ' trait' + (owned > 1 ? 's' : '') + ' already spliced', value: -round3(RC.spliceTraitPenalty * owned) });
+    if (guide > 0) bd.push({ label: 'Guided by your splicing puzzle', value: round3(0.14 * guide) });
     if (pS !== raw) bd.push({ label: 'Limits', value: round3(pS - raw) });
-    var crit = Math.min(RC.spliceCrit * RC.cleanMul[cleanL] * (1.25 - 0.15 * (skill - 1)), 1 - pS);
+    var crit = Math.min(RC.spliceCrit * RC.cleanMul[cleanL] * (1.25 - 0.15 * (skill - 1)) * (1 - 0.4 * guide), 1 - pS);
     var cost = tr.cost, fundingUsed = Math.min(R.funding, cost), why = '';
     var lw = labWhy();
     if (g < RC.spliceMinGenome) why = 'Needs a genome of at least ' + RC.spliceMinGenome + '% (currently ' + Math.floor(g) + '%)';
+    else if (sp.modern) why = 'Modern animals cannot be spliced';
     else if (R.traits[speciesId].indexOf(traitId) >= 0) why = 'This species already has the ' + tr.name + ' trait';
+    else if (tr.donor && Z.DNA && Z.DNA.doses(tr.donor) < 1) why = 'You need sequenced ' + Z.DNA.donorName(tr.donor) + ' DNA. Buy a sample in the Gene bank.';
     else if (lw) why = lw;
     else if (!sci) why = scientists().length ? 'All scientists are busy' : 'Hire a scientist first';
     else if (S.money < cost - fundingUsed) why = 'Not enough money (' + fmt(cost) + ')';
@@ -3483,12 +3774,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       canStart: !why, why: why, breakdown: bd, genomeLoss: [3, 6], species: speciesId, trait: traitId, scientist: sci ? { id: sci.id, name: sci.name, skill: sci.skill } : null };
   }
   function startSplice(speciesId, traitId, staffId, opts) {
-    var dry = dryOf(arguments); if (typeof staffId === 'object') staffId = undefined;
-    var R = S.research, od = spliceOdds(speciesId, traitId, staffId);
+    var dry = dryOf(arguments), op = staffId && typeof staffId === 'object' ? staffId : opts; if (typeof staffId === 'object') staffId = undefined;
+    var R = S.research, od = spliceOdds(speciesId, traitId, staffId, op);
     if (!od.canStart) return fail(od.why);
     if (dry) return okr(od.cost);
     payScience(od.cost);
-    var job = { id: newId(), kind: 'splice', species: speciesId, trait: traitId, staffId: od.scientist.id, t: od.hours, total: od.hours, chance: od.success, cost: od.cost, odds: { ok: od.success, crit: od.critical } };
+    var tr0 = TR[traitId], usedDonor = null;
+    if (tr0.donor && Z.DNA) { Z.DNA.useDose(tr0.donor); usedDonor = tr0.donor; }
+    var job = { id: newId(), kind: 'splice', species: speciesId, trait: traitId, staffId: od.scientist.id, t: od.hours, total: od.hours, chance: od.success, cost: od.cost, odds: { ok: od.success, crit: od.critical }, guide: op && typeof op.guide === 'number' ? clamp(op.guide, 0, 1) : 0, donor: usedDonor };
     R.jobs.push(job); R.stats.experiments++;
     bus.emit('research');
     return okr(od.cost, { jobId: job.id, hours: od.hours });
@@ -3499,8 +3792,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (u < job.odds.ok) outcome = 'success'; else if (u < job.odds.ok + job.odds.crit) outcome = 'critical'; else outcome = 'fail';
     var res = { job: job, outcome: outcome, species: job.species };
     if (outcome === 'success') {
-      R.traits[job.species].push(job.trait); R.stats.spliced++; R.stats.successes++;
-      rlog(nm + ' has spliced the ' + tr.name + ' trait into the ' + sp.name + ' line! Every future hatchling will carry it.', 'good');
+      R.traits[job.species].push(job.trait); R.stats.spliced++; R.stats.successes++; if (tr.donor) R.stats.genes = (R.stats.genes || 0) + 1;
+      rlog(nm + ' has spliced the ' + tr.name + (tr.donor ? ' gene' : ' trait') + ' into the ' + sp.name + ' line! Every future hatchling will carry it.', 'good');
       xpUp(sci, 30);
     } else if (outcome === 'critical') {
       var loss = Math.round(rng.range(3, 6) * 10) / 10; R.genomes[job.species] = Math.max(0, round1(R.genomes[job.species] - loss)); res.loss = loss; R.stats.criticals++; R.stats.failures++;
@@ -3512,7 +3805,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       xpUp(sci, 10);
     }
     res.genome = R.genomes[job.species];
-    bus.emit('experiment', { job: job, outcome: outcome, species: job.species, genome: res.genome, loss: res.loss });
+    bus.emit('experiment', { job: job, outcome: outcome, species: job.species, trait: job.trait, genome: res.genome, loss: res.loss });
   }
 
   // ---- expeditions ----
@@ -3549,6 +3842,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < n; k++) out.push(rollGrade(RC.expGrades));
     if (rng.chance(RC.expPristine)) { out.push(3); bonus.pristine = true; }
     if (rng.chance(RC.expFossil)) { R.fossilCredits++; bonus.fossil = true; }
+    if (Z.DNA) { var dn = Z.DNA.expeditionFind(job.site); if (dn) bonus.donor = dn; }
     var got = [];
     out.forEach(function (g) {
       if (R.samples.length < sampleCap()) { var sm = { id: newId(), site: job.site, grade: g, day: S.day }; R.samples.push(sm); got.push(sm); }
@@ -3558,6 +3852,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var txt = 'The dig team is back from ' + SITE[job.site].name + ' with ' + got.length + ' amber sample' + (got.length === 1 ? '' : 's') + '.';
     if (bonus.pristine) txt += ' One piece is pristine!';
     if (bonus.fossil) txt += ' They also brought a fossil skeleton for the park (free to place).';
+    if (bonus.donor) txt += ' Local vets also traded a sample of ' + bonus.donor + ' DNA for sequencing.';
     if (lost) txt += ' ' + lost + ' could not be stored and were loaned to museums for research funding.';
     rlog(txt, 'good');
     bus.emit('expedition', { site: job.site, samples: got, bonus: bonus, lost: lost });
@@ -3574,7 +3869,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var eff = {
       sequencer: ['+' + Math.round(RC.seqBonus[1] * 100) + '% / +' + Math.round(RC.seqBonus[2] * 100) + '% / +' + Math.round(RC.seqBonus[3] * 100) + '% extraction and splice success'],
       centrifuge: ['Jobs ' + Math.round((1 - RC.hoursMul[1]) * 100) + '% / ' + Math.round((1 - RC.hoursMul[2]) * 100) + '% / ' + Math.round((1 - RC.hoursMul[3]) * 100) + '% faster'],
-      clean_room: ['Contamination risk x' + RC.cleanMul[1] + ' / x' + RC.cleanMul[2] + ' / x' + RC.cleanMul[3]],
+      clean_room: ['Contamination risk ×' + RC.cleanMul[1] + ' / ×' + RC.cleanMul[2] + ' / ×' + RC.cleanMul[3]],
       cryo_store: ['Salvage chance ' + Math.round(RC.salvagePerLevel * 100) + '% per level; sample store +' + RC.cryoCap + ' per level'],
       incubator: ['Hatch success +' + Math.round(RC.incBonus[1] * 100) + '% / +' + Math.round(RC.incBonus[2] * 100) + '% / +' + Math.round(RC.incBonus[3] * 100) + '%, incubation 12% / 24% / 35% faster'],
       lab_bench: ['+1 scientist desk per lab per level']
@@ -3644,7 +3939,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var R = S.research, job = jobOfStaff(s.id), idx = scientists().indexOf(s);
     s.speed = 0;
     if (s.pv !== RT.pathVer || s.pl !== RT.labs.length) { s.pv = RT.pathVer; s.pl = RT.labs.length; placeScientist(s, Math.max(0, idx)); }
-    if (job && labOnline()) { s.state = 'work'; s.task = job.kind === 'splice' ? 'Splicing ' + TR[job.trait].name + ' into ' + SP[job.species].name : 'Extracting DNA (' + Math.ceil(job.t) + 'h left)'; }
+    var sq = !job && Z.DNA ? Z.DNA.sciTask(s) : null;
+    if (job && labOnline()) { s.state = 'work'; s.task = job.kind === 'hybrid' ? 'Cross-splicing a hybrid' : job.kind === 'splice' ? 'Splicing ' + TR[job.trait].name + ' into ' + SP[job.species].name : 'Extracting DNA (' + Math.ceil(job.t) + 'h left)'; }
+    else if (sq && labOnline()) { s.state = 'work'; s.task = sq; }
     else { s.state = 'idle'; s.task = job ? 'Waiting for the lab to reopen' : (R.samples.length ? 'Ready for the next sample' : 'Waiting for samples'); }
   }
   function cancelJob(jobId, opts) {
@@ -3657,7 +3954,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (j.kind === 'extract') {
       R.samples.push({ id: j.sampleId, site: j.site, grade: j.grade, day: S.day, degraded: j.degraded });
       rlog('Experiment cancelled. The sample went back into the store, but the reagents are gone.', 'info', false);
-    } else rlog('Splice cancelled. The reagents are gone.', 'info', false);
+    } else { if (j.donor && Z.DNA) Z.DNA.returnDose(j.donor); rlog((j.kind === 'hybrid' ? 'Hybrid splice' : 'Splice') + ' cancelled. The reagents are gone' + (j.donor ? ', but the donor sample was kept.' : '.'), 'info', false); }
     bus.emit('research');
     return okr(0);
   }
@@ -3668,13 +3965,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!sp) return { chance: 0, hours: 0, cost: 0, canStart: false, why: 'Unknown species', breakdown: [] };
     var g = R.genomes[speciesId], incL = eqLevel('incubator'), bd = [], chance, guaranteed = R.guaranteed > 0;
     var gb = (g - 50) * RC.hatchPerGenome;
-    chance = clamp(RC.hatchBase + gb + RC.incBonus[incL], 0.05, 0.99);
+    var hyb = sp.hybrid ? 0.08 : 0;
+    chance = clamp(RC.hatchBase + gb + RC.incBonus[incL] - hyb, 0.05, 0.99);
     if (guaranteed) { bd.push({ label: 'First hatches are guaranteed', value: 1 }); }
     else {
       bd.push({ label: 'Base chance', value: RC.hatchBase });
       bd.push({ label: 'Genome ' + Math.floor(g) + '% complete', value: round3(gb) });
       if (incL) bd.push({ label: 'Incubator ' + roman(incL), value: RC.incBonus[incL] });
-      var lim = chance - (RC.hatchBase + gb + RC.incBonus[incL]); if (Math.abs(lim) > 1e-6) bd.push({ label: 'Limits', value: round3(lim) });
+      if (hyb) bd.push({ label: 'Hybrid instability', value: -hyb });
+      var lim = chance - (RC.hatchBase + gb + RC.incBonus[incL] - hyb); if (Math.abs(lim) > 1e-6) bd.push({ label: 'Limits', value: round3(lim) });
     }
     var hours = Math.max(4, Math.round((8 + 3 * Math.sqrt(sp.length)) * RC.incHours[incL]));
     var why = '';
@@ -3699,18 +3998,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     enc = encOfTile(t);
     var success = eg.guaranteed ? true : rng.chance(eg.chance);
-    if (RT.force && RT.force.hatch !== undefined && RT.force.hatch !== null) { success = !!RT.force.hatch; RT.force.hatch = null; }
+    if (RT.force && RT.force.hatch !== undefined && RT.force.hatch !== null) { success = !!RT.force.hatch; if (!RT.force.keep) RT.force.hatch = null; }   // forceNext('keep', true) (Masterclass) keeps the outcome for every egg that hatches at the same moment
     R.eggs.splice(R.eggs.indexOf(eg), 1);
     if (success) {
       var g = R.genomes[eg.species], q = Math.round(g * 10) / 10;
       var a = makeAnimal(eg.species, enc, cxOf(t) + rng.range(-0.5, 0.5), czOf(t) + rng.range(-0.5, 0.5), true, null, q, R.traits[eg.species]);
       insertAnimal(a); R.stats.hatched++;
-      msg('A ' + sp.name + ' has hatched! Say hello to ' + a.name + (q < 70 ? ' (a rather fragile specimen: genome quality ' + Math.floor(q) + '%)' : q >= 95 ? ' (a magnificent specimen)' : '') + '.', 'good');
+      msg('A ' + sp.name + (Z.Realms && Z.Realms.live(sp) ? ' has been born! Say hello to ' : ' has hatched! Say hello to ') + a.name + (q < 70 ? ' (a rather fragile specimen: genome quality ' + Math.floor(q) + '%)' : q >= 95 ? ' (a magnificent specimen)' : '') + '.', 'good');
       bus.emit('hatch', { egg: eg, ok: true, animal: a });
     } else {
       R.stats.eggsLost++;
       var refund = Math.round(eg.paid * RC.hatchRefund); earn(refund, 'animals');
-      msg('The ' + sp.name + ' egg failed to hatch. The incubator staff recovered ' + fmt(refund) + ' of the cost.', 'bad');
+      msg('The ' + sp.name + (Z.Realms && Z.Realms.live(sp) ? ' pregnancy was lost. The hatchery' : ' egg failed to hatch. The incubator') + ' staff recovered ' + fmt(refund) + ' of the cost.', 'bad');
       bus.emit('hatch', { egg: eg, ok: false, refund: refund });
     }
     bus.emit('research');
@@ -3729,11 +4028,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!sci) { R.jobs.splice(k, 1); continue; }
       if (!on) continue;
       j.t -= dh;
-      if (j.t <= 0) { R.jobs.splice(k, 1); if (j.kind === 'extract') resolveExtract(j); else resolveSplice(j); bus.emit('research'); }
+      if (j.t <= 0) { R.jobs.splice(k, 1); if (j.kind === 'extract') resolveExtract(j); else if (j.kind === 'hybrid' && Z.DNA) Z.DNA.resolveHybrid(j); else resolveSplice(j); bus.emit('research'); }
     }
+    if (Z.DNA) Z.DNA.step(dt, dh);   // background sequencing of queued DNA batches by free scientists
     if (R.eggs.length && RT.hatcheries.length) {
       for (k = R.eggs.length - 1; k >= 0; k--) {
         var eg = R.eggs[k];
+        if (Z.Power) { var pe = Z.Power.eggTick(eg, dh); if (pe === 1) continue; if (pe === 2) { R.eggs.splice(k, 1); R.stats.eggsLost++; var rfp = Math.round(eg.paid * RC.hatchRefund); earn(rfp, 'animals'); msg('The ' + SP[eg.species].name + ' egg went cold in the dead incubator and was lost. ' + fmt(rfp) + ' was recovered.', 'bad'); bus.emit('eggLost', { egg: eg }); bus.emit('research'); continue; } }   // power package: an unpowered hatchery stops incubating; long cuts spoil eggs
         if (eg.t > 0) { eg.t -= dh; if (eg.t > 0) continue; }
         if (eg.t <= 0) {
           if (!hatchEgg(eg)) { eg.wait = (eg.wait || 0) + dh; if (eg.wait > 36) { R.eggs.splice(k, 1); R.stats.eggsLost++; var rf = Math.round(eg.paid * RC.hatchRefund); earn(rf, 'animals'); msg('The ' + SP[eg.species].name + ' egg spoiled while waiting for a valid enclosure. ' + fmt(rf) + ' was recovered.', 'bad'); bus.emit('hatch', { egg: eg, ok: false, refund: rf }); bus.emit('research'); } }
@@ -3762,13 +4063,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (cnt && S.day % 5 === 0) rlog('Field notes: observing healthy dinosaurs has added ' + tot.toFixed(1) + '% to the genome records across ' + cnt + ' species.', 'info', false);
     }
     researchGrant();
+    if (Z.DNA) Z.DNA.daily();
     bus.emit('research');
   }
   // dead-end protection: nothing to extract, no money for the cheapest lot, fewer than two species in reach
   function researchGrant() {
     var R = S.research, un = 0, id;
     for (id in R.genomes) if (R.genomes[id] >= RC.unlockGenome) un++;
-    if (un >= 2 || R.samples.length || R.jobs.some(function (j) { return j.kind === 'extract' || j.kind === 'expedition'; })) return;
+    if (un >= 2 || R.samples.length || (R.batches && R.batches.length) || R.jobs.some(function (j) { return j.kind === 'extract' || j.kind === 'expedition'; })) return;
     if (S.day - R.lastGrant < RC.grantCooldown) return;
     var cheapest = 1e9; for (var k = 0; k < R.market.length; k++) cheapest = Math.min(cheapest, R.market[k].price);
     if (!R.market.length) cheapest = 0;
@@ -3784,10 +4086,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function summary() {
     var R = S.research, sc = scientists(), cap = labCapacity(), free = freeScientists().length, un = 0, id, avg = 0;
     for (id in R.genomes) { if (R.genomes[id] >= RC.unlockGenome) un++; avg += R.genomes[id]; }
-    var ex = R.jobs.filter(function (j) { return j.kind === 'expedition'; }).length;
+    var ex = R.jobs.filter(function (j) { return j.kind === 'expedition'; }).length, nSp = 0;
+    D.animals.forEach(function (a) { if (!a.modern) nSp++; });
     return { labs: RT.labs.length, labsBuilt: RT.allLabs.length, labOnline: labOnline(), labOfflineHours: R.labOffline, scientists: sc.length, capacity: cap, freeScientists: free, busyScientists: sciWorkers().length - free,
       hatcheries: RT.hatcheries.length, eggSlots: RT.hatcheries.length * RC.eggSlots, freeEggSlots: Math.max(0, RT.hatcheries.length * RC.eggSlots - R.eggs.length), eggs: R.eggs.length,
-      sampleCap: sampleCap(), samples: R.samples.length, funding: R.funding, jobs: R.jobs.length, expeditions: ex, unlockedSpecies: un, totalSpecies: D.animals.length, genomeAvg: avg / D.animals.length,
+      sampleCap: sampleCap(), samples: R.samples.length, funding: R.funding, jobs: R.jobs.length, expeditions: ex, unlockedSpecies: un, totalSpecies: nSp, genomeAvg: avg / Math.max(1, nSp),
       guaranteedHatches: R.guaranteed, focus: R.focusSp || null, pity: R.pity || 0, fossilCredits: R.fossilCredits, equipment: Object.assign({}, R.equipment), candidates: R.candidates.length, nextCandidateDay: R.nextCandidateDay };
   }
   function genomeInfo(spId) {
@@ -3814,6 +4117,60 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     CONST: RC
   };
 
+
+  // Context for the DNA package (src/22-sim-dna.js): getters for the closure-private state/lookups and the research helpers it builds on.
+  Z.simCtx = {
+    S: function () { return S; }, RT: function () { return RT; }, SP: function () { return SP; }, TR: function () { return TR; }, SITE: function () { return SITE; }, EQ: function () { return EQ; },
+    D: D, RC: RC, DAY_SECONDS: DAY_SECONDS, newId: newId, msg: msg, rlog: rlog, fmt: fmt, earn: earn, spend: spend, clamp: clamp, round1: round1, round3: round3, fail: fail, okr: okr, dryOf: dryOf,
+    scientists: scientists, freeScientists: freeScientists, jobOfStaff: jobOfStaff, labOnline: labOnline, labWhy: labWhy, eqLevel: eqLevel, payScience: payScience, xpUp: xpUp, jobHours: jobHours,
+    sciPick: sciPick, addGenome: addGenome, priceFor: priceFor, siteList: siteList, genomeOf: genomeOf, aliveCount: function () { return S.animals.length; }, researchAPI: researchAPI
+  };
+
+  // Context for the moats package (src/23-sim-moats.js): closure-private state, helpers and the undo journal.
+  Z.moatCtx = {
+    S: function () { return S; }, RT: function () { return RT; }, SP: function () { return SP; }, BD: function () { return BD; }, D: function () { return D; }, N: N, rng: rng, bus: bus,
+    msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, fail: fail, okr: okr, dryOf: dryOf,
+    jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, cliffT: cliffT, entranceTile: entranceTile, seaMask: seaMask, waterKind: waterKind,
+    objFootprint: objFootprint, encById: encById, encOfTile: encOfTile, fxOf: fxOf, aDanger: aDanger, tileOf: tileOf, cxOf: cxOf, czOf: czOf, plural: plural, lc: lc, DT4: DT4, WX: function () { return WX; }
+  };
+
+  // Context for the realms package (src/26-sim-realms.js). Hooks into this file are marked "realms package" and guarded with `Z.Realms &&`.
+  Z.realmCtx = {
+    S: function () { return S; }, RT: function () { return RT; }, SP: function () { return SP; }, BD: function () { return BD; }, SC: function () { return SC; }, D: D, N: N, rng: rng, bus: bus,
+    msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, fail: fail, okr: okr, dryOf: dryOf,
+    jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, cliffT: cliffT, entranceTile: entranceTile, seaMask: seaMask, heightAt: heightAt,
+    objFootprint: objFootprint, encById: encById, encOfTile: encOfTile, fxOf: fxOf, aDanger: aDanger, aMinFence: aMinFence, tileOf: tileOf, cxOf: cxOf, czOf: czOf, plural: plural, lc: lc,
+    WX: function () { return WX; }, isNight: isNight, DAY_SECONDS: DAY_SECONDS, turn: turn, newId: newId, say: say, hurtGuest: hurtGuest, removeAnimal: removeAnimal,
+    recapture: recapture, doEscape: doEscape, onEscape: onEscape, compatible: compatible, refreshEncAnimals: refreshEncAnimals, encStats: encStats
+  };
+
+  // Context for the power and news packages (src/25-sim-power.js, src/27-sim-news.js). Hooks into this file are marked "power package" / "news package".
+  Z.powerCtx = {
+    S: function () { return S; }, RT: function () { return RT; }, SP: function () { return SP; }, BD: function () { return BD; }, SC: function () { return SC; }, D: function () { return D; }, N: N, rng: rng, bus: bus,
+    msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, plural: plural, lc: lc, world: afterWorldChange, objFootprint: objFootprint, tileOf: tileOf, cxOf: cxOf, czOf: czOf,
+    aMinFence: aMinFence, aDanger: aDanger, doEscape: doEscape, encById: encById, openNow: openNow, isNight: isNight, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
+    WX: function () { return WX; }, DIFF: function () { return DIFF; }, startLeaving: startLeaving, computeRating: computeRating, recomputeWX: recomputeWX, onEscape: onEscape,
+    refreshEncs: function (onlyElectric) {   // rebuild the geometry/strength of enclosures (cheap; no flood fill)
+      for (var q = 0; q < S.enclosures.length; q++) { var en = S.enclosures[q], Eo = RT.encx[en.id]; if (onlyElectric && !(Eo && Eo.elec)) continue; buildEncGeom(en); encStats(en); }
+      bus.emit('enclosures');
+    },
+    say: say, fireStaff: fireStaff, setOpen: setOpen, thought: function (g, key) { say(g, key); }
+  };
+
+  // Context for the monorail package (src/24-sim-monorail.js): closure-private state, guest helpers, undo journal. Hooks into this file are marked "monorail package".
+  Z.monoCtx = {
+    S: function () { return S; }, RT: function () { return RT; }, SP: function () { return SP; }, BD: function () { return BD; }, D: function () { return D; }, N: N, rng: rng, bus: bus,
+    msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, fail: fail, okr: okr, dryOf: dryOf, say: say, plural: plural, lc: lc,
+    jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, seaMask: seaMask, heightAt: heightAt, cliffT: cliffT,
+    objFootprint: objFootprint, footprint: footprint, frontPathTiles: frontPathTiles, encById: encById, aDanger: aDanger, tileOf: tileOf, cxOf: cxOf, czOf: czOf, getField: getField, INF: INF,
+    startLeaving: startLeaving, gxPlace: gxPlace, gxHr: gxHr, objCentre: objCentre, removeGuest: removeGuest, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
+    openNow: openNow, WX: function () { return WX; }, isUnlocked: function (k, id) { return isUnlocked(k, id); }
+  };
+
+  Z.safariCtx = {   // safari package: what the sim needs beyond Z.monoCtx
+    removeAnimal: removeAnimal, hurtGuest: hurtGuest, doEscape: doEscape, recapture: recapture, onEscape: onEscape, newId: newId, isNight: isNight, refreshEncAnimals: refreshEncAnimals, encStats: encStats,
+    addBack: function (an) { S.animals.push(an); RT.aById.set(an.id, an); }, addAnimal: addAnimal, cliffT: cliffT, cxOf: cxOf, czOf: czOf, fxOf: fxOf, spawnGuestHook: null, lc: lc, gateTile: function () { return GATE_I0 + GATE_J * N; }
+  };
 
   // ====================== NEW GAME / SAVE / LOAD ======================
   function rawPlace(type, i, j, rot) {
@@ -3864,26 +4221,201 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return ms[0] || { id: 'fern_meadow', bounds: { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, gen: { base: 'grass' } };
   }
   function ramp(i, rs, wid) { var f = 0; if (rs) for (var k = 0; k < rs.length; k++) f = Math.max(f, 1 - Math.abs(i - rs[k]) / wid); return f < 0 ? 0 : f; }
+  // ====================== ISLAND: sea / fresh water, coast helpers ======================
+  // Sea = water tiles connected (8-way) to the grid edge through water tiles whose lowest corner is at or below sea level (elev <= 0).
+  // Everything else that is water is fresh (lakes, rivers: their bed corners sit at elev >= 1). Derived, never saved.
+  function seaOf(terr, E) {
+    var sea = new Uint8Array(NN), st = [], t, i, j, k, di, dj, EWd = N + 1;
+    function low(q) { var x = q % N, y = (q - x) / N, c = x + y * EWd; return E[c] <= 0 || E[c + 1] <= 0 || E[c + EWd] <= 0 || E[c + EWd + 1] <= 0; }
+    for (t = 0; t < NN; t++) {
+      i = t % N; j = (t - i) / N;
+      if ((i === 0 || j === 0 || i === N - 1 || j === N - 1) && terr[t] === WATER && low(t)) { sea[t] = 1; st.push(t); }
+    }
+    while (st.length) {
+      t = st.pop(); i = t % N; j = (t - i) / N;
+      for (dj = -1; dj <= 1; dj++) for (di = -1; di <= 1; di++) {
+        var x = i + di, y = j + dj; if (x < 0 || y < 0 || x >= N || y >= N) continue;
+        k = x + y * N; if (!sea[k] && terr[k] === WATER && low(k)) { sea[k] = 1; st.push(k); }
+      }
+    }
+    return sea;
+  }
+  function seaMask(force) { if (force || !RT.sea) { RT.sea = seaOf(S.terrain, S.elev); RT.seaNear = null; } return RT.sea; }
+  // tiles within 2 tiles of the sea (land that must stay at or above sea level)
+  function seaNear() {
+    var sea = seaMask();
+    if (RT.seaNear) return RT.seaNear;
+    var nr = new Uint8Array(NN), i, j, a, b;
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      if (!sea[i + j * N]) continue;
+      for (b = -2; b <= 2; b++) for (a = -2; a <= 2; a++) { var x = i + a, y = j + b; if (x >= 0 && y >= 0 && x < N && y < N) nr[x + y * N] = 1; }
+    }
+    RT.seaNear = nr; return nr;
+  }
+  // does any tile around the tile-corner (ci,cj) belong to the mask?
+  function cornerSea(ci, cj, mask) {
+    for (var b = -1; b <= 0; b++) for (var a = -1; a <= 0; a++) { var x = ci + a, y = cj + b; if (x >= 0 && y >= 0 && x < N && y < N && mask[x + y * N]) return true; }
+    return false;
+  }
+  function waterKind(i, j) {
+    if (!Z.inb(i, j) || S.terrain[i + j * N] !== WATER) return null;
+    return seaMask()[i + j * N] ? 'sea' : 'fresh';
+  }
+  // distance (tiles) to the nearest tile of the mask (0 on it); Float32Array(NN)
+  function chamfer(src) {
+    var d = new Float32Array(NN), i, j, t, v, BIG = 999;
+    for (t = 0; t < NN; t++) d[t] = src[t] ? 0 : BIG;
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      t = i + j * N; v = d[t]; if (v === 0) continue;
+      if (i > 0 && d[t - 1] + 1 < v) v = d[t - 1] + 1;
+      if (j > 0) { if (d[t - N] + 1 < v) v = d[t - N] + 1; if (i > 0 && d[t - N - 1] + 1.414 < v) v = d[t - N - 1] + 1.414; if (i < N - 1 && d[t - N + 1] + 1.414 < v) v = d[t - N + 1] + 1.414; }
+      d[t] = v;
+    }
+    for (j = N - 1; j >= 0; j--) for (i = N - 1; i >= 0; i--) {
+      t = i + j * N; v = d[t]; if (v === 0) continue;
+      if (i < N - 1 && d[t + 1] + 1 < v) v = d[t + 1] + 1;
+      if (j < N - 1) { if (d[t + N] + 1 < v) v = d[t + N] + 1; if (i < N - 1 && d[t + N + 1] + 1.414 < v) v = d[t + N + 1] + 1.414; if (i > 0 && d[t + N - 1] + 1.414 < v) v = d[t + N - 1] + 1.414; }
+      d[t] = v;
+    }
+    return d;
+  }
+  // signed shore distance per tile for the CURRENT state: + = land (1 = first tile inland of the water), - = sea (-1 = first sea tile off the beach). Not cached.
+  function shoreDist() {
+    var sea = seaMask(), land = new Uint8Array(NN), t, dl, ds, out = new Float32Array(NN);
+    for (t = 0; t < NN; t++) land[t] = sea[t] ? 0 : 1;
+    dl = chamfer(sea); ds = chamfer(land);
+    for (t = 0; t < NN; t++) out[t] = sea[t] ? -ds[t] : dl[t];
+    return out;
+  }
+  var TONGUE_I0 = 17, TONGUE_I1 = 38;
+  // land mask of an island description (see D.maps[].gen.island)
+  function isleMask(I, sd) {
+    var land = new Uint8Array(NN), i, j, k, x, y, H = I.harm || [], B = I.bays || [], wob = I.wob === undefined ? 0.22 : I.wob;
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      x = i + 0.5; y = j + 0.5;
+      var u = (x - I.cx) / I.rx, v = (y - I.cy) / I.ry, r = Math.sqrt(u * u + v * v), a = Math.atan2(v, u), R = 1 + (fbm(x / 8, y / 8, sd + 3) - 0.5) * wob;
+      for (k = 0; k < H.length; k++) R += H[k][1] * Math.cos(H[k][0] * a + H[k][2]);
+      for (k = 0; k < B.length; k++) { var da = a - B[k][0]; while (da > PI) da -= TAU; while (da < -PI) da += TAU; R -= B[k][2] * Math.exp(-(da * da) / (B[k][1] * B[k][1])); }
+      if (r < R) land[i + j * N] = 1;
+    }
+    function disc(cx, cy, r, val) {
+      for (j = Math.max(0, Math.floor(cy - r - 1)); j <= Math.min(N - 1, Math.ceil(cy + r + 1)); j++) for (i = Math.max(0, Math.floor(cx - r - 1)); i <= Math.min(N - 1, Math.ceil(cx + r + 1)); i++) {
+        var dx = i + 0.5 - cx, dy = j + 0.5 - cy, rr = r * (1 + (fbm(i / 3, j / 3, sd + 9) - 0.5) * 0.35);
+        if (dx * dx + dy * dy < rr * rr) land[i + j * N] = val;
+      }
+    }
+    (I.capes || []).forEach(function (c) { disc(c[0], c[1], c[2], 1); });
+    // the gate peninsula: always land from the plaza down to the south edge, wider than the plaza so beaches flank it
+    var tj = I.tongueJ || 36;
+    for (j = tj; j < N; j++) {
+      var tl = 18 - Math.round((fbm(j / 5, 3.3, sd + 51) - 0.3) * 6), tr = 37 + Math.round((fbm(j / 5, 8.8, sd + 52) - 0.3) * 6);
+      for (i = Math.min(18, tl); i <= Math.max(37, tr); i++) land[i + j * N] = 1;
+    }
+    if (I.lagoon) {
+      var L = I.lagoon; disc(L.x, L.y, L.r, 0);
+      for (var s = 0; s < 40; s += 0.7) { var px = L.x + Math.cos(L.ang) * s, py = L.y + Math.sin(L.ang) * s; if (px < 0 || py < 0 || px > N || py > N) break; disc(px, py, 1.5, 0); }
+    }
+    (I.islets || []).forEach(function (c) { disc(c[0], c[1], c[2], 1); });
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+      var tg = j >= tj && i >= 14 && i <= 41;
+      if (!tg && (i < 2 || j < 2 || i > N - 3 || j > N - 3)) land[i + j * N] = 0;
+    }
+    // sea pockets that do not reach the edge become land
+    var seen = new Uint8Array(NN), st = [], t;
+    for (t = 0; t < NN; t++) { i = t % N; j = (t - i) / N; if ((i === 0 || j === 0 || i === N - 1 || j === N - 1) && !land[t]) { seen[t] = 1; st.push(t); } }
+    while (st.length) {
+      t = st.pop(); i = t % N; j = (t - i) / N;
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) { var x2 = i + d[0], y2 = j + d[1]; if (x2 < 0 || y2 < 0 || x2 >= N || y2 >= N) return; var q = x2 + y2 * N; if (!seen[q] && !land[q]) { seen[q] = 1; st.push(q); } });
+    }
+    for (t = 0; t < NN; t++) if (!land[t] && !seen[t]) land[t] = 1;
+    return land;
+  }
+  // elevation (in elev steps) of the island profile at signed shore distance s (tiles; + inland): sea floor shelves, beach ramp, then the inland plain at +2
+  function isleProfile(s) {
+    if (s >= 0) return 2 * sstep(s / 4.6);
+    if (s > -2.4) return 0;
+    if (s > -4.8) return -1;
+    if (s > -8) return -2;
+    return -3;
+  }
+  // Z.Sim.previewMap(mapId, seed) -> {terrain, elev, sea, bounds} for the new-game sheet (own state, never touches the live game)
+  function previewMap(id, seed) {
+    var sS = S, sR = RT, sZ = Z.state, rs = rng.getSeed(), out = null;
+    try {
+      S = Z.newState(); RT = newRT(); Z.state = S;
+      var md = mapDef(id); S.map = { id: md.id, i0: md.bounds.i0, j0: md.bounds.j0, i1: md.bounds.i1, j1: md.bounds.j1 };
+      var r = genMap(md, seed || 1, true);
+      out = { terrain: S.terrain, elev: S.elev, sea: seaOf(S.terrain, S.elev), bounds: r && r.bounds || md.bounds };
+    } catch (e) { out = null; }
+    S = sS; RT = sR; Z.state = sZ; rng.seed(rs);
+    return out;
+  }
+
   // fills S.terrain / S.elev for the whole grid (outside the bounds too, so the surroundings look natural) and scatters starting plants and rocks inside the bounds
-  function genMap(md, seed) {
+  function genMap(md, seed, previewOnly) {
     var g = md.gen || {}, b = md.bounds, sd = (seed | 0) % 100003, ci, cj, k, i, j, t;
+    rng.seed((seed | 0) * 2654435761 + 12345);   // map generation depends on the seed only (so previewMap matches the real thing)
     var baseT = TI[g.base || 'grass']; if (baseT === undefined) baseT = 0;
-    var lakes = [], mesas = [], tries;
+    var lakes = [], mesas = [], tries, I = g.island || null, land = null, dl = null, ds = null, sdT = null, ELEVB = N + 1;
+    if (I) {
+      land = isleMask(I, sd);
+      var seaM0 = new Uint8Array(NN), landM = new Uint8Array(NN);
+      for (t = 0; t < NN; t++) { seaM0[t] = land[t] ? 0 : 1; landM[t] = land[t]; }
+      dl = chamfer(seaM0); ds = chamfer(landM); sdT = new Float32Array(NN);
+      for (t = 0; t < NN; t++) sdT[t] = land[t] ? dl[t] : -ds[t];
+      // owned land = everything from the first beach to the last beach tile, plus a tile of shallows; always down to the south edge
+      var bi0 = N, bj0 = N, bi1 = 0, bj1 = N - 1;
+      for (t = 0; t < NN; t++) if (land[t]) { i = t % N; j = (t - i) / N; if (i < bi0) bi0 = i; if (i > bi1) bi1 = i; if (j < bj0) bj0 = j; }
+      b = { i0: Math.max(0, bi0 - 1), j0: Math.max(0, bj0 - 1), i1: Math.min(N - 1, bi1 + 1), j1: N - 1 };
+    }
+    var inland = function (x, y) { return !I ? 99 : (Z.inb(x | 0, y | 0) ? sdT[(x | 0) + (y | 0) * N] : -1); };
     var near = function (x, y, r) { // keep features off the entrance plaza (tiles 22..33, 39..55)
       var dx = Math.max(22 - x, 0, x - 34), dy = Math.max(39 - y, 0);
       return Math.sqrt(dx * dx + dy * dy) > r;
     };
-    if (g.lakes) for (k = 0, tries = 0; k < g.lakes.n && tries < 200; tries++) {
+    if (g.lakes) for (k = 0, tries = 0; k < g.lakes.n && tries < 300; tries++) {
       var lr = rng.range(g.lakes.r[0], g.lakes.r[1]), lx = rng.range(b.i0 + lr + 1, b.i1 - lr), ly = rng.range(b.j0 + lr + 1, b.j1 - lr), ok = near(lx, ly, lr + 4);
+      if (I && ok) ok = inland(lx, ly) > lr + 4.5 && ly < 50 && !(lx + lr > 23 && lx - lr < 33 && ly + lr > 22);   // keep the central corridor from the gate free of lakes
       for (var q = 0; q < lakes.length && ok; q++) { var ddx = lakes[q].x - lx, ddy = lakes[q].y - ly; if (Math.sqrt(ddx * ddx + ddy * ddy) < lakes[q].r + lr + 3) ok = false; }
       if (ok) { lakes.push({ x: lx, y: ly, r: lr }); k++; }
     }
-    if (g.mesas) for (k = 0, tries = 0; k < g.mesas.n && tries < 200; tries++) {
+    if (g.mesas) for (k = 0, tries = 0; k < g.mesas.n && tries < 300; tries++) {
       var mr = g.mesas.r * rng.range(0.8, 1.2), mx = rng.range(b.i0 + mr + 2, b.i1 - mr - 1), my = rng.range(b.j0 + mr + 2, b.j1 - mr - 1), mok = near(mx, my, mr + 5);
+      if (I && mok) mok = inland(mx, my) > mr + 4;
       if (g.canyon && Math.abs(my - g.canyon.j) < mr + g.canyon.w + 3) mok = false;
       for (var q2 = 0; q2 < mesas.length && mok; q2++) { var mdx = mesas[q2].x - mx, mdy = mesas[q2].y - my; if (Math.sqrt(mdx * mdx + mdy * mdy) < mesas[q2].r + mr + 3) mok = false; }
+      for (var q3 = 0; q3 < lakes.length && mok; q3++) { var ldx = lakes[q3].x - mx, ldy = lakes[q3].y - my; if (Math.sqrt(ldx * ldx + ldy * ldy) < lakes[q3].r + mr + 3) mok = false; }
       if (mok) { mesas.push({ x: mx, y: my, r: mr, a: rng.range(-PI, PI) }); k++; }
     }
+    // rivers: meandering stream from a lake (or an inland spring) towards the coast in direction `to`, stamped as fresh-water tiles
+    var fresh = new Uint8Array(NN), riverPts = [];
+    function stampRiver(rd, src, wide) {
+      if (!I || !rd) return;
+      var x = src.x, y = src.y, dirA = Math.atan2(Math.sin(rd.to) * I.ry, Math.cos(rd.to) * I.rx) , hx = Math.cos(dirA), hy = Math.sin(dirA), ph = rng.range(0, 6.28), pts = [], steps = 0;
+      var tgx = I.cx + Math.cos(rd.to) * I.rx * 1.3, tgy = I.cy + Math.sin(rd.to) * I.ry * 1.3, ax = tgx - x, ay = tgy - y, al = Math.sqrt(ax * ax + ay * ay) || 1;
+      hx = ax / al; hy = ay / al;
+      while (steps++ < 90) {
+        var wob = Math.sin(steps * 0.33 + ph) * 0.55 + Math.sin(steps * 0.11 + ph * 2) * 0.5;
+        x += hx + (-hy) * wob * 0.55; y += hy + hx * wob * 0.55;
+        if (x < 2 || y < 2 || x > N - 2 || y > N - 2) break;
+        var tt = (x | 0) + (y | 0) * N, rw = 1.15 + (sdT[tt] < 5 ? 0.55 : 0) + (wide ? 0.25 : 0);
+        pts.push([+x.toFixed(1), +y.toFixed(1), rw]);
+        if (sdT[tt] <= 0) break;
+        for (var jj = Math.floor(y - rw - 1); jj <= Math.ceil(y + rw + 1); jj++) for (var ii = Math.floor(x - rw - 1); ii <= Math.ceil(x + rw + 1); ii++) {
+          if (ii < 0 || jj < 0 || ii >= N || jj >= N || !land[ii + jj * N]) continue;
+          if (ii >= 20 && ii <= 35 && jj >= 36) continue;   // never across the entrance plaza
+          var rx2 = ii + 0.5 - x, ry2 = jj + 0.5 - y; if (rx2 * rx2 + ry2 * ry2 < rw * rw) fresh[ii + jj * N] = 1;
+        }
+      }
+      riverPts.push(pts);
+    }
+    var srcOf = function (n, rd) {
+      if (lakes[n]) return { x: lakes[n].x, y: lakes[n].y };
+      var a = rd.to + PI + 0.5 * (n ? -1 : 1);
+      return { x: clamp(I.cx + Math.cos(a) * I.rx * 0.45, 4, N - 5), y: clamp(I.cy + Math.sin(a) * I.ry * 0.45, 4, 44) };
+    };
+    if (I && I.river) stampRiver(I.river, srcOf(0, I.river), false);
+    if (I && I.river2) stampRiver(I.river2, srcOf(1, I.river2), true);
     var phase = rng.range(0, 6.28), HF = new Float32Array((N + 1) * (N + 1));
     for (cj = 0; cj <= N; cj++) for (ci = 0; ci <= N; ci++) {
       var h = 0;
@@ -3901,16 +4433,30 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var mw = da < 0.6 ? 5 : 1.1;
         h += g.mesas.h * sstep((m.r - md2 + mw / 2) / mw);
       }
-      for (k = 0; k < lakes.length; k++) {
+      if (!I) for (k = 0; k < lakes.length; k++) {
         var l = lakes[k], ld = Math.sqrt((ci - l.x) * (ci - l.x) + (cj - l.y) * (cj - l.y)) / l.r;
         if (ld < 1.2) h -= g.lakes.depth * 1.6 * (1 - sstep(ld / 1.2));
       }
       // keep the plaza and the outer rim of the grid flat
       var pdx = Math.max(22 - ci, 0, ci - 34), pdy = Math.max(39 - cj, 0), pf = sstep(Math.sqrt(pdx * pdx + pdy * pdy) / 5);
-      var ef = sstep(Math.min(ci, cj, N - ci, N - cj) / 4);
+      var ef = I ? 1 : sstep(Math.min(ci, cj, N - ci, N - cj) / 4);
       HF[ci + cj * (N + 1)] = h * pf * ef;
     }
-    for (k = 0; k < HF.length; k++) S.elev[k] = clamp(Math.round(HF[k]), -4, 12);
+    // elevation: island = shore profile + the inland relief faded in from the beach; legacy (no island) = the raw field
+    var cornerS = null;
+    if (I) {
+      cornerS = new Float32Array((N + 1) * (N + 1));
+      for (cj = 0; cj <= N; cj++) for (ci = 0; ci <= N; ci++) {
+        var sS = 0;
+        for (var bb = -1; bb <= 0; bb++) for (var aa = -1; aa <= 0; aa++) sS += sdT[clamp(ci + aa, 0, N - 1) + clamp(cj + bb, 0, N - 1) * N];
+        sS = sS / 4 + (fbm(ci / 5, cj / 5, sd + 21) - 0.5) * 1.1 * (sS > -3 ? 1 : 0);
+        cornerS[ci + cj * ELEVB] = sS;
+        var e = isleProfile(sS); if (sS > 0) e += HF[ci + cj * ELEVB] * sstep((sS - 1.8) / 6);
+        S.elev[ci + cj * ELEVB] = clamp(Math.round(e), -4, 12);
+      }
+      // the entrance plaza and its approach are flat at the inland level
+      for (cj = 38; cj <= N; cj++) for (ci = 21; ci <= 35; ci++) S.elev[ci + cj * ELEVB] = 2;
+    } else for (k = 0; k < HF.length; k++) S.elev[k] = clamp(Math.round(HF[k]), -4, 12);
     // terrain
     var paint = g.paint || [], pr;
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
@@ -3923,47 +4469,73 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (TI[pr.t] !== undefined) ter = TI[pr.t];
       }
       for (k = 0; k < lakes.length; k++) {
-        var lk = lakes[k], dl = Math.sqrt((i + 0.5 - lk.x) * (i + 0.5 - lk.x) + (j + 0.5 - lk.y) * (j + 0.5 - lk.y)) / lk.r;
-        if (dl < 0.72) ter = WATER; else if (dl < 0.98 && ter !== WATER) ter = TI.dirt;
+        var lk = lakes[k], dlk = Math.sqrt((i + 0.5 - lk.x) * (i + 0.5 - lk.x) + (j + 0.5 - lk.y) * (j + 0.5 - lk.y)) / lk.r;
+        if (dlk < 0.72) { ter = WATER; if (I) fresh[t] = 1; } else if (dlk < 0.98 && ter !== WATER) ter = TI.dirt;
+      }
+      if (I) {
+        var bw = 2.5 + 2.1 * fbm(i / 6, j / 6, sd + 41);
+        if (!land[t]) ter = WATER;
+        else if (fresh[t]) ter = WATER;
+        else if (dl[t] <= bw && !(ter === WATER)) ter = TI.sand;
       }
       if (i >= 21 && i <= 34 && j >= 38) ter = TI.grass;   // the plaza is always meadow
       S.terrain[t] = ter;
     }
+    if (I) {
+      // fresh water beds: every lake/river tile corner sits at elev 1 (surface half a step above the sea), dropping to the sea level where a river meets the beach
+      var fdist = chamfer(fresh);
+      for (t = 0; t < NN; t++) if (fresh[t] && S.terrain[t] !== WATER) S.terrain[t] = WATER;
+      for (cj = 0; cj <= N; cj++) for (ci = 0; ci <= N; ci++) {
+        var c = ci + cj * ELEVB, wd = 99, fw = false;
+        for (var b2 = -1; b2 <= 0; b2++) for (var a2 = -1; a2 <= 0; a2++) {
+          var xx = ci + a2, yy = cj + b2; if (xx < 0 || yy < 0 || xx >= N || yy >= N) continue;
+          if (fresh[xx + yy * N]) fw = true; if (fdist[xx + yy * N] < wd) wd = fdist[xx + yy * N];
+        }
+        if (fw) S.elev[c] = clamp(Math.round(isleProfile(cornerS[c])), 0, 1);
+        else if (wd < 6 && cornerS[c] > 1.5) S.elev[c] = clamp(S.elev[c], 1, 2 + Math.ceil(wd));
+      }
+    }
+    if (previewOnly) return { bounds: b };
     // starting plants and rocks (inside the bounds, never on the plaza)
-    var total = 0, sc = g.scatter || [];
+    var total = 0, sc = g.scatter || [], sea0 = I ? seaOf(S.terrain, S.elev) : null;
     for (k = 0; k < sc.length && total < 120; k++) {
       var sp = sc[k], want = sp[1], got = 0, allowed = sp[2] || [], opt = sp[3] || {};
       for (tries = 0; tries < want * 30 && got < want && total < 120; tries++) {
         i = rng.int(b.i0, b.i1); j = rng.int(b.j0, b.j1); t = i + j * N;
         if (i >= 21 && i <= 34 && j >= 38) continue;
         if (S.tileObj[t] || S.path[t] || tileSlope(i, j) > 2) continue;
+        if (sea0 && sea0[t] && sp[0] !== 'ice_floe') continue;
         var tn = D.terrain[S.terrain[t]].id; if (allowed.length && allowed.indexOf(tn) < 0) continue;
         if (opt.nearWater) {
           var nw = false;
-          for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) if (Z.inb(i + di, j + dj) && S.terrain[(i + di) + (j + dj) * N] === WATER) nw = true;
+          for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) if (Z.inb(i + di, j + dj) && S.terrain[(i + di) + (j + dj) * N] === WATER && (!sea0 || !sea0[(i + di) + (j + dj) * N])) nw = true;
           if (!nw) continue;
         }
         if (rawPlace(sp[0], i, j, rng.int(0, 3))) { got++; total++; }
       }
     }
+    return { bounds: b, island: !!I, lakes: lakes.map(function (l) { return [+l.x.toFixed(1), +l.y.toFixed(1), +l.r.toFixed(1)]; }), rivers: riverPts.map(function (p) { return p.filter(function (_, n) { return n % 3 === 0; }); }) };
   }
 
   function newGame(opts) {
     opts = opts || {};
-    rng.seed(opts.seed || (Date.now() & 0x7fffffff));
-    S = Z.newState(); Z.state = S; RT = newRT();
+    var gseed = opts.seed || (Date.now() & 0x7fffffff);
+    rng.seed(gseed);
+    S = Z.newState(); Z.state = S; RT = newRT(); EV.amber = 1;   // (an amber price event of the previous game must not price this game's first market)
     var paved = PI_.paved || 1;
     applyDifficulty(opts.difficulty, true);
     if (opts.money) S.money = opts.money;
     var md = mapDef(opts.map), bb = md.bounds;
     S.map = { id: md.id, i0: bb.i0, j0: bb.j0, i1: bb.i1, j1: bb.j1 };
     S.rating = 0.9;
+    if (Z.DNA) Z.DNA.beforeReset();   // forget the previous game's hybrid species before the genome table is built
     S.research = newResearch();
     var i, j;
     for (j = N - 4; j < N; j++) for (i = 25; i <= 30; i++) S.path[i + j * N] = paved;
     for (j = N - 16; j < N - 4; j++) { S.path[27 + j * N] = paved; S.path[28 + j * N] = paved; }
     S.speed = 1;
-    genMap(md, rng.getSeed());
+    var gm = genMap(md, gseed);
+    if (gm && gm.island) { S.map = { id: md.id, i0: gm.bounds.i0, j0: gm.bounds.j0, i1: gm.bounds.i1, j1: gm.bounds.j1, island: 1, lakes: gm.lakes, rivers: gm.rivers }; }
     rebuildNav();
     initDerived();
     [['ginkgo', 22, 47], ['pine', 32, 48], ['ginkgo', 23, 39], ['pine', 33, 41], ['tree_fern', 22, 50], ['pine', 31, 39], ['bush', 25, 49], ['bush', 30, 49], ['fern', 24, 47], ['fern', 31, 46],
@@ -3979,7 +4551,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var sci = { id: newId(), type: 'scientist', name: nm, x: 0, z: 0, heading: 0, speed: 0, state: 'idle', task: 'Waiting for samples', skill: 1.5, xp: 0, wage: Math.round(STF.scientist.wage * 1.5), ti: 0, home: 0, tk: null, route: null, ri: 0, wt: 0, lo: 0 };
     S.staff.push(sci); RT.sById.set(sci.id, sci); placeScientist(sci, 0);
     makeCandidates(); refreshMarket(true);
+    if (Z.DNA) Z.DNA.afterReset();
     recomputeEnclosures();
+    if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package
+    if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
+    if (Z.Power) Z.Power.afterLoad(true);   // power package: fresh grid state
+    if (Z.Realms) { Z.Realms.reset(); Z.Realms.update(); }   // realms package
+    if (Z.News) Z.News.afterLoad(true);   // news package: empty feed
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to Amber Acres! Your lab is ready: run an extraction, hatch a Dryosaurus and open the gates.', 'info', false);
     bus.emit('reset');
@@ -3992,8 +4570,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return v;
     });
   }
-  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array };
-  var ARR_LEN = { terrain: NN, path: NN, fenceX: N * (N + 1), fenceZ: (N + 1) * N, tileObj: NN, tileEnc: NN, dirt: NN };
+  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array };
+  var ARR_LEN = { terrain: NN, path: NN, fenceX: N * (N + 1), fenceZ: (N + 1) * N, tileObj: NN, tileEnc: NN, dirt: NN, ditch: NN, rail: NN };
+  var ARR_OPTIONAL = { ditch: 1, rail: 1 };   // moats package: old saves have no ditch layer (defaults to none)
   function load(str) {
     var obj, ns;
     try {
@@ -4004,6 +4583,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (var f in ARR_FIELDS) {
         var v = ns[f];
         if (v && v.__t) v = Z.unpackArray(v);
+        if (!v && ARR_OPTIONAL[f]) v = new ARR_FIELDS[f](ARR_LEN[f]);
         if (!v || v.length !== ARR_LEN[f]) return false;
         ns[f] = v;
       }
@@ -4017,11 +4597,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     } catch (e) { return false; }
     S = ns; Z.state = S; RT = newRT();
     rng.seed(obj.rng || 1); RT.ghEMA = obj.ghEMA || 65; RT.nextGroup = obj.nextGroup || 1;
+    if (Z.DNA) Z.DNA.afterLoad();   // re-register saved hybrid species and default the DNA fields of old saves
     var k;
     for (k = 0; k < S.guests.length; k++) {
       var g = S.guests[k];
       g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.nt = rng.next();
-      if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
+      if (g.state === 'ride') { g.gt = ''; g.dk = ''; }   // monorail package: riders stay on their train (relinked in Monorail.afterLoad)
+      else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
       if (g.gt === 'out') g.gt = 'exit';
     }
     if (!S.panic) S.panic = 0;
@@ -4031,7 +4613,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (S.eventAt === undefined) S.eventAt = -1;
     if (S.research.firstDone === undefined) S.research.firstDone = (S.research.stats.successes + S.research.stats.failures) > 0;   // old saves with a finished extraction skip the guarantee
     for (k = 0; k < S.animals.length; k++) {
-      var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = '';
+      var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
       if (a.genomeQ === undefined) a.genomeQ = 100; if (!a.traits) a.traits = [];
       if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
@@ -4039,6 +4621,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     initDerived();
     recomputeEnclosures();
+    if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package: default fields of old saves, relink riders, derive the track graph
+    if (Z.Power) Z.Power.afterLoad();   // power package: default state of old saves, derive the grid
+    if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
+    if (Z.Safari) Z.Safari.afterLoad();   // safari package: riders relink, derived routes and zones (after realms and enclosures)
+    if (Z.News) Z.News.afterLoad();   // news package
     secondly();
     S.staff.forEach(function (s) { if (s.type === 'scientist') s.pv = -1; });
     bus.emit('reset');
@@ -4064,7 +4651,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (k = 0; k < r.issues.length; k++) out.issues.push(name + ': ' + r.issues[k]);
     }
     var cm = compatibleReport(e); if (cm) out.issues.push(cm);
+    if (e.animals.length && !e.viewTiles.length) { out.noAccess = true; out.issues.unshift(noAccessMsg(e)); }   // QA: keepers need a path (or pier / walkway) within 3 tiles
+    if (Z.Moats) out.moat = Z.Moats.report(e, out.issues);
+    if (Z.Realms) out.realm = Z.Realms.report(e, out.issues);   // realms package: kind, containment status, tank/dome/zone details   // moats package: boundary mix, per-species containment
     return out;
+  }
+  function noAccessMsg(e) {
+    var water = e.kind === 'tank' || e.realm === 'sea' || e.kind === 'pen';
+    return 'Keepers cannot reach this enclosure: no path' + (water ? ', pier or walkway' : '') + ' within 3 tiles. Its animals will not be fed, watered or cleaned for' + ' and will starve. Lay a path' + (water ? ', pier or tunnel' : '') + ' beside it.';
   }
   function compatibleReport(e) {
     if (e.species.length > 1) for (var k = 0; k < e.species.length; k++) if (SP[e.species[k]].diet === 'carnivore') return 'Predators are sharing with other species!';
@@ -4073,7 +4667,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function animalReport(id) {
     var a = RT.aById.get(id); if (!a) return null;
     var sp = SP[a.species], iss = [];
-    if (a.state === 'escaped') iss.push('Escaped! Security or keepers must recapture it');
+    if (a.state === 'escaped') iss.push('Escaped! Security or rangers must recapture it');
     if (a.sick) iss.push('Unwell and needs a vet');
     if (a.hunger > 70) iss.push('Hungry'); if (a.thirst > 70) iss.push('Thirsty'); if (a.energy < 25) iss.push('Tired');
     if (a.health < 40) iss.push('Poor health');
@@ -4082,7 +4676,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var E = RT.encx[enc.id], r = suitFor(enc, E, a.species, E.bySp[a.species] || 1);
       for (var k = 0; k < r.issues.length; k++) iss.push(r.issues[k]);
       if (enc.foodLevel < 0.15) iss.push('Food has run out');
-      if (enc.waterLevel < 0.15 && !E.water.length) iss.push('Water has run out');
+      if (enc.waterLevel < 0.15 && !E.water.length && !E.moatN) iss.push('Water has run out');
     }
     return { id: a.id, name: a.name, species: a.species, speciesName: sp.name, sex: a.sex, age: a.age, baby: a.baby, state: a.state, enclosure: enc ? enc.name : null,
       needs: { hunger: a.hunger, thirst: a.thirst, energy: a.energy, health: a.health, happiness: a.happiness }, suitability: enc ? (enc.suitability[a.species] || 0) : 0, issues: iss, fact: sp.fact,
@@ -4095,10 +4689,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function objectReport(id) {
     var o = RT.oById.get(id); if (!o) return null;
-    var def = o.kind === 'building' ? BD[o.type] : SC[o.type], issues = [], connected = true;
+    var def = o.kind === 'building' ? BD[o.type] : SC[o.type], issues = [], connected = true, moatInfo = null;
     if (o.kind === 'building') {
-      connected = buildingConnected(o);
+      connected = def.utility ? true : buildingConnected(o);
       if (!connected) issues.push('Its entrance (front) must touch a path');
+      if (def.moat && Z.Moats) { var mi = Z.Moats.objectInfo(o.id); if (mi) { moatInfo = mi; for (var mk = 0; mk < mi.issues.length; mk++) issues.push(mi.issues[mk]); } }
       if (o.type === 'hatchery' && S.research.eggs.length) issues.push(S.research.eggs.length + ' egg(s) incubating');
     }
     var q = RT.bq[o.id], thriving = null, thrivesOn = null, hereName = null;
@@ -4108,7 +4703,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (thriving === false) issues.push('Struggling on ' + hereName.toLowerCase() + ' - ' + (def.waterEdge ? 'prefers mud or meadow beside water' : 'prefers ' + thrivesOn.join(', ').toLowerCase()));
     }
     return { thriving: thriving, thrivesOn: thrivesOn, terrainHere: hereName, info: def.info || '', id: o.id, kind: o.kind, type: o.type, name: def.name, connected: connected, issues: issues, front: frontList(objFootprint(o)), price: o.price, defaultPrice: def.price, uses: o.uses || 0, income: o.income || 0,
-      queue: q ? q.q.length : 0, users: q ? q.use : 0, fill: o.fill, upkeep: def.upkeep || 0 };
+      queue: q ? q.q.length : 0, users: q ? q.use : 0, fill: o.fill, upkeep: def.upkeep || 0, moat: moatInfo, needsPower: !!def.needsPower };
   }
   // structured, code-derived habitat facts for the Guide screen
   function habitatGuide() {
@@ -4168,6 +4763,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     forceNext: function (kind, v) { RT.force = RT.force || {}; RT.force[kind] = v; },
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex, opts.q === undefined ? Math.max(50, genomeOf(speciesId)) : opts.q, S.research.traits[speciesId]); insertAnimal(a); return a; },
     objectReport: objectReport, guestReport: guestReport, footprint: footprintOf, suitabilityFor: suitabilityFor, setOpen: setOpen, isOpenNow: function () { return openNow(); },
+    isSea: function (i, j) { return Z.inb(i, j) && !!seaMask()[i + j * N]; }, waterKind: waterKind, seaMask: seaMask, shoreDist: shoreDist, previewMap: previewMap,
+    isFresh: function (i, j) { return waterKind(i, j) === 'fresh'; }, isIsland: function () { return !!(S.map && S.map.island); },
     arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS,
     weatherInfo: function () { return weatherInfo(); }, activeEvents: function () { return S.activeEvents.slice(); }, applyDifficulty: function (id, fresh) { return applyDifficulty(id, fresh); },
     difficultyInfo: function () { return { id: S.difficulty, income: DIFF.income, costs: DIFF.costs, arrivals: DIFF.arrivals, interest: DIFF.interest }; },
@@ -4177,3 +4774,5 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   // headless safety: create a game on load if Z.DATA exists so Z.state is never null
   newGame({ seed: 1 });
 })();
+
+

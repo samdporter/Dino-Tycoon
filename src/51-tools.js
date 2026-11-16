@@ -116,7 +116,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ---------------------------------------------------------------- tap = inspect
   function onTap(x, y, type) {
-    if (UI.tool) return;
+    if (UI.tool || (Z.Examples && Z.Examples.active())) return;   // Masterclass: watching only
     var hit = Z.World.pickEntity(x, y);
     if (hit) { UI.snd('click'); UI.Panel.open(hit.kind, hit.id); if (hit.kind === 'animal') UI.callFor(hit.id); }
     else if (UI.Panel.isOpen()) UI.Panel.hide();
@@ -126,7 +126,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- tool lifecycle
   var HINTS = {
     path: 'Drag in a straight line. A tap lays one tile.', terrain: 'Paint with your finger. Pick a brush size.', sculpt: 'Press and hold, or drag, to keep going. One level each time.', fence: '', scenery: 'Tap to place. Slide to adjust before you lift.',
-    building: 'Tap to place. Slide to adjust. Touch a path edge.', animal: 'Tap inside an enclosure to place it.', staff: 'Tap a path tile to hire here.', bulldoze: '', animalmove: 'Tap inside an enclosure to move it there.'
+    building: 'Tap to place. Slide to adjust. Touch a path edge.', ditch: 'Drag to dig. Width and shape are set on the right.', animal: 'Tap inside an enclosure to place it.', staff: 'Tap a path tile to hire here.', bulldoze: '', animalmove: 'Tap inside an enclosure to move it there.'
   };
   Tools.start = function (spec) {
     var prev = UI.tool;
@@ -135,7 +135,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (UI.Panel) UI.Panel.hide(true);
     clearPreview(); hover = null; drag = null;
     el.strip.classList.add('on'); buildStrip(); UI.markSelected(); syncSide();
-    if (UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain' && spec.kind !== 'sculpt') { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
+    if ((UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain' && spec.kind !== 'sculpt') || window.innerHeight < 520) { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
     if (UI.Tutorial) UI.Tutorial.onTool(UI.tool);
   };
   Tools.cancel = function (quiet) {
@@ -171,6 +171,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     function seg(opts, cur, fn) {
       var sg = h('div.seg'); opts.forEach(function (o) { sg.appendChild(h('button' + (o[0] === cur ? '.on' : ''), { html: o[2] ? ic(o[2]) + o[1] : o[1], 'aria-label': o[3] || o[1], on: { click: function () { UI.snd('click'); fn(o[0]); buildStrip(); } } })); }); return sg;
     }
+    if (Tools.stripHook) Tools.stripHook(t, s, seg);
     if (t.kind === 'fence') s.appendChild(seg([['rect', 'Enclosure', 'rect'], ['line', 'Line', 'line']], t.mode, function (v) { t.mode = UI.prefs.fenceMode = v; clearPreview(); if (UI.Tutorial) UI.Tutorial.onFenceMode && UI.Tutorial.onFenceMode(v); }));
     if (t.kind === 'terrain') s.appendChild(seg([[1, 'S'], [2, 'M'], [3, 'L']], t.brush, function (v) { t.brush = UI.prefs.brush = v; clearPreview(); }));
     if (t.kind === 'sculpt') { var sg2 = seg([[1, '1'], [2, '2'], [3, '3'], [5, '5']], t.brush, function (v) { t.brush = UI.prefs.sbrush = v; clearPreview(); }); sg2.classList.add('sc'); sg2.setAttribute('aria-label', 'Brush size in tiles'); s.appendChild(sg2); }
@@ -213,10 +214,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (Math.abs(b.i - a.i) >= Math.abs(b.j - a.j)) { var s = Math.sign(b.i - a.i) || 1; for (var i = a.i; i !== b.i + s; i += s) tiles.push({ i: i, j: a.j }); }
     else { var s2 = Math.sign(b.j - a.j) || 1; for (var j = a.j; j !== b.j + s2; j += s2) tiles.push({ i: a.i, j: j }); }
     var ok = [], cost = 0, msg = '';
-    tiles.forEach(function (q) { var r = Z.Sim.placePath(q.i, q.j, t.id, { dry: true }); if (r.ok) { ok.push(q); cost += r.cost; } else if (!msg) msg = failMsg(r); });
+    var bridgeN = 0;
+    tiles.forEach(function (q) { var r = Z.Sim.placePath(q.i, q.j, t.id, { dry: true }); if (r.ok) { ok.push(q); cost += r.cost; if (r.bridge) bridgeN++; } else if (!msg) msg = failMsg(r); });
     var afford = cost <= Z.state.money;
     return { spec: { type: 'tiles', tiles: ok.length ? ok : tiles, ok: ok.length > 0 && afford }, ok: ok.length > 0 && afford, cost: cost, n: ok.length, msg: !ok.length ? msg : (!afford ? 'Not enough money' : ''),
-      label: ok.length > 1 ? ok.length + ' tiles' : '', run: function () { var n = 0, c = 0; for (var k = 0; k < ok.length; k++) { var r = Z.Sim.placePath(ok[k].i, ok[k].j, t.id); if (!r.ok) break; n++; c += r.cost; } return { n: n, cost: c }; } };
+      label: bridgeN ? 'bridge: ' + bridgeN + ' tile' + (bridgeN > 1 ? 's' : '') + (ok.length > bridgeN ? ' + ' + (ok.length - bridgeN) + ' path tile' + (ok.length - bridgeN > 1 ? 's' : '') : '') : ok.length > 1 ? ok.length + ' tiles' : '', run: function () { var n = 0, c = 0; for (var k = 0; k < ok.length; k++) { var r = Z.Sim.placePath(ok[k].i, ok[k].j, t.id); if (!r.ok) break; n++; c += r.cost; } return { n: n, cost: c }; } };
   };
   PLAN.terrain = function (d) {
     var t = UI.tool, radius = t.brush - 1, centers = d.pts || [d.a], set = {}, list = [], water = t.id === 'water', S = Z.state, ti = -1, k;
@@ -343,7 +345,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { spec: spec, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), warn: sub || r.warn, label: '',
       run: function () {
         var label = (t.name || t.id), rr = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot);
-        if (rr.ok) { rerollRot(); if (rr.warn && t.kind === 'building') UI.toast('Entrance needs a path', 'info'); else if (rr.warn) UI.toast(rr.warn + ' - lay a path next to it.', 'info'); }
+        if (rr.ok) { rerollRot(); if (rr.warn && t.kind === 'building') UI.toast(/^Entrance not on a path/.test(rr.warn) ? 'Entrance needs a path' : rr.warn, /power|network|substation/i.test(rr.warn) ? 'bad' : 'info'); else if (rr.warn) UI.toast(rr.warn + ' - lay a path next to it.', 'info'); }   // QA: say WHY (unpowered station...), not always 'entrance'
         return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 };
       } };
   };
@@ -400,6 +402,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var t = UI.tool; if (!t || !d || !d.a) return null;
     var f = PLAN[t.kind]; return f ? f(d) : null;
   }
+  Tools.lastPlan = function () { return lastPlan; };   // test hook: the plan behind the preview (ok, msg, cost, label)
   function applyPlan(plan, x, y, touch) {
     lastPlan = plan;
     if (!plan) { clearPreview(); return; }
@@ -491,5 +494,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (UI.tool && hover && !drag && !nptr) refreshPlan();
   };
   Tools.current = function () { return UI.tool; };
-  UI.markTabs = function () { Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); };
+  // extension points for other packages (moats): add PLAN kinds and strip controls
+  Tools.PLAN = PLAN; Tools.refresh = refreshPlan; Tools.failMsg = failMsg; Tools.tilesBetween = tilesBetween;
+  UI.markTabs = function () { if (UI.groupMark) { UI.groupMark(); return; } Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); };
 })();
+
+

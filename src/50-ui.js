@@ -42,6 +42,12 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ------------------------------------------------------------------ icons
   var P = {
+    wave: 'M2 9c3-3 5 3 8 0s5-3 8 0 3 3 4 0M2 15c3-3 5 3 8 0s5-3 8 0 3 3 4 0M2 20h20',   // realms package icons
+    wing: 'M3 14c4-1 6-5 9-9 3 4 5 8 9 9-3 0-5 1-9 5-4-4-6-5-9-5zM12 5v14',
+    radar: 'M12 12m-2 0a2 2 0 104 0 2 2 0 10-4 0M7 7a7 7 0 000 10M17 7a7 7 0 010 10M4 4a11 11 0 000 16M20 4a11 11 0 010 16',
+    ditch: 'M2 8h5l2 10h6l2-10h5M4 21h16',   // moats package icon
+    monorail: 'M5 4h14a2 2 0 012 2v7H3V6a2 2 0 012-2zM7 8h3.500M13.500 8H17M3 16h18M7 16v5M17 16v5',   // monorail package icon
+    safari: 'M3 15h2.500l1.500-4h8l2 4H21v3H3zM8 18.500a1.500 1.500 0 100 .1M16 18.500a1.500 1.500 0 100 .1M9 11V8h5',   // safari package icon
     menu: 'M4 7h16M4 12h16M4 17h16', close: 'M6 6l12 12M18 6L6 18', check: 'M5 12.5l5 5L19 7',
     pause: 'M8 5v14M16 5v14',
     play: ['f', 'M7 4.5l12 7.5-12 7.5z'], play2: ['f', 'M3 5l8.5 7L3 19zM12 5l8.5 7-8.5 7z'], play3: ['f', 'M2 6.5l6.3 5.5L2 17.5zM8.5 6.5l6.3 5.5-6.3 5.5zM15 6.5l6.3 5.5L15 17.5z'],
@@ -95,7 +101,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     egg: 'M12 3c-4 0-7 6-7 11a7 7 0 0014 0c0-5-3-11-7-11z',
     gem: 'M6 4h12l4 6-10 11L2 10zM2 10h20M9 4l-2 6 5 11 5-11-2-6',
     vial: 'M9 3h6M10 3v14a2 2 0 004 0V3M10 10h4',
-    leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8'
+    leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8',
+    bolt: ['fill', 'M13.500 2L5 13.500h5.500L9.500 22 19 10h-5.800z'],
+    paper: 'M4 5h13v14H6a2 2 0 01-2-2zM17 8h3v9a2 2 0 01-2 2M7 8.500h7M7 12h7M7 15.500h4'
   };
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
@@ -189,7 +197,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!el.undo || !Z.Sim) return;
     var u = Z.Sim.canUndo(), now = Date.now();
     if (bump) undoShownUntil = now + 20000;
-    var show = (UI.tool || now < undoShownUntil) && !UI.titleOpen;
+    var show = (UI.tool || now < undoShownUntil || (u.count && UI.Tutorial && UI.Tutorial.wantsUndo && UI.Tutorial.wantsUndo())) && !UI.titleOpen;
     var key = show + '|' + u.count + '|' + u.label + '|' + u.refund;
     if (key === undoKey) return; undoKey = key;
     el.undo.style.display = show ? 'flex' : 'none';
@@ -216,8 +224,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (cashShown !== target) {
       var d = target - cashShown;
       cashShown += Math.abs(d) < 1 ? d : d * Math.min(1, dt * 7); if (Math.abs(target - cashShown) < 1) cashShown = target;
-      setTxt(el.cashTxt, 'cash', fmt(cashShown));
-    } else setTxt(el.cashTxt, 'cash', fmt(target));
+      setTxt(el.cashTxt, 'cash', UI.hudMoney ? UI.hudMoney(cashShown) : fmt(cashShown));
+    } else setTxt(el.cashTxt, 'cash', UI.hudMoney ? UI.hudMoney(target) : fmt(target));
     el.cash.classList.toggle('neg', target < 0);
   }
   var cashFlashT = 0;
@@ -316,13 +324,13 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (e) { name = e.name; txt = e.thought ? '“' + e.thought + '”' : UI.stateText(e.state); }
     } else if (f.kind === 'staff') {
       e = S.staff.filter(function (a) { return a.id === f.id; })[0];
-      if (e) { name = e.name + ' the ' + e.type; txt = e.task || ''; }
+      if (e) { var sdef = UI.byId(D.staff, e.type); name = e.name + ' the ' + (sdef ? sdef.name : e.type).toLowerCase(); txt = e.task || ''; }
     }
     if (!e) { Z.World.follow(null); return; }
     setTxt(el.fName, 'fn', name); setTxt(el.fTxt, 'ft', txt);
   }
   UI.stateText = function (s) {
-    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', leave: 'Heading home', work: 'Working' })[s] || s;
+    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', fly: 'Flying', leave: 'Heading home', work: 'Working' })[s] || s;
   };
   UI.exitFollow = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; UI.snd('click'); };
   UI.followInfo = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; if (UI.sel) UI.Panel.open(UI.sel.kind, UI.sel.id); };
@@ -403,6 +411,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     else if (s === 'chain') { g.fillStyle = def.strength > 3 ? '#4d545a' : '#8d979f'; g.fillRect(6, 14, 4, 40); g.fillRect(54, 14, 4, 40); g.fillRect(6, 14, 52, 3); g.strokeStyle = def.strength > 3 ? '#667078' : '#b8c1c8'; g.lineWidth = 1.5; for (i = -40; i < 70; i += 8) { g.beginPath(); g.moveTo(8 + i, 17); g.lineTo(8 + i + 36, 53); g.moveTo(8 + i + 36, 17); g.lineTo(8 + i, 53); g.stroke(); } g.save(); g.globalCompositeOperation = 'destination-over'; g.restore(); }
     else if (s === 'glass') { g.fillStyle = 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); g.strokeStyle = '#6a8ea0'; g.lineWidth = 2; g.strokeRect(8, 16, 48, 38); g.strokeStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
     else if (s === 'concrete') { g.fillStyle = '#a8a39a'; g.fillRect(4, 14, 56, 40); g.strokeStyle = '#7d786f'; g.lineWidth = 1.5; g.strokeRect(4, 14, 56, 40); g.beginPath(); g.moveTo(32, 14); g.lineTo(32, 54); g.moveTo(4, 34); g.lineTo(60, 34); g.stroke(); }
+    else if (s === 'electric') { var hv = def.strength > 4; g.fillStyle = hv ? '#3d4348' : '#9a9d98'; g.fillRect(6, hv ? 8 : 16, 4, hv ? 46 : 38); g.fillRect(54, hv ? 8 : 16, 4, hv ? 46 : 38); g.strokeStyle = '#8fd0ff'; g.lineWidth = 2; for (i = 0; i < (hv ? 5 : 3); i++) { var wy = (hv ? 14 : 22) + i * (hv ? 9 : 13); g.beginPath(); g.moveTo(8, wy); g.lineTo(56, wy); g.stroke(); } g.fillStyle = '#f2c230'; g.beginPath(); g.moveTo(34, 20); g.lineTo(28, 33); g.lineTo(33, 33); g.lineTo(30, 45); g.lineTo(39, 29); g.lineTo(34, 29); g.fill(); }
     else if (s === 'hedge') { g.fillStyle = '#2f7a3a'; for (i = 0; i < 5; i++) { g.beginPath(); g.arc(12 + i * 10, 38 - (i % 2) * 3, 12, 0, 7); g.fill(); } g.fillStyle = '#3f9a4a'; for (i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10, 32, 7, 0, 7); g.fill(); } }
     return c;
   }
@@ -488,24 +497,26 @@ window.Z = window.Z || {}; var Z = window.Z;
     function sc(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0 }; }); }; }
     function bd(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, fp: [d.w || 1, d.h || 1] }; }); }; }
     CATS = [
-      { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests and staff only walk on paths.' },
+      { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests and staff only walk on paths.' },
       { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }).concat(sculptItems()); } },
-      { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
+      { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'hatch', name: 'Hatch', icon: 'egg', items: function () {
-        var R = Z.Sim.research; return D.animals.map(function (p) { var gi = R.genomeInfo(p.id), ho = R.hatchOdds(p.id); return { kind: 'animal', id: p.id, name: p.name, cost: ho.cost, def: p, star: 0, genome: gi.genome, chance: ho.chance, locked: gi.genome < 50, odds: ho, rarity: p.rarity }; })
-          .sort(function (a, b) { return (a.locked - b.locked) || b.genome - a.genome; }); } },
+        var R = Z.Sim.research; return D.animals.filter(function (p) { return !p.modern && (!UI.Realms || UI.Realms.hatchShows(p)); }).map(function (p) { var gi = R.genomeInfo(p.id), ho = R.hatchOdds(p.id); return { kind: 'animal', id: p.id, name: p.name, cost: ho.cost, def: p, star: 0, genome: gi.genome, chance: ho.chance, locked: gi.genome < 50, odds: ho, rarity: p.rarity, realm: UI.Realms ? UI.Realms.realmOf(p) : 'land', tip: UI.Realms ? UI.Realms.hatchTip(p) : undefined }; })
+          .sort(function (a, b) { return (a.locked - b.locked) || b.genome - a.genome; }).concat(UI.Realms && UI.Realms.hatchMore ? UI.Realms.hatchMore() : []); } },
       { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['ginkgo', 'pine', 'monkey_puzzle', 'cycad', 'horsetail', 'tree_fern', 'dead_tree', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'reed_clump', 'boulder', 'rock_pile', 'ice_floe']) },
-      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'scratching_post', 'mud_wallow', 'carcass_feeder']) },
+      { id: 'encl', name: 'Enclosure extras', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'scratching_post', 'mud_wallow', 'carcass_feeder']) },
       { id: 'sci', name: 'Science', icon: 'flask', items: bd(['research_lab', 'hatchery', 'emergency_bunker', 'viewing_platform']) },
       { id: 'fac', name: 'Facilities', icon: 'cart', items: function () { return bd(['burger_stand', 'pizza_hut', 'ice_cream', 'drinks_stall', 'coffee_cart', 'toilets', 'gift_shop', 'balloon_stand', 'carousel', 'info_kiosk', 'restaurant', 'education_centre'])().concat(sc(['bench', 'bin'])()); } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'picnic_table', 'sign', 'fossil_skeleton']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.filter(function (s) { return s.id !== 'scientist'; }).map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
     ];
+    if (UI.extraCats) UI.extraCats.forEach(function (c) { CATS.splice(CATS.length - 1, 0, c); });   // other packages (moats) add build categories
     UI.CATS = CATS;
   }
 
   function buildTabs() {
+    if (UI.buildGroups) { UI.buildGroups(CATS); return; }   // two-level build bar (75-ui-groups.js)
     el.tabs.innerHTML = '';
     CATS.forEach(function (c) {
       var b = h('button.tab', { html: ic(c.icon) + '<span>' + c.name + '</span>', 'data-cat': c.id, on: { click: function () { UI.snd('click'); UI.openCat(c.id); } } });
@@ -520,7 +531,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.cat = id; markTabs(); renderCards(c);
     if (UI.Tutorial) UI.Tutorial.onCat(id);
   };
-  function markTabs() { Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); }
+  function markTabs() { if (UI.groupMark) { UI.groupMark(); return; } Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); }
   function itemPriceText(it) { return fmt(it.cost) + (it.unit ? '<small style="font:500 9.5px var(--sans);color:var(--ink2)"> ' + it.unit + '</small>' : ''); }
   function fpIcon(w, hh) {
     var u = 5, W = w * u + 2, H = hh * u + 2, r = '';
@@ -541,12 +552,14 @@ window.Z = window.Z || {}; var Z = window.Z;
         card.appendChild(h('div.gbar', h('i', { style: 'width:' + Math.min(100, it.genome) + '%' }), h('b', { style: 'left:50%' })));
         card.appendChild(h('div.pr', { html: locked ? '<small style="font:700 10.5px var(--sans);color:var(--ink2)">' + Math.round(it.genome) + '/50%</small>' : '<span style="font-size:11px">' + Math.round(it.chance * 100) + '% · ' + fmt(it.cost) + '</span>' }));
         if (it.genome <= 0) th.classList.add('sil');
+        if (it.realm && it.realm !== 'land') card.appendChild(h('span.rbadge.' + it.realm, { text: it.realm === 'sea' ? 'SEA' : 'AIR' }));
       } else {
         card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: it.priceHtml || itemPriceText(it) }));
       }
       if (it.fp) card.appendChild(h('span.fpb', { html: fpIcon(it.fp[0], it.fp[1]) + it.fp[0] + '×' + it.fp[1] }));
       if (locked && it.kind !== 'animal') card.appendChild(h('span.lk', { html: ic('lock') + '★' + it.star }));
-      if (it.sculpt) th.innerHTML = sculptIcon(it.id);
+      if (it.iconHtml) th.innerHTML = it.iconHtml;
+      else if (it.sculpt) th.innerHTML = sculptIcon(it.id);
       else if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));
       else lazyThumb(th, it.kind === 'animal' ? 'animal' : it.kind === 'staff' ? 'staff' : it.kind, it.id, it.emoji || '', 96);
       card.addEventListener('click', function () { UI.snd('click'); UI.onCard(it, locked); });
@@ -576,7 +589,9 @@ window.Z = window.Z || {}; var Z = window.Z;
   UI.costOf = function (k, id) {
     var d = k === 'path' ? D.paths : k === 'terrain' ? D.terrain : k === 'fence' ? D.fences : k === 'animal' ? D.animals : k === 'scenery' ? D.scenery : k === 'building' ? D.buildings : D.staff;
     if (k === 'animal') return Z.Sim.research.hatchOdds(id).cost;
-    if (k === 'sculpt') return 0;
+    if (k === 'sculpt' || k === 'moatview') return 0;
+    if (UI.Realms && UI.Realms.costOf && UI.Realms.costOf(k, id) !== undefined) return UI.Realms.costOf(k, id);
+    if (k === 'ditch') return Z.DATA.moats.depths[(+id || 1) - 1].cost;
     var x = UI.byId(d, id); return x ? (x.cost !== undefined ? x.cost : x.hireCost) : 0;
   };
 
@@ -652,3 +667,5 @@ window.Z = window.Z || {}; var Z = window.Z;
   UI.reset = function () { lastHud = {}; cashShown = null; updateHud(); updateCash(1); };
   UI.setBuildHidden = function (b) { el.build.classList.toggle('hide', b); };
 })();
+
+

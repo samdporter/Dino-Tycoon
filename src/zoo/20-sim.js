@@ -223,7 +223,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (o.type === 'keeper_hut') RT.hasHut = true; if (o.type === 'vet_clinic') RT.hasVet = true; if (o.type === 'education_centre') RT.hasEdu = true;
       } else {
         def = SC[o.type];
-        solid = def.kind === 'tree' || def.kind === 'rock' || o.type === 'climbing_frame' || o.type === 'tyre_swing';
+        solid = def.kind === 'tree' || def.kind === 'rock';
         shelter = def.kind === 'shelter';
         if (o.type === 'bench') bt.bench.push(o); else if (o.type === 'bin') bt.bin.push(o);
         else if (def.inEnclosure === false) solid = true;
@@ -308,15 +308,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k], at = tileOf(a.x, a.z), ne = S.tileEnc[at];
       if (a.state === 'escaped' || !a.enc) {
-        if (ne) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; }
+        if (ne) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; a.wx = 0; a.wz = 0; a.aroute = null; }
       } else if (ne !== a.enc) {
         if (ne) a.enc = ne;
         else {
-          var oldE = a.enc; a.home = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = '';
+          var oldE = a.enc; a.home = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null;
           S.stats.escapes++; msg('The ' + SP[a.species].name.toLowerCase() + ' ' + a.name + ' has wandered out of its enclosure!', 'bad');
           bus.emit('escape', a);
         }
       }
+      if (a.enc && !aok(a, at)) { var he = RT.eMap[a.enc]; if (he) relocateAnimal(a, he); }
     }
     refreshEncAnimals();
     for (r = 0; r < newEncs.length; r++) encStats(newEncs[r]);
@@ -1308,26 +1309,146 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var i0 = Math.floor(x0 / TILE), j0 = Math.floor(z0 / TILE), i1 = Math.floor(x1 / TILE), j1 = Math.floor(z1 / TILE);
     if (i0 === i1 && j0 === j1) return true;
     if (!aok(a, i1 + j1 * N)) return false;
-    if (a.enc) {
-      if (i1 !== i0) { if (S.fenceZ[Math.max(i0, i1) + j0 * (N + 1)]) return false; }
-      else if (j1 !== j0) { if (S.fenceX[i0 + Math.max(j0, j1) * N]) return false; }
+    if (i1 !== i0) { if (S.fenceZ[Math.max(i0, i1) + j0 * (N + 1)]) return false; }
+    else if (j1 !== j0) { if (S.fenceX[i0 + Math.max(j0, j1) * N]) return false; }
+    return true;
+  }
+  function canStepTile(a, t, d) {
+    var i = t % N, j = (t - i) / N;
+    var ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+    if (ni < 0 || nj < 0 || ni >= N || nj >= N) return false;
+    if (fenceAt(i, j, d)) return false;
+    return aok(a, ni + nj * N);
+  }
+  function pickPassable(a, arr) {
+    if (!arr || !arr.length) return -1;
+    for (var k = 0; k < 6; k++) {
+      var t = arr[Math.floor(rng.next() * arr.length)];
+      if (aok(a, t)) return t;
+    }
+    for (var q = 0; q < arr.length; q++) if (aok(a, arr[q])) return arr[q];
+    return -1;
+  }
+  function steerAnimal(a) {
+    var t0 = tileOf(a.x, a.z), d, nt;
+    if (a.tg === 'wander' || a.state === 'escaped') {
+      var cur = t0, prev = a.prevT >= 0 ? a.prevT : -1, wroute = [];
+      for (var s = 0; s < 3; s++) {
+        var cands = [], fall = [];
+        for (d = 0; d < 4; d++) {
+          if (!canStepTile(a, cur, d)) continue;
+          nt = cur + DT4[d];
+          if (nt !== prev) cands.push(nt); else fall.push(nt);
+        }
+        var pool = cands.length ? cands : fall;
+        if (!pool.length) break;
+        var nxt = pool[Math.floor(rng.next() * pool.length)];
+        wroute.push(nxt);
+        prev = cur; cur = nxt;
+      }
+      if (!wroute.length) return false;
+      a.prevT = t0;
+      var lastW = wroute[wroute.length - 1];
+      a.tx = cxOf(lastW) + rng.range(-0.4, 0.4);
+      a.tz = czOf(lastW) + rng.range(-0.4, 0.4);
+      var firstW = wroute[0];
+      a.wx = cxOf(firstW) + rng.range(-0.35, 0.35);
+      a.wz = czOf(firstW) + rng.range(-0.35, 0.35);
+      a.aroute = wroute.length > 1 ? wroute.slice(1) : null;
+      return true;
+    }
+    var goalT = tileOf(a.tx, a.tz);
+    var st = ++RT.stampN, stamp = RT.stamp, q = RT.queue, prevArr = RT.prev, h = 0, tl = 0;
+    q[tl++] = t0; stamp[t0] = st; prevArr[t0] = -1;
+    var bestT = -1, bestD = 1e9;
+    while (h < tl && tl < 160) {
+      var t = q[h++];
+      if (t === goalT) { bestT = t; break; }
+      if (t !== t0) {
+        var bdx = cxOf(t) - a.tx, bdz = czOf(t) - a.tz, bdd = bdx * bdx + bdz * bdz;
+        if (t === a.prevT) bdd += 64;
+        if (bdd < bestD) { bestD = bdd; bestT = t; }
+      }
+      for (d = 0; d < 4; d++) {
+        if (!canStepTile(a, t, d)) continue;
+        nt = t + DT4[d];
+        if (stamp[nt] === st) continue;
+        stamp[nt] = st; prevArr[nt] = t; q[tl++] = nt;
+      }
+    }
+    if (bestT < 0 || bestT === t0) return false;
+    var route = [], c = bestT;
+    while (c !== t0 && prevArr[c] >= 0) { route.push(c); c = prevArr[c]; }
+    if (!route.length) return false;
+    route.reverse();
+    a.prevT = t0;
+    var first = route[0];
+    a.wx = cxOf(first) + rng.range(-0.35, 0.35);
+    a.wz = czOf(first) + rng.range(-0.35, 0.35);
+    a.aroute = route.length > 1 ? route.slice(1) : null;
+    if (bestT !== goalT) {
+      var last = route[route.length - 1];
+      a.tx = cxOf(last) + rng.range(-0.4, 0.4);
+      a.tz = czOf(last) + rng.range(-0.4, 0.4);
     }
     return true;
   }
   // moves toward (tx,tz); returns true when arrived or given up
   function animalMove(a, dt, spd) {
-    var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.3) { a.speed = 0; return true; }
-    var step = Math.min(spd * dt, d), nx = a.x + dx / d * step, nz = a.z + dz / d * step, moved = false;
-    if (nx !== a.x && canGo(a, a.x, a.z, nx, a.z)) { a.x = nx; moved = true; }
-    if (nz !== a.z && canGo(a, a.x, a.z, a.x, nz)) { a.z = nz; moved = true; }
-    if (!moved) { a.stuck += dt; a.speed = 0; if (a.stuck > 1.2) { a.stuck = 0; return true; } return false; }
+    var ct = tileOf(a.x, a.z);
+    if (a.curT !== ct) { a.prevT = a.curT !== undefined ? a.curT : ct; a.curT = ct; }
+    var gx = a.wx ? a.wx : a.tx, gz = a.wz ? a.wz : a.tz;
+    var dx = gx - a.x, dz = gz - a.z, d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.3) {
+      if (a.wx) {
+        if (a.aroute && a.aroute.length) {
+          var nt = a.aroute.shift();
+          a.wx = cxOf(nt) + rng.range(-0.35, 0.35);
+          a.wz = czOf(nt) + rng.range(-0.35, 0.35);
+        } else { a.wx = 0; a.wz = 0; }
+        gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
+        dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
+        if (d < 0.3) { a.speed = 0; a.detours = 0; return true; }
+      } else { a.speed = 0; a.detours = 0; return true; }
+    }
+    var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
+    var vx = dx / d * step, vz = dz / d * step;
+    var okX = Math.abs(dx) > 1e-4 && canGo(a, ox, oz, ox + vx, oz);
+    var nx = okX ? ox + vx : ox;
+    var okZ = Math.abs(dz) > 1e-4 && canGo(a, nx, oz, nx, oz + vz);
+    if (okX && okZ) {
+      a.x = nx; a.z = oz + vz;
+    } else if (okX && Math.abs(dx) > 0.25) {
+      var sx = ox + (dx > 0 ? 1 : -1) * Math.min(step, Math.abs(dx));
+      if (canGo(a, ox, oz, sx, oz)) a.x = sx; else a.x = nx;
+    } else if (okZ && Math.abs(dz) > 0.25) {
+      var sz = oz + (dz > 0 ? 1 : -1) * Math.min(step, Math.abs(dz));
+      if (canGo(a, ox, oz, ox, sz)) a.z = sz; else a.z = oz + vz;
+    }
+    var mx = a.x - ox, mz = a.z - oz, md = Math.sqrt(mx * mx + mz * mz);
+    if (md < step * 0.35 && step > 1e-4) {
+      a.stuck += dt;
+      if (a.stuck > 0.08) {
+        a.stuck = 0;
+        a.detours = (a.detours || 0) + 1;
+        if (a.detours <= 8 && steerAnimal(a)) {
+          a.speed = spd;
+          a.heading = turn(a.heading, Math.atan2((a.wx || a.tx) - a.x, (a.wz || a.tz) - a.z), dt * 8);
+          return false;
+        }
+        a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.speed = 0;
+        return true;
+      }
+      a.speed = 0;
+      return false;
+    }
     a.stuck = 0; a.speed = spd;
-    a.heading = turn(a.heading, Math.atan2(dx, dz), dt * 5);
+    a.heading = turn(a.heading, Math.atan2(mx, mz), dt * 6);
     return false;
   }
   function setTargetTile(a, t) {
     a.tx = cxOf(t) + rng.range(-0.6, 0.6); a.tz = czOf(t) + rng.range(-0.6, 0.6);
+    a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
   }
   function relocateAnimal(a, enc) {
     var best = -1, bd = 1e9, k;
@@ -1336,7 +1457,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var dx = cxOf(t) - a.x, dz = czOf(t) - a.z, d = dx * dx + dz * dz;
       if (d < bd) { bd = d; best = t; }
     }
-    if (best >= 0) { a.x = cxOf(best); a.z = czOf(best); a.tx = a.x; a.tz = a.z; }
+    if (best >= 0) { a.x = cxOf(best); a.z = czOf(best); a.tx = a.x; a.tz = a.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; }
   }
   function randomEncTile(a, enc, near) {
     for (var k = 0; k < 8; k++) {
@@ -1362,16 +1483,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var target = -1;
     if (isNight() || a.energy < 18) {
       a.tg = 'sleep';
-      if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = E.shelter[Math.floor(rng.next() * E.shelter.length)];
+      if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = pickPassable(a, E.shelter);
       if (target < 0 || (tileOf(a.x, a.z) === target)) { a.state = 'sleep'; a.speed = 0; a.tg = ''; return; }
     } else if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = E.feed; }
     else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
       a.tg = 'drink';
-      target = E.drink.length ? E.drink[Math.floor(rng.next() * E.drink.length)] : (E.water.length && swimmer(sp) ? E.water[Math.floor(rng.next() * E.water.length)] : E.feed);
-    } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = E.toy[Math.floor(rng.next() * E.toy.length)]; }
-    else if (E.water.length && swimmer(sp) && rng.chance(0.18)) { a.tg = 'swim'; target = E.water[Math.floor(rng.next() * E.water.length)]; }
+      target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp) ? pickPassable(a, E.water) : E.feed);
+    } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = pickPassable(a, E.toy); }
+    else if (E.water.length && swimmer(sp) && rng.chance(0.18)) { a.tg = 'swim'; target = pickPassable(a, E.water); }
     else { a.tg = 'wander'; target = randomEncTile(a, enc, 14); }
-    if (target < 0) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
+    if (target < 0 || !aok(a, target)) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
     setTargetTile(a, target);
     a.state = (a.tg === 'wander' && rng.chance(0.06)) || (a.baby && rng.chance(0.15)) ? 'run' : 'walk';
     a.stuck = 0;
@@ -1428,9 +1549,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           if (tg === 'eat') { a.state = 'eat'; a.st = rng.range(3.5, 6); }
           else if (tg === 'drink') { a.state = 'drink'; a.st = rng.range(2.5, 4.5); }
           else if (tg === 'play') { a.state = 'play'; a.st = rng.range(4, 8); }
-          else if (tg === 'swim') { a.state = 'swim'; a.st = rng.range(5, 10); setTargetTile(a, E.water[Math.floor(rng.next() * E.water.length)]); a.tg = 'swimming'; }
+          else if (tg === 'swim') {
+            var wt = pickPassable(a, E.water);
+            if (wt >= 0) { a.state = 'swim'; a.st = rng.range(5, 10); setTargetTile(a, wt); a.tg = 'swimming'; }
+            else { a.state = 'idle'; a.st = 1; }
+          }
           else if (tg === 'swimming') { a.state = 'idle'; a.st = 1; }
           else if (tg === 'sleep') { a.state = 'sleep'; a.tg = ''; a.speed = 0; }
+          else if (tg === 'wander' && !isNight() && a.energy > 30 && rng.chance(0.4)) {
+            var nt2 = randomEncTile(a, enc, 10);
+            if (nt2 >= 0) { setTargetTile(a, nt2); a.state = 'walk'; }
+            else { a.state = 'idle'; a.st = rng.range(1.5, 6); }
+          }
           else { a.state = 'idle'; a.st = rng.range(1.5, 6); }
           if (a.state !== 'swim' && a.state !== 'walk') a.speed = 0;
           if (a.state === 'swim' && tg === 'swimming') a.state = 'idle';
@@ -1502,7 +1632,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (arrived) {
       if (RT.pathTiles.length) {
         var t = RT.pathTiles[Math.floor(rng.next() * RT.pathTiles.length)];
-        a.tx = cxOf(t) + rng.range(-2.5, 2.5); a.tz = czOf(t) + rng.range(-2.5, 2.5);
+        setTargetTile(a, t);
       }
     }
     a.state = 'escaped';
@@ -2077,7 +2207,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (g.gt === 'out') g.gt = 'exit';
     }
     for (k = 0; k < S.animals.length; k++) {
-      var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = '';
+      var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
       if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
     }

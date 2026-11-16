@@ -1,4 +1,4 @@
-// ===== 60-main.js =====
+// ===== 90-main.js =====
 window.Z = window.Z || {}; var Z = window.Z;
 /* Amber Acres - bootstrap, main loop, title screen, saving, quality management. */
 (function () {
@@ -13,12 +13,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   function sset(k, v) { return Z.Storage.set(k, v); }
   Main.hasSave = function () { return !!sget(SAVE_KEY); };
   Main.save = function () {
-    if (!Main.playing || !Z.state) return Promise.resolve(false);
+    if (!Main.playing || Main.watching || Main.hold || !Z.state || Z.state.gameOver) return Promise.resolve(false);   // Masterclass: never autosave over the player's own park
     try { return sset(SAVE_KEY, Z.Sim.save()); }
     catch (e) { console.error('save failed', e); return Promise.resolve(false); }
   };
+  Main.pref = function (k, v) {   // small settings store (not the save): Main.pref('watched') / Main.pref('watched', value)
+    if (v === undefined) return settings[k]; settings[k] = v; sset(SET_KEY, JSON.stringify(settings)); return v;
+  };
   Main.saveSettings = function () { settings.sound = Z.Audio.enabled(); return sset(SET_KEY, JSON.stringify(settings)); };
-  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; } catch (e) { } Z.Audio.setEnabled(settings.sound); }
+  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; if (s.watched) settings.watched = s.watched; if (s.hints) settings.hints = s.hints; } catch (e) { } Z.Audio.setEnabled(settings.sound); }
   function saveNotice(ok) {
     if (!ok && !saveFailed) { saveFailed = true; UI.toast('Saving failed. Export a backup in Settings before closing.', 'bad'); }
     if (ok) saveFailed = false;
@@ -106,6 +109,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var tb = h('div.tb');
     if (has) tb.appendChild(h('button.btn.gold', { html: ic('play') + 'Continue', on: { click: function () { UI.snd('unlock'); UI.snd('click'); Main.continueGame(); } } }));
     tb.appendChild(h('button.btn' + (has ? '.alt' : ''), { html: ic('plus') + 'New game', on: { click: function () { UI.snd('unlock'); UI.snd('click'); if (has && !tb.confirmNew) { tb.confirmNew = true; this.innerHTML = 'Replace saved park? Tap again'; var b = this; setTimeout(function () { tb.confirmNew = false; b.innerHTML = ic('plus') + 'New game'; }, 3000); } else Main.openSetup(); } } }));
+    if (UI.Masterclass) tb.appendChild(h('button.btn.alt', { html: ic('play') + 'Masterclass: watch example games', on: { click: function () { UI.snd('unlock'); UI.snd('click'); UI.Masterclass.open(); } } }));
     titleEl.appendChild(tb);
     var backups = h('div.tb');
     if (has) backups.appendChild(h('button.btn.sm.alt', { text: 'Export save', on: { click: Main.exportSave } }));
@@ -130,6 +134,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     c.target.x = (i0 + w / 2) * T; c.target.z = (j0 + hh * 0.6) * T;
     c.dist = Math.min(150, (UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
   }
+  Main.internals = { enterGame: function () { enterGame(); }, startCam: function () { startCam(); }, closeSetup: function () { closeSetup(); }, sget: sget, SAVE_KEY: SAVE_KEY };   // used by the Masterclass (73-examples-ui.js)
   Main.newGame = function (o) {
     o = o || {}; var maps = Z.DATA.maps, args = { seed: o.seed || ((Math.random() * 0x7ffffff) | 0) + 1, difficulty: o.difficulty || 'normal' };
     if (o.map || (maps && maps.length)) args.map = o.map || maps[0].id;
@@ -155,9 +160,10 @@ window.Z = window.Z || {}; var Z = window.Z;
       var cols = Z.DATA.terrain.map(function (t) { return t.colour || '#6fae4a'; });
       for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
         var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (N + 1)] || 0) : 0;
-        g.fillStyle = cols[p.terrain[i + j * N]] || '#6fae4a'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
+        var isSea = !!(p.sea && p.sea[i + j * N]);
+        g.fillStyle = isSea ? (e < -1 ? '#2d78a6' : '#58a9c4') : (cols[p.terrain[i + j * N]] || '#6fae4a'); g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
         if (e) { g.fillStyle = e > 0 ? 'rgba(255,255,255,' + Math.min(0.5, e * 0.07) + ')' : 'rgba(10,30,60,' + Math.min(0.5, -e * 0.09) + ')'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
-        if (!inb) { g.fillStyle = 'rgba(20,28,16,.62)'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
+        if (!inb && !isSea) { g.fillStyle = 'rgba(20,28,16,.62)'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
       }
     } else {
       // schematic from the map's gen hints, seeded so Reroll changes it
@@ -231,12 +237,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (document.hidden) { last = now; return; }
     var raw = Math.max(0.001, (now - last) / 1000); last = now; var dt = Math.min(0.1, raw);
     try {
-      if (Main.playing) {
-        Z.Sim.tick(dt);
+      if (Main.hold) { /* QA: a headless Masterclass reference run owns Z.state: do not tick or autosave it */ }
+      else if (Main.playing) {
+        if (Main.watching && Z.Examples) Z.Examples.tick(dt); else Z.Sim.tick(dt);
         UI.update(dt); Z.Audio.update(dt);
-        saveT += raw; if (saveT >= 10) { saveT = 0; Main.save().then(saveNotice); }
+        saveT += raw; if (saveT >= 10) { saveT = 0; if (!Main.watching && !Main.hold && !(Z.state && Z.state.gameOver)) Main.save().then(saveNotice); }
       } else { Z.Sim.tick(dt); var c = Z.World.cam; c.yaw += dt * 0.07; }
-      Z.World.frame(dt);
+      if (!(UI.Minigames && UI.Minigames.isOpen && UI.Minigames.isOpen())) Z.World.frame(dt);   // a full-screen puzzle hides the world: spend the frame budget on the puzzle (phones)
     } catch (e) { console.error('frame error', e); }
     // adaptive quality
     ema += (Math.min(raw, 0.25) - ema) * 0.05;
