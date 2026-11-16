@@ -262,3 +262,440 @@ test('monorail 2-station loop and keepers crossing moat bridges work properly', 
   assert.equal(enc.foodLevel, 1);
   assert.equal(enc.poop, 0);
 });
+
+test('building info includes specific outputs and utility buildings do not require paths', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 3333, map: 'green', difficulty: 'easy', name: 'Info Test' });
+  z.state.money = 200000;
+  z.state.unlocked.star = 5;
+
+  // Every building has non-empty info; generators state their kW output
+  for (const b of z.DATA.buildings) {
+    assert.ok(b.info && b.info.length > 10, `Missing info for building ${b.id}`);
+    if (b.gen) {
+      assert.ok(b.info.includes(String(b.gen.kw)) && /kW/i.test(b.info), `Generator ${b.id} info should state ${b.gen.kw} kW`);
+    }
+    if (b.battery) {
+      assert.ok(b.info.includes(String(b.battery.kwh)) && /kWh/i.test(b.info), `Battery ${b.id} info should state ${b.battery.kwh} kWh`);
+    }
+    if (b.powerNode) {
+      assert.ok(b.info.includes(String(b.powerNode.radius)), `Power node ${b.id} info should state radius ${b.powerNode.radius}`);
+    }
+    if (b.moat) {
+      assert.ok(b.info.includes(String(b.moat.cap)), `Moat source ${b.id} info should state cap ${b.moat.cap}`);
+    }
+  }
+
+  // Place utility buildings away from any path
+  for (let j = 10; j <= 16; j++) for (let i = 10; i <= 20; i++) {
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * z.N] = 0;
+  }
+  const gen = z.Sim.placeObject('diesel_gen', 10, 10, 0);
+  const batt = z.Sim.placeObject('battery_bank', 13, 10, 0);
+  const sub = z.Sim.placeObject('substation', 16, 10, 0);
+  assert.equal(gen.ok, true);
+  assert.equal(gen.warn, undefined);
+  assert.equal(batt.ok, true);
+  assert.equal(sub.ok, true);
+
+  const genRep = z.Sim.objectReport(gen.id);
+  assert.equal(genRep.utility, true);
+  assert.equal(genRep.issues.length, 0);
+
+  const genInfo = z.Sim.power.objectInfo(gen.id);
+  assert.equal(genInfo.kind, 'gen');
+  assert.equal(genInfo.kw, 45);
+  assert.equal(typeof genInfo.out, 'number');
+
+  const battInfo = z.Sim.power.objectInfo(batt.id);
+  assert.equal(battInfo.kind, 'battery');
+  assert.equal(battInfo.kwh, 120);
+  assert.equal(battInfo.rate, 40);
+
+  const subInfo = z.Sim.power.objectInfo(sub.id);
+  assert.equal(subInfo.kind, 'node');
+  assert.equal(subInfo.radius, 11);
+  assert.equal(subInfo.alive, true);
+
+  // Regular path-requiring building off-path warns & reports disconnected
+  const stall = z.Sim.placeObject('burger_stand', 10, 14, 0);
+  assert.equal(stall.ok, true);
+  assert.match(stall.warn, /Entrance not on a path/i);
+  const stallRep = z.Sim.objectReport(stall.id);
+  assert.equal(stallRep.utility, false);
+  assert.equal(stallRep.connected, false);
+  assert.ok(stallRep.issues.some((x) => /path/i.test(x)));
+
+  const stallPw = z.Sim.power.objectInfo(stall.id);
+  assert.equal(stallPw.kind, 'consumer');
+  assert.equal(stallPw.kw, 1.5);
+  assert.equal(stallPw.connected, true);
+});
+
+test('UI cards, toolstrip, placement plan, and inspect panel render building specs and skip path prompts for utilities', () => {
+  function mkEl(tag) {
+    const attrs = {}, children = [], cls = new Set(), listeners = {};
+    const style = { setProperty() {} };
+    let _html = '', _text = '';
+    const node = {
+      nodeType: 1,
+      tagName: String(tag || 'div').toUpperCase(),
+      style, children,
+      classList: {
+        add(...a) { a.forEach(c => c && cls.add(c)); },
+        remove(...a) { a.forEach(c => c && cls.delete(c)); },
+        toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+        contains(c) { return cls.has(c); }
+      },
+      set className(v) { cls.clear(); String(v || '').split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); },
+      get className() { return Array.from(cls).join(' '); },
+      set innerHTML(v) {
+        _html = String(v || ''); children.length = 0;
+        const stack = [node];
+        const re = /<(\/?)([a-zA-Z0-9-]+)([^>]*)>|([^<]+)/g;
+        let m;
+        while ((m = re.exec(_html))) {
+          if (m[4]) { stack[stack.length - 1].children.push({ nodeType: 3, textContent: m[4], children: [] }); continue; }
+          if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
+          const ch = mkEl(m[2]), rawAttr = m[3] || '', selfClose = /\/\s*$/.test(rawAttr);
+          let am; const are = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+          while ((am = are.exec(rawAttr))) if (am[1] && am[1] !== '/') ch.setAttribute(am[1], am[2] || '');
+          stack[stack.length - 1].appendChild(ch);
+          if (!selfClose) stack.push(ch);
+        }
+      },
+      get innerHTML() { return _html; },
+      set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
+      get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
+      removeAttribute(k) { delete attrs[k]; },
+      appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
+      insertBefore(c, ref) { if (!c) return c; c.parentNode = node; const idx = children.indexOf(ref); if (idx >= 0) children.splice(idx, 0, c); else children.push(c); return c; },
+      addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      click() { (listeners.click || []).forEach(fn => fn({ stopPropagation() {}, preventDefault() {} })); },
+      querySelector(sel) { return node.querySelectorAll(sel)[0] || null; },
+      querySelectorAll(sel) {
+        const matchOne = (el, part) => {
+          let s = part.trim(), m;
+          const attrM = s.match(/\[([^\]=]+)="([^"]*)"\]/g) || [];
+          for (const a of attrM) {
+            const p = a.slice(1, -1).split('=');
+            if (el.getAttribute(p[0]) !== p[1].replace(/^"|"$/g, '')) return false;
+            s = s.replace(a, '');
+          }
+          if ((m = s.match(/#([a-zA-Z0-9_-]+)/))) { if (el.getAttribute('id') !== m[1]) return false; s = s.replace(m[0], ''); }
+          const clsM = s.match(/\.[a-zA-Z0-9_-]+/g) || [];
+          for (const c of clsM) { if (!el.classList.contains(c.slice(1))) return false; s = s.replace(c, ''); }
+          if (s && el.tagName.toLowerCase() !== s.toLowerCase()) return false;
+          return true;
+        };
+        const parts = sel.trim().split(/\s+/);
+        let scope = [node];
+        for (const part of parts) {
+          const next = [];
+          const walk = (el) => { for (const ch of el.children) { if (ch.tagName) { if (matchOne(ch, part)) next.push(ch); walk(ch); } } };
+          scope.forEach(walk);
+          scope = next;
+        }
+        return scope;
+      },
+      focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40,
+      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
+    };
+    return node;
+  }
+
+  const rootUi = mkEl('div'), body = mkEl('body'), head = mkEl('head'), worldEl = mkEl('div');
+  rootUi.setAttribute('id', 'ui'); worldEl.setAttribute('id', 'world');
+  const document = {
+    head, body,
+    createElement: mkEl,
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t == null ? '' : t), children: [] }),
+    getElementById: (id) => id === 'ui' ? rootUi : id === 'world' ? worldEl : null,
+    querySelector: (s) => s === '#ui' ? rootUi : s === '#world' ? worldEl : rootUi.querySelector(s),
+    querySelectorAll: (s) => rootUi.querySelectorAll(s),
+    addEventListener() {}
+  };
+  const ctx = vm.createContext({
+    console, setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() {}, document,
+    window: null, innerWidth: 1280, innerHeight: 900,
+    btoa: s => Buffer.from(s, 'binary').toString('base64'),
+    atob: s => Buffer.from(s, 'base64').toString('binary')
+  });
+  ctx.window = ctx;
+  ctx.addEventListener = () => {};
+
+  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const z = ctx.Z;
+  z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  load('50-ui.js');
+  load('51-tools.js');
+  load('52-panels.js');
+  load('68-ui-power.js');
+
+  z.UI.init();
+  z.Sim.newGame({ seed: 4444, map: 'green', difficulty: 'easy', name: 'UI Test' });
+  z.state.money = 250000;
+  z.state.unlocked.star = 5;
+  for (let j = 10; j <= 18; j++) for (let i = 10; i <= 20; i++) {
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * z.N] = 0;
+  }
+
+  // 1. Power cards show specific kW/kWh/range badges, tooltips, and no entrance bar
+  z.UI.openCat('power', true);
+  const cardsEl = z.UI.el.cards;
+  const genCard = cardsEl.querySelector('.card[data-id="diesel_gen"]');
+  assert.ok(genCard, 'diesel_gen card rendered');
+  assert.equal(genCard.querySelector('.spb').textContent, '45kW');
+  assert.match(genCard.getAttribute('title'), /45 kW/);
+  assert.equal(genCard.querySelector('.fpb').innerHTML.includes('#f2a81d'), false);
+  assert.equal(cardsEl.querySelector('.card[data-id="solar_field"] .spb').textContent, '38kW');
+  assert.equal(cardsEl.querySelector('.card[data-id="wind_turbine"] .spb').textContent, '26kW');
+  assert.equal(cardsEl.querySelector('.card[data-id="battery_bank"] .spb').textContent, '120kWh');
+  assert.equal(cardsEl.querySelector('.card[data-id="geothermal_plant"] .spb').textContent, '120kW');
+  assert.equal(cardsEl.querySelector('.card[data-id="substation"] .spb').textContent, '11t');
+
+  // 2. Selecting diesel_gen opens toolstrip with 45 kW and placement plan has door: false and no path prompt
+  genCard.click();
+  assert.match(z.UI.el.strip.textContent, /45 kW/);
+  const gpGen = { i: 12, j: 12, x: 12 * z.TILE, z: 12 * z.TILE };
+  const genPlan = z.UI.Tools.PLAN.building({ a: gpGen, b: gpGen });
+  assert.equal(genPlan.ok, true);
+  assert.equal(genPlan.spec.door, false);
+  assert.match(genPlan.warn, /45 kW/);
+  assert.doesNotMatch(genPlan.warn, /path|entrance/i);
+  z.UI.Tools.cancel();
+
+  // 3. Regular path-requiring building still sets door: true and entrance needs a path
+  z.UI.openCat('fac', true);
+  cardsEl.querySelector('.card[data-id="burger_stand"]').click();
+  const gpStall = { i: 12, j: 16, x: 12 * z.TILE, z: 16 * z.TILE };
+  const stallPlan = z.UI.Tools.PLAN.building({ a: gpStall, b: gpStall });
+  assert.equal(stallPlan.spec.door, true);
+  assert.match(stallPlan.warn, /entrance needs a path/i);
+  z.UI.Tools.cancel();
+
+  // 4. Inspecting placed generator, battery, substation shows specific power info & omits path status
+  const g = z.Sim.placeObject('diesel_gen', 10, 10, 0);
+  const b = z.Sim.placeObject('battery_bank', 13, 10, 0);
+  const s = z.Sim.placeObject('substation', 16, 10, 0);
+  const st = z.Sim.placeObject('burger_stand', 10, 15, 0);
+
+  z.UI.Panel.open('object', g.id);
+  let txt = z.UI.el.panel.textContent;
+  assert.match(txt, /Power generator/);
+  assert.match(txt, /45 kW/);
+  assert.match(txt, /Generating now/);
+  assert.doesNotMatch(txt, /Connected to a path/);
+  assert.doesNotMatch(txt, /Visitors served/);
+
+  z.UI.Panel.open('object', b.id);
+  txt = z.UI.el.panel.textContent;
+  assert.match(txt, /Power storage/);
+  assert.match(txt, /120 kWh/);
+  assert.doesNotMatch(txt, /Connected to a path/);
+
+  z.UI.Panel.open('object', s.id);
+  txt = z.UI.el.panel.textContent;
+  assert.match(txt, /Power relay/);
+  assert.match(txt, /11 tiles/);
+  assert.doesNotMatch(txt, /Connected to a path/);
+
+  z.UI.Panel.open('object', st.id);
+  txt = z.UI.el.panel.textContent;
+  assert.match(txt, /Visitors served/);
+  assert.match(txt, /Its entrance \(front\) must touch a path/);
+  assert.match(txt, /hunger/i);
+});
+
+test('bank loans specify circumstance-based interest rates and charge interest every day', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 5555, map: 'green', difficulty: 'normal', name: 'Loan Test' });
+
+  // Healthy high-rated park gets a lower rate than an overdrawn low-reputation park
+  z.state.rating = 4.2;
+  z.state.reputation = 85;
+  z.state.money = 30000;
+  z.state.finance.history.push({ day: 1, income: 5000, costs: 2000, profit: 3000, balance: 30000 });
+  const goodQuote = z.Sim.loanQuote(5000);
+  assert.equal(goodQuote.ok, true);
+  assert.ok(goodQuote.factors.some((f) => /Established park/i.test(f.label)));
+
+  z.state.rating = 1.0;
+  z.state.reputation = 25;
+  z.state.money = -2500;
+  z.state.stats.escapes = 2;
+  z.state.finance.history.push({ day: 2, income: 500, costs: 2000, profit: -1500, balance: -2500 });
+  const badQuote = z.Sim.loanQuote(5000);
+  assert.equal(badQuote.ok, true);
+  assert.ok(badQuote.rate > goodQuote.rate + 0.015, `Expected distressed rate (${badQuote.rate}) >> healthy rate (${goodQuote.rate})`);
+  assert.ok(badQuote.factors.some((f) => /overdrawn/i.test(f.label)));
+  assert.ok(badQuote.factors.some((f) => /reputation/i.test(f.label)));
+
+  // Take two loans under different circumstances -> each locks in its own specified rate
+  const r1 = z.Sim.takeLoan(5000);
+  assert.equal(r1.ok, true);
+  assert.equal(r1.rate, badQuote.rate);
+
+  z.state.rating = 4.2;
+  z.state.reputation = 85;
+  z.state.stats.escapes = 0;
+  z.state.finance.history.push({ day: 3, income: 6000, costs: 2000, profit: 4000, balance: 10000 });
+  const r2 = z.Sim.takeLoan(10000);
+  assert.equal(r2.ok, true);
+  assert.ok(r2.rate < r1.rate, `Second loan in good conditions (${r2.rate}) should be cheaper than first (${r1.rate})`);
+
+  const sum = z.Sim.loanSummary();
+  assert.equal(sum.total, 15000);
+  assert.equal(sum.loans.length, 2);
+  const expectedDaily = Math.round(5000 * r1.rate) + Math.round(10000 * r2.rate);
+  assert.equal(sum.dailyInterest, expectedDaily);
+
+  // Save/load preserves individual loans and migrates legacy loan-only saves
+  const saved = JSON.parse(z.Sim.save());
+  assert.equal(z.Sim.load(JSON.stringify(saved)), true);
+  assert.equal(z.Sim.loanSummary().loans.length, 2);
+  assert.equal(z.Sim.loanSummary().dailyInterest, expectedDaily);
+
+  const legacy = JSON.parse(JSON.stringify(saved));
+  delete legacy.s.loans;
+  legacy.s.loan = 8000;
+  assert.equal(z.Sim.load(JSON.stringify(legacy)), true);
+  assert.equal(z.Sim.loanSummary().total, 8000);
+  assert.equal(z.Sim.loanSummary().loans.length, 1);
+
+  // Reload the two-loan save and advance past midnight: daily interest is paid and recorded in costs/profit
+  assert.equal(z.Sim.load(JSON.stringify(saved)), true);
+  z.state.guests = [];
+  const moneyBefore = z.state.money;
+  const startDay = z.state.day;
+  z.state.time = 0.998;
+  for (let k = 0; k < 20 && z.state.day === startDay; k++) z.Sim.tick(0.1);
+  assert.equal(z.state.day, startDay + 1);
+  const lastRec = z.state.finance.history[z.state.finance.history.length - 1];
+  assert.equal(lastRec.interest, -expectedDaily);
+  assert.ok(lastRec.costs >= expectedDaily, `Daily costs (${lastRec.costs}) must include interest (${expectedDaily})`);
+  assert.equal(lastRec.profit, lastRec.income - lastRec.costs);
+  assert.equal(moneyBefore - z.state.money, lastRec.costs, 'Bank balance must drop by daily costs including interest');
+  assert.ok(z.state.messages.some((m) => m.text.includes('loan interest')), 'Day report should mention loan interest');
+
+  // Repaying partial amount pays down highest-rate loan first
+  z.state.money = 50000;
+  assert.equal(z.Sim.repayLoan(5000).ok, true);
+  const afterRepay = z.Sim.loanSummary();
+  assert.equal(afterRepay.total, 10000);
+  assert.equal(afterRepay.loans.length, 1);
+  assert.equal(afterRepay.loans[0].rate, r2.rate);
+});
+
+test('Finances modal shows offered loan rate, circumstance factors, active loans, and daily interest', () => {
+  function mkEl(tag) {
+    const attrs = {}, children = [], cls = new Set(), listeners = {};
+    const style = { setProperty() {} };
+    let _html = '', _text = '';
+    const node = {
+      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      classList: {
+        add(...a) { a.forEach(c => c && cls.add(c)); },
+        remove(...a) { a.forEach(c => c && cls.delete(c)); },
+        toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+        contains(c) { return cls.has(c); }
+      },
+      set className(v) { cls.clear(); String(v || '').split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); },
+      get className() { return Array.from(cls).join(' '); },
+      set innerHTML(v) {
+        _html = String(v || ''); children.length = 0;
+        const stack = [node], re = /<(\/?)([a-zA-Z0-9-]+)([^>]*)>|([^<]+)/g;
+        let m;
+        while ((m = re.exec(_html))) {
+          if (m[4]) { stack[stack.length - 1].children.push({ nodeType: 3, textContent: m[4], children: [] }); continue; }
+          if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
+          const ch = mkEl(m[2]), rawAttr = m[3] || '', selfClose = /\/\s*$/.test(rawAttr);
+          let am; const are = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+          while ((am = are.exec(rawAttr))) if (am[1] && am[1] !== '/') ch.setAttribute(am[1], am[2] || '');
+          stack[stack.length - 1].appendChild(ch);
+          if (!selfClose) stack.push(ch);
+        }
+      },
+      get innerHTML() { return _html; },
+      set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
+      get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
+      removeAttribute(k) { delete attrs[k]; },
+      appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
+      insertBefore(c, ref) { if (!c) return c; c.parentNode = node; const idx = children.indexOf(ref); if (idx >= 0) children.splice(idx, 0, c); else children.push(c); return c; },
+      addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      click() { (listeners.click || []).forEach(fn => fn({ stopPropagation() {}, preventDefault() {} })); },
+      querySelector(sel) { return node.querySelectorAll(sel)[0] || null; },
+      querySelectorAll(sel) {
+        const matchOne = (el, part) => {
+          let s = part.trim(), m;
+          const attrM = s.match(/\[([^\]=]+)="([^"]*)"\]/g) || [];
+          for (const a of attrM) { const p = a.slice(1, -1).split('='); if (el.getAttribute(p[0]) !== p[1].replace(/^"|"$/g, '')) return false; s = s.replace(a, ''); }
+          if ((m = s.match(/#([a-zA-Z0-9_-]+)/))) { if (el.getAttribute('id') !== m[1]) return false; s = s.replace(m[0], ''); }
+          const clsM = s.match(/\.[a-zA-Z0-9_-]+/g) || [];
+          for (const c of clsM) { if (!el.classList.contains(c.slice(1))) return false; s = s.replace(c, ''); }
+          if (s && el.tagName.toLowerCase() !== s.toLowerCase()) return false;
+          return true;
+        };
+        let scope = [node];
+        for (const part of sel.trim().split(/\s+/)) {
+          const next = [];
+          const walk = (el) => { for (const ch of el.children) { if (ch.tagName) { if (matchOne(ch, part)) next.push(ch); walk(ch); } } };
+          scope.forEach(walk); scope = next;
+        }
+        return scope;
+      },
+      focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40, clientWidth: 300, clientHeight: 170,
+      getContext() { return { setTransform() {}, clearRect() {}, fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, arc() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
+    };
+    return node;
+  }
+
+  const rootUi = mkEl('div'), body = mkEl('body'), head = mkEl('head'), worldEl = mkEl('div');
+  rootUi.setAttribute('id', 'ui'); worldEl.setAttribute('id', 'world');
+  const document = {
+    head, body, createElement: mkEl,
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t == null ? '' : t), children: [] }),
+    getElementById: (id) => id === 'ui' ? rootUi : id === 'world' ? worldEl : null,
+    querySelector: (s) => s === '#ui' ? rootUi : s === '#world' ? worldEl : rootUi.querySelector(s),
+    querySelectorAll: (s) => rootUi.querySelectorAll(s),
+    addEventListener() {}
+  };
+  const ctx = vm.createContext({
+    console, setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() {}, document, window: null, innerWidth: 1280, innerHeight: 900,
+    btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
+  });
+  ctx.window = ctx; ctx.addEventListener = () => {};
+  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const z = ctx.Z;
+  z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  load('50-ui.js'); load('53-screens.js');
+  z.UI.init();
+  z.Sim.newGame({ seed: 6666, map: 'green', difficulty: 'normal', name: 'Fin Tab Test' });
+
+  z.UI.openModal('fin');
+  let modalText = z.UI.el.modal.textContent;
+  assert.match(modalText, /Offered daily interest/);
+  assert.match(modalText, /Rate factors:/);
+  assert.match(modalText, /Borrow £5,000 at/);
+
+  // Click Borrow button in modal
+  const borrowBtn = z.UI.el.modal.querySelectorAll('button').find((b) => /Borrow £5,000/.test(b.textContent));
+  assert.ok(borrowBtn);
+  borrowBtn.click();
+  modalText = z.UI.el.modal.textContent;
+  assert.match(modalText, /Interest due each day/);
+  assert.match(modalText, /Daily loan interest/);
+  assert.match(modalText, /£5,000/);
+});

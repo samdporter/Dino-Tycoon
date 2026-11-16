@@ -811,3 +811,108 @@ def test_monorail_single_station_loop_and_moat_bridge_staff(browser):
         assert_no_browser_errors(problems)
     finally:
         context.close()
+
+
+def test_building_info_and_utility_path_ui(browser):
+    context, page, problems = open_game(browser)
+    try:
+        new_park(page, difficulty="easy")
+        js(page, """(() => {
+          Z.state.money = 250000;
+          Z.state.unlocked.star = 5;
+          for (let j = 10; j <= 20; j++) for (let i = 10; i <= 24; i++) {
+            Z.Sim.bulldoze(i, j);
+            Z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+            Z.state.terrain[i + j * Z.N] = 0;
+          }
+        })()""")
+
+        # 1. Power build cards show kW/kWh/range specs & tooltips and no entrance bar
+        js(page, "Z.UI.openCat('power', true)")
+        cards = js(page, """(() => {
+          return Array.from(document.querySelectorAll('#cards .card[data-kind="building"]')).map(c => ({
+            id: c.getAttribute('data-id'),
+            spb: c.querySelector('.spb')?.textContent || '',
+            fpb: c.querySelector('.fpb')?.textContent || '',
+            title: c.getAttribute('title') || '',
+            hasDoorRect: !!c.querySelector('.fpb rect[fill="#f2a81d"]')
+          }));
+        })()""")
+        by_id = {c["id"]: c for c in cards}
+        assert by_id["diesel_gen"]["spb"] == "45kW"
+        assert "45 kW" in by_id["diesel_gen"]["title"]
+        assert by_id["diesel_gen"]["hasDoorRect"] is False
+        assert by_id["solar_field"]["spb"] == "38kW"
+        assert "38 kW" in by_id["solar_field"]["title"]
+        assert by_id["wind_turbine"]["spb"] == "26kW"
+        assert by_id["battery_bank"]["spb"] == "120kWh"
+        assert by_id["geothermal_plant"]["spb"] == "120kW"
+        assert by_id["substation"]["spb"] == "11t"
+
+        # 2. Selecting diesel_gen shows kW in toolstrip and NO path requirement in placement plan
+        page.locator('#cards .card[data-id="diesel_gen"]').click()
+        strip_text = page.locator("#toolstrip .tname small").inner_text()
+        assert "45 kW" in strip_text
+        gen_plan = js(page, """(() => {
+          const gp = { i: 12, j: 12, x: 12 * Z.TILE, z: 12 * Z.TILE };
+          const p = Z.UI.Tools.PLAN.building({ a: gp, b: gp });
+          return { ok: p.ok, door: p.spec.door, warn: p.warn };
+        })()""")
+        assert gen_plan["ok"] is True
+        assert gen_plan["door"] is False
+        assert "45 kW" in gen_plan["warn"]
+        assert "path" not in gen_plan["warn"].lower()
+        assert "entrance" not in gen_plan["warn"].lower()
+
+        # 3. Selecting burger_stand DOES show entrance/path requirement
+        js(page, "Z.UI.Tools.cancel()")
+        js(page, "Z.UI.openCat('fac', true)")
+        page.locator('#cards .card[data-id="burger_stand"]').click()
+        stall_plan = js(page, """(() => {
+          const gp = { i: 12, j: 16, x: 12 * Z.TILE, z: 16 * Z.TILE };
+          const p = Z.UI.Tools.PLAN.building({ a: gp, b: gp });
+          return { ok: p.ok, door: p.spec.door, warn: p.warn };
+        })()""")
+        assert stall_plan["door"] is True
+        assert "entrance needs a path" in stall_plan["warn"].lower()
+        js(page, "Z.UI.Tools.cancel()")
+
+        # 4. Inspecting placed generator, battery, substation shows specific power info & NO path status
+        ids = js(page, """(() => {
+          const g = Z.Sim.placeObject('diesel_gen', 10, 10, 0);
+          const b = Z.Sim.placeObject('battery_bank', 13, 10, 0);
+          const s = Z.Sim.placeObject('substation', 16, 10, 0);
+          const st = Z.Sim.placeObject('burger_stand', 10, 15, 0);
+          return { g: g.id, b: b.id, s: s.id, st: st.id };
+        })()""")
+
+        js(page, f"Z.UI.Panel.open('object', {ids['g']})")
+        gen_panel = page.locator("#panel").inner_text()
+        assert "Power generator" in gen_panel
+        assert "45 kW" in gen_panel
+        assert "Generating now" in gen_panel
+        assert "Connected to a path" not in gen_panel
+        assert "Visitors served" not in gen_panel
+
+        js(page, f"Z.UI.Panel.open('object', {ids['b']})")
+        batt_panel = page.locator("#panel").inner_text()
+        assert "Power storage" in batt_panel
+        assert "120 kWh" in batt_panel
+        assert "Connected to a path" not in batt_panel
+
+        js(page, f"Z.UI.Panel.open('object', {ids['s']})")
+        sub_panel = page.locator("#panel").inner_text()
+        assert "Power relay" in sub_panel
+        assert "11 tiles" in sub_panel
+        assert "Connected to a path" not in sub_panel
+
+        # Regular building panel keeps visitors, path issue, and building fact
+        js(page, f"Z.UI.Panel.open('object', {ids['st']})")
+        stall_panel = page.locator("#panel").inner_text()
+        assert "Visitors served" in stall_panel
+        assert "Its entrance (front) must touch a path" in stall_panel
+        assert "hunger" in stall_panel.lower()
+
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()

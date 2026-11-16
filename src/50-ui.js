@@ -489,6 +489,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     var out = [], plant = def.terrains && def.terrains.length && (def.kind === 'tree' || def.kind === 'bush');
     if (plant) out.push('Best on: ' + UI.terrainNames(def.terrains) + '.');
     if (def.info && !(short && plant)) out.push(def.info);
+    if (!short && def.w !== undefined) {
+      if (def.needsPower && def.powerDraw && !/kW/i.test(def.info || '')) out.push('Draws ' + def.powerDraw + ' kW.');
+      if (def.upkeep > 0 && !/upkeep|\/day/i.test(def.info || '')) out.push('Upkeep ' + fmt(def.upkeep) + '/day.');
+    }
     return out.join(' ');
   };
 
@@ -533,11 +537,23 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   function markTabs() { if (UI.groupMark) { UI.groupMark(); return; } Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); }
   function itemPriceText(it) { return fmt(it.cost) + (it.unit ? '<small style="font:500 9.5px var(--sans);color:var(--ink2)"> ' + it.unit + '</small>' : ''); }
-  function fpIcon(w, hh) {
+  function fpIcon(w, hh, noDoor) {
     var u = 5, W = w * u + 2, H = hh * u + 2, r = '';
     for (var j = 0; j < hh; j++) for (var i = 0; i < w; i++) r += '<rect x="' + (1 + i * u) + '" y="' + (1 + j * u) + '" width="' + (u - 0.8) + '" height="' + (u - 0.8) + '" rx="1" fill="#6a9a52"/>';
-    r += '<rect x="1" y="' + (H - 2.6) + '" width="' + (W - 2) + '" height="1.8" fill="#f2a81d"/>';
+    if (!noDoor) r += '<rect x="1" y="' + (H - 2.6) + '" width="' + (W - 2) + '" height="1.8" fill="#f2a81d"/>';
     return '<svg class="fpi" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '">' + r + '</svg>';
+  }
+  function cardSpec(it) {
+    var d = it.def; if (!d) return '';
+    if (it.kind === 'fence' && d.strength) return 'Str ' + d.strength;
+    if (it.kind !== 'building') return '';
+    if (d.gen) return d.gen.kw + 'kW';
+    if (d.battery) return d.battery.kwh + 'kWh';
+    if (d.powerNode) return d.powerNode.radius + 't';
+    if (d.moat) return d.moat.cap + 'u';
+    if (d.realm === 'plant' && D.realms && D.realms.plant) return D.realms.plant.capacity + 'u';
+    if (d.realm === 'tower' && D.realms && D.realms.virtual) return D.realms.virtual.levels[0].radius + 't';
+    return '';
   }
   function renderCards(c) {
     var cards = el.cards, items = c.items(), S = Z.state; cards.innerHTML = ''; cards.className = '';
@@ -545,7 +561,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star || !!it.locked;
       if (it.first) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
-      var card = h('button.card' + (locked ? '.lock' : '') + (it.kind === 'animal' ? '.dino' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && it.kind === 'scenery' && UI.itemInfo(it.def)) || it.name });
+      var card = h('button.card' + (locked ? '.lock' : '') + (it.kind === 'animal' ? '.dino' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && (it.kind === 'scenery' || it.kind === 'building') && UI.itemInfo(it.def)) || it.name });
       var th = h('div.th'); card.appendChild(th);
       if (it.kind === 'animal') {
         card.appendChild(h('div.nm', { text: it.genome > 0 ? it.name : '???' }));
@@ -556,8 +572,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       } else {
         card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: it.priceHtml || itemPriceText(it) }));
       }
-      if (it.fp) card.appendChild(h('span.fpb', { html: fpIcon(it.fp[0], it.fp[1]) + it.fp[0] + '×' + it.fp[1] }));
+      if (it.fp) card.appendChild(h('span.fpb', { html: fpIcon(it.fp[0], it.fp[1], !!(it.def && it.def.utility)) + it.fp[0] + '×' + it.fp[1] }));
       if (locked && it.kind !== 'animal') card.appendChild(h('span.lk', { html: ic('lock') + '★' + it.star }));
+      else if (!locked) { var sp = cardSpec(it); if (sp) card.appendChild(h('span.spb', { text: sp })); }
       if (it.iconHtml) th.innerHTML = it.iconHtml;
       else if (it.sculpt) th.innerHTML = sculptIcon(it.id);
       else if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));

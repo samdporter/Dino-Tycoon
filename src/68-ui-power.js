@@ -164,7 +164,7 @@
   // ------------------------------------------------------------------ build category
   function items() {
     var ids = ['substation', 'power_pylon', 'diesel_gen', 'solar_field', 'wind_turbine', 'battery_bank', 'backup_gen', 'geothermal_plant'], out = [];
-    ids.forEach(function (id) { var d = UI.byId(D.buildings, id); if (d) out.push({ kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, tip: d.info }); });
+    ids.forEach(function (id) { var d = UI.byId(D.buildings, id); if (d) out.push({ kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, fp: [d.w || 1, d.h || 1] }); });
     ['electric_light', 'electric_heavy'].forEach(function (id) { var d = UI.byId(D.fences, id); if (d) out.push({ kind: 'fence', id: id, name: d.name, cost: d.cost, unit: '/panel', def: d, star: d.star || 0, tip: d.info }); });
     out.push({ kind: 'powerview', id: 'coverage', name: 'Coverage', cost: 0, star: 0, emoji: '📡', priceHtml: ST.cov ? 'On' : 'Off', tip: 'Show which tiles each substation and pylon reaches.' });
     return out;
@@ -194,9 +194,30 @@
     function update() {
       var i = Z.Power && Z.Power.objectInfo(id); if (!i) { box.style.display = 'none'; return; }
       var k = JSON.stringify(i); if (k === key) return; key = k; box.style.display = ''; box.innerHTML = '';
-      box.appendChild(h('h4', { text: 'Power' }));
-      box.appendChild(h('div.' + (i.powered ? 'ok' : 'bad'), h('span', { text: i.powered ? 'On, ' : 'Off: ' }), h('b', { text: i.powered ? i.kw + ' kW' : (i.why || 'no supply') })));
-      if (!i.connected) box.appendChild(h('div.bad', { text: 'Not within reach of a substation or pylon.' }));
+      if (i.kind === 'gen') {
+        box.appendChild(h('h4', { text: i.genKind === 'backup' ? 'Backup generator' : 'Generator' }));
+        box.appendChild(h('div.kv', h('span', { text: 'Capacity' }), h('b', { text: i.kw + ' kW' })));
+        box.appendChild(h('div.kv', h('span', { text: 'Generating now' }), h('b', { text: r0(i.out) + ' / ' + r0(i.kw) + ' kW' })));
+        var bad = i.state === 'broken' || i.state === 'nofuel' || i.state === 'tripped' || i.state === 'feathered';
+        var stTxt = i.why || (i.state === 'run' ? 'Running' : i.state === 'standby' ? 'Standing by (runs when needed)' : i.state === 'idle' ? 'Idle' : i.state);
+        box.appendChild(h('div.' + (bad ? 'bad' : i.state === 'run' ? 'ok' : ''), { text: stTxt }));
+      } else if (i.kind === 'battery') {
+        box.appendChild(h('h4', { text: 'Battery bank' }));
+        box.appendChild(h('div.kv', h('span', { text: 'Unit capacity' }), h('b', { text: i.kwh + ' kWh (±' + i.rate + ' kW)' })));
+        box.appendChild(h('div.kv', h('span', { text: 'Grid stored' }), h('b', { text: r0(i.stored) + ' / ' + r0(i.totalCap) + ' kWh' })));
+        var bTxt = i.discharging ? 'Discharging to grid' : i.charging ? 'Charging from surplus' : i.stored >= i.totalCap - 0.5 ? 'Full' : i.stored <= 0.1 ? 'Empty' : 'Standing by';
+        box.appendChild(h('div.' + (i.discharging || i.charging ? 'ok' : ''), { text: bTxt }));
+      } else if (i.kind === 'node') {
+        box.appendChild(h('h4', { text: 'Power relay' }));
+        box.appendChild(h('div.kv', h('span', { text: 'Reach' }), h('b', { text: i.radius + ' tiles' })));
+        box.appendChild(h('div.kv', h('span', { text: 'Consumers in range' }), h('b', { text: String(i.consumers) })));
+        box.appendChild(h('div.' + (i.alive ? 'ok' : 'bad'), { text: i.alive ? 'Online' : 'Down: repair due in ' + i.etaHours + ' h' }));
+        box.appendChild(h('div.btnrow', { style: 'margin-top:5px' }, h('button.btn.sm.alt', { html: ic('target') + (ST.cov ? 'Hide coverage' : 'Show coverage'), on: { click: function () { ST.cov = !ST.cov; Z.PowerWorld && Z.PowerWorld.setCoverage(ST.cov); key = ''; update(); UI.snd('click'); } } })));
+      } else {
+        box.appendChild(h('h4', { text: 'Power' }));
+        box.appendChild(h('div.' + (i.powered ? 'ok' : 'bad'), h('span', { text: i.powered ? 'On, ' : 'Off (' + i.kw + ' kW): ' }), h('b', { text: i.powered ? i.kw + ' kW' : (i.why || 'no supply') })));
+        if (!i.connected) box.appendChild(h('div.bad', { text: 'Not within reach of a substation or pylon.' }));
+      }
     }
     update(); return { el: box, update: update };
   };

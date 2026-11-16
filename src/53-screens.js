@@ -88,9 +88,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   function setBar(b, frac) { var f = UI.clamp(frac, 0, 1); b.className = 'bar' + (f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low'); b.firstChild.style.width = Math.round(f * 100) + '%'; }
 
   // ------------------------------------------------------------------ finances
-  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops & rides', donations: 'Donations & grants', research: 'Research (amber, reagents, labs)', animals: 'Hatchery (eggs, refunds, sales)', construction: 'Construction', upkeep: 'Dinosaur & building upkeep', wages: 'Wages', marketing: 'Marketing', other: 'Loans, hiring & other' };
+  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops & rides', donations: 'Donations & grants', research: 'Research (amber, reagents, labs)', animals: 'Hatchery (eggs, refunds, sales)', construction: 'Construction', upkeep: 'Dinosaur & building upkeep', wages: 'Wages', marketing: 'Marketing', interest: 'Loan interest', other: 'Loans, hiring & other' };
+  function pctStr(r) { return (r * 100).toFixed(1) + '%'; }
   function finTab(b) {
-    var S = Z.state;
+    var S = Z.state, borrowAmt = 5000, loanSig = '';
     var cashBox = h('div.box'), table = h('table.tbl'), chart = h('canvas.chart'), loanBox = h('div.box'), ticketBox = h('div.box'), mkBox = h('div.box');
     b.appendChild(cashBox);
     b.appendChild(box('Today so far', table));
@@ -110,21 +111,63 @@ window.Z = window.Z || {}; var Z = window.Z;
     ts.value = S.ticketPrice; tsPaint(); tHint();
     function upd() {
       var S2 = Z.state, f = S2.finance.today, hist = S2.finance.history;
+      var ls = Z.Sim.loanSummary ? Z.Sim.loanSummary() : { total: S2.loan || 0, max: 100000, dailyInterest: 0, avgRate: 0, loans: [] };
       cashBox.innerHTML = ''; cashBox.appendChild(h('div.kv', h('span', { text: 'In the bank' }), h('b.big' + (S2.money < 0 ? '.neg' : ''), { text: fmt(S2.money) })));
-      if (S2.loan) cashBox.appendChild(h('div.kv', h('span', { text: 'Loan outstanding' }), h('b.neg', { text: fmt(S2.loan) })));
-      if (hist.length) { var l = hist[hist.length - 1]; cashBox.appendChild(h('div.kv', h('span', { text: 'Yesterday (day ' + l.day + ')' }), h('b' + (l.profit >= 0 ? '.pos' : '.neg'), { text: (l.profit >= 0 ? '+' : '') + fmt(l.profit) + ' profit' }))); }
+      if (S2.loan) {
+        cashBox.appendChild(h('div.kv', h('span', { text: 'Loan outstanding' }), h('b.neg', { text: fmt(S2.loan) })));
+        cashBox.appendChild(h('div.kv', h('span', { text: 'Daily loan interest' }), h('b.neg', { text: fmt(ls.dailyInterest) + ' / day (' + pctStr(ls.avgRate) + ')' })));
+      }
+      if (hist.length) {
+        var l = hist[hist.length - 1], intrNote = l.interest ? ' (incl. ' + fmt(Math.abs(l.interest)) + ' interest)' : '';
+        cashBox.appendChild(h('div.kv', h('span', { text: 'Yesterday (day ' + l.day + ')' }), h('b' + (l.profit >= 0 ? '.pos' : '.neg'), { text: (l.profit >= 0 ? '+' : '') + fmt(l.profit) + ' profit' + intrNote })));
+      }
       table.innerHTML = ''; var tot = 0;
       Object.keys(CATN).forEach(function (k) { var v = f[k] || 0; if (!v) return; tot += v; table.appendChild(h('tr', h('td', { text: CATN[k] }), h('td.r.num' + (v >= 0 ? '.pos' : '.neg'), { text: (v >= 0 ? '+' : '-') + fmt(Math.abs(v)).replace('-', '') }))); });
       if (!tot) table.appendChild(h('tr', h('td', { text: 'Nothing yet today.' }), h('td')));
       table.appendChild(h('tr', h('td', h('b', { text: 'Net' })), h('td.r.num', h('b' + (tot >= 0 ? '.pos' : '.neg'), { text: (tot >= 0 ? '+' : '-') + fmt(Math.abs(tot)).replace('-', '') }))));
       drawChart(chart, hist);
-      loanBox.innerHTML = ''; loanBox.appendChild(h('h4', { text: 'Bank loan' }));
-      loanBox.appendChild(h('div.kv', h('span', { text: 'Owed (interest added daily)' }), h('b.num', { text: fmt(S2.loan) })));
-      var lr = h('div.btnrow');
-      lr.appendChild(h('button.btn.sm', { text: 'Borrow £5,000', on: { click: function () { var r = Z.Sim.takeLoan(5000); UI.toast(r.ok ? 'Borrowed £5,000' : r.msg, r.ok ? 'money' : 'bad'); UI.snd(r.ok ? 'cash' : 'bad'); upd(); } } }));
-      lr.appendChild(h('button.btn.sm.alt' + (S2.loan ? '' : '.dis'), { text: 'Repay £1,000', on: { click: function () { var r = Z.Sim.repayLoan(1000); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); upd(); } } }));
-      lr.appendChild(h('button.btn.sm.alt' + (S2.loan ? '' : '.dis'), { text: 'Repay all', on: { click: function () { var r = Z.Sim.repayLoan(Z.state.loan); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); upd(); } } }));
-      loanBox.appendChild(lr);
+
+      var q = Z.Sim.loanQuote ? Z.Sim.loanQuote(borrowAmt) : { ok: true, amount: borrowAmt, rate: 0.01, dailyInterest: Math.round(borrowAmt * 0.01), factors: [] };
+      var lkey = JSON.stringify([borrowAmt, S2.loan, Math.floor(S2.money / 100), ls.loans, q.rate, q.ok, hist.length]);
+      if (lkey !== loanSig) {
+        loanSig = lkey;
+        loanBox.innerHTML = ''; loanBox.appendChild(h('h4', { text: 'Bank loans' }));
+        loanBox.appendChild(h('div.kv', h('span', { text: 'Total owed (interest paid daily)' }), h('b.num' + (S2.loan ? '.neg' : ''), { text: fmt(S2.loan) })));
+        if (S2.loan > 0) loanBox.appendChild(h('div.kv', h('span', { text: 'Interest due each day' }), h('b.neg', { text: fmt(ls.dailyInterest) + ' / day (' + pctStr(ls.avgRate) + ')' })));
+        if (ls.loans.length) {
+          ls.loans.forEach(function (ln) {
+            loanBox.appendChild(h('div.kv', { style: 'padding:4px 0;border-top:1px solid rgba(58,42,26,.1);align-items:center' },
+              h('span', { html: '<b>' + fmt(ln.principal) + '</b> at <b>' + pctStr(ln.rate) + '/day</b><br><small style="color:var(--ink2)">' + fmt(ln.dailyInterest) + '/day · taken day ' + ln.takenDay + '</small>' }),
+              h('button.btn.sm.alt', { text: 'Repay', on: { click: function () { var r = Z.Sim.repayLoan(ln.principal, { loanId: ln.id }); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); loanSig = ''; upd(); } } })));
+          });
+          var repRow = h('div.btnrow', { style: 'margin-top:6px' });
+          repRow.appendChild(h('button.btn.sm.alt', { text: 'Repay £1,000', on: { click: function () { var r = Z.Sim.repayLoan(1000); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); loanSig = ''; upd(); } } }));
+          repRow.appendChild(h('button.btn.sm.alt', { text: 'Repay all', on: { click: function () { var r = Z.Sim.repayLoan(Z.state.loan); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); loanSig = ''; upd(); } } }));
+          loanBox.appendChild(repRow);
+        }
+        var quoteBox = h('div', { style: 'margin-top:8px;padding-top:8px;border-top:1px dashed rgba(58,42,26,.22)' });
+        var seg = h('div.seg', { style: 'margin-bottom:6px' });
+        [5000, 10000, 25000].forEach(function (amt) {
+          seg.appendChild(h('button' + (borrowAmt === amt ? '.on' : ''), { text: fmt(amt), on: { click: function () { borrowAmt = amt; loanSig = ''; UI.snd('click'); upd(); } } }));
+        });
+        quoteBox.appendChild(seg);
+        if (q.ok) {
+          quoteBox.appendChild(h('div.kv', h('span', { text: 'Offered daily interest' }), h('b.num', { text: pctStr(q.rate) + ' / day (' + fmt(q.dailyInterest) + '/day)' })));
+          if (q.factors && q.factors.length) {
+            var fTxt = q.factors.map(function (fc) { return fc.label + ' (' + (fc.delta >= 0 ? '+' : '') + pctStr(fc.delta) + ')'; }).join(' · ');
+            quoteBox.appendChild(h('div', { style: 'font-size:11.5px;color:var(--ink2);line-height:1.35;margin:3px 0 6px', text: 'Rate factors: ' + fTxt }));
+          }
+          quoteBox.appendChild(h('div.btnrow', h('button.btn.sm', { text: 'Borrow ' + fmt(borrowAmt) + ' at ' + pctStr(q.rate) + '/day', on: { click: function () {
+            var r = Z.Sim.takeLoan(borrowAmt);
+            UI.toast(r.ok ? 'Borrowed ' + fmt(borrowAmt) + ' at ' + pctStr(r.rate) + '/day (' + fmt(r.dailyInterest) + '/day)' : r.msg, r.ok ? 'money' : 'bad');
+            UI.snd(r.ok ? 'cash' : 'bad'); loanSig = ''; upd();
+          } } })));
+        } else {
+          quoteBox.appendChild(h('div', { style: 'font-size:12.5px;color:var(--bad)', text: q.msg }));
+        }
+        loanBox.appendChild(quoteBox);
+      }
+
       mkBox.innerHTML = ''; mkBox.appendChild(h('h4', { text: 'Marketing' }));
       if (S2.marketing.active) mkBox.appendChild(h('div', { style: 'font-size:13px', html: 'Campaign running: <b>' + S2.marketing.daysLeft + '</b> day' + (S2.marketing.daysLeft === 1 ? '' : 's') + ' left. Visitor numbers are up.' }));
       else { mkBox.appendChild(h('div', { style: 'font-size:13px;color:var(--ink2)', text: 'Posters and radio spots bring about 70% more visitors for five days.' })); mkBox.appendChild(h('button.btn.sm.gold', { text: 'Start campaign ' + fmt(Z.Sim.MARKETING_COST), on: { click: function () { var r = Z.Sim.startMarketing(); UI.toast(r.ok ? 'Campaign launched!' : r.msg, r.ok ? 'good' : 'bad'); UI.snd(r.ok ? 'cash' : 'bad'); upd(); } } })); }

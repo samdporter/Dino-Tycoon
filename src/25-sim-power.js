@@ -524,8 +524,31 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   P.entryFor = function (objId) { return X.byKey['o' + objId] || null; };
   P.objectInfo = function (objId) {
-    var e = X.byKey['o' + objId]; if (!e) return null;
-    return { powered: e.on, kw: e.kw, cls: e.cls, why: e.why, connected: e.node >= 0 };
+    var e = X.byKey['o' + objId];
+    if (e) return { kind: 'consumer', powered: e.on, kw: e.kw, cls: e.cls, why: e.why, connected: e.node >= 0 };
+    var k, g;
+    if (X.gens) for (k = 0; k < X.gens.length; k++) {
+      g = X.gens[k];
+      if (g.id === objId) return { kind: 'gen', genKind: g.kind, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, noise: g.noise || 0 };
+    }
+    var o = RT().oById && RT().oById.get(objId), def = o && defOf(o), ps = ensure();
+    if (def && def.battery) {
+      return { kind: 'battery', kwh: def.battery.kwh, rate: PD.batteryRate, stored: ps ? r1(ps.stored) : 0, totalCap: X.cap, discharging: X.discharge > 0.5, charging: !!X.charging };
+    }
+    if (def && def.powerNode && X.nodes) {
+      for (k = 0; k < X.nodes.length; k++) {
+        var nd = X.nodes[k];
+        if (nd.id !== objId) continue;
+        var dn = ps && ps.nodes[objId], alive = !(dn && dn.eta > now()), etaHours = !alive ? Math.max(1, Math.ceil(hoursOf(dn.eta - now()))) : 0;
+        var inRange = 0;
+        for (var m = 0; m < X.entries.length; m++) {
+          var ce = X.entries[m], dx = ce.i + 0.5 - nd.ci, dz = ce.j + 0.5 - nd.cj;
+          if (dx * dx + dz * dz <= nd.r * nd.r) inRange++;
+        }
+        return { kind: 'node', radius: nd.r, alive: alive, etaHours: etaHours, consumers: inRange };
+      }
+    }
+    return null;
   };
   P.fenceInfo = function (encId) {
     var E = RT().encx[encId]; if (!E || !E.elec) return null;

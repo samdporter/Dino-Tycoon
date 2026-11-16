@@ -52,7 +52,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   Z.newState = function () {
     return {
       version: 2,
-      money: 30000, loan: 0, day: 1, time: 0.3, speed: 1, ticketPrice: 8,
+      money: 30000, loan: 0, loans: [], day: 1, time: 0.3, speed: 1, ticketPrice: 8,
       rating: 1, reputation: 50, marketing: { active: false, daysLeft: 0 }, open: true,
       elev: new Int8Array((N + 1) * (N + 1)), map: { id: 'fern_meadow', i0: 0, j0: 0, i1: N - 1, j1: N - 1 },
       terrain: new Uint8Array(N * N), path: new Uint8Array(N * N),
@@ -69,7 +69,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     };
   };
   Z.emptyFinance = function () {
-    return { tickets: 0, food: 0, shops: 0, donations: 0, animals: 0, construction: 0, upkeep: 0, wages: 0, marketing: 0, research: 0, other: 0 };
+    return { tickets: 0, food: 0, shops: 0, donations: 0, animals: 0, construction: 0, upkeep: 0, wages: 0, marketing: 0, research: 0, interest: 0, other: 0 };
   };
 
   // ---- compact typed-array (de)serialisation: byte RLE + base64 ----

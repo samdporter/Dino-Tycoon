@@ -491,24 +491,42 @@ window.Z.DATA = {
   ],
 
   buildings: [
-    { id: "burger_stand", name: "Burger stand", emoji: "🍔", cost: 1200, upkeep: 20, type: "food", price: 6, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.5 }, star: 0 },
-    { id: "pizza_hut", name: "Pizza kiosk", emoji: "🍕", cost: 1800, upkeep: 30, type: "food", price: 8, capacity: 6, w: 2, h: 1, satisfies: { hunger: 0.6 }, star: 0 },
-    { id: "ice_cream", name: "Ice cream kiosk", emoji: "🍦", cost: 600, upkeep: 12, type: "food", price: 4, capacity: 3, w: 1, h: 1, satisfies: { hunger: 0.2, fun: 0.1 }, star: 0 },
-    { id: "drinks_stall", name: "Drinks stall", emoji: "🥤", cost: 500, upkeep: 8, type: "drink", price: 3, capacity: 4, w: 1, h: 1, satisfies: { thirst: 0.6 }, star: 0 },
-    { id: "coffee_cart", name: "Coffee cart", emoji: "☕", cost: 700, upkeep: 10, type: "drink", price: 4, capacity: 3, w: 1, h: 1, satisfies: { thirst: 0.4, energy: 0.3 }, star: 0 },
-    { id: "toilets", name: "Toilets", emoji: "🚻", cost: 600, upkeep: 10, type: "toilet", price: 0, capacity: 8, w: 2, h: 1, satisfies: { bladder: 1 }, star: 0 },
-    { id: "gift_shop", name: "Gift shop", emoji: "🎁", cost: 2500, upkeep: 30, type: "shop", price: 12, capacity: 6, w: 2, h: 2, satisfies: { fun: 0.2 }, star: 1 },
-    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0 },
-    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 3, h: 3, satisfies: { fun: 0.8 }, star: 1 },
-    { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0 },
-    { id: "viewing_platform", name: "Viewing platform", emoji: "🔭", cost: 1800, upkeep: 15, type: "info", price: 0, capacity: 20, w: 2, h: 1, satisfies: { fun: 0.3 }, star: 0 },
-    { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 4, h: 3, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 2 },
-    { id: "keeper_hut", name: "Ranger station", emoji: "🛖", cost: 1200, upkeep: 12, type: "staff", price: 0, capacity: 6, w: 2, h: 2, satisfies: {}, star: 0 },
-    { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 3, h: 2, satisfies: {}, star: 1 },
-    { id: "education_centre", name: "Discovery museum", emoji: "🎓", cost: 9000, upkeep: 90, type: "info", price: 5, capacity: 40, w: 4, h: 3, satisfies: { fun: 0.5 }, star: 2 },
-    { id: "emergency_bunker", name: "Emergency bunker", emoji: "🚨", cost: 3000, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, h: 2, satisfies: {}, star: 1 },
-    { id: "hatchery", name: "Hatchery", emoji: "🥚", cost: 4000, upkeep: 40, type: "science", price: 0, capacity: 2, w: 3, h: 2, satisfies: {}, star: 0 },
-    { id: "research_lab", name: "Research lab", emoji: "🔬", cost: 6000, upkeep: 90, type: "science", price: 0, capacity: 2, w: 4, h: 3, satisfies: {}, star: 0 }
+    { id: "burger_stand", name: "Burger stand", emoji: "🍔", cost: 1200, upkeep: 20, type: "food", price: 6, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.5 }, star: 0,
+      info: "Quick hot food stall (serves 4 at once, -50% hunger). Entrance must touch a path." },
+    { id: "pizza_hut", name: "Pizza kiosk", emoji: "🍕", cost: 1800, upkeep: 30, type: "food", price: 8, capacity: 6, w: 2, h: 1, satisfies: { hunger: 0.6 }, star: 0,
+      info: "Hearty pizza kiosk (serves 6 at once, -60% hunger). Entrance must touch a path." },
+    { id: "ice_cream", name: "Ice cream kiosk", emoji: "🍦", cost: 600, upkeep: 12, type: "food", price: 4, capacity: 3, w: 1, h: 1, satisfies: { hunger: 0.2, fun: 0.1 }, star: 0,
+      info: "Cold treat stall (serves 3 at once, -20% hunger, +10% fun). Entrance must touch a path." },
+    { id: "drinks_stall", name: "Drinks stall", emoji: "🥤", cost: 500, upkeep: 8, type: "drink", price: 3, capacity: 4, w: 1, h: 1, satisfies: { thirst: 0.6 }, star: 0,
+      info: "Cold drinks stand (serves 4 at once, -60% thirst). Entrance must touch a path." },
+    { id: "coffee_cart", name: "Coffee cart", emoji: "☕", cost: 700, upkeep: 10, type: "drink", price: 4, capacity: 3, w: 1, h: 1, satisfies: { thirst: 0.4, energy: 0.3 }, star: 0,
+      info: "Hot coffee cart (serves 3 at once, -40% thirst, +30% energy). Entrance must touch a path." },
+    { id: "toilets", name: "Toilets", emoji: "🚻", cost: 600, upkeep: 10, type: "toilet", price: 0, capacity: 8, w: 2, h: 1, satisfies: { bladder: 1 }, star: 0,
+      info: "Park restrooms (8 stalls, free to use, full comfort). Entrance must touch a path." },
+    { id: "gift_shop", name: "Gift shop", emoji: "🎁", cost: 2500, upkeep: 30, type: "shop", price: 12, capacity: 6, w: 2, h: 2, satisfies: { fun: 0.2 }, star: 1,
+      info: "Souvenir shop (capacity 6, +20% fun, high ticket spend). Entrance must touch a path." },
+    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0,
+      info: "Compact souvenir stand (capacity 2, +20% fun). Entrance must touch a path." },
+    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 3, h: 3, satisfies: { fun: 0.8 }, star: 1,
+      info: "Dinosaur ride for guests (capacity 12, +80% fun and mood boost). Entrance must touch a path." },
+    { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0,
+      info: "Park map and guide booth (capacity 4, free). Entrance must touch a path." },
+    { id: "viewing_platform", name: "Viewing platform", emoji: "🔭", cost: 1800, upkeep: 15, type: "info", price: 0, capacity: 20, w: 2, h: 1, satisfies: { fun: 0.3 }, star: 0,
+      info: "Raised lookout (capacity 20, +30% fun): draws guests to view enclosures and boosts donations nearby. Entrance must touch a path." },
+    { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 4, h: 3, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 2,
+      info: "Full sit-down dining (capacity 30, full hunger, -30% thirst, +30% energy). Entrance must touch a path." },
+    { id: "keeper_hut", name: "Ranger station", emoji: "🛖", cost: 1200, upkeep: 12, type: "staff", price: 0, capacity: 6, w: 2, h: 2, satisfies: {}, star: 0,
+      info: "Extends ranger enclosure patrol range from 32 to 48 tiles. Entrance must touch a path." },
+    { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 3, h: 2, satisfies: {}, star: 1,
+      info: "Veterinary station for treating sick dinosaurs. Entrance must touch a path." },
+    { id: "education_centre", name: "Discovery museum", emoji: "🎓", cost: 9000, upkeep: 90, type: "info", price: 5, capacity: 40, w: 4, h: 3, satisfies: { fun: 0.5 }, star: 2,
+      info: "Museum (capacity 40, +50% fun): boosts guest donations park-wide (+50% amount). Entrance must touch a path." },
+    { id: "emergency_bunker", name: "Emergency bunker", emoji: "🚨", cost: 3000, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, h: 2, satisfies: {}, star: 1,
+      info: "Guest shelter during dinosaur escapes (capacity 30); lowers injury risk while animals are loose. Entrance must touch a path." },
+    { id: "hatchery", name: "Hatchery", emoji: "🥚", cost: 4000, upkeep: 40, type: "science", price: 0, capacity: 2, w: 3, h: 2, satisfies: {}, star: 0,
+      info: "Incubates dinosaur eggs (adds 2 egg slots). Needs power and a path at its entrance." },
+    { id: "research_lab", name: "Research lab", emoji: "🔬", cost: 6000, upkeep: 90, type: "science", price: 0, capacity: 2, w: 4, h: 3, satisfies: {}, star: 0,
+      info: "Houses scientists for amber extraction and DNA splicing. Needs power and a path at its entrance." }
   ],
 
   staff: [
@@ -802,9 +820,9 @@ window.Z.DATA = {
   ],
 
   difficulties: [
-    { id: "easy", name: "Relaxed", blurb: "Plenty of starting cash, cheaper running costs and busier gates. Good for learning the ropes.", money: 35000, income: 1.1, costs: 0.85, arrivals: 1.1, interest: 0.002 },
-    { id: "normal", name: "Standard", blurb: "A fair challenge. Careful planning turns a modest profit; careless spending sinks the park.", money: 22000, income: 1, costs: 1, arrivals: 1, interest: 0.004 },
-    { id: "hard", name: "Tycoon", blurb: "Lean starting funds, dearer upkeep, fewer guests and costly loans. Every pound counts.", money: 15000, income: 0.92, costs: 1.2, arrivals: 0.9, interest: 0.007 }
+    { id: "easy", name: "Relaxed", blurb: "Plenty of starting cash, cheaper running costs and busier gates. Good for learning the ropes.", money: 35000, income: 1.1, costs: 0.85, arrivals: 1.1, interest: 0.006 },
+    { id: "normal", name: "Standard", blurb: "A fair challenge. Careful planning turns a modest profit; careless spending sinks the park.", money: 22000, income: 1, costs: 1, arrivals: 1, interest: 0.01 },
+    { id: "hard", name: "Tycoon", blurb: "Lean starting funds, dearer upkeep, fewer guests and costly loans. Every pound counts.", money: 15000, income: 0.92, costs: 1.2, arrivals: 0.9, interest: 0.016 }
   ]
 };
 
@@ -885,9 +903,9 @@ window.Z.DATA.donors = [
   };
   D.buildings.push(
     { id: 'pump_station', name: 'Pump station', emoji: '⛲', cost: 3200, upkeep: 40, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0, needsPower: true,
-      moat: { source: 'pump', cap: 160 }, info: 'Draws water from a lake, a river or the sea into a ditch it touches. Stand it beside the water.' },
+      moat: { source: 'pump', cap: 160 }, info: 'Supplies 160 units of water from a lake, river or sea into a ditch it touches. Stand it beside water (draws 8 kW).' },
     { id: 'borehole', name: 'Borehole', emoji: '🕳️', cost: 1600, upkeep: 75, type: 'utility', utility: true, price: 0, capacity: 0, w: 1, h: 1, satisfies: {}, star: 0, needsPower: true,
-      moat: { source: 'borehole', cap: 40 }, info: 'Taps groundwater anywhere. Small supply and costly to run, but it fills a ditch it touches.' }
+      moat: { source: 'borehole', cap: 40 }, info: 'Taps groundwater anywhere for 40 units of fresh water into a ditch it touches (draws 3.5 kW; high upkeep).' }
   );
   D.goals.push({ id: 'moat_only', text: 'House a species behind a moat with no fence', type: 'moat', target: 1, reward: 2500 });
 })(window.Z.DATA);
@@ -965,19 +983,19 @@ window.Z.DATA.donors = [
     { id: 'substation', name: 'Substation', emoji: '🔌', cost: 2200, upkeep: 14, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0, powerNode: { radius: 11 },
       info: 'Hands mains power to everything within 11 tiles. The island is one grid: sources feed every substation.' },
     { id: 'power_pylon', name: 'Power pylon', emoji: '🗼', cost: 750, upkeep: 4, type: 'utility', utility: true, price: 0, capacity: 0, w: 1, h: 1, satisfies: {}, star: 0, powerNode: { radius: 6 },
-      info: 'A small relay: power for everything within 6 tiles.' },
+      info: 'A small relay: hands mains power to everything within 6 tiles.' },
     { id: 'diesel_gen', name: 'Diesel generator', emoji: '🛢️', cost: 3500, upkeep: 24, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0,
-      gen: { kind: 'diesel', kw: 45, noise: 8 }, info: 'Cheap and dependable, but burns fuel (paid daily), rumbles and is ugly: lowers scenery appeal within a few tiles. Runs only when needed.' },
+      gen: { kind: 'diesel', kw: 45, noise: 8 }, info: 'Generates up to 45 kW on demand (burns £1.15/kWh of fuel, paid daily). Noisy and ugly: lowers scenery appeal nearby.' },
     { id: 'solar_field', name: 'Solar field', emoji: '☀️', cost: 5200, upkeep: 12, type: 'utility', utility: true, price: 0, capacity: 0, w: 3, h: 3, satisfies: {}, star: 1,
-      gen: { kind: 'solar', kw: 38 }, info: 'Free power by day. Cloud and rain cut the output; nothing at night. Pair it with batteries.' },
+      gen: { kind: 'solar', kw: 38 }, info: 'Generates up to 38 kW of free power by day. Cloud and rain cut output; zero at night. Pair with batteries.' },
     { id: 'wind_turbine', name: 'Wind turbine', emoji: '🌬️', cost: 4300, upkeep: 18, type: 'utility', utility: true, price: 0, capacity: 0, w: 1, h: 1, satisfies: {}, star: 1,
-      gen: { kind: 'wind', kw: 26 }, info: 'Power from the breeze, best in a blow. In a violent storm it must feather its blades and stops.' },
+      gen: { kind: 'wind', kw: 26 }, info: 'Generates 26 kW rated (up to ~30 kW in strong wind), fuel-free. Feathers its blades and stops in violent storms.' },
     { id: 'battery_bank', name: 'Battery bank', emoji: '🔋', cost: 3200, upkeep: 10, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 1,
-      battery: { kwh: 120 }, info: 'Stores surplus power (120 kWh) and rides through short cuts while a backup generator spins up.' },
+      battery: { kwh: 120 }, info: 'Stores 120 kWh of surplus power (charges and discharges up to 40 kW) and bridges short cuts while backup spins up.' },
     { id: 'backup_gen', name: 'Backup generator', emoji: '⚡', cost: 3900, upkeep: 22, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 1,
-      gen: { kind: 'backup', kw: 35, noise: 3 }, info: 'Starts by itself shortly after a cut and keeps the classes you choose (Power screen) running. Needs fuel money.' },
+      gen: { kind: 'backup', kw: 35, noise: 3 }, info: 'Generates 35 kW during a power cut: auto-starts shortly after an outage for selected classes (Power screen). Burns fuel.' },
     { id: 'geothermal_plant', name: 'Geothermal plant', emoji: '🌋', cost: 36000, upkeep: 140, type: 'utility', utility: true, price: 0, capacity: 0, w: 4, h: 4, satisfies: {}, star: 4,
-      gen: { kind: 'geothermal', kw: 120 }, info: 'Steady, clean power from deep under the island, in any weather. Expensive to build and to maintain.' }
+      gen: { kind: 'geothermal', kw: 120 }, info: 'Generates a steady 120 kW of clean power around the clock, in any weather. High build cost and upkeep.' }
   );
   // existing buildings and scenery that plausibly use mains power
   D.buildings.forEach(function (b) { var kw = D.power.draws[b.id]; if (kw && !b.powerDraw) { b.needsPower = true; b.powerDraw = kw; } });
@@ -1120,17 +1138,17 @@ window.Z.DATA.donors = [
   };
   D.buildings.push(
     { id: 'filtration_plant', name: 'Tank filtration plant', emoji: '🧪', cost: 7500, upkeep: 70, type: 'utility', utility: true, price: 0, capacity: 0, w: 3, h: 2, satisfies: {}, star: 2, needsPower: true, powerDraw: 18, powerClass: 'life', realm: 'plant',
-      info: 'Pumps and filters sea water for lagoon tanks within about 9 tiles. Without power the water slowly goes bad.' },
+      info: 'Supplies and filters up to 900 units of sea water for lagoon tanks within 9 tiles (draws 18 kW). Without power the water goes stale.' },
     { id: 'underwater_gallery', name: 'Underwater gallery', emoji: '🪟', cost: 9000, upkeep: 60, type: 'info', price: 0, capacity: 24, w: 3, h: 2, satisfies: { fun: 0.5 }, star: 2, plat: true, realm: 'gallery',
-      info: 'A viewing hall with floor-to-ceiling acrylic windows set into a tank wall. Build it touching a tank. Excellent views.' },
+      info: 'Viewing hall with floor-to-ceiling acrylic windows set into a tank wall (capacity 24, +50% fun). Build touching a tank with a path at the entrance.' },
     { id: 'feeding_grandstand', name: 'Feeding-show grandstand', emoji: '🎪', cost: 12500, upkeep: 90, type: 'info', price: 0, capacity: 60, w: 4, h: 2, satisfies: { fun: 0.6 }, star: 3, plat: true, realm: 'grandstand',
-      info: 'Tiered seating beside a tank or sea pen. Rangers run a feeding show twice a day: splashes, cheers and a boost to visitors\' mood and spending.' },
+      info: 'Tiered seating beside a tank or sea pen (capacity 60, +60% fun). Rangers run feeding shows twice a day, boosting mood and spending.' },
     { id: 'canopy_tower', name: 'Canopy observation tower', emoji: '🗼', cost: 8500, upkeep: 55, type: 'info', price: 0, capacity: 16, w: 2, h: 2, satisfies: { fun: 0.4 }, star: 3, plat: true, realm: 'tower',
-      info: 'A tall lookout beside the Thunder Dome. Guests watch the pterosaurs soar at eye level.' },
+      info: 'Tall lookout beside the Thunder Dome (capacity 16, +40% fun). Guests watch pterosaurs soar at eye level.' },
     { id: 'tagging_tower', name: 'Tagging control tower', emoji: '📡', cost: 26000, upkeep: 140, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, needsPower: true, powerDraw: 25, powerClass: 'containment', realm: 'tower',
-      info: 'Runs the electronic geofence of virtual zones within its range and tags the animals inside. Needs power; upgrade it for range, capacity and strength.' },
+      info: 'Projects an invisible geofence (10-tile range, 6 tags, strength 3 at level 1; upgradable). Draws 25 kW; power loss drops the fence.' },
     { id: 'boathouse', name: 'Recovery boathouse', emoji: '🚤', cost: 6000, upkeep: 45, type: 'utility', utility: true, price: 0, capacity: 0, w: 3, h: 2, satisfies: {}, star: 2, realm: 'boat',
-      info: 'Keeps a rescue boat and divers. Escaped marine animals are recovered much faster. Build it near the shore.' },
+      info: 'Keeps a rescue boat and divers. Escaped marine animals are recovered much faster. Build near the shore.' },
     { id: 'drone_hangar', name: 'Net-gun drone hangar', emoji: '🛸', cost: 7000, upkeep: 55, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, realm: 'drone',
       info: 'Launches net-gun drones. Escaped flying animals are recovered much faster.' }
   );

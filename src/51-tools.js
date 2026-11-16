@@ -167,6 +167,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
     else if ((t.kind === 'scenery' || t.kind === 'building') && t.def && UI.itemInfo && UI.itemInfo(t.def, true)) hint = UI.itemInfo(t.def, true);
+    else if (t.kind === 'building' && t.def && t.def.utility) hint = 'Tap to place. Slide to adjust.';
     s.appendChild(h('div.tname', { html: name + '<small>' + hint + '</small>' }));
     function seg(opts, cur, fn) {
       var sg = h('div.seg'); opts.forEach(function (o) { sg.appendChild(h('button' + (o[0] === cur ? '.on' : ''), { html: o[2] ? ic(o[2]) + o[1] : o[1], 'aria-label': o[3] || o[1], on: { click: function () { UI.snd('click'); fn(o[0]); buildStrip(); } } })); }); return sg;
@@ -333,14 +334,24 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   PLAN.scenery = PLAN.building = function (d) {
     var t = UI.tool, gp = d.b || d.a, r0 = objRect(t.id, t.kind, gp, t.rot), r = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot, { dry: true });
-    var spec = { type: 'object', kind: t.kind, id: t.id, i: r0.i, j: r0.j, rot: t.rot, ok: r.ok }, sub = '';
+    var def = t.def || (t.kind === 'building' ? UI.byId(D.buildings, t.id) : UI.byId(D.scenery, t.id));
+    var isUtil = t.kind === 'building' && !!(def && def.utility);
+    var spec = { type: 'object', kind: t.kind, id: t.id, i: r0.i, j: r0.j, rot: t.rot, ok: r.ok, door: !isUtil }, sub = '';
     if (t.kind === 'building') {
       var tok = [], anyBad = false;
       for (var jj = 0; jj < r0.h; jj++) for (var ii = 0; ii < r0.w; ii++) { var b = tileBlocked(r0.i + ii, r0.j + jj); if (b) anyBad = true; tok.push(!b); }
       if (!r.ok && !anyBad) tok = tok.map(function () { return false; });
       spec.tileOk = r.ok ? tok.map(function () { return true; }) : tok;
       var fp = Z.Sim.footprint(t.id, r0.i, r0.j, t.rot), onPath = fp && fp.front.some(function (q) { return Z.state.path[q.i + q.j * N]; });
-      if (fp) sub = (r0.w + '×' + r0.h) + ' - entrance ' + (onPath ? 'on a path' : 'needs a path');
+      if (fp) {
+        if (isUtil) {
+          var uSpec = def.gen ? def.gen.kw + ' kW' : def.battery ? def.battery.kwh + ' kWh' : def.powerNode ? def.powerNode.radius + '-tile range' : def.moat ? def.moat.cap + ' water' : '';
+          sub = (r0.w + '×' + r0.h) + (uSpec ? ' · ' + uSpec : '') + (r.warn ? ' - ' + r.warn : '');
+        } else {
+          var extraWarn = r.warn ? r.warn.replace(/^Entrance not on a path yet(?:\.\s*)?/, '') : '';
+          sub = (r0.w + '×' + r0.h) + ' - entrance ' + (onPath ? 'on a path' : 'needs a path') + (extraWarn ? ' · ' + extraWarn : '');
+        }
+      }
     }
     return { spec: spec, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), warn: sub || r.warn, label: '',
       run: function () {

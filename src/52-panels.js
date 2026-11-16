@@ -214,11 +214,24 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ------------------------------------------------------------------ objects (buildings / scenery)
   var sciUpd = null;
+  function buildingSub(def) {
+    if (!def) return '';
+    if (def.gen) return 'Power generator';
+    if (def.battery) return 'Power storage';
+    if (def.powerNode) return 'Power relay';
+    if (def.moat) return 'Water supply';
+    if (def.realm === 'plant') return 'Water filtration';
+    if (def.realm === 'tower') return 'Containment tower';
+    if (def.realm === 'boat' || def.realm === 'drone') return 'Recovery station';
+    if (def.safariPortal) return 'Safari barrier';
+    if (def.safariRanger) return 'Safari rangers';
+    return ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', info: 'Information', staff: 'Staff building', science: 'Science building', transport: 'Transport building', utility: 'Utility building' })[def.type] || '';
+  }
   function openObject(id) {
     sciUpd = null;
     var o = find(Z.state.objects, id); if (!o) return false;
     var isB = o.kind === 'building', def = UI.byId(isB ? D.buildings : D.scenery, o.type);
-    var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, isB ? ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', info: 'Information', staff: 'Staff building', science: 'Science building' })[def.type] || '' : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || ''), b = f.body;
+    var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, isB ? buildingSub(def) : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || ''), b = f.body;
     var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tiles = []; if (fp) for (var a = 0; a < fp.w; a++) for (var c = 0; c < fp.h; c++) tiles.push({ i: fp.i0 + a, j: fp.j0 + c });
     if (tiles.length) Z.World.setPreview({ type: 'tiles', tiles: tiles, ok: true });
     var st = h('div'), slider = null, pv = null, stats = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
@@ -260,20 +273,32 @@ window.Z = window.Z || {}; var Z = window.Z;
         var q = find(Z.state.objects, id); if (!q) return false;
         var r = Z.Sim.objectReport(id); if (!r) return false;
         if (sciUpd) sciUpd();
-        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn]);
+        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, r.issues]);
         if (k !== key) {
           key = k; stats.innerHTML = ''; var rows = [];
           if (isB) {
-            if (def.type !== 'science') { rows.push(['Visitors served', r.uses]); if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]); rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]); }
+            if (!def.utility && def.type !== 'science' && def.type !== 'staff') {
+              rows.push(['Visitors served', r.uses]);
+              if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]);
+              rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]);
+              if (def.capacity > 0) rows.push(['Capacity', def.capacity + ' guests']);
+            }
             rows.push(['Running cost', fmt(r.upkeep) + ' / day']);
           } else { rows.push(['Beauty', '★'.repeat(def.aesthetic) + '☆'.repeat(5 - def.aesthetic)]); if (q.type === 'bin') rows.push(['Bin', Math.round((q.fill || 0) * 100) + '% full']); }
           rows.forEach(function (r2) { stats.appendChild(h('div.kv', h('span', { text: r2[0] }), h('b', { text: String(r2[1]) }))); });
           if (!isB) {
             if (r.thriving === true) stats.appendChild(h('ul.issues', h('li.ok', { text: 'Thriving here' })));
             else if (r.thriving === false) stats.appendChild(issuesList(['Struggling on ' + ((r.terrainHere || r.terrainName || (D.terrain[Z.state.terrain[q.i + q.j * Z.N]] || {}).name || 'this ground')).toLowerCase() + (r.thrivesOn && r.thrivesOn.length ? ' - prefers ' + (r.thrivesOn.map(function (t) { var tt = UI.byId(D.terrain, t); return (tt ? tt.name : String(t)).toLowerCase(); }).join(', ')) : '')]));
-            if (def.info || r.info) stats.appendChild(h('div.fact', { text: def.info || r.info }));
           }
-          if (isB) { if (r.connected) stats.appendChild(h('ul.issues', h('li.ok', { text: 'Connected to a path' }))); else stats.appendChild(issuesList(r.issues.length ? r.issues : ['Not connected to a path'])); }
+          if (def.info || r.info) stats.appendChild(h('div.fact', { text: def.info || r.info }));
+          if (isB) {
+            if (!def.utility) {
+              if (r.connected) stats.appendChild(h('ul.issues', h('li.ok', { text: 'Connected to a path' })));
+              else stats.appendChild(issuesList(r.issues.length ? r.issues : ['Not connected to a path']));
+            } else if (!def.moat && r.issues.length) {
+              stats.appendChild(issuesList(r.issues));
+            }
+          }
         }
         return true;
       }

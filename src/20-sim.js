@@ -1394,17 +1394,92 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (dryOf(arguments)) return okr(0);
     o.price = n; return okr(0);
   }
+  var MAX_LOAN = 100000;
+  function ensureLoans() {
+    if (!Array.isArray(S.loans)) {
+      S.loans = S.loan > 0 ? [{ id: 1, principal: Math.round(S.loan), rate: DIFF.interest || 0.01, takenDay: S.day || 1 }] : [];
+    }
+    var sum = 0;
+    for (var k = 0; k < S.loans.length; k++) sum += Math.max(0, Math.round(S.loans[k].principal || 0));
+    S.loan = sum;
+    return S.loans;
+  }
+  function loanQuote(n) {
+    ensureLoans();
+    n = Math.round(+n);
+    var maxBorrow = Math.max(0, MAX_LOAN - S.loan);
+    if (!(n > 0)) return { ok: false, msg: 'Invalid amount', amount: 0, rate: 0, dailyInterest: 0, maxBorrow: maxBorrow, factors: [] };
+    if (S.loan + n > MAX_LOAN) return { ok: false, msg: 'The bank will not lend that much (limit ' + fmt(MAX_LOAN) + ')', amount: n, rate: 0, dailyInterest: 0, maxBorrow: maxBorrow, factors: [] };
+    var ddef = difficultyDef(S.difficulty) || { name: 'Standard', interest: 0.01 };
+    var base = DIFF.interest || ddef.interest || 0.01;
+    var rate = base, factors = [{ label: ddef.name + ' base rate', delta: base }];
+    var star = S.rating || 1;
+    if (star >= 3.5) { rate -= 0.004; factors.push({ label: 'Established park (' + star.toFixed(1) + '★)', delta: -0.004 }); }
+    else if (star >= 2.5) { rate -= 0.002; factors.push({ label: 'Growing park (' + star.toFixed(1) + '★)', delta: -0.002 }); }
+    else if (star < 1.5) { rate += 0.003; factors.push({ label: 'Early park risk (' + star.toFixed(1) + '★)', delta: 0.003 }); }
+    if (S.money < -2000) { rate += 0.012; factors.push({ label: 'Deeply overdrawn', delta: 0.012 }); }
+    else if (S.money < 0) { rate += 0.008; factors.push({ label: 'Bank account in the red', delta: 0.008 }); }
+    var debtAdd = Math.round(((S.loan / MAX_LOAN) * 0.015 + (n / MAX_LOAN) * 0.006) * 1000) / 1000;
+    if (debtAdd > 0) { rate += debtAdd; factors.push({ label: S.loan > 0 ? 'Existing debt & loan size' : 'Loan size', delta: debtAdd }); }
+    var rep = S.reputation !== undefined ? S.reputation : 50;
+    if (rep >= 70) { rate -= 0.002; factors.push({ label: 'Strong reputation', delta: -0.002 }); }
+    else if (rep < 35) { rate += 0.005; factors.push({ label: 'Poor reputation', delta: 0.005 }); }
+    if (RT.escaped && RT.escaped.length > 0) { rate += 0.01; factors.push({ label: 'Active dinosaur escape', delta: 0.01 }); }
+    else if (S.stats && S.stats.escapes > 0) { rate += 0.003; factors.push({ label: 'Past escape record', delta: 0.003 }); }
+    var hist = S.finance && S.finance.history;
+    if (hist && hist.length) {
+      var last = hist[hist.length - 1];
+      if (last.profit > 0) { rate -= 0.001; factors.push({ label: 'Profitable yesterday', delta: -0.001 }); }
+      else if (last.profit < 0) { rate += 0.003; factors.push({ label: 'Operating at a loss', delta: 0.003 }); }
+    }
+    rate = Math.round(clamp(rate, 0.004, 0.05) * 1000) / 1000;
+    return { ok: true, amount: n, rate: rate, dailyInterest: Math.max(1, Math.round(n * rate)), maxBorrow: maxBorrow, factors: factors };
+  }
+  function loanSummary() {
+    var list = ensureLoans(), daily = 0, out = [];
+    for (var k = 0; k < list.length; k++) {
+      var ln = list[k]; if (!(ln.principal > 0)) continue;
+      var intr = Math.max(1, Math.round(ln.principal * ln.rate));
+      daily += intr;
+      out.push({ id: ln.id, principal: ln.principal, rate: ln.rate, dailyInterest: intr, takenDay: ln.takenDay || 1 });
+    }
+    return { total: S.loan, max: MAX_LOAN, dailyInterest: daily, avgRate: S.loan > 0 ? daily / S.loan : 0, loans: out };
+  }
   function takeLoan(n, opts) {
-    n = Math.round(+n); if (!(n > 0)) return fail('Invalid amount');
-    if (S.loan + n > 100000) return fail('The bank will not lend that much');
-    if (dryOf(arguments)) return okr(0);
-    S.loan += n; earn(n, 'other'); return okr(0);
+    var q = loanQuote(n);
+    if (!q.ok) return fail(q.msg);
+    if (dryOf(arguments)) return okr(0, { rate: q.rate, dailyInterest: q.dailyInterest, factors: q.factors });
+    var list = ensureLoans(), maxId = 0;
+    for (var k = 0; k < list.length; k++) if (list[k].id > maxId) maxId = list[k].id;
+    var loanObj = { id: maxId + 1, principal: q.amount, rate: q.rate, takenDay: S.day };
+    list.push(loanObj);
+    ensureLoans();
+    earn(q.amount, 'other');
+    return okr(0, { id: loanObj.id, rate: q.rate, dailyInterest: q.dailyInterest, factors: q.factors });
   }
   function repayLoan(n, opts) {
+    var list = ensureLoans();
+    var targetId = opts && typeof opts === 'object' ? opts.loanId : 0;
+    if (targetId && (n === undefined || n === null)) {
+      for (var ti = 0; ti < list.length; ti++) if (list[ti].id === targetId) { n = list[ti].principal; break; }
+    }
     n = Math.min(Math.round(+n), S.loan); if (!(n > 0)) return fail('Nothing to repay');
     if (S.money < n) return fail('Not enough money');
     if (dryOf(arguments)) return okr(n);
-    S.loan -= n; spend(n, 'other'); return okr(n);
+    var rem = n, order = list.slice().sort(function (a, b) {
+      if (targetId && a.id === targetId) return -1;
+      if (targetId && b.id === targetId) return 1;
+      return (b.rate - a.rate) || (a.id - b.id);
+    });
+    for (var k = 0; k < order.length && rem > 0; k++) {
+      var pay = Math.min(rem, order[k].principal);
+      order[k].principal -= pay;
+      rem -= pay;
+    }
+    S.loans = list.filter(function (x) { return x.principal > 0; });
+    ensureLoans();
+    spend(n, 'other');
+    return okr(n);
   }
   var MARKETING_COST = 1800;   // was 600: with 2.8x longer days a +70% visitor campaign pays back far more per day
   function startMarketing(opts) {
@@ -3388,16 +3463,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Power) Z.Power.newDay();   // power package: fuel bill, cable fee, sabotage roll
     if (Z.Realms) Z.Realms.newDay();   // realms package: tank/dome/zone upkeep, tag upkeep, zone hold counter
     if (Z.News) Z.News.newDay();   // news package: insurance, sponsors, inspections, awards, daily stories
-    if (S.loan > 0) { var intr = Math.round(S.loan * (DIFF.interest || 0.004)); if (intr) spend(intr, 'other'); }
+    var intr = loanSummary().dailyInterest;
+    if (intr > 0) spend(intr, 'interest');
     if (Z.Monorail) Z.Monorail.newDay();   // monorail package: train upkeep, daily station figures
     if (Z.Safari) Z.Safari.newDay();   // safari package: vehicle upkeep, daily figures
     var t = S.finance.today;
-    var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
+    var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing + (t.interest || 0));
     var profit = income - costs;
     var rec = {}; for (var c in t) rec[c] = Math.round(t[c]);
     rec.day = S.day; rec.balance = Math.round(S.money); rec.income = Math.round(income); rec.costs = Math.round(costs); rec.profit = Math.round(profit);
     S.finance.history.push(rec); if (S.finance.history.length > 30) S.finance.history.shift();
-    msg('Day ' + S.day + ' report: takings ' + fmt(income) + ', running costs ' + fmt(costs) + ', ' + (profit >= 0 ? 'profit ' : 'loss ') + fmt(Math.abs(profit)) + '.', profit >= 0 ? 'good' : 'bad');
+    msg('Day ' + S.day + ' report: takings ' + fmt(income) + ', running costs ' + fmt(costs) + (intr > 0 ? ' (incl. ' + fmt(intr) + ' loan interest)' : '') + ', ' + (profit >= 0 ? 'profit ' : 'loss ') + fmt(Math.abs(profit)) + '.', profit >= 0 ? 'good' : 'bad');
     S.finance.today = Z.emptyFinance();
     S.day++; S.stats.guestsToday = 0;
     if (S.marketing.active) { S.marketing.daysLeft--; if (S.marketing.daysLeft <= 0) { S.marketing.active = false; msg('Your marketing campaign has ended.', 'info'); } }
@@ -4596,6 +4672,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       ns.unlocked = Object.assign({ star: 0 }, ns.unlocked);
     } catch (e) { return false; }
     S = ns; Z.state = S; RT = newRT();
+    if (S.loan > 0 && (!Array.isArray(S.loans) || !S.loans.length)) {
+      var ldDef = difficultyDef(S.difficulty) || { interest: 0.01 };
+      S.loans = [{ id: 1, principal: Math.round(S.loan), rate: ldDef.interest || 0.01, takenDay: S.day || 1 }];
+    }
+    ensureLoans();
+    if (S.finance && S.finance.today && S.finance.today.interest === undefined) S.finance.today.interest = 0;
     rng.seed(obj.rng || 1); RT.ghEMA = obj.ghEMA || 65; RT.nextGroup = obj.nextGroup || 1;
     if (Z.DNA) Z.DNA.afterLoad();   // re-register saved hybrid species and default the DNA fields of old saves
     var k;
@@ -4702,7 +4784,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       hereName = D.terrain[S.terrain[o.i + o.j * N]].name;
       if (thriving === false) issues.push('Struggling on ' + hereName.toLowerCase() + ' - ' + (def.waterEdge ? 'prefers mud or meadow beside water' : 'prefers ' + thrivesOn.join(', ').toLowerCase()));
     }
-    return { thriving: thriving, thrivesOn: thrivesOn, terrainHere: hereName, info: def.info || '', id: o.id, kind: o.kind, type: o.type, name: def.name, connected: connected, issues: issues, front: frontList(objFootprint(o)), price: o.price, defaultPrice: def.price, uses: o.uses || 0, income: o.income || 0,
+    return { thriving: thriving, thrivesOn: thrivesOn, terrainHere: hereName, info: def.info || '', id: o.id, kind: o.kind, type: o.type, name: def.name, utility: !!def.utility, connected: connected, issues: issues, front: frontList(objFootprint(o)), price: o.price, defaultPrice: def.price, uses: o.uses || 0, income: o.income || 0,
       queue: q ? q.q.length : 0, users: q ? q.use : 0, fill: o.fill, upkeep: def.upkeep || 0, moat: moatInfo, needsPower: !!def.needsPower };
   }
   // structured, code-derived habitat facts for the Guide screen
@@ -4756,7 +4838,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke, research: researchAPI,
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff,
-    setTicketPrice: setTicketPrice, setPrice: setPrice, takeLoan: takeLoan, repayLoan: repayLoan, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
+    setTicketPrice: setTicketPrice, setPrice: setPrice, takeLoan: takeLoan, repayLoan: repayLoan, loanQuote: loanQuote, loanSummary: loanSummary, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
     // extras
     lockdown: function () { return !!(RT && RT.lockdown); },
