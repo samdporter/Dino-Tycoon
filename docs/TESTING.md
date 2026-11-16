@@ -1,5 +1,16 @@
 # Verification report — 16 November 2026
 
+## Dino / Zoo menu update
+
+The updated Wild Acres Zoo was extracted into `styles/zoo.css` and 12 scripts under `src/zoo/`. Comparison against the supplied HTML confirmed identical CSS and game code, with only the approved title navigation added. The embedded Three.js matches the existing vendor library after whitespace removal. All JavaScript files pass syntax checks.
+
+- Node logic/lifecycle/storage checks: 22 passed, including two Zoo save-isolation checks.
+- HTTP checks: 3 passed, including both entry points, every declared asset and private-file exclusions.
+- Targeted browser checks: 2 passed in Chromium and 2 in WebKit, using desktop and phone viewports. These create a Dino park, switch to Zoo, create/save a zoo, switch back, verify both saves remain separate, and return to Continue the zoo.
+- WebKit provides Safari engine coverage; the Safari app and physical iPhones were not tested. The existing full browser suite was not rerun for this change. Pages packaging was updated but no deployment was performed.
+
+The earlier verification record below predates this menu work.
+
 ## Checks actually completed
 
 | Check | Result |

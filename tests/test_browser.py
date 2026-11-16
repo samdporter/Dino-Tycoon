@@ -338,3 +338,38 @@ def test_phone_continue_preserves_both_corrupt_copies(browser):
         assert_no_browser_errors(problems)
     finally:
         context.close()
+
+
+@pytest.mark.parametrize('mobile', [False, True])
+def test_choose_tycoon_and_preserve_separate_saves(browser, mobile):
+    context, page, problems = open_game(browser, mobile=mobile)
+    try:
+        assert page.get_by_role('link', name='Dino Tycoon', exact=True).get_attribute('aria-current') == 'page'
+        new_park(page)
+        page.evaluate('Z.Main.toTitle()')
+        dino_save = page.evaluate("localStorage.getItem('amberacres.save.v2')")
+        page.get_by_role('link', name='Zoo Tycoon', exact=True).click()
+        page.wait_for_function("window.Z && Z.Main && document.querySelector('#title.on') && !document.querySelector('#boot:not(.gone)')")
+        assert page.title() == 'Wild Acres Zoo'
+        assert page.get_by_role('link', name='Zoo Tycoon', exact=True).get_attribute('aria-current') == 'page'
+        assert not page.get_by_role('button', name='Continue', exact=True).count()
+        page.get_by_role('button', name='New game', exact=True).click()
+        page.wait_for_function("Z.Main.playing")
+        assert page.evaluate("Z.Main.save()")
+        assert page.evaluate("!!localStorage.getItem('wildacres.save.v1')")
+        # Returning to a title checkpoints the running park; compare afterwards.
+        page.evaluate('Z.Main.toTitle()')
+        assert page.evaluate("localStorage.getItem('amberacres.save.v2')") == dino_save
+        dino_before_switch = page.evaluate("localStorage.getItem('amberacres.save.v2')")
+        zoo_before_switch = page.evaluate("localStorage.getItem('wildacres.save.v1')")
+        page.get_by_role('link', name='Dino Tycoon', exact=True).click()
+        page.wait_for_function("window.Z && Z.Main && document.querySelector('#title.on') && !document.querySelector('#boot:not(.gone)')")
+        assert page.get_by_role('button', name='Continue', exact=True).is_visible()
+        assert page.evaluate("localStorage.getItem('amberacres.save.v2')") == dino_before_switch
+        assert page.evaluate("localStorage.getItem('wildacres.save.v1')") == zoo_before_switch
+        page.get_by_role('link', name='Zoo Tycoon', exact=True).click()
+        page.get_by_role('button', name='Continue', exact=True).click()
+        page.wait_for_function('Z.Main.playing')
+        assert not problems
+    finally:
+        context.close()

@@ -1,6 +1,7 @@
 """Stdlib HTTP integration checks: python3 -m unittest discover -s tests -p 'test_server.py'."""
 import importlib.util
 from pathlib import Path
+import re
 import threading
 import unittest
 from urllib.error import HTTPError
@@ -26,10 +27,20 @@ class PublicServerTests(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def test_entrypoint_and_script(self):
-        for path in ['/', '/index.html', '/src/15-storage.js', '/styles/game.css']:
+        for path in ['/', '/index.html', '/zoo.html', '/src/15-storage.js', '/styles/game.css']:
             with self.subTest(path=path), urlopen(self.base + path) as response:
                 self.assertEqual(response.status, 200)
                 self.assertIn('no-cache', response.headers['Cache-Control'])
+                response.read()
+
+    def test_both_games_load_all_declared_assets(self):
+        for entry in ['/index.html', '/zoo.html']:
+            with urlopen(self.base + entry) as response:
+                html = response.read().decode('utf-8')
+            for asset in re.findall(r'(?:src|href)="((?:src|styles|vendor)/[^" ]+)"', html):
+                with self.subTest(entry=entry, asset=asset), urlopen(self.base + '/' + asset) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertTrue(response.read())
 
     def test_private_files_and_traversal_are_not_served(self):
         for path in ['/.git/config', '/README.md', '/server.py', '/tests/test_browser.py', '/%2e%2e/README.md', '/src/%2e%2e/README.md', '/src/']:

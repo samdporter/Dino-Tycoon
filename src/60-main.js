@@ -97,6 +97,9 @@ window.Z = window.Z || {}; var Z = window.Z;
   function buildTitle() {
     titleEl = document.getElementById('title'); titleEl.innerHTML = '';
     var has = Main.hasSave();
+    titleEl.appendChild(h('nav.tycoon-choice', { 'aria-label': 'Choose your tycoon' },
+      h('a', { href: 'index.html', text: 'Dino Tycoon', 'aria-current': 'page' }),
+      h('a', { href: 'zoo.html', text: 'Zoo Tycoon' })));
     titleEl.appendChild(h('div.emblem', { html: UI.amberSvg ? UI.amberSvg(92) : '' }));
     titleEl.appendChild(h('div.logo', h('small', { text: 'a dinosaur park adventure' }), 'Amber', h('br'), 'Acres'));
     titleEl.appendChild(h('div.tag', { text: 'Decode the amber, hatch the giants, and open the gates.' }));

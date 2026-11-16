@@ -16,6 +16,12 @@ This refactor extracts the original game's existing sections, preserves their de
 
 Rendering and UI observe `Z.state` and the `Z.bus` event bus. A `reset` event follows simulation resets/loads; renderer and UI rebuild their derived views. Runtime simulation caches are recreated by `Sim.load`, so serialized JSON need not be byte-identical after a load.
 
+## Zoo entry point
+
+`zoo.html` loads Wild Acres Zoo from `styles/zoo.css` and the ordered classic scripts in `src/zoo/`. These files preserve the supplied Zoo game's existing module boundaries and behaviour. Both games reuse the identical bundled Three.js library. Each page loads only its own game scripts, so their `Z` namespaces remain independent. `styles/tycoon-menu.css` styles the title-screen links between the two entry points.
+
+Zoo retains its own localStorage keys: `wildacres.save.v1`, `wildacres.settings.v1` and `wazoo_tut`. Dino's keys remain unchanged. Zoo keeps its original storage implementation; the Dino storage service and backup controls described below apply to Dino.
+
 ## Save contract
 
 `Z.Sim.save()` returns the original raw v2 JSON string. `Z.Sim.load(raw)` returns a boolean, with legacy elevation/map defaults retained. The persisted park key remains `amberacres.save.v2`, and the settings key remains `amberacres.settings.v1`. Old raw localStorage saves at the same origin are readable without a conversion step. Browser data at another origin is not accessible; use a JSON backup to move saves when available.

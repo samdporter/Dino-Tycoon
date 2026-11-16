@@ -33,7 +33,7 @@ class PublicHandler(SimpleHTTPRequestHandler):
             return str(ROOT / "__forbidden__")
         if not relative.parts or relative == Path("."):
             return str(ROOT / "index.html")
-        if candidate == ROOT / "index.html":
+        if candidate in {ROOT / "index.html", ROOT / "zoo.html"}:
             return str(candidate)
         resolved_relative = candidate.relative_to(ROOT)
         if resolved_relative.parts and resolved_relative.parts[0] in PUBLIC_DIRS and candidate.is_file():
