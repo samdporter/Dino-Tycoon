@@ -15,7 +15,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     world.addEventListener('pointerup', onUp); world.addEventListener('pointercancel', onCancel);
     world.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse' && !nptr) { hover = null; if (UI.tool && POINT[UI.tool.kind] || UI.tool) clearPreview(); } });
     world.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-    world.addEventListener('wheel', function (e) { e.preventDefault(); Z.World.zoom(Math.exp(UI.clamp(e.deltaY, -120, 120) * 0.0013)); }, { passive: false });
+    world.addEventListener('wheel', function (e) { e.preventDefault(); if (UI.SV && UI.SV.active) return UI.SV.wheel(e); Z.World.zoom(Math.exp(UI.clamp(e.deltaY, -120, 120) * 0.0013)); }, { passive: false });
     window.addEventListener('keydown', onKey); window.addEventListener('keyup', function (e) { delete keys[e.key.toLowerCase()]; });
     window.addEventListener('blur', function () { keys = {}; });
     UI.held.keys = keysFrame;
@@ -27,7 +27,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA')) { if (e.key === 'Escape') tg.blur(); return; }
     if (UI.titleOpen) return;
     var k = e.key.toLowerCase();
+    if (UI.SV && UI.SV.active && UI.SV.key && UI.SV.key(e, k)) return;
     UI.snd('unlock');
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { if (!(UI.modalOpen && UI.modalOpen())) { UI.doUndo(); e.preventDefault(); } return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var S = Z.state;
     if (k === 'escape') { if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
@@ -35,6 +37,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (k === ' ') { UI.setSpeed(S.speed === 0 ? (UI.lastSpeed || 1) : 0); if (S.speed) UI.lastSpeed = S.speed; e.preventDefault(); return; }
     if (k === '1') UI.setSpeed(1); else if (k === '2') UI.setSpeed(2); else if (k === '3') UI.setSpeed(4);
     else if (k === 'r') Tools.rotate();
+    else if (k === 'z') UI.doUndo();
     else if (k === 'b') { UI.openCat('bull', true); }
     else if (k === 'h') UI.hideUI(!UI.el.root_hidden && !document.getElementById('ui').classList.contains('ui-hidden'));
     else if (k === '+' || k === '=') Z.World.zoom(0.8); else if (k === '-' || k === '_') Z.World.zoom(1.25);
@@ -42,7 +45,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     else if ('wasdqe'.indexOf(k) >= 0 || k.indexOf('arrow') === 0) { keys[k] = 1; e.preventDefault(); }
   }
   function keysFrame(dt) {
-    if (UI.titleOpen) return;
+    if (UI.titleOpen || (UI.StreetView && (typeof UI.StreetView.active === 'function' ? UI.StreetView.active() : UI.StreetView.active)) || (UI.SV && UI.SV.active)) return;
     var v = 620 * dt, dx = 0, dy = 0, r = 0;
     if (keys.a || keys.arrowleft) dx += v; if (keys.d || keys.arrowright) dx -= v;
     if (keys.w || keys.arrowup) dy += v; if (keys.s || keys.arrowdown) dy -= v;
@@ -54,6 +57,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function pick(x, y) { return Z.World.pickGround(x, y); }
   function onDown(e) {
     if (UI.titleOpen) return;
+    if (UI.SV && UI.SV.active) return UI.SV.down(e, world);
     UI.snd('unlock');
     try { world.setPointerCapture(e.pointerId); } catch (er) { }
     ptrs[e.pointerId] = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, type: e.pointerType, btn: e.button };
@@ -72,6 +76,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
   function ang(a, b) { return Math.atan2(b.y - a.y, b.x - a.x); }
   function onMove(e) {
+    if (UI.SV && UI.SV.active) return UI.SV.move(e);
     var p = ptrs[e.pointerId];
     if (!p) { if (e.pointerType === 'mouse' && !UI.titleOpen) onHover(e.clientX, e.clientY); return; }
     var dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
@@ -90,6 +95,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
   }
   function onUp(e) {
+    if (UI.SV && UI.SV.active) return UI.SV.up(e, world);
     var p = ptrs[e.pointerId]; if (!p) return;
     delete ptrs[e.pointerId]; nptr = Object.keys(ptrs).length;
     try { world.releasePointerCapture(e.pointerId); } catch (er) { }
@@ -102,6 +108,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (nptr === 0) g = null;
   }
   function onCancel(e) {
+    if (UI.SV && UI.SV.active) return UI.SV.cancel(e);
     delete ptrs[e.pointerId]; nptr = Object.keys(ptrs).length;
     if (g && g.mode === 'tool') toolAbort();
     if (nptr === 0) g = null;
@@ -118,20 +125,21 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ---------------------------------------------------------------- tool lifecycle
   var HINTS = {
-    path: 'Drag in a straight line. A tap lays one tile.', terrain: 'Paint with your finger. Pick a brush size.', fence: '', scenery: 'Tap to place. Slide to adjust before you lift.',
+    path: 'Drag in a straight line. A tap lays one tile.', terrain: 'Paint with your finger. Pick a brush size.', sculpt: 'Press and hold, or drag, to keep going. One level each time.', fence: '', scenery: 'Tap to place. Slide to adjust before you lift.',
     building: 'Tap to place. Slide to adjust. Touch a path edge.', animal: 'Tap inside an enclosure to place it.', staff: 'Tap a path tile to hire here.', bulldoze: '', animalmove: 'Tap inside an enclosure to move it there.'
   };
   Tools.start = function (spec) {
     var prev = UI.tool;
-    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, rot: 0, move: false, brush: UI.prefs.brush || 2, mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
+    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
     if (UI.tool.kind === 'scenery' || UI.tool.kind === 'building') rerollRot();
     if (UI.Panel) UI.Panel.hide(true);
     clearPreview(); hover = null; drag = null;
     el.strip.classList.add('on'); buildStrip(); UI.markSelected(); syncSide();
-    if (UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain') { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
+    if (UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain' && spec.kind !== 'sculpt') { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
     if (UI.Tutorial) UI.Tutorial.onTool(UI.tool);
   };
   Tools.cancel = function (quiet) {
+    sculptStop();
     if (!UI.tool) return;
     UI.tool = null; drag = null; hover = null; g = null; clearPreview();
     el.strip.classList.remove('on'); UI.markSelected(); syncSide();
@@ -156,7 +164,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function buildStrip() {
     var t = UI.tool, s = el.strip; s.innerHTML = ''; if (!t) return;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
-    var hint = t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
+    var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
     s.appendChild(h('div.tname', { html: name + '<small>' + hint + '</small>' }));
     function seg(opts, cur, fn) {
@@ -164,8 +172,16 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     if (t.kind === 'fence') s.appendChild(seg([['rect', 'Enclosure', 'rect'], ['line', 'Line', 'line']], t.mode, function (v) { t.mode = UI.prefs.fenceMode = v; clearPreview(); if (UI.Tutorial) UI.Tutorial.onFenceMode && UI.Tutorial.onFenceMode(v); }));
     if (t.kind === 'terrain') s.appendChild(seg([[1, 'S'], [2, 'M'], [3, 'L']], t.brush, function (v) { t.brush = UI.prefs.brush = v; clearPreview(); }));
+    if (t.kind === 'sculpt') {
+      var sg2 = seg([[1, '1×1', null, '1x1'], [2, '3×3', null, '3x3'], [3, '5×5', null, '5x5']], t.brush, function (v) { t.brush = UI.prefs.sbrush = v; clearPreview(); });
+      sg2.classList.add('sc'); sg2.setAttribute('aria-label', 'Brush size in tiles'); s.appendChild(sg2);
+      if (t.id === 'level') {
+        var shp = seg([['smooth', 'Soft'], ['sharp', 'Sharp']], t.sharp ? 'sharp' : 'smooth', function (v) { t.sharp = (v === 'sharp'); clearPreview(); });
+        shp.setAttribute('aria-label', 'Level sharpness'); s.appendChild(shp);
+      }
+    }
     if (t.kind === 'bulldoze') s.appendChild(seg([['things', 'Things'], ['fences', 'Fences']], t.bmode, function (v) { t.bmode = v; clearPreview(); }));
-    if (t.kind === 'building' || t.kind === 'scenery') { if (manualRot()) s.appendChild(h('button.btn.sm.alt', { html: ic('rot') + 'Rotate', on: { click: function () { Tools.rotate(); UI.snd('click'); } } })); }
+    if (t.kind === 'building' || t.kind === 'scenery') { if (manualRot()) s.appendChild(h('button.btn.sm.alt', { html: ic('rot') + 'Rotate<small class="kb">R</small>', on: { click: function () { Tools.rotate(); UI.snd('click'); } } })); }
     s.appendChild(h('button.btn.sm' + (t.move ? '' : '.alt'), { html: ic('hand') + (t.move ? 'Tool' : 'Move'), 'aria-label': 'Move the camera', on: { click: function () { Tools.toggleMove(); UI.snd('click'); } } }));
     s.appendChild(h('button.btn.sm.warn', { html: ic('check') + 'Done', on: { click: function () { Tools.cancel(); UI.snd('click'); } } }));
     if (t.kind === 'animal' || t.kind === 'animalmove') { el.forecast = h('div#forecast', h('div.pct', { text: '--' }), h('div.fi', { text: 'Move over an enclosure to see how happy it would be.' })); s.appendChild(el.forecast); }
@@ -225,6 +241,61 @@ window.Z = window.Z || {}; var Z = window.Z;
         return { n: chg.length, cost: c };
       } };
   };
+  // ---- terrain sculpting ----
+  var SC = {}, SCL = UI.SCULPT || []; for (var sci = 0; sci < SCL.length; sci++) SC[SCL[sci].id] = SCL[sci];
+  function elevAt(c) {
+    var S = Z.state; if (!S.elev || !Z.eidx) return null;
+    var e = S.elev, a = e[Z.eidx(c.i, c.j)], b = e[Z.eidx(c.i + 1, c.j)], d = e[Z.eidx(c.i, c.j + 1)], f = e[Z.eidx(c.i + 1, c.j + 1)];
+    if (a === undefined || f === undefined) return null; return Math.round((a + b + d + f) / 4);
+  }
+  function heightText(c) { var v = elevAt(c); return v === null ? '' : 'Height ' + (v > 0 ? '+' : '') + v; }
+  PLAN.sculpt = function (d) {
+    var t = UI.tool, c = d.b || d.a, sp = SC[t.id] || SC.raise, radius = t.brush - 1, Sm = Z.Sim;
+    var sharp = (t.sharp !== undefined ? t.sharp : !!sp.sharp);
+    var tiles = brushTiles(c.i, c.j, radius).filter(function (q) { return !Sm.inMap || Sm.inMap(q.i, q.j); });
+    if (Sm.inMap && !Sm.inMap(c.i, c.j)) return { spec: { type: 'tiles', tiles: tiles.length ? tiles : [c], ok: false }, ok: false, cost: 0, msg: 'Outside your land', label: '' };
+    if (!Sm.terraform) return { spec: null, ok: false, cost: 0, msg: 'Terrain sculpting is not available', label: '' };
+    var r = Sm.terraform(c.i, c.j, sp.mode, radius, { sharp: sharp, dry: true }), cost = r.cost || 0;
+    if (r.ok && sp.lake && Sm.paintTerrain) { var w = Sm.paintTerrain(c.i, c.j, 'water', radius, { dry: true }); if (w && w.ok && w.cost) cost += w.cost; }
+    return { spec: { type: 'tiles', tiles: tiles.length ? tiles : [c], ok: !!r.ok }, ok: !!r.ok, cost: cost, msg: r.ok ? '' : failMsg(r), warn: heightText(c), label: '', sculpt: true };
+  };
+  var sculpt = null;
+  function sculptStop() {
+    if (!sculpt) return; var sc = sculpt; sculpt = null; clearTimeout(sc.timer);
+    try { if (Z.Sim && Z.Sim.endStroke) Z.Sim.endStroke(); } catch (e) { }
+    if (sc.n) {
+      if (UI.updateUndo) UI.updateUndo(true);
+      if (UI.syncUndo) UI.syncUndo(true);
+    }
+    return sc;
+  }
+  function sculptApply() {
+    var sc = sculpt, t = UI.tool; if (!sc || !drag || !t || t.kind !== 'sculpt') return;
+    var c = drag.b || drag.a, sp = SC[t.id] || SC.raise, radius = t.brush - 1, sharp = (t.sharp !== undefined ? t.sharp : !!sp.sharp);
+    var res = Z.Sim.terraform ? Z.Sim.terraform(c.i, c.j, sp.mode, radius, { sharp: sharp }) : { ok: false, msg: 'Terrain sculpting is not available' };
+    if (res.ok) {
+      sc.n++; sc.cost += res.cost || 0;
+      if (sp.lake && Z.Sim.paintTerrain) { var w = Z.Sim.paintTerrain(c.i, c.j, 'water', radius); if (w && w.ok) sc.cost += w.cost || 0; }
+      UI.snd(sc.n === 1 ? 'build' : 'click'); refreshPlan();
+      if (UI.Tutorial && sc.n === 1 && UI.Tutorial.onBuilt) UI.Tutorial.onBuilt(t);
+      sc.timer = setTimeout(sculptApply, 180);
+    } else {
+      sc.failed = true; UI.snd('bad'); var m = failMsg(res); if (!/Already|Nothing/.test(m) || sc.n === 0) UI.toast(m, 'bad'); refreshPlan();
+    }
+  }
+  function sculptDown(x, y, touch) {
+    if (Z.Sim && Z.Sim.beginStroke) Z.Sim.beginStroke(strokeLabel());
+    sculpt = { n: 0, cost: 0, failed: false, timer: setTimeout(sculptApply, touch ? 110 : 0) };
+  }
+  function sculptUp(x, y, type) {
+    var touch = type !== 'mouse', gp = pick(x, y);
+    if (gp && drag) { drag.b = gp; drag.cx = x; drag.cy = y; }
+    if (sculpt && !sculpt.n && !sculpt.failed) { clearTimeout(sculpt.timer); sculptApply(); }
+    var d = drag; drag = null; var sc = sculptStop();
+    if (sc && sc.n) flashCost(x, y, (sc.cost ? '-' + fmt(sc.cost) : 'Done') + (sc.n > 1 ? ' (' + sc.n + ' levels)' : ''), true);
+    if (!UI.tool) return;
+    if (touch) { clearPreview(); hover = null; } else { hover = mkDrag(x, y, false); refreshPlan(); }
+  }
   function fenceEdgesRect(a, b) {
     var i0 = Math.min(a.i, b.i), i1 = Math.max(a.i, b.i), j0 = Math.min(a.j, b.j), j1 = Math.max(a.j, b.j), e = [], i, j;
     for (i = i0; i <= i1; i++) { e.push({ axis: 'x', i: i, j: j0 }); e.push({ axis: 'x', i: i, j: j1 + 1 }); }
@@ -327,7 +398,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (plan.spec) Z.World.setPreview(plan.spec); else Z.World.setPreview(null);
     var txt = plan.free ? plan.label : (plan.cost ? (plan.cost < 0 ? '+' : '') + fmt(Math.abs(plan.cost)) : (plan.ok ? 'Free' : ''));
     if (UI.tool.kind === 'bulldoze' && plan.ok) txt = '+' + fmt(Math.abs(plan.cost)) + ' back';
+    var dd0 = drag || hover, anc = dd0 && (dd0.b || dd0.a);
+    if (!plan.ok && anc && Z.Sim && Z.Sim.inMap && !Z.Sim.inMap(anc.i, anc.j)) { plan.msg = 'Outside your land'; plan.cost = 0; txt = 'Outside your land'; }
     var sub = plan.ok ? ((plan.label && !plan.free ? plan.label : '') + (plan.warn ? (plan.label ? ' - ' : '') + plan.warn : '')) : plan.msg;
+    if (txt === 'Outside your land') sub = '';
     if (!plan.ok && !txt) txt = plan.msg, sub = '';
     else if (!plan.ok && plan.cost) txt = fmt(plan.cost);
     showCost(x, y, txt, sub, plan.ok, touch);
@@ -353,6 +427,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var touch = type !== 'mouse'; drag = mkDrag(x, y, touch);
     if (!drag) { clearPreview(); return; }
     drag.start = { x: x, y: y }; refreshPlan();
+    if (UI.tool && UI.tool.kind === 'sculpt') { sculptStop(); sculptDown(x, y, touch); }
   }
   function toolMove(x, y) {
     if (!drag) { var d0 = mkDrag(x, y, ptrs && Object.keys(ptrs).length && ptrs[Object.keys(ptrs)[0]].type !== 'mouse'); if (d0) { drag = d0; } else return; }
@@ -367,18 +442,23 @@ window.Z = window.Z || {}; var Z = window.Z;
     refreshPlan();
   }
   function toolUp(x, y, type) {
-    if (!drag) { return; }
+    if (!drag) { sculptStop(); return; }
+    if (UI.tool && UI.tool.kind === 'sculpt') { sculptUp(x, y, type); return; }
     var touch = type !== 'mouse', gp = pick(x, y);
     if (gp) { drag.b = gp; drag.cx = x; drag.cy = y; }
     drag.committing = true;
     var plan = planFor(drag);
     var d = drag; drag = null;
     if (plan && plan.ok) {
-      var res = plan.run(); var spent = res.cost;
+      var sl = strokeLabel(); if (Z.Sim && Z.Sim.beginStroke) Z.Sim.beginStroke(sl); var res;
+      try { res = plan.run(); } finally { if (Z.Sim && Z.Sim.endStroke) Z.Sim.endStroke(); }
+      var spent = res.cost;
+      if (UI.updateUndo) UI.updateUndo(true);
+      if (UI.syncUndo) UI.syncUndo(true);
       if (res.n > 0) {
         UI.snd('build'); flashCost(x, y, (spent < 0 ? '+' : '-') + fmt(Math.abs(spent)) + (res.n > 1 ? '' : ''), true);
         if (UI.Tutorial) UI.Tutorial.onBuilt && UI.Tutorial.onBuilt(UI.tool);
-      } else { UI.snd('bad'); if (plan.msg) UI.toast(plan.msg, 'bad'); }
+      } else if (!res.silent) { UI.snd('bad'); if (plan.msg) UI.toast(plan.msg, 'bad'); }
     } else if (plan) {
       UI.snd('bad'); if (plan.msg) flashCost(x, y, plan.msg, false);
     }
@@ -386,7 +466,20 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!UI.tool) return;
     if (touch) { clearPreview(); hover = null; } else { hover = mkDrag(x, y, false); refreshPlan(); }
   }
-  function toolAbort() { drag = null; clearPreview(); }
+  function strokeLabel() {
+    var t = UI.tool; if (!t) return 'action'; var k = t.kind;
+    if (k === 'fence') return t.mode === 'rect' ? 'enclosure fence' : 'fence line';
+    if (k === 'path') return 'path';
+    if (k === 'terrain') return t.name.toLowerCase() + ' terrain';
+    if (k === 'sculpt') return t.name.toLowerCase().replace(/ \(.*\)/, '');
+    if (k === 'bulldoze') return 'bulldoze';
+    return (t.name || t.id || k).toLowerCase();
+  }
+  function toolAbort() {
+    sculptStop();
+    if (Z.Sim && Z.Sim.endStroke) try { Z.Sim.endStroke(); } catch (e) {}
+    drag = null; clearPreview();
+  }
   function onHover(x, y) {
     if (!UI.tool || UI.tool.move || nptr) return;
     hover = mkDrag(x, y, false); if (hover) refreshPlan(); else clearPreview();

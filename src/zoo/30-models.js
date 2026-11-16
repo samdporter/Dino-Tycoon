@@ -1630,7 +1630,7 @@ var SCENERY_API;
 
 // ================================================================ BUILDINGS
 var BLD = {};
-var BLD_DEF = { burger_stand: [1, 1], pizza_hut: [1, 1], ice_cream: [1, 1], drinks_stall: [1, 1], coffee_cart: [1, 1], toilets: [2, 1], gift_shop: [2, 1], balloon_stand: [1, 1], carousel: [2, 2], info_kiosk: [1, 1], restaurant: [2, 2], keeper_hut: [1, 1], vet_clinic: [2, 2], education_centre: [2, 2] };
+var BLD_DEF = { burger_stand: [1, 1], pizza_hut: [1, 1], ice_cream: [1, 1], drinks_stall: [1, 1], coffee_cart: [1, 1], toilets: [2, 1], gift_shop: [2, 1], balloon_stand: [1, 1], carousel: [2, 2], info_kiosk: [1, 1], restaurant: [2, 2], keeper_hut: [1, 1], vet_clinic: [2, 2], education_centre: [2, 2], viewing_platform: [2, 1], emergency_bunker: [2, 2] };
 var texMats = {};
 function labelMat(text, bg, fg, w, h) {
   var key = text + bg + fg + w + h; if (texMats[key]) return texMats[key];
@@ -1910,6 +1910,56 @@ BLD.education_centre = function (grp0) {
   grp0.add(labelMesh('LEARN', 0x4f8a5a, 0xfff4d0, 1.0, 0.28, 0, 2.55, 0.9, 0));
 };
 
+function pulseMat(col, em) { return new T.MeshLambertMaterial({ color: col, emissive: em, transparent: true, opacity: 0.8, depthWrite: false }); }
+function chainUpd(grp0, fn) { var prev = grp0.userData.update; grp0.userData.update = function (dt, t) { if (prev) prev(dt, t); fn(dt, t || 0); }; }
+function post(g, x, z, y0, y1, col, r) { g.limb(x, y0, z, x, y1, z, r || 0.05, r || 0.05, col, { seg: 5 }); }
+function railing(g, x0, z0, x1, z1, y, col) { post(g, x0, z0, y - 0.9, y, col, 0.04); post(g, x1, z1, y - 0.9, y, col, 0.04); g.limb(x0, y, z0, x1, y, z1, 0.03, 0.03, col, { seg: 4 }); g.limb(x0, y - 0.45, z0, x1, y - 0.45, z1, 0.025, 0.025, col, { seg: 4 }); }
+
+BLD.viewing_platform = function (grp0) { // 4x2 m
+  var g = B(), wd = 0x9a6a40, wd2 = 0x7a5230;
+  g.box(3.9, 0.1, 1.9, 0, 0.05, 0, 0x8d8a84);
+  for (var a = -1; a <= 1; a += 2) for (var b = -1; b <= 1; b += 2) post(g, a * 1.7, b * 0.7, 0.05, 2.9, wd2, 0.09);
+  for (var k = 0; k < 2; k++) { g.limb(-1.7, 0.2 + k * 1.1, 0.7, 1.7, 0.2 + k * 1.1 + 0.0, 0.7, 0.03, 0.03, wd2, { seg: 4 }); }
+  g.box(3.8, 0.14, 1.7, 0, 1.6, 0, wd); for (k = 0; k < 8; k++) g.box(0.02, 0.02, 1.72, -1.6 + k * 0.46, 1.69, 0, wd2);
+  railing(g, 0.1, 0.8, 1.9, 0.8, 2.7, wd2); railing(g, -1.9, -0.8, 1.9, -0.8, 2.7, wd2); railing(g, -1.9, -0.8, -1.9, 0.8, 2.7, wd2); railing(g, 1.9, -0.8, 1.9, 0.8, 2.7, wd2);
+  // staircase along the front face (left to right)
+  for (k = 0; k < 5; k++) g.box(0.36, 0.3 * (k + 1), 0.4, -1.75 + k * 0.36, 0.15 * (k + 1), 0.95, wd);
+  // roof canopy
+  for (a = -1; a <= 1; a += 2) for (b = -1; b <= 1; b += 2) post(g, a * 1.5, b * 0.6, 1.6, 3.3, wd2, 0.05);
+  g.box(3.6, 0.1, 1.6, 0, 3.35, 0, 0x3f7a4a); g.cone(2.0, 0.5, 0, 3.7, 0, 0x4a8a56, { seg: 4, rot: [0, PI / 4, 0], sx: 1, sz: 0.5 });
+  // binoculars on posts
+  for (a = 0; a < 2; a++) { var bx = -0.5 + a * 1.4; post(g, bx, 0.6, 1.67, 2.3, 0x555a60, 0.04); g.cyl(0.07, 0.07, 0.3, bx - 0.07, 2.35, 0.7, 0x2a2e34, { seg: 6, rot: [PI / 2, 0, 0] }); g.cyl(0.07, 0.07, 0.3, bx + 0.07, 2.35, 0.7, 0x2a2e34, { seg: 6, rot: [PI / 2, 0, 0] }); }
+  g.box(0.9, 0.5, 0.04, 1.2, 2.0, 0.78, 0xf4ead0);
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('LOOKOUT', 0x3f7a4a, 0xfff4d0, 1.0, 0.24, -0.4, 2.95, 0.62, 0));
+};
+
+BLD.emergency_bunker = function (grp0) { // 4x4 m
+  var g = B(), cn = function (x, y, z) { return hash3(Math.floor(x * 5), Math.floor(y * 4), Math.floor(z * 5)) > 0.7 ? 0x8a8c8a : 0x9a9c9a; };
+  var hz = function (x, y, z) { return fract((x + y) * 3.2) < 0.5 ? 0xf2c030 : 0x2a2a2a; };
+  g.box(3.9, 0.12, 3.9, 0, 0.06, 0, 0x7a7c7a);
+  g.box(3.2, 1.8, 2.6, 0, 1.0, -0.4, cn, { s: [1, 2, 1] }); g.box(3.4, 0.25, 2.8, 0, 2.0, -0.4, 0x7a7c7a);
+  g.box(3.0, 0.2, 2.4, 0, 2.25, -0.4, 0x5a5c5a, { rot: [0.0, 0, 0] });
+  g.box(3.3, 0.3, 0.06, 0, 0.35, 0.92, hz, { s: [24, 1, 1] }); g.box(3.3, 0.3, 0.06, 0, 1.75, 0.92, hz, { s: [24, 1, 1] });
+  g.box(1.5, 1.4, 0.2, 0, 0.8, 0.95, 0x4a5058); g.box(1.3, 1.2, 0.1, 0, 0.8, 1.05, 0x6a7078); g.box(1.4, 0.06, 0.1, 0, 0.8, 1.12, 0x2a2e34);
+  g.cyl(0.14, 0.14, 0.05, 0.0, 1.1, 1.12, 0xc83a2a, { seg: 8, rot: [PI / 2, 0, 0] });
+  g.box(0.8, 0.3, 0.05, -1.1, 1.3, 0.93, 0xf4ead0); g.box(0.3, 0.3, 0.06, 1.2, 1.1, 0.93, 0xd8322e); g.box(0.08, 0.2, 0.07, 1.2, 1.1, 0.93, 0xffffff); g.box(0.2, 0.08, 0.07, 1.2, 1.1, 0.93, 0xffffff);
+  g.box(0.7, 0.45, 0.04, 1.0, 1.4, 0.93, 0x2a3038);
+  for (var i = 0; i < 5; i++) g.box(1.4 - i * 0.04, 0.06, 0.3, 0, 0.1 + i * 0.0, 1.2 + 0.0, 0x8a8c8a);
+  g.cyl(0.35, 0.35, 0.5, 0.9, 2.6, -1.0, 0x6a6c6a, { seg: 8 }); g.cyl(0.4, 0.4, 0.05, 0.9, 2.85, -1.0, 0x4a4c4a, { seg: 8 });
+  post(g, -1.2, -1.2, 2.35, 3.6, 0x555a60, 0.04); g.limb(-1.2, 3.4, -1.2, -0.7, 3.7, -1.2, 0.02, 0.02, 0x555a60, { seg: 3 }); g.box(0.35, 0.22, 0.04, -1.38, 3.45, -1.2, 0xe0a030);
+  for (i = 0; i < 4; i++) g.box(0.3, 0.3, 0.3, -1.5 + i * 0.0, 0.25 + i * 0.0, 1.6 + (i % 2) * 0.0, 0x4a6a3a, { rot: [0, 0.2 * i, 0] });
+  g.cyl(0.1, 0.1, 0.9, 1.7, 0.45, 1.5, 0xd8322e, { seg: 6 });
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('EMERGENCY', 0xc83a2a, 0xffffff, 1.4, 0.26, -0.5, 1.9, 0.98, 0));
+  var bk = new T.Mesh(unit('ebeacon', function () { return new T.SphereGeometry(0.22, 8, 6); }), pulseMat(0xff3a2a, 0xff1a0a)); bk.position.set(0, 3.45, -0.4);
+  var rot = grp(); rot.position.set(0, 2.45, -0.4); var bb = B(); bb.cyl(0.3, 0.3, 0.2, 0, 0.1, 0, 0x4a4c4a, { seg: 8 }); bb.sph(0.3, 0.3, 0.3, 0, 0.45, 0, 0xff3a2a, { s: [8, 5] }); grp0.add(mesh(bb.build()));
+  var rb = B(); rb.box(1.1, 0.05, 0.12, 0, 0.45, 0, 0xffe0c0); rot.add(mesh(rb.build())); grp0.add(rot);
+  var lg = new T.Mesh(unit('ebeaconl', function () { return new T.SphereGeometry(0.42, 8, 6); }), pulseMat(0xff3a2a, 0xff1a0a)); lg.position.set(0, 2.95, -0.4); grp0.add(lg);
+  chainUpd(grp0, function (dt, tm) { rot.rotation.y = tm * 4; var s = Math.max(0, Math.sin(tm * 4.5)); lg.material.opacity = 0.1 + 0.5 * s; });
+  grp0.userData.update(0, 0);
+};
+
 BUILDING_API = {
   building: function (id) {
     var b = BLD[id]; if (!b) return null;
@@ -1975,6 +2025,7 @@ API.createStaff = function (type) { return API_people.staff(type); };
 function fallbackBox() { var f = grp('missing'); f.add(mesh(B().box(1.2, 1.2, 1.2, 0, 0.6, 0, 0xc08060).build())); return f; }
 API.createScenery = function (id) { return SCENERY_API.scenery(id) || fallbackBox(); };
 API.createBuilding = function (id) { return BUILDING_API.building(id) || fallbackBox(); };
+API.makeBuilding = API.createBuilding;
 API.sceneryInstancing = SCENERY_API.instancing;
 API.speciesIds = function () { return Object.keys(QUADS).concat(Object.keys(OTHERS)); };
 return API;

@@ -5,8 +5,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA;
   var Screens = UI.Screens = {}, el, tabEls = {}, curTab = null, tabUpdate = null, pausedBy = false, pressing = false, tick = 0;
-  var TABS = [['ov', 'Overview', 'star'], ['fin', 'Finances', 'coin'], ['ani', 'Animals', 'paw'], ['gst', 'Guests', 'guests'], ['stf', 'Staff', 'person'], ['goals', 'Goals', 'flag'], ['msg', 'News', 'bell'], ['set', 'Settings', 'gear']];
-  var BUILD = { ov: ovTab, fin: finTab, ani: aniTab, gst: gstTab, stf: stfTab, goals: goalsTab, msg: msgTab, set: setTab };
+  var TABS = [['ov', 'Overview', 'star'], ['fin', 'Finances', 'coin'], ['ani', 'Animals', 'paw'], ['gst', 'Guests', 'guests'], ['stf', 'Staff', 'person'], ['goals', 'Goals', 'flag'], ['msg', 'News', 'bell'], ['guide', 'Guide', 'book'], ['set', 'Settings', 'gear']];
+  var BUILD = { ov: ovTab, fin: finTab, ani: aniTab, gst: gstTab, stf: stfTab, goals: goalsTab, msg: msgTab, guide: function (b) { return UI.Guide && UI.Guide.build ? UI.Guide.build(b) : null; }, set: setTab };
 
   Screens.init = function () {
     el = UI.el; var m = el.modal; m.innerHTML = '';
@@ -78,7 +78,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (ns <= 5) next.appendChild(h('div.chips', ul.length ? ul.map(function (n) { return h('span.chip', { text: n }); }) : [h('span.chip', { text: 'Bragging rights' })]));
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your zoo' }));
-      [['Day', S2.day], ['Animals', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Guests in the zoo', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]].forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
+      var stList = [['Day', S2.day], ['Animals', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Guests in the zoo', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
+      if (S2.panic > 0) stList.push(['Park panic', Math.round(S2.panic * 100) + '%']);
+      if (S2.stats && S2.stats.injuries) stList.push(['Guest injuries', S2.stats.injuries]);
+      if (S2.stats && S2.stats.compensation) stList.push(['Compensation paid', fmt(S2.stats.compensation)]);
+      stList.forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
     }
     upd(); return upd;
   }
@@ -109,6 +113,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       var S2 = Z.state, f = S2.finance.today, hist = S2.finance.history;
       cashBox.innerHTML = ''; cashBox.appendChild(h('div.kv', h('span', { text: 'In the bank' }), h('b.big' + (S2.money < 0 ? '.neg' : ''), { text: fmt(S2.money) })));
       if (S2.loan) cashBox.appendChild(h('div.kv', h('span', { text: 'Loan outstanding' }), h('b.neg', { text: fmt(S2.loan) })));
+      if (S2.stats && S2.stats.injuries) cashBox.appendChild(h('div.kv', h('span', { text: 'Guest injuries' }), h('b.neg', { text: String(S2.stats.injuries) })));
+      if (S2.stats && S2.stats.compensation) cashBox.appendChild(h('div.kv', h('span', { text: 'Injury compensation' }), h('b.neg', { text: fmt(S2.stats.compensation) })));
+      if (S2.panic > 0) cashBox.appendChild(h('div.kv', h('span', { text: 'Park panic' }), h('b.neg', { text: Math.round(S2.panic * 100) + '%' })));
       if (hist.length) { var l = hist[hist.length - 1]; cashBox.appendChild(h('div.kv', h('span', { text: 'Yesterday (day ' + l.day + ')' }), h('b' + (l.profit >= 0 ? '.pos' : '.neg'), { text: (l.profit >= 0 ? '+' : '') + fmt(l.profit) + ' profit' }))); }
       table.innerHTML = ''; var tot = 0;
       Object.keys(CATN).forEach(function (k) { var v = f[k] || 0; if (!v) return; tot += v; table.appendChild(h('tr', h('td', { text: CATN[k] }), h('td.r.num' + (v >= 0 ? '.pos' : '.neg'), { text: (v >= 0 ? '+' : '-') + fmt(Math.abs(v)).replace('-', '') }))); });
@@ -255,12 +262,19 @@ window.Z = window.Z || {}; var Z = window.Z;
     game.appendChild(h('div.btnrow', h('button.btn.sm', { html: ic('save') + 'Save now', on: { click: function () { var ok = Z.Main.save(); UI.toast(ok ? 'Game saved' : 'Could not save in this browser', ok ? 'good' : 'bad'); } } }),
       h('button.btn.sm.alt', { html: ic('flag') + 'Replay tutorial', on: { click: function () { UI.closeModal(); UI.Tutorial.restart(); } } }),
       h('button.btn.sm.alt', { html: ic('home') + 'Title screen', on: { click: function () { Z.Main.toTitle(); } } })));
-    var nb = h('button.btn.sm.warn', { html: ic('trash') + 'New game' }), armed = false;
+    var nb = h('button.btn.sm.warn', { text: 'New game setup' });
     nb.addEventListener('click', function () {
-      if (!armed) { armed = true; nb.innerHTML = 'Really start over? Tap again'; setTimeout(function () { armed = false; nb.innerHTML = ic('trash') + 'New game'; }, 3500); }
-      else { UI.closeModal(); Z.Main.newGame(); }
+      UI.closeModal();
+      if (Z.Main.openSetup) Z.Main.openSetup();
     });
-    game.appendChild(nb); b.appendChild(game);
+    game.appendChild(nb);
+    game.appendChild(h('div.btnrow',
+      h('button.btn.sm.alt', { text: 'Export save', on: { click: function () { Z.Main.exportSave(); } } }),
+      h('button.btn.sm.alt', { text: 'Import save', on: { click: function () { Z.Main.chooseImport(); } } })));
+    var status = h('p', { text: (Z.Storage && Z.Storage.status) ? Z.Storage.status() : '', role: 'status' });
+    game.appendChild(status);
+    game.appendChild(h('p', { text: 'Saves belong to this browser and web address. Export backups before changing devices or addresses.' }));
+    b.appendChild(game);
     var how = box('How to play'); how.classList.add('help');
     how.appendChild(h('div', { html:
       '<p><b>Goal:</b> build a zoo people love. Fence an enclosure, give the animals the ground, plants and shelter they like, then lay paths so guests can see them. Add food, drink and toilets, hire staff, and watch the stars climb.</p>' +
@@ -268,6 +282,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       '<p><b>Mouse:</b> left click uses the tool or pans; right-drag rotates; wheel zooms. <b>Keys:</b> WASD or arrows pan, Q/E rotate, +/- zoom, R rotates the item, B bulldoze, Space pause, 1-2-3 speed, H hides the interface, Esc cancels.</p>' +
       '<p><b>Tip:</b> ' + (D.tips[(Math.random() * D.tips.length) | 0]) + '</p>' }));
     b.appendChild(how);
-    return null;
+    return function () { if (Z.Storage && Z.Storage.status) status.textContent = Z.Storage.status(); };
   }
+  Screens.buildSettings = setTab;
 })();

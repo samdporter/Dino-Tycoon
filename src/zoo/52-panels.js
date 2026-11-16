@@ -142,12 +142,19 @@ window.Z = window.Z || {}; var Z = window.Z;
             spBox.appendChild(h('div.sp-row', h('div.sth', thumbBox('animal', sid, 64, sp.emoji)), h('div.sm', sp.name + ' × ' + s.count, h('small', { text: worstK ? 'Weak: ' + worstK : 'Everything it needs' })), h('div', { style: 'min-width:70px' }, h('div.num', { style: 'font:700 15px var(--serif);text-align:right;color:' + (pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)'), text: pct + '%' }), bar(s.suitability))));
           });
         }
-        if (!sameList(issKey, r.issues)) { issKey = r.issues.slice(); iss.innerHTML = ''; iss.appendChild(issuesList(r.issues, en.animals.length ? 'This enclosure is in good order' : 'Ready for its first residents')); }
+        var issues = r.issues ? r.issues.slice() : [];
+        var bp = (en.badPlants && en.badPlants.length) ? en.badPlants : (r.badPlants && r.badPlants.length ? r.badPlants : null);
+        if (bp && bp.length) {
+          var plantWarn = bp.length === 1 ? '1 plant is struggling on mismatched soil terrain' : bp.length + ' plants are struggling on mismatched soil terrain';
+          if (issues.indexOf(plantWarn) < 0) issues.push(plantWarn);
+        }
+        if (!sameList(issKey, issues)) { issKey = issues.slice(); iss.innerHTML = ''; iss.appendChild(issuesList(issues, en.animals.length ? 'This enclosure is in good order' : 'Ready for its first residents')); }
         return true;
       }
     };
     cur.update(); return true;
   }
+  Panel.showEnclosure = Panel.openEnclosure = openEnc;
 
   // ------------------------------------------------------------------ guest
   function openGuest(id) {
@@ -212,19 +219,35 @@ window.Z = window.Z || {}; var Z = window.Z;
       kind: 'object', update: function () {
         var q = find(Z.state.objects, id); if (!q) return false;
         var r = Z.Sim.objectReport(id); if (!r) return false;
-        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill]);
+        var pok = (Z.Sim && Z.Sim.plantOk ? Z.Sim.plantOk(id) : (r.thriving !== undefined ? r.thriving : null));
+        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, pok]);
         if (k !== key) {
           key = k; stats.innerHTML = ''; var rows = [];
           if (isB) {
             rows.push(['Visitors served', r.uses]); if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]); rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]); rows.push(['Running cost', fmt(r.upkeep) + ' / day']);
           } else { rows.push(['Beauty', '★'.repeat(def.aesthetic) + '☆'.repeat(5 - def.aesthetic)]); if (q.type === 'bin') rows.push(['Bin', Math.round((q.fill || 0) * 100) + '% full']); }
           rows.forEach(function (r2) { stats.appendChild(h('div.kv', h('span', { text: r2[0] }), h('b', { text: String(r2[1]) }))); });
+          if (!isB) {
+            var thriv = pok !== null ? pok : r.thriving;
+            if (thriv === true) stats.appendChild(h('ul.issues', h('li.ok', { text: 'Thriving here' })));
+            else if (thriv === false) stats.appendChild(issuesList(['Struggling on ' + ((r.terrainHere || r.terrainName || (D.terrain[Z.state.terrain[q.i + q.j * Z.N]] || {}).name || 'this ground')).toLowerCase() + (r.thrivesOn && r.thrivesOn.length ? ' - prefers ' + (r.thrivesOn.map(function (t) { var tt = UI.byId(D.terrain, t); return (tt ? tt.name : String(t)).toLowerCase(); }).join(', ')) : (def.terrains && def.terrains.length ? ' - prefers ' + def.terrains.map(function (t) { var tt = UI.byId(D.terrain, t); return (tt ? tt.name : String(t)).toLowerCase(); }).join(', ') : ''))]));
+            if (def.info || r.info) stats.appendChild(h('div.fact', { text: def.info || r.info }));
+          }
           if (isB) { if (r.connected) stats.appendChild(h('ul.issues', h('li.ok', { text: 'Connected to a path' }))); else stats.appendChild(issuesList(r.issues.length ? r.issues : ['Not connected to a path'])); }
         }
         return true;
       }
     };
     cur.update(); return true;
+  }
+  if (Z.Sim && !Z.Sim.plantOk) {
+    Z.Sim.plantOk = function (objId) {
+      var o = find(Z.state && Z.state.objects, objId); if (!o) return null;
+      var d = UI.byId(D.scenery, o.type);
+      if (!d || (d.kind !== 'tree' && d.kind !== 'bush') || !d.terrains) return null;
+      var t = o.i + o.j * Z.N, tid = Z.state.terrain[t], tn = D.terrain[tid] ? D.terrain[tid].id : null;
+      return d.terrains.indexOf(tn) >= 0;
+    };
   }
   function priceHint(p, def) {
     var r = p / def;

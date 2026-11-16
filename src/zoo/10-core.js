@@ -45,19 +45,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   Z.w2t = function (x) { return Math.floor(x / TILE); };
   Z.fenceXIdx = function (i, j) { return i + j * N; };
   Z.fenceZIdx = function (i, j) { return i + j * (N + 1); };
+  Z.ELEV_STEP = 0.5;
+  Z.eidx = function (i, j) { return j * (N + 1) + i; };
 
-  Z.newState = function () {
+  Z.newState = function (seed) {
+    if (seed !== undefined) rng.seed(seed);
     return {
       version: 1,
       money: 25000, loan: 0, day: 1, time: 0.3, speed: 1, ticketPrice: 8,
       rating: 1, reputation: 50, marketing: { active: false, daysLeft: 0 }, open: true,
+      elev: new Int8Array((N + 1) * (N + 1)),
+      map: { id: 'meadow', name: 'Grassland Sanctuary', i0: 0, j0: 0, i1: N - 1, j1: N - 1 },
       terrain: new Uint8Array(N * N), path: new Uint8Array(N * N),
       fenceX: new Uint8Array(N * (N + 1)), fenceZ: new Uint8Array((N + 1) * N),
       tileObj: new Int32Array(N * N), tileEnc: new Int16Array(N * N), dirt: new Uint8Array(N * N),
       objects: [], enclosures: [], animals: [], guests: [], staff: [],
       finance: { today: Z.emptyFinance(), history: [] },
-      goals: {}, stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0 },
-      unlocked: { star: 0 }, messages: [], nextId: 1
+      goals: {},
+      stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0 },
+      unlocked: { star: 0 }, messages: [], nextId: 1,
+      panic: 0,
+      difficulty: 'normal',
+      weather: { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' },
+      activeEvents: [],
+      eventAt: 3,
+      debtWarn: 0
     };
   };
   Z.emptyFinance = function () {
@@ -99,11 +111,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       while (k + run < n && bytes[k + run] === v && run < 255) run++;
       out.push(run, v); k += run;
     }
-    var t = arr instanceof Uint8Array ? 'u8' : arr instanceof Int32Array ? 'i32' : arr instanceof Int16Array ? 'i16' : 'u8';
+    var t = arr instanceof Uint8Array ? 'u8' : arr instanceof Int32Array ? 'i32' : arr instanceof Int16Array ? 'i16' : arr instanceof Int8Array ? 'i8' : 'u8';
     return { __t: t, n: arr.length, d: b64enc(out) };
   };
   Z.unpackArray = function (o) {
-    var rl = b64dec(o.d), C = o.__t === 'i32' ? Int32Array : o.__t === 'i16' ? Int16Array : Uint8Array;
+    var rl = b64dec(o.d), C = o.__t === 'i32' ? Int32Array : o.__t === 'i16' ? Int16Array : o.__t === 'i8' ? Int8Array : Uint8Array;
     var arr = new C(o.n), bytes = new Uint8Array(arr.buffer), p = 0;
     for (var k = 0; k + 1 < rl.length; k += 2) {
       var run = rl[k], v = rl[k + 1];

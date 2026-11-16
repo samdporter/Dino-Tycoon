@@ -48,6 +48,21 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.good = function () { if (!ready() || !limit('good', 250)) return; tone(660, 0.12, 'triangle', 0.06, 0); tone(880, 0.2, 'triangle', 0.06, 0.09); };
   A.fanfare = function () { if (!ready() || !limit('fan', 800)) return; [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 0.28, 'triangle', 0.07, i * 0.11); tone(f * 2, 0.2, 'sine', 0.02, i * 0.11); }); tone(1047, 0.7, 'triangle', 0.06, 0.5); };
   A.alarm = function () { if (!ready() || !limit('alarm', 1200)) return; for (var i = 0; i < 3; i++) { tone(880, 0.13, 'square', 0.035, i * 0.3); tone(660, 0.13, 'square', 0.035, i * 0.3 + 0.15); } };
+  A.thunder = function () {
+    if (!ready() || !limit('thunder', 1200)) return;
+    noise(0.4, 0.28, 420, 'lowpass', 0, 2);
+    tone(110, 0.6, 'sawtooth', 0.14, 0, 30);
+    noise(1.8, 0.24, 180, 'lowpass', 0.08);
+    tone(75, 1.4, 'sine', 0.22, 0.05, 38);
+    noise(2.4, 0.18, 140, 'lowpass', 0.25);
+    tone(55, 2.0, 'sine', 0.2, 0.3, 30);
+    noise(2.8, 0.12, 100, 'lowpass', 0.6);
+  };
+  A.play = function (name, a, b) {
+    if (!ready()) return;
+    if (name === 'thunder') A.thunder();
+    else if (typeof A[name] === 'function') A[name](a, b);
+  };
 
   // species calls
   function growl(f) { var t = tone(f, 0.75, 'sawtooth', 0.1, 0, f * 0.7), lfo = ctx.createOscillator(), lg = ctx.createGain(); lfo.frequency.value = 22; lg.gain.value = f * 0.25; lfo.connect(lg); lg.connect(t.o.frequency); lfo.start(); lfo.stop(ctx.currentTime + 0.9); noise(0.5, 0.05, 300, 'lowpass', 0.05); }
@@ -70,11 +85,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.update = function (dt) {
     if (!ready() || !Z.state) return;
     var S = Z.state, t = S.time, day = t > 0.27 && t < 0.78;
-    if (ambGain) { var target = 0.016 + Math.min(0.03, S.guests.length * 0.00045); ambGain.gain.value += (target - ambGain.gain.value) * Math.min(1, dt * 0.5); }
+    var w = S.weather, rainK = (w && (w.type === 'rain' || w.type === 'storm')) ? (typeof w.intensity === 'number' ? w.intensity : 0.6) : 0;
+    if (ambGain) { var target = 0.016 + Math.min(0.03, S.guests.length * 0.00045) + (rainK > 0 ? rainK * 0.035 : 0); ambGain.gain.value += (target - ambGain.gain.value) * Math.min(1, dt * 0.5); }
     if (S.speed === 0) return;
-    if (day) {
+    if (day && rainK < 0.6) {
       birdT -= dt; if (birdT <= 0) { birdT = 1.6 + Math.random() * 4.5; var b = 2600 + Math.random() * 1800, n = 2 + (Math.random() * 3 | 0); for (var i = 0; i < n; i++) tone(b * (1 + (i % 2) * 0.18), 0.07, 'sine', 0.018, i * 0.1, b * (1.2 + Math.random() * 0.3)); }
-    } else {
+    } else if (!day && rainK < 0.6) {
       cricT -= dt; if (cricT <= 0) {
         cricT = 1.2 + Math.random() * 2.5;
         var o = ctx.createOscillator(), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain(), tt = ctx.currentTime; o.frequency.value = 4300 + Math.random() * 400; lfo.frequency.value = 28; lg.gain.value = 0.008; g.gain.value = 0.008;

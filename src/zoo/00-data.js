@@ -214,18 +214,18 @@ window.Z.DATA = {
   ],
 
   scenery: [
-    { id: "oak", name: "Oak tree", emoji: "🌳", cost: 120, kind: "tree", biome: "forest", aesthetic: 3, inEnclosure: true },
-    { id: "pine", name: "Pine tree", emoji: "🌲", cost: 130, kind: "tree", biome: "forest", aesthetic: 3, inEnclosure: true },
-    { id: "acacia", name: "Acacia tree", emoji: "🌳", cost: 120, kind: "tree", biome: "savannah", aesthetic: 3, inEnclosure: true },
-    { id: "palm", name: "Palm tree", emoji: "🌴", cost: 140, kind: "tree", biome: "sand", aesthetic: 3, inEnclosure: true },
-    { id: "bamboo", name: "Bamboo grove", emoji: "🎍", cost: 90, kind: "tree", biome: "forest", aesthetic: 3, inEnclosure: true },
-    { id: "baobab", name: "Baobab tree", emoji: "🌳", cost: 350, kind: "tree", biome: "savannah", aesthetic: 4, inEnclosure: true },
-    { id: "cactus", name: "Cactus", emoji: "🌵", cost: 60, kind: "bush", biome: "sand", aesthetic: 2, inEnclosure: true },
-    { id: "snow_pine", name: "Snow pine", emoji: "🌲", cost: 130, kind: "tree", biome: "snow", aesthetic: 3, inEnclosure: true },
-    { id: "jungle_tree", name: "Jungle tree", emoji: "🌴", cost: 220, kind: "tree", biome: "rainforest", aesthetic: 4, inEnclosure: true },
-    { id: "bush", name: "Shrub", emoji: "🌿", cost: 25, kind: "bush", biome: "any", aesthetic: 2, inEnclosure: true },
-    { id: "fern", name: "Fern", emoji: "🌿", cost: 20, kind: "bush", biome: "rainforest", aesthetic: 2, inEnclosure: true },
-    { id: "tall_grass", name: "Tall grass", emoji: "🌾", cost: 10, kind: "bush", biome: "any", aesthetic: 1, inEnclosure: true },
+    { id: "oak", name: "Oak tree", emoji: "🌳", cost: 120, kind: "tree", cat: "plant", biome: "forest", aesthetic: 3, inEnclosure: true, terrains: ["grass", "forest", "dirt"] },
+    { id: "pine", name: "Pine tree", emoji: "🌲", cost: 130, kind: "tree", cat: "plant", biome: "forest", aesthetic: 3, inEnclosure: true, terrains: ["forest", "grass", "rock", "snow"] },
+    { id: "acacia", name: "Acacia tree", emoji: "🌳", cost: 120, kind: "tree", cat: "plant", biome: "savannah", aesthetic: 3, inEnclosure: true, terrains: ["savannah", "sand", "dirt"] },
+    { id: "palm", name: "Palm tree", emoji: "🌴", cost: 140, kind: "tree", cat: "plant", biome: "sand", aesthetic: 3, inEnclosure: true, terrains: ["sand", "dirt", "grass"] },
+    { id: "bamboo", name: "Bamboo grove", emoji: "🎍", cost: 90, kind: "tree", cat: "plant", biome: "forest", aesthetic: 3, inEnclosure: true, terrains: ["forest", "rainforest", "dirt"] },
+    { id: "baobab", name: "Baobab tree", emoji: "🌳", cost: 350, kind: "tree", cat: "plant", biome: "savannah", aesthetic: 4, inEnclosure: true, terrains: ["savannah", "sand", "dirt"] },
+    { id: "cactus", name: "Cactus", emoji: "🌵", cost: 60, kind: "bush", cat: "plant", biome: "sand", aesthetic: 2, inEnclosure: true, terrains: ["sand", "savannah", "rock"] },
+    { id: "snow_pine", name: "Snow pine", emoji: "🌲", cost: 130, kind: "tree", cat: "plant", biome: "snow", aesthetic: 3, inEnclosure: true, terrains: ["snow", "rock", "forest"] },
+    { id: "jungle_tree", name: "Jungle tree", emoji: "🌴", cost: 220, kind: "tree", cat: "plant", biome: "rainforest", aesthetic: 4, inEnclosure: true, terrains: ["rainforest", "grass", "dirt"] },
+    { id: "bush", name: "Shrub", emoji: "🌿", cost: 25, kind: "bush", cat: "plant", biome: "any", aesthetic: 2, inEnclosure: true, terrains: ["grass", "savannah", "forest", "dirt", "rainforest"] },
+    { id: "fern", name: "Fern", emoji: "🌿", cost: 20, kind: "bush", cat: "plant", biome: "rainforest", aesthetic: 2, inEnclosure: true, terrains: ["rainforest", "grass", "forest", "dirt"] },
+    { id: "tall_grass", name: "Tall grass", emoji: "🌾", cost: 10, kind: "bush", cat: "plant", biome: "any", aesthetic: 1, inEnclosure: true, terrains: ["grass", "savannah", "dirt"] },
     { id: "boulder", name: "Boulder", emoji: "🪨", cost: 80, kind: "rock", biome: "rock", aesthetic: 2, inEnclosure: true },
     { id: "rock_pile", name: "Rock pile", emoji: "🪨", cost: 50, kind: "rock", biome: "rock", aesthetic: 2, inEnclosure: true },
     { id: "ice_floe", name: "Ice floe", emoji: "🧊", cost: 90, kind: "rock", biome: "snow", aesthetic: 2, inEnclosure: true },
@@ -246,6 +246,105 @@ window.Z.DATA = {
     { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false }
   ],
 
+  maps: [
+    {
+      id: "meadow",
+      name: "Grassland Sanctuary",
+      sub: "Medium (48×48)",
+      desc: "The classic start: 48 by 48 tiles of gentle green meadow with a few low rises, a pond and plenty of room to grow your zoo.",
+      bounds: { i0: 4, j0: 8, i1: 51, j1: 55 },
+      cashBonus: 0,
+      palette: ["grass", "dirt", "forest"],
+      size: "Medium",
+      blurb: "The classic start: 48 by 48 tiles of gentle green meadow with a few low rises, a pond and plenty of room to grow your zoo.",
+      gen: {
+        base: "grass", hills: { amp: 2, scale: 14 }, lakes: { n: 1, r: [3, 4], depth: 2 },
+        paint: [{ t: "dirt", n: 0.7, s: 6 }, { t: "forest", n: 0.66, s: 10 }],
+        scatter: [["oak", 8, ["grass", "forest"]], ["pine", 8, ["forest", "grass"]], ["bush", 10, ["grass", "forest"]], ["fern", 8, ["grass", "forest"]], ["tall_grass", 6, ["grass", "dirt"]], ["boulder", 4, ["grass"]]]
+      }
+    },
+    {
+      id: "pocket",
+      name: "Pocket Reserve",
+      sub: "Small (30×30)",
+      desc: "A cramped 30 by 30 plot of flat, affordable land. Every tile counts, so plan your animal enclosures carefully.",
+      bounds: { i0: 13, j0: 26, i1: 42, j1: 55 },
+      cashBonus: 0,
+      palette: ["grass", "dirt"],
+      size: "Small",
+      blurb: "A cramped 30 by 30 plot of flat, affordable land. Every tile counts, so plan your animal enclosures carefully.",
+      gen: {
+        base: "grass", hills: { amp: 0, scale: 10 },
+        paint: [{ t: "dirt", n: 0.78, s: 5 }],
+        scatter: [["oak", 3, ["grass"]], ["bush", 5, ["grass"]], ["fern", 3, ["grass"]], ["boulder", 2, ["grass"]]]
+      }
+    },
+    {
+      id: "lakeland",
+      name: "Riverlands Delta",
+      sub: "Large (56×50)",
+      desc: "A sprawling 56 by 50 floodplain dotted with lakes and waterways. Perfect for aquatic animals and wading birds.",
+      bounds: { i0: 0, j0: 6, i1: 55, j1: 55 },
+      cashBonus: 0,
+      palette: ["grass", "water", "rainforest", "dirt", "forest"],
+      size: "Large",
+      blurb: "A sprawling 56 by 50 floodplain dotted with lakes and waterways. Perfect for aquatic animals and wading birds.",
+      gen: {
+        base: "grass", hills: { amp: 1.5, scale: 12 }, lakes: { n: 6, r: [4, 7], depth: 2 },
+        paint: [{ t: "rainforest", n: 0.68, s: 9 }, { t: "dirt", n: 0.74, s: 6 }, { t: "forest", n: 0.7, s: 12 }],
+        scatter: [["tall_grass", 20, ["dirt", "grass"]], ["jungle_tree", 6, ["rainforest"]], ["oak", 8, ["grass", "forest"]], ["pine", 6, ["forest"]], ["fern", 10, ["rainforest", "grass"]], ["bush", 8, ["grass"]]]
+      }
+    },
+    {
+      id: "highland",
+      name: "Highland Ridge",
+      sub: "Large (52×54)",
+      desc: "Rolling uplands, a long cliff line to the north and stony slopes under woodland. Dramatic, rugged habitat for mountain fauna.",
+      bounds: { i0: 2, j0: 2, i1: 53, j1: 55 },
+      cashBonus: 0,
+      palette: ["grass", "rock", "forest"],
+      size: "Large",
+      blurb: "Rolling uplands, a long cliff line to the north and stony slopes under woodland. Dramatic, rugged habitat for mountain fauna.",
+      gen: {
+        base: "grass", hills: { amp: 4, scale: 11 }, ridge: { j: 22, wave: 4, h: 6, ramps: [14, 41] },
+        paint: [{ t: "rock", hi: 4 }, { t: "forest", n: 0.52, s: 9 }, { t: "rock", n: 0.82, s: 5 }],
+        scatter: [["pine", 24, ["forest", "grass", "rock"]], ["snow_pine", 4, ["rock"]], ["boulder", 14, ["rock", "grass", "forest"]], ["rock_pile", 12, ["rock", "grass"]], ["bush", 10, ["grass", "forest"]], ["fern", 6, ["forest"]], ["log", 5, ["forest"]]]
+      }
+    },
+    {
+      id: "gulch",
+      name: "Savannah Canyon",
+      sub: "Medium (44×50)",
+      desc: "Sun-baked savannah and sand, split by a deep canyon and studded with flat-topped mesas. Ideal for African plains species.",
+      bounds: { i0: 6, j0: 6, i1: 49, j1: 55 },
+      cashBonus: 0,
+      palette: ["savannah", "sand", "dirt", "rock"],
+      size: "Medium",
+      blurb: "Sun-baked savannah and sand, split by a deep canyon and studded with flat-topped mesas. Ideal for African plains species.",
+      gen: {
+        base: "savannah", hills: { amp: 1.5, scale: 13 }, canyon: { j: 25, wave: 4, w: 3, depth: 4, ramps: [14, 38] }, mesas: { n: 4, r: 4.5, h: 4 },
+        paint: [{ t: "sand", n: 0.64, s: 8 }, { t: "dirt", lo: -2 }, { t: "rock", hi: 3 }],
+        scatter: [["acacia", 16, ["savannah", "sand", "dirt"]], ["baobab", 4, ["savannah"]], ["cactus", 6, ["sand"]], ["bush", 8, ["savannah"]], ["boulder", 10, ["rock", "savannah", "sand"]], ["rock_pile", 8, ["rock", "savannah", "sand"]], ["tall_grass", 6, ["dirt", "savannah"]]]
+      }
+    },
+    {
+      id: "frost",
+      name: "Alpine Tundra",
+      sub: "Medium (46×48)",
+      desc: "A frozen plateau of snowdrifts and conifer stands, with icy tarns and rocky knolls. Cold paradise for polar bears and penguins.",
+      bounds: { i0: 5, j0: 8, i1: 50, j1: 55 },
+      cashBonus: 0,
+      palette: ["snow", "rock", "forest", "water"],
+      size: "Medium",
+      blurb: "A frozen plateau of snowdrifts and conifer stands, with icy tarns and rocky knolls. Cold paradise for polar bears and penguins.",
+      gen: {
+        base: "snow", hills: { amp: 3, scale: 12 }, lakes: { n: 3, r: [3, 5], depth: 2 },
+        paint: [{ t: "forest", n: 0.58, s: 8 }, { t: "rock", hi: 4 }],
+        scatter: [["snow_pine", 26, ["snow", "forest", "rock"]], ["pine", 8, ["forest"]], ["ice_floe", 6, ["water"]], ["boulder", 8, ["snow", "rock"]], ["rock_pile", 6, ["snow", "rock"]], ["fern", 4, ["forest"]], ["bush", 4, ["forest"]]]
+      }
+    }
+  ],
+
   buildings: [
     { id: "burger_stand", name: "Burger stand", emoji: "🍔", cost: 1200, upkeep: 20, type: "food", price: 6, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.5 }, star: 0 },
     { id: "pizza_hut", name: "Pizza kiosk", emoji: "🍕", cost: 1800, upkeep: 30, type: "food", price: 8, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.6 }, star: 0 },
@@ -257,10 +356,12 @@ window.Z.DATA = {
     { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0 },
     { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 2, h: 2, satisfies: { fun: 0.8 }, star: 2 },
     { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0 },
+    { id: "viewing_platform", name: "Viewing Tower", icon: "tower", emoji: "🔭", cost: 950, upkeep: 30, type: "info", price: 0, capacity: 20, w: 2, d: 2, h: 2, color: 0x7b6248, roof: 0x4d7c47, appeal: 14, boost: { fun: 20 }, satisfies: { fun: 0.3 }, star: 0, info: "Elevated lookout platform giving guests panoramic views over adjacent enclosures." },
     { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 2, h: 2, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 3 },
     { id: "keeper_hut", name: "Keeper hut", emoji: "🛖", cost: 800, upkeep: 8, type: "staff", price: 0, capacity: 4, w: 1, h: 1, satisfies: {}, star: 0 },
     { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 2, h: 2, satisfies: {}, star: 1 },
-    { id: "education_centre", name: "Education centre", emoji: "🎓", cost: 5000, upkeep: 60, type: "info", price: 3, capacity: 40, w: 2, h: 2, satisfies: { fun: 0.5 }, star: 2 }
+    { id: "education_centre", name: "Education centre", emoji: "🎓", cost: 5000, upkeep: 60, type: "info", price: 3, capacity: 40, w: 2, h: 2, satisfies: { fun: 0.5 }, star: 2 },
+    { id: "emergency_bunker", name: "Emergency Shelter", icon: "bunker", emoji: "🚨", cost: 850, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, d: 2, h: 2, color: 0x6a7882, roof: 0xd8623b, appeal: 4, satisfies: {}, star: 1, info: "Reinforced guest shelter used during dangerous animal escapes and park lockdowns." }
   ],
 
   staff: [
@@ -446,13 +547,34 @@ window.Z.DATA = {
   ],
 
   events: [
-    { id: "heatwave", text: "A heatwave sends temperatures soaring. Guests are thirstier than usual.", effect: { type: "guestThirst", amount: 20 } },
-    { id: "rain", text: "Heavy rain keeps visitors indoors for the afternoon.", effect: { type: "guests", amount: -15 } },
-    { id: "celebrity_visit", text: "A television presenter visits and films a segment at the zoo.", effect: { type: "guests", amount: 25 } },
-    { id: "school_trip", text: "A school trip arrives, bringing a noisy but generous crowd.", effect: { type: "money", amount: 600 } },
-    { id: "donation", text: "An anonymous donor leaves a generous envelope at the gate.", effect: { type: "money", amount: 1000 } },
-    { id: "bin_fire", text: "A bin catches fire behind the café, and the sprinklers soak the path.", effect: { type: "cleanliness", amount: -10 } },
-    { id: "vaccine", text: "A new vaccine boosts animal health across the zoo.", effect: { type: "animalHealth", amount: 5 } },
-    { id: "storm_damage", text: "A storm snaps branches and knocks over a fence panel.", effect: { type: "fenceDamage", amount: 1 } }
+    { id: "heatwave", name: "Heatwave", emoji: "☀️", weight: 2, dur: 12, text: "A heatwave sends temperatures soaring. Guests are thirstier than usual.", effect: { type: "weather", weather: "heat", hours: 12, dur: 12, amount: 20 } },
+    { id: "rain", name: "Heavy rain", emoji: "🌧️", weight: 2, dur: 6, text: "Heavy rain keeps visitors indoors for the afternoon.", effect: { type: "weather", weather: "rain", hours: 6, dur: 6, amount: -15 } },
+    { id: "storm_damage", name: "Storm damage", emoji: "⛈️", weight: 1.2, dur: 4, text: "A violent storm snaps branches and knocks over a fence panel.", effect: { type: "weather", weather: "storm", breach: true, hours: 4, dur: 4, amount: 1 } },
+    { id: "celebrity_visit", name: "Celebrity visit", emoji: "🌟", weight: 1.5, dur: 12, text: "A television presenter visits and films a segment at the zoo.", effect: { type: "celebrity", arrivals: 1.6, reputation: 5, hours: "day", dur: 12, amount: 25 } },
+    { id: "school_trip", name: "School trip", emoji: "🚌", weight: 2, text: "A school trip arrives, bringing a noisy but generous crowd.", effect: { type: "schoolTrip", guests: 32, amount: 600 } },
+    { id: "donation", name: "Anonymous donation", emoji: "💌", weight: 1, text: "An anonymous donor leaves a generous envelope at the gate.", effect: { type: "donation", base: 500, perStar: 250, amount: 1000 } },
+    { id: "bin_fire", name: "Bin fire", emoji: "🔥", weight: 1.2, text: "A bin catches fire behind the café, and the sprinklers soak the path.", effect: { type: "binFire", radius: 5, dirt: 150, amount: -10 } },
+    { id: "vaccine", name: "Vaccination drive", emoji: "💉", weight: 1, dur: 48, text: "A new vaccine boosts animal health across the zoo.", effect: { type: "vaccine", health: 10, sick: 0.5, hours: 48, dur: 48, amount: 5 } },
+    { id: "food_inspection", name: "Food-safety inspection", emoji: "📋", weight: 1.2, text: "An environmental health officer turns up unannounced to inspect your kitchens, bins and toilets.", effect: { type: "inspection", reward: 400, fine: 600 } },
+    { id: "viral_video", name: "Viral video", emoji: "📱", weight: 1.2, dur: 48, text: "A video of a zoo animal doing something daft has gone viral online.", effect: { type: "viral", arrivals: 1.4, reputation: 3, hours: 48, dur: 48 } },
+    { id: "conservation_grant", name: "Conservation grant", emoji: "📈", weight: 0.9, dur: 72, text: "A national wildlife fund awards your zoo an operating conservation grant.", effect: { type: "grant", mult: 1.35, hours: 72, dur: 72 } },
+    { id: "feed_shortage", name: "Feed shortage", emoji: "📉", weight: 0.9, dur: 72, text: "A regional harvest shortfall increases animal feed and supplier costs temporarily.", effect: { type: "feedShortage", mult: 1.25, hours: 72, dur: 72 } },
+    { id: "staff_illness", name: "Staff illness", emoji: "🤒", weight: 1, dur: 24, text: "A stomach bug is going round the staff room.", effect: { type: "staffIllness", hours: 24, dur: 24 } },
+    { id: "power_cut", name: "Power cut", emoji: "🔌", weight: 0.8, dur: 8, text: "A power cut knocks out zoo refrigeration and perimeter alarms.", effect: { type: "powerCut", hours: 8, dur: 8 } }
+  ],
+
+  weather: [
+    { id: "clear", name: "Clear skies", emoji: "☀️", blurb: "Bright and pleasant.", effects: "Guests are slightly happier." },
+    { id: "cloudy", name: "Overcast", emoji: "☁️", blurb: "Grey skies, but dry.", effects: "No effect." },
+    { id: "rain", name: "Rain", emoji: "🌧️", blurb: "Steady rain soaks the zoo.", effects: "About 45% fewer arrivals, slower and grumpier guests who seek shelter, muddier paths, shops and food sell a little more." },
+    { id: "storm", name: "Thunderstorm", emoji: "⛈️", blurb: "Thunder rolls over the enclosures.", effects: "About 75% fewer arrivals, guests flee for cover and leave, animals are stressed; wet fences & restless animals — escape risk +35%." },
+    { id: "heat", name: "Heatwave", emoji: "🔥", blurb: "Scorching temperatures.", effects: "Guests are about 80% thirstier and tire 30% faster, drinks and ice cream sell well, animals without water suffer and illness is more likely." },
+    { id: "fog", name: "Fog", emoji: "🌫️", blurb: "A thick mist hangs over the zoo.", effects: "About 15% fewer arrivals; animals are hard to see so guests enjoy themselves a little less." }
+  ],
+
+  difficulties: [
+    { id: "easy", name: "Relaxed", blurb: "Plenty of starting cash, cheaper running costs and busier gates. Good for learning the ropes.", money: 35000, income: 1.1, costs: 0.85, arrivals: 1.1, interest: 0.002 },
+    { id: "normal", name: "Standard", blurb: "A fair challenge. Careful planning turns a modest profit; careless spending sinks the zoo.", money: 22000, income: 1, costs: 1, arrivals: 1, interest: 0.004 },
+    { id: "hard", name: "Tycoon", blurb: "Lean starting funds, dearer upkeep, fewer guests and costly loans. Every pound counts.", money: 15000, income: 0.92, costs: 1.2, arrivals: 0.9, interest: 0.007 }
   ]
 };

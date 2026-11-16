@@ -89,7 +89,22 @@ window.Z = window.Z || {}; var Z = window.Z;
     home: 'M3 11.500L12 4l9 7.500M5.500 10v10h13V10',
     info: 'M12 3a9 9 0 100 18 9 9 0 000-18zM12 11v6M12 7.500v.01',
     up: 'M6 14l6-6 6 6', down: 'M6 10l6 6 6-6',
-    leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8'
+    flask: 'M9 3h6M10 3v6L4.500 18.500A2 2 0 006.200 21.500h11.600a2 2 0 001.700-3L14 9V3M7.500 15h9',
+    dna: 'M7 3c0 6 10 6 10 12s-10 6-10 6M17 3c0 6-10 6-10 12M8 7h8M8 17h8M9 12h6',
+    undo: 'M9 14L4 9l5-5M4 9h10a6 6 0 010 12h-3',
+    egg: 'M12 3c-4 0-7 6-7 11a7 7 0 0014 0c0-5-3-11-7-11z',
+    gem: 'M6 4h12l4 6-10 11L2 10zM2 10h20M9 4l-2 6 5 11 5-11-2-6',
+    vial: 'M9 3h6M10 3v14a2 2 0 004 0V3M10 10h4',
+    leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8',
+    bunker: 'M12 3L2 12h3v8h14v-8h3L12 3zm0 5a3 3 0 013 3v2H9v-2a3 3 0 013-3z',
+    tower: 'M7 2h10v3h-2v3l2 11h-2v3H9v-3H7L9 8V5H7V2zm3 6h4M10 12h4M10 16h4',
+    guide: 'M12 2a10 10 0 100 20 10 10 0 000-20zm3.5 6.5l-2 5.5-5.5 2 2-5.5 5.5-2z',
+    book: 'M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z',
+    hill: 'M2 20l7-10 5 6 4-3 4 7z',
+    raise: 'M12 19V5M5 12l7-7 7 7',
+    lower: 'M12 5v14M5 12l7 7 7-7',
+    level: 'M3 12h18M3 8h18M3 16h18',
+    smooth: 'M2 15c4-6 8-6 10 0s6 6 10 0'
   };
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
@@ -112,6 +127,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.menuDot = $('#menudot', el.menu);
     el.clock = h('div#clock.pill.hud-cell', { html: '<span class="sunmoon">' + ic('sun') + '</span><span>Day <b class="num">1</b></span><b class="num tm">08:00</b><span class="open">Open</span>' });
     el.sunmoon = $('.sunmoon', el.clock); el.dayN = $('b', el.clock); el.tm = $('.tm', el.clock); el.open = $('.open', el.clock);
+    if (UI.WeatherHud && UI.WeatherHud.mount) UI.WeatherHud.mount(el.clock);
     el.speed = h('div#speed.pill');
     [[0, 'pause', 'Pause'], [1, 'play', 'Normal speed'], [2, 'play2', 'Fast'], [4, 'play3', 'Fastest']].forEach(function (s) {
       var b = h('button', { html: ic(s[1]), 'aria-label': s[2], 'data-s': s[0], on: { click: function () { UI.setSpeed(s[0]); } } }); el.speed.appendChild(b);
@@ -121,13 +137,16 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.hud = h('div#hud', r1, r2);
     el.goal = h('button#goalchip.pill', { on: { click: function () { UI.openModal('goals'); UI.snd('click'); } } });
     el.pause = h('div#pausebadge', { text: 'PAUSED' });
+    el.lock = h('div#lockbar', { html: ic('bell') + '<b>LOCKDOWN</b><span>⚠ PARK LOCKDOWN — Dangerous animal loose! Gates closed, guests seeking shelter</span>' });
     el.side = h('div#side');
     function cb(icon, label, cls) { return h('button.cbtn.pill' + (cls ? '.' + cls : ''), { html: ic(icon), 'aria-label': label }); }
     el.bRotL = cb('rotl', 'Rotate view left'); el.bRotR = cb('rotr', 'Rotate view right');
     el.bZin = cb('zin', 'Zoom in'); el.bZout = cb('zout', 'Zoom out'); el.bTilt = cb('tilt', 'Change camera angle');
     el.bRotObj = cb('rot', 'Rotate item'); el.bRotObj.style.display = 'none';
     el.bMove = cb('hand', 'Move the camera instead of using the tool'); el.bMove.style.display = 'none';
-    [el.bMove, el.bRotObj, el.bRotL, el.bRotR, el.bZin, el.bZout, el.bTilt].forEach(function (b) { el.side.appendChild(b); });
+    el.bSV = cb('eye', 'Street view'); el.bSV.title = 'Street view - walk through your zoo'; el.bSV.classList.add('svbtn');
+    el.bSV.addEventListener('click', function () { UI.snd('click'); if (UI.StreetView && UI.StreetView.toggle) UI.StreetView.toggle(); else if (UI.SV) UI.SV.enter(); });
+    [el.bMove, el.bRotObj, el.bRotL, el.bRotR, el.bZin, el.bZout, el.bTilt, el.bSV].forEach(function (b) { el.side.appendChild(b); });
     UI.hold(el.bRotL, function (dt) { Z.World.rotate(-1.7 * dt, 0); });
     UI.hold(el.bRotR, function (dt) { Z.World.rotate(1.7 * dt, 0); });
     UI.hold(el.bZin, function (dt) { Z.World.zoom(Math.exp(-1.6 * dt)); });
@@ -143,13 +162,15 @@ window.Z = window.Z || {}; var Z = window.Z;
       h('button.btn.sm', { html: ic('close') + 'Exit follow', on: { click: function () { UI.exitFollow(); } } }));
     el.fName = $('b', el.follow); el.fTxt = $('span', el.follow);
     el.build = h('div#build');
+    el.undo = h('button#undoBtn.pill', { 'aria-label': 'Undo', on: { click: function () { UI.doUndo(); } } });
+    el.build.appendChild(el.undo);
     el.strip = h('div#toolstrip.pill');
     el.dock = h('div#dock'); el.tabs = h('div#tabs'); el.cards = h('div#cards.empty');
     el.dock.appendChild(el.tabs); el.dock.appendChild(el.cards);
     el.build.appendChild(el.strip); el.build.appendChild(el.dock);
     el.panel = h('div#panel'); el.modal = h('div#modal'); el.cost = h('div#costtip'); el.tut = h('div#tut.pill');
     el.unhide = h('button#unhide.pill', { html: ic('eye'), 'aria-label': 'Show interface', on: { click: function () { UI.hideUI(false); } } });
-    el.stack = h('div#stack', el.pause, el.goal, el.follow, el.tut, el.toasts, el.banner);
+    el.stack = h('div#stack', el.pause, el.lock, el.goal, el.follow, el.tut, el.toasts, el.banner);
     [el.hud, el.stack, el.side, el.build, el.panel, el.modal, el.unhide].forEach(function (e) { root.appendChild(e); });
     document.body.appendChild(el.cost);
     el.conf = h('canvas#confetti'); document.body.appendChild(el.conf);
@@ -162,6 +183,57 @@ window.Z = window.Z || {}; var Z = window.Z;
     function down(e) { e.preventDefault(); UI.held[id] = fn; btn.setPointerCapture && e.pointerId != null && btn.setPointerCapture(e.pointerId); UI.snd('click'); }
     function up() { delete UI.held[id]; }
     btn.addEventListener('pointerdown', down); btn.addEventListener('pointerup', up); btn.addEventListener('pointercancel', up); btn.addEventListener('lostpointercapture', up);
+  };
+
+  // ------------------------------------------------------------------ undo
+  var undoShownUntil = 0, undoKey = '';
+  UI.updateUndo = function (bump) {
+    if (!el.undo || !Z.Sim) return;
+    var u = (Z.Sim && Z.Sim.canUndo) ? Z.Sim.canUndo() : { count: 0, label: '', refund: 0 }, now = Date.now();
+    if (bump) undoShownUntil = now + 20000;
+    var show = (UI.tool || now < undoShownUntil) && !UI.titleOpen;
+    var key = show + '|' + u.count + '|' + u.label + '|' + u.refund;
+    if (key === undoKey) return; undoKey = key;
+    el.undo.style.display = show ? 'flex' : 'none';
+    el.undo.classList.toggle('dis', !u.count);
+    el.undo.innerHTML = ic('undo') + '<span><b>Undo</b>' + (u.count ? '<small>' + u.label + (u.refund ? ' (' + (u.refund > 0 ? '+' : '-') + fmt(Math.abs(u.refund)) + ')' : '') + '</small>' : '<small>nothing to undo</small>') + '</span>' + '<kbd>Z</kbd>';
+  };
+  UI.syncUndo = function (bump) { UI.updateUndo(bump); };
+  UI.doUndo = function () {
+    var u = (Z.Sim && Z.Sim.canUndo) ? Z.Sim.canUndo() : { count: 0 };
+    if (!u.count) { UI.snd('bad'); UI.toast('Nothing to undo', 'info'); return; }
+    var r = Z.Sim.undo();
+    if (r && r.ok) {
+      UI.snd('build');
+      UI.toast('Undone: ' + u.label + (r.refund ? ' (' + (r.refund > 0 ? '+' : '-') + fmt(Math.abs(r.refund)) + ')' : ''), 'good');
+      undoShownUntil = Date.now() + 20000;
+      if (UI.Tutorial && UI.Tutorial.onUndo) UI.Tutorial.onUndo();
+    } else {
+      UI.snd('bad');
+      UI.toast((r && r.msg) || 'Cannot undo that', 'bad');
+    }
+    undoKey = ''; UI.updateUndo();
+  };
+
+  UI.StreetView = {
+    active: function () { return !!(UI.SV && UI.SV.active); },
+    enter: function (x, z, yaw) { if (UI.SV && UI.SV.enter) UI.SV.enter(x, z, yaw); },
+    exit: function () { if (UI.SV && UI.SV.exit) UI.SV.exit(); },
+    toggle: function () { if (this.active()) this.exit(); else this.enter(); }
+  };
+
+  UI.WeatherHud = UI.WeatherHud || {
+    mount: function (clock) {
+      if (this._mounted) return;
+      this._mounted = true;
+      if (UI.Weather && UI.Weather.init) UI.Weather.init();
+    },
+    tick: function () {
+      if (UI.Weather && UI.Weather.render) UI.Weather.render();
+    },
+    close: function () {
+      if (UI.Weather && UI.Weather.open) UI.Weather.open(false);
+    }
   };
 
   UI.hideUI = function (on) { root.classList.toggle('ui-hidden', !!on); if (on) UI.toast('Tap the eye to bring the controls back', 'info'); };
@@ -191,6 +263,17 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   function updateHud(force) {
     var S = Z.state; if (!S) return;
+    // lockdown
+    var ld = (Z.Sim && Z.Sim.lockdown && Z.Sim.lockdown()) || (Z.state && Z.state.lockdown) || false;
+    if (lastHud.ld !== ld) {
+      lastHud.ld = ld;
+      if (el.lock) el.lock.classList.toggle('on', ld);
+      document.body.classList.toggle('lockdown', ld);
+      if (Z.World && Z.World.setLockdown) Z.World.setLockdown(ld);
+      if (ld) UI.snd('alarm');
+    }
+    if (UI.WeatherHud && UI.WeatherHud.tick) UI.WeatherHud.tick();
+    if (UI.syncUndo) UI.syncUndo();
     setTxt(el.guestsN, 'g', String(S.guests.length));
     var r = UI.clamp(S.rating, 0, 5), key = Math.round(r * 20);
     if (lastHud.rate !== key) { lastHud.rate = key; for (var i = 0; i < 5; i++) el.starEls[i].style.setProperty('--f', Math.round(UI.clamp(r - i, 0, 1) * 100) + '%'); el.stars.title = 'Zoo rating ' + r.toFixed(1); }
@@ -380,13 +463,54 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   UI.lazyThumb = lazyThumb;
 
+  // ---- terrain sculpting cards (Raise / Lower / Level / Smooth / Cliff / Dig lake) ----
+  var SCULPT_DEFS = [
+    { id: 'raise', name: 'Raise (hill)', mode: 'raise', tip: 'Press and hold to build a hill, one level at a time.' },
+    { id: 'lower', name: 'Lower (dip)', mode: 'lower', tip: 'Press and hold to dig a dip, one level at a time.' },
+    { id: 'level', name: 'Level', mode: 'level', tip: 'Flattens the ground to the height you first press on.' },
+    { id: 'smooth', name: 'Smooth', mode: 'smooth', tip: 'Softens bumps and steep slopes.' },
+    { id: 'cliff', name: 'Cliff / plateau', mode: 'raise', sharp: true, tip: 'Raises ground with sharp edges. Steep cliffs cannot be built on or walked over.' },
+    { id: 'lake', name: 'Dig lake', mode: 'lower', lake: true, tip: 'Digs down and floods the brush area with water.' }
+  ];
+  UI.SCULPT = SCULPT_DEFS;
+  function sculptIcon(id) {
+    var g = '#79a95a', g2 = '#5d8a43', br = '#8a6a43', bl = '#4aa3c8', ar = '#2c5e3a', s = '';
+    var sv = function (x) { return '<svg viewBox="0 0 48 48" width="100%" height="100%">' + x + '</svg>'; };
+    var arrow = function (up, x) { return '<path d="M' + x + ' ' + (up ? 14 : 8) + 'v' + (up ? -9 : 9) + 'm-4 ' + (up ? 4 : -4) + 'l4 ' + (up ? -4 : 4) + 'l4 ' + (up ? -4 : 4) + '" fill="none" stroke="' + ar + '" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 ' + (up ? 6 : 2) + ')"/>'; };
+    if (id === 'raise') s = '<path d="M2 40 H46 V46 H2Z" fill="' + br + '"/><path d="M2 40 C14 40 16 18 24 18 C32 18 34 40 46 40 Z" fill="' + g + '"/>' + arrow(true, 24);
+    else if (id === 'lower') s = '<path d="M2 24 H46 V46 H2Z" fill="' + br + '"/><path d="M2 24 C14 24 14 38 24 38 C34 38 34 24 46 24 V28 H2Z" fill="' + g2 + '"/><path d="M2 24 C14 24 14 38 24 38 C34 38 34 24 46 24" fill="none" stroke="' + g + '" stroke-width="4"/>' + arrow(false, 24);
+    else if (id === 'level') s = '<path d="M2 30 L14 22 L26 34 L46 24 V46 H2Z" fill="' + br + '" opacity=".55"/><path d="M2 28 H46 V46 H2Z" fill="' + br + '"/><rect x="2" y="26" width="44" height="5" rx="2" fill="' + g + '"/><path d="M8 16 H40 M8 20 H40" stroke="' + ar + '" stroke-width="2.6" stroke-linecap="round"/>';
+    else if (id === 'smooth') s = '<path d="M2 46 V30 H46 V46Z" fill="' + br + '"/><path d="M2 32 L10 22 L16 32 L24 20 L30 32 L38 22 L46 32" fill="none" stroke="' + g2 + '" stroke-width="2" stroke-dasharray="3 3"/><path d="M2 30 C12 18 18 18 24 24 S38 30 46 22 V46 H2Z" fill="' + g + '"/><path d="M2 30 C12 18 18 18 24 24 S38 30 46 22" fill="none" stroke="' + g2 + '" stroke-width="2.4"/>';
+    else if (id === 'cliff') s = '<path d="M2 42 H46 V46 H2Z" fill="' + br + '"/><path d="M2 42 V32 H14 V16 H34 V32 H46 V42Z" fill="#a8998a"/><path d="M14 16 H34 L38 20 H10Z" fill="' + g + '"/><path d="M14 20 V32 M34 20 V32 M24 20 V32" stroke="#8a7a6a" stroke-width="1.5"/><path d="M2 32 H14 L16 30 H2Z M34 32 H46 V30 H36Z" fill="' + g + '"/>';
+    else s = '<path d="M2 20 H46 V46 H2Z" fill="' + br + '"/><path d="M2 20 H8 C12 20 12 36 24 36 C36 36 36 20 40 20 H46 V22 H2Z" fill="' + g + '"/><path d="M8 22 C12 22 12 36 24 36 C36 36 36 22 40 22Z" fill="' + bl + '"/><path d="M16 28 Q20 26 24 28 T32 28" fill="none" stroke="#bfe6f5" stroke-width="1.6" stroke-linecap="round"/>';
+    return sv(s);
+  }
+  var SCULPT_PROBE = { i: 20, j: 40 };
+  function sculptPriceOf(d) {
+    var T = Z.Sim && Z.Sim.terraform; if (!T) return null;
+    try {
+      var r = T(SCULPT_PROBE.i, SCULPT_PROBE.j, d.mode, 0, { sharp: !!d.sharp, dry: true }), c = r && typeof r.cost === 'number' ? r.cost : null;
+      if (c === null) return null;
+      if (d.lake && Z.Sim.paintTerrain) { var w = Z.Sim.paintTerrain(SCULPT_PROBE.i, SCULPT_PROBE.j, 'water', 0, { dry: true }); if (w && w.ok && w.cost) c += w.cost; }
+      return c;
+    } catch (e) { return null; }
+  }
+  function sculptItems() {
+    var has = !!(Z.Sim && Z.Sim.terraform);
+    return SCULPT_DEFS.map(function (d, k) {
+      var c = has ? sculptPriceOf(d) : null;
+      return { kind: 'sculpt', id: d.id, name: d.name, cost: c || 0, def: d, star: 0, sculpt: true, first: k === 0, off: !has, tip: d.tip,
+        priceHtml: !has ? '<small style="font:600 10px var(--sans);color:var(--ink3)">soon</small>' : c === null ? '<small style="font:600 10px var(--sans);color:var(--ink2)">per level</small>' : fmt(c) + '<small style="font:500 9.5px var(--sans);color:var(--ink2)"> /level</small>' };
+    });
+  }
+
   var CATS;
   function defCats() {
     function sc(ids, kind) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: 0 }; }); }; }
     function bd(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star }; }); }; }
     CATS = [
       { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests only walk on paths.' },
-      { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); } },
+      { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }).concat(sculptItems()); } },
       { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'animals', name: 'Animals', icon: 'paw', items: function () { return D.animals.slice().sort(function (a, b) { return a.star - b.star || a.cost - b.cost; }).map(function (p) { return { kind: 'animal', id: p.id, name: p.name, cost: p.cost, def: p, star: p.star, emoji: p.emoji }; }); } },
       { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe']) },
@@ -419,23 +543,45 @@ window.Z = window.Z || {}; var Z = window.Z;
   function renderCards(c) {
     var cards = el.cards, items = c.items(), S = Z.state; cards.innerHTML = ''; cards.className = '';
     cards.scrollLeft = 0;
+    if (c.id === 'terrain') {
+      var segMode = h('div.seg.drawer-mode', { style: 'margin: 0 4px 6px 4px;' });
+      var tMode = UI.terrainDrawerMode || 'all';
+      [['all', 'All'], ['paint', 'Paint'], ['sculpt', 'Sculpt']].forEach(function (m) {
+        segMode.appendChild(h('button' + (tMode === m[0] ? '.on' : ''), {
+          text: m[1],
+          on: {
+            click: function () {
+              UI.terrainDrawerMode = m[0];
+              UI.refreshCards();
+            }
+          }
+        }));
+      });
+      cards.appendChild(segMode);
+      if (tMode === 'paint') items = items.filter(function (it) { return !it.sculpt; });
+      else if (tMode === 'sculpt') items = items.filter(function (it) { return it.sculpt; });
+    }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star;
-      var card = h('button.card' + (locked ? '.lock' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.name });
+      if (it.first && (!UI.terrainDrawerMode || UI.terrainDrawerMode === 'all')) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
+      var card = h('button.card' + (locked ? '.lock' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || it.name });
       var th = h('div.th'); card.appendChild(th);
-      card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: itemPriceText(it) }));
+      card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: it.priceHtml || itemPriceText(it) }));
       if (locked) card.appendChild(h('span.lk', { html: ic('lock') + '★' + it.star }));
-      if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));
+      if (it.sculpt) th.innerHTML = sculptIcon(it.id);
+      else if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));
       else lazyThumb(th, it.kind === 'animal' ? 'animal' : it.kind === 'staff' ? 'staff' : it.kind, it.id, it.emoji || '', 96);
       card.addEventListener('click', function () { UI.snd('click'); UI.onCard(it, locked); });
       cards.appendChild(card);
     });
     markSelected();
   }
+  UI.buildDrawer = function (cat) { UI.openCat(cat); };
   UI.refreshCards = function () { var c = UI.cat && UI.byId(CATS, UI.cat); if (c && !c.tool && el.cards.className === '') { var sl = el.cards.scrollLeft; renderCards(c); el.cards.scrollLeft = sl; } };
   UI.onCard = function (it, locked) {
-    if (locked) { UI.toast('Needs a ' + it.star + '-star zoo. Keep improving your rating!', 'info'); return; }
     if (it.kind === 'animal') { UI.Panel.species(it.id); return; }
+    if (it.kind === 'sculpt' && !(Z.Sim && Z.Sim.terraform)) { UI.toast('Terrain sculpting is not available yet.', 'info'); return; }
+    if (locked) { UI.toast('Needs a ' + it.star + '-star zoo. Keep improving your rating!', 'info'); return; }
     UI.Tools.start({ kind: it.kind, id: it.id, name: it.name, def: it.def });
   };
   function markSelected() {
@@ -451,6 +597,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     });
   }
   UI.costOf = function (k, id) {
+    if (k === 'sculpt') return 0;
     var d = k === 'path' ? D.paths : k === 'terrain' ? D.terrain : k === 'fence' ? D.fences : k === 'animal' ? D.animals : k === 'scenery' ? D.scenery : k === 'building' ? D.buildings : D.staff;
     var x = UI.byId(d, id); return x ? (x.cost !== undefined ? x.cost : x.hireCost) : 0;
   };
@@ -479,6 +626,16 @@ window.Z = window.Z || {}; var Z = window.Z;
       UI.banner({ title: 'Sad news', text: (a.name || 'An animal') + ' the ' + (sp ? sp.name.toLowerCase() : 'animal') + ' has died.', kind: 'alert', ms: 5000 });
     });
     b.on('gameOver', function () { UI.gameOver(); });
+    b.on('undo:change', function () { UI.syncUndo && UI.syncUndo(); });
+    b.on('undo', function () { UI.syncUndo && UI.syncUndo(); });
+    b.on('lockdown', function (on) {
+      var ld = !!on;
+      if (lastHud) lastHud.ld = ld;
+      if (el.lock) el.lock.classList.toggle('on', ld);
+      document.body.classList.toggle('lockdown', ld);
+      if (Z.World && Z.World.setLockdown) Z.World.setLockdown(ld);
+      if (ld) UI.snd('alarm');
+    });
     b.on('reset', function () {
       lastHud = {}; cashShown = null; lastStar = null; UI.unread = 0;
       if (UI.Panel) UI.Panel.hide(true); if (UI.Tools) UI.Tools.cancel(true); UI.refreshCards();
@@ -490,6 +647,12 @@ window.Z = window.Z || {}; var Z = window.Z;
       pendingTicker = null;
     }, 400);
   }
+  UI.closeAll = function () {
+    if (UI.closeModal) UI.closeModal();
+    if (UI.Panel && UI.Panel.hide) UI.Panel.hide(true);
+    if (UI.Tools && UI.Tools.cancel) UI.Tools.cancel(true);
+    if (UI.WeatherHud && UI.WeatherHud.close) UI.WeatherHud.close();
+  };
   UI.exitFollowQuiet = function () { UI.following = null; el.follow.classList.remove('on'); };
   UI.jumpTo = function (kind, id) {
     var p = Z.World.entityPos(kind, id);
@@ -522,6 +685,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (UI.Tools) UI.Tools.init(); if (UI.Panel) UI.Panel.init(); if (UI.Screens) UI.Screens.init(); if (UI.Tutorial) UI.Tutorial.init();
     UI.reset();
   };
-  UI.reset = function () { lastHud = {}; cashShown = null; updateHud(); updateCash(1); };
+  UI.reset = function () {
+    if (UI.StreetView && UI.StreetView.active()) UI.StreetView.exit();
+    else if (UI.SV && UI.SV.active) UI.SV.exit();
+    if (UI.syncUndo) UI.syncUndo();
+    lastHud = {}; cashShown = null; updateHud(); updateCash(1);
+  };
   UI.setBuildHidden = function (b) { el.build.classList.toggle('hide', b); };
 })();

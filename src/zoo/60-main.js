@@ -9,15 +9,76 @@ window.Z = window.Z || {}; var Z = window.Z;
   var ema = 0.016, slowT = 0, prCap = 2, budget = 240, QUAL = { low: [1, 140], med: [1.5, 320], high: [2, 600] };
 
   // ---------------------------------------------------------------- storage (localStorage may be blocked)
-  function sget(k) { try { var v = localStorage.getItem(k); if (v !== null) return v; } catch (e) { } return mem[k] || null; }
-  function sset(k, v) { mem[k] = v; try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function sget(k) {
+    if (Z.Storage && Z.Storage.get) {
+      var v = Z.Storage.get(k);
+      if (v !== null && v !== undefined) return v;
+    }
+    try { var lv = localStorage.getItem(k); if (lv !== null) return lv; } catch (e) { }
+    return mem[k] || null;
+  }
+  function sset(k, v) {
+    mem[k] = v;
+    var ok = true;
+    try { localStorage.setItem(k, v); } catch (e) { ok = false; }
+    return ok;
+  }
   Main.hasSave = function () { return !!sget(SAVE_KEY); };
   Main.save = function () {
-    if (!Main.playing || (Z.state && Z.state.gameOver)) return false;
-    try { var s = Z.Sim.save(); mem[SAVE_KEY] = s; try { localStorage.setItem(SAVE_KEY, s); return true; } catch (e) { return false; } } catch (e) { console.error('save failed', e); return false; }
+    if (!Main.playing || !Z.state || Z.state.gameOver) return false;
+    try {
+      var raw = Z.Sim.save();
+      var ok = sset(SAVE_KEY, raw);
+      if (Z.Storage && Z.Storage.set) {
+        var p = Z.Storage.set(SAVE_KEY, raw);
+        if (p && typeof p.then === 'function') {
+          p.then(saveNotice).catch(function () { saveNotice(false); });
+        }
+      }
+      return true;
+    } catch (e) {
+      console.error('save failed', e);
+      return false;
+    }
   };
   Main.saveSettings = function () { settings.sound = Z.Audio.enabled(); sset(SET_KEY, JSON.stringify(settings)); };
-  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (s.quality) settings.quality = s.quality; if (s.sound === false) settings.sound = false; } catch (e) { } Z.Audio.setEnabled(settings.sound); }
+  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; } catch (e) { } Z.Audio.setEnabled(settings.sound); }
+  function saveNotice(ok) {
+    if (!ok && !saveFailed) { saveFailed = true; UI.toast('Saving failed. Export a backup in Settings before closing.', 'bad'); }
+    if (ok) saveFailed = false;
+  }
+  Main.exportSave = function () {
+    var raw = Main.playing ? Z.Sim.save() : sget(SAVE_KEY);
+    if (!raw) { UI.toast('No park to export yet.', 'info'); return; }
+    var url = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+    var a = document.createElement('a'); a.href = url; a.download = 'wild-acres-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+  };
+  Main.importSave = function (raw) {
+    var previous = Z.Sim.save(), parsed;
+    try {
+      parsed = JSON.parse(raw);
+      if (!parsed || (parsed.v !== 1 && parsed.v !== 2) || !parsed.s || !Array.isArray(parsed.s.animals) || !Array.isArray(parsed.s.guests) || !Array.isArray(parsed.s.staff)) throw new Error('Invalid save');
+      if (!Z.Sim.load(raw)) throw new Error('Unsupported save');
+    } catch (e) {
+      Z.Sim.load(previous); UI.toast('Invalid or unsupported save. Your park was kept.', 'bad'); return Promise.resolve(false);
+    }
+    Z.state.speed = 1; startCam(); enterGame(); UI.closeModal(); closeSetup();
+    var ok = Main.save();
+    UI.toast(ok ? 'Park imported and saved.' : 'Park imported, but saving failed. Export a backup.', ok ? 'good' : 'bad');
+    return Promise.resolve(!!ok);
+  };
+  Main.chooseImport = function () {
+    if ((Main.playing || Main.hasSave()) && !window.confirm('Import a park and replace the current save? Export a backup first if you want to keep it.')) return;
+    var input = document.createElement('input'); input.type = 'file'; input.accept = '.json,application/json';
+    input.onchange = function () {
+      var file = input.files[0]; if (!file) return;
+      if (file.size > 20 * 1024 * 1024) { UI.toast('Save file is too large (maximum 20 MB).', 'bad'); return; }
+      var reader = new FileReader(); reader.onload = function () { Main.importSave(reader.result); };
+      reader.onerror = function () { UI.toast('Could not read this file.', 'bad'); }; reader.readAsText(file);
+    };
+    input.click();
+  };
 
   // ---------------------------------------------------------------- quality
   Main.getQuality = function () { return settings.quality; };
@@ -71,7 +132,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     var tb = h('div.tb');
     if (has) tb.appendChild(h('button.btn.gold', { html: ic('play') + 'Continue', on: { click: function () { UI.snd('unlock'); UI.snd('click'); Main.continueGame(); } } }));
     tb.appendChild(h('button.btn' + (has ? '.alt' : ''), { html: ic('plus') + 'New game', on: { click: function () { UI.snd('unlock'); UI.snd('click'); if (has && !tb.confirmNew) { tb.confirmNew = true; this.innerHTML = 'Replace saved zoo? Tap again'; var b = this; setTimeout(function () { tb.confirmNew = false; b.innerHTML = ic('plus') + 'New game'; }, 3000); } else Main.newGame(); } } }));
+    tb.appendChild(h('button.btn.alt', { html: ic('gear') + 'Park setup', on: { click: function () { UI.snd('unlock'); UI.snd('click'); Main.openSetup(); } } }));
     titleEl.appendChild(tb);
+    var backups = h('div.tb');
+    if (has) backups.appendChild(h('button.btn.sm.alt', { text: 'Export save', on: { click: Main.exportSave } }));
+    backups.appendChild(h('button.btn.sm.alt', { text: 'Import save', on: { click: Main.chooseImport } }));
+    titleEl.appendChild(backups);
+    if (location.protocol === 'file:') titleEl.appendChild(h('div.tag', { text: 'Run the included server or use your hosted site for reliable saving.' }));
     titleEl.appendChild(h('div.ver', { text: 'Wild Acres Zoo' }));
   }
   Main.showTitle = function () {
@@ -80,21 +147,103 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   function enterGame() {
     UI.titleOpen = false; titleEl.classList.remove('on'); document.getElementById('ui').style.display = ''; Main.playing = true; saveT = 0;
-    UI.reset(); UI.cat = null; UI.markTabs && UI.markTabs(); UI.el.cards.className = 'empty';
+    if (Z.Storage && Z.Storage.requestPersistence) Z.Storage.requestPersistence();
+    UI.reset(); UI.cat = null; UI.markTabs && UI.markTabs(); if (UI.el && UI.el.cards) UI.el.cards.className = 'empty';
     UI.snd('unlock');
   }
-  function startCam() { var c = Z.World.cam; c.target.x = 56; c.target.z = 68; c.dist = UI.narrow() ? 76 : 70; c.yaw = 0.15; c.pitch = 0.9; }
-  Main.newGame = function () {
-    Z.Sim.newGame(); Z.state.speed = 1; startCam(); enterGame();
-    if (UI.Panel) UI.Panel.closeSheet(); UI.closeModal();
-    UI.Tutorial.restart();
+  function startCam() {
+    var c = Z.World.cam, m = Z.state && Z.state.map, T = Z.TILE || 2;
+    var i0 = m ? m.i0 : 0, j0 = m ? m.j0 : 0, i1 = m ? m.i1 : N - 1, j1 = m ? m.j1 : N - 1, w = i1 - i0 + 1, hh = j1 - j0 + 1, big = Math.max(w, hh, 24) / 56;
+    if (c.target) { c.target.x = (i0 + w / 2) * T; c.target.z = (j0 + hh * 0.6) * T; }
+    c.dist = Math.min(150, (UI.narrow && UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
+  }
+  Main.newGame = function (o) {
+    o = o || {}; var maps = Z.DATA.maps, args = { seed: o.seed || ((Math.random() * 0x7ffffff) | 0) + 1, difficulty: o.difficulty || 'normal' };
+    if (o.map || (maps && maps.length)) args.map = o.map || maps[0].id;
+    Z.Sim.newGame(args); Z.state.speed = 1; startCam(); enterGame();
+    if (Z.World.snapCamera) Z.World.snapCamera();
+    if (UI.Panel) UI.Panel.closeSheet(); UI.closeModal(); closeSetup();
+    if (UI.Tutorial) UI.Tutorial.restart();
+    Main.save();
+  };
+
+  // ---------------------------------------------------------------- new-game setup sheet
+  var setupEl = null, setupSel = null;
+  var FALLBACK_MAPS = [{ id: 'default', name: 'Starter meadow', size: 'Medium', blurb: 'A friendly plot to learn on.', bounds: { i0: 0, j0: 0, i1: N - 1, j1: N - 1 } }];
+  var FALLBACK_DIFFS = [{ id: 'easy', name: 'Relaxed', blurb: 'Generous funds and patient guests.', money: 45000 }, { id: 'normal', name: 'Normal', blurb: 'The intended experience.', money: 30000 }, { id: 'hard', name: 'Challenging', blurb: 'Tight budget, picky guests.', money: 20000 }];
+  function closeSetup() { if (setupEl) { setupEl.remove(); setupEl = null; } }
+  Main.closeSetup = closeSetup;
+  function drawMapThumb(cv, m, seed) {
+    var W = cv.width, g = cv.getContext('2d'), b = m.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, px = W / N, p = null, i, j;
+    try { if (Z.Sim.previewMap) p = Z.Sim.previewMap(m.id, seed); } catch (e) { p = null; }
+    if (p && p.bounds) b = p.bounds;
+    g.fillStyle = '#5b6e4e'; g.fillRect(0, 0, W, W);
+    if (p && p.terrain) {
+      var cols = Z.DATA.terrain.map(function (t) { return t.colour || '#6fae4a'; });
+      for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
+        var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (N + 1)] || 0) : 0;
+        g.fillStyle = cols[p.terrain[i + j * N]] || '#6fae4a'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
+        if (e) { g.fillStyle = e > 0 ? 'rgba(255,255,255,' + Math.min(0.5, e * 0.07) + ')' : 'rgba(10,30,60,' + Math.min(0.5, -e * 0.09) + ')'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
+        if (!inb) { g.fillStyle = 'rgba(20,28,16,.62)'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
+      }
+    } else {
+      // schematic from the map's gen hints, seeded so Reroll changes it
+      var gen = m.gen || {}, cl = function (id, d) { var t = UI.byId(Z.DATA.terrain, id); return t ? t.colour : d; };
+      var sd = (seed || 1) * 7919 + m.id.length * 131, rnd = function () { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
+      var bw = (b.i1 - b.i0 + 1) * px, bh = (b.j1 - b.j0 + 1) * px, bx = b.i0 * px, by = b.j0 * px, k, blob = function (col, r) { g.fillStyle = col; g.beginPath(); g.arc(bx + rnd() * bw, by + rnd() * bh, r * (0.7 + rnd() * 0.6), 0, 7); g.fill(); };
+      g.fillStyle = cl(gen.base, '#7fb25a'); g.fillRect(bx, by, bw, bh);
+      g.save(); g.beginPath(); g.rect(bx, by, bw, bh); g.clip();
+      (gen.paint || []).forEach(function (pt) { for (k = 0; k < 5; k++) blob(cl(pt.t, '#8b6a45'), bw * 0.1); });
+      if (gen.hills && gen.hills.amp) for (k = 0; k < 3 + gen.hills.amp; k++) blob('rgba(255,255,255,' + Math.min(0.28, 0.08 + gen.hills.amp * 0.04) + ')', bw * 0.12);
+      if (gen.mesas) for (k = 0; k < gen.mesas.n; k++) blob('rgba(120,95,70,.8)', bw * 0.06);
+      if (gen.lakes) for (k = 0; k < gen.lakes.n; k++) blob('#4aa3c8', gen.lakes.r ? (gen.lakes.r[0] + gen.lakes.r[1]) / 2 * px * 0.8 : bw * 0.07);
+      var line = function (j, w, col) { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); for (var x = 0; x <= 8; x++) { var yy = by + (j - b.j0) * px + Math.sin(x * 1.3 + (seed || 0)) * 2; if (x) g.lineTo(bx + bw * x / 8, yy); else g.moveTo(bx, yy); } g.stroke(); };
+      if (gen.ridge) line(gen.ridge.j, 3, '#6d5f52');
+      if (gen.canyon) line(gen.canyon.j, Math.max(3, gen.canyon.w * px * 0.8), '#4a3a2c');
+      g.restore();
+    }
+    g.strokeStyle = '#ffe08a'; g.lineWidth = 1.5; g.strokeRect(b.i0 * px + 0.75, b.j0 * px + 0.75, (b.i1 - b.i0 + 1) * px - 1.5, (b.j1 - b.j0 + 1) * px - 1.5);
+    g.fillStyle = '#c4553a'; g.fillRect(27 * px, (N - 2) * px, 2 * px + 1, 2 * px);
+  }
+  Main.openSetup = function () {
+    closeSetup();
+    var maps = (Z.DATA.maps && Z.DATA.maps.length) ? Z.DATA.maps : FALLBACK_MAPS, diffs = (Z.DATA.difficulties && Z.DATA.difficulties.length) ? Z.DATA.difficulties : FALLBACK_DIFFS;
+    var sel = setupSel = setupSel || {}; sel.map = maps.filter(function (m) { return m.id === sel.map; }).length ? sel.map : maps[0].id;
+    sel.diff = diffs.filter(function (d) { return d.id === sel.diff; }).length ? sel.diff : (diffs.filter(function (d) { return d.id === 'normal'; })[0] || diffs[0]).id;
+    sel.seed = sel.seed || ((Math.random() * 99999) | 0) + 1;
+    var root = setupEl = h('div#setup'), box = h('div.sbox'), mapRow = h('div.smaps'), dRow = h('div.sdiffs'), seedTxt = h('span.sseed');
+    var thumbs = {};
+    function mark() {
+      Array.prototype.forEach.call(mapRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.map); });
+      Array.prototype.forEach.call(dRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.diff); });
+      seedTxt.textContent = 'Terrain seed ' + sel.seed;
+    }
+    function draw() { maps.forEach(function (m) { drawMapThumb(thumbs[m.id], m, sel.seed); }); }
+    maps.forEach(function (m) {
+      var cv = h('canvas', { width: 112, height: 112 }); thumbs[m.id] = cv;
+      mapRow.appendChild(h('button.smap', { 'data-id': m.id, on: { click: function () { UI.snd('click'); sel.map = m.id; mark(); } } }, h('div.sth', cv),
+        h('div.snm', h('b', { text: m.name }), h('span.badge', { text: m.size || '' })), h('div.sbl', { text: m.blurb || '' })));
+    });
+    diffs.forEach(function (d) {
+      dRow.appendChild(h('button.sdiff', { 'data-id': d.id, on: { click: function () { UI.snd('click'); sel.diff = d.id; mark(); } } }, h('b', { text: d.name }), h('span.sm', { text: UI.fmt(d.money || 0) }), h('small', { text: d.blurb || '' })));
+    });
+    box.appendChild(h('h2', { text: 'Choose your land' })); box.appendChild(mapRow);
+    box.appendChild(h('div.srow', seedTxt, h('button.btn.sm.alt', { html: ic('rot') + 'Reroll terrain', on: { click: function () { UI.snd('click'); sel.seed = ((Math.random() * 99999) | 0) + 1; mark(); draw(); } } })));
+    box.appendChild(h('h2', { text: 'Starting funds' })); box.appendChild(dRow);
+    box.appendChild(h('div.sact', h('button.btn.alt', { text: 'Back', on: { click: function () { UI.snd('click'); closeSetup(); } } }),
+      h('button.btn.gold', { html: ic('play') + 'Start park', on: { click: function () { UI.snd('click'); var s0 = { map: sel.map, difficulty: sel.diff, seed: sel.seed }; sel.seed = 0; Main.newGame(s0); } } })));
+    root.appendChild(box); document.body.appendChild(root); mark(); draw();
   };
   Main.continueGame = function () {
-    var s = sget(SAVE_KEY), ok = false;
-    try { ok = s && Z.Sim.load(s); } catch (e) { console.error(e); ok = false; }
-    if (!ok) { UI.toast('That save could not be loaded. Starting fresh.', 'bad'); Main.newGame(); return; }
+    var s = sget(SAVE_KEY), options = (Z.Storage && Z.Storage.getCandidates) ? Z.Storage.getCandidates(SAVE_KEY) : (s ? [s] : []), previous = Z.Sim.save(), loaded = -1;
+    if (!options || !options.length) options = s ? [s] : [];
+    for (var i = 0; i < options.length; i++) {
+      try { if (options[i] && Z.Sim.load(options[i])) { loaded = i; break; } } catch (e) {}
+      try { Z.Sim.load(previous); } catch (e) {}
+    }
+    if (loaded < 0) { UI.toast('This save could not be loaded. Export it before starting a new park, or import a backup.', 'bad'); return; }
     Z.state.speed = 1; startCam(); enterGame(); UI.closeModal();
-    UI.toast('Welcome back! Day ' + Z.state.day + '.', 'good');
+    UI.toast((loaded > 0 ? 'Recovered an older saved zoo. ' : '') + 'Welcome back! Day ' + Z.state.day + '.', 'good');
   };
   Main.demo = function () { buildDemo(); Z.bus.emit('reset'); UI.reset(); };
   Main.toTitle = function () {
@@ -112,7 +261,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (Main.playing) {
         Z.Sim.tick(dt);
         UI.update(dt); Z.Audio.update(dt);
-        saveT += dt; if (saveT >= 30) { saveT = 0; if (!Main.save() && !saveFailed) { saveFailed = true; UI.toast('Autosave is unavailable in this browser.', 'info'); } }
+        saveT += raw; if (saveT >= 10) { saveT = 0; Main.save(); }
       } else { Z.Sim.tick(dt); var c = Z.World.cam; c.yaw += dt * 0.07; }
       Z.World.frame(dt);
     } catch (e) { console.error('frame error', e); }
@@ -131,7 +280,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       Z.World.init(cont);
       UI.init();
       loadSettings();
-      var dpr = window.devicePixelRatio || 1; prCap = Math.min(dpr, UI.touch() ? 1.5 : 2); budget = UI.touch() ? 340 : 520; applyQuality();
+      Main.setQuality(settings.quality);
       Z.bus.emit('reset');
       Main.showTitle();
     } catch (e) { console.error('boot failed', e); var b = document.getElementById('boot'); if (b) b.innerHTML = '<div class="boot-in"><div class="boot-logo">Something went wrong</div><div class="boot-sub">' + String(e && e.message || e) + '</div></div>'; return; }
@@ -143,5 +292,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     last = performance.now(); requestAnimationFrame(frame);
     setTimeout(function () { var b = document.getElementById('boot'); if (b) { b.classList.add('gone'); setTimeout(function () { b.remove(); }, 700); } }, 400);
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  function start() {
+    if (Z.Storage && Z.Storage.init) {
+      Z.Storage.init().then(boot).catch(function (e) { console.error('Storage startup failed', e); boot(); });
+    } else {
+      boot();
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
 })();
