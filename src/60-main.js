@@ -205,11 +205,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     root.appendChild(box); document.body.appendChild(root); mark(); draw();
   };
   Main.continueGame = function () {
-    var s = sget(SAVE_KEY), ok = false, previous = Z.Sim.save();
-    try { ok = s && Z.Sim.load(s); } catch (e) { console.error(e); ok = false; }
-    if (!ok) { Z.Sim.load(previous); UI.toast('This save could not be loaded. Export it before starting a new park, or import a backup.', 'bad'); return; }
+    var s = sget(SAVE_KEY), options = Z.Storage.getCandidates ? Z.Storage.getCandidates(SAVE_KEY) : [s], previous = Z.Sim.save(), loaded = -1;
+    if (!options || !options.length) options = s ? [s] : [];
+    for (var i = 0; i < options.length; i++) {
+      try { if (options[i] && Z.Sim.load(options[i])) { loaded = i; break; } } catch (e) {}
+      try { Z.Sim.load(previous); } catch (e) {}
+    }
+    if (loaded < 0) { UI.toast('This save could not be loaded. Export it before starting a new park, or import a backup.', 'bad'); return; }
     Z.state.speed = 1; startCam(); enterGame(); UI.closeModal();
-    UI.toast('Welcome back! Day ' + Z.state.day + '.', 'good');
+    UI.toast((loaded ? 'Recovered an older saved park. ' : '') + 'Welcome back! Day ' + Z.state.day + '.', 'good');
   };
   Main.demo = function () { buildDemo(); Z.bus.emit('reset'); UI.reset(); };
   Main.toTitle = function () {

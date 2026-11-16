@@ -4,7 +4,7 @@ window.Z = window.Z || {};
 (function () {
   'use strict';
   var Z = window.Z;
-  var cache = {}, db = null, ready = null;
+  var cache = {}, candidates = {}, db = null, ready = null;
   var keys = ['amberacres.save.v2', 'amberacres.settings.v1'];
   var lastStatus = 'No save written this session';
   function localRead(key) {
@@ -48,12 +48,19 @@ window.Z = window.Z || {};
   Z.Storage = {
     init: function () {
       if (ready) return ready;
-      keys.forEach(function (key) { cache[key] = localRead(key); });
+      keys.forEach(function (key) { cache[key] = localRead(key); candidates[key] = cache[key].value ? [cache[key].value] : []; });
       ready = open().then(function (value) {
         db = value;
         if (db) db.onversionchange = function () { db.close(); db = null; };
         return Promise.all(keys.map(function (key) {
           return transaction('readonly', function (store) { return store.get(key); }).then(function (record) {
+            var found = [cache[key]];
+            if (record && record.value) found.push(record);
+            found.sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+            candidates[key] = [];
+            found.forEach(function (item) {
+              if (item.value && candidates[key].indexOf(item.value) === -1) candidates[key].push(item.value);
+            });
             if (record && record.value && (!cache[key].value || record.updatedAt > cache[key].updatedAt)) cache[key] = record;
           });
         }));
@@ -61,10 +68,12 @@ window.Z = window.Z || {};
       return ready;
     },
     get: function (key) { return cache[key] ? cache[key].value : null; },
+    getCandidates: function (key) { return candidates[key] ? candidates[key].slice() : (cache[key] && cache[key].value ? [cache[key].value] : []); },
     set: function (key, value) {
       // Synchronous localStorage write is deliberate: pagehide cannot await IndexedDB.
       var record = { value: value, updatedAt: Math.max(Date.now(), (cache[key] && cache[key].updatedAt || 0) + 1) };
       cache[key] = record;
+      candidates[key] = [value];
       var localOK = localWrite(key, record);
       return transaction('readwrite', function (store) { return store.put(record, key); }).then(function (idbOK) {
         var ok = localOK || idbOK === true;

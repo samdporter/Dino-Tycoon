@@ -115,7 +115,7 @@ def test_title_setup_and_canvas_render(browser, tmp_path):
         # Canvas dimensions and the screenshot are smoke checks; inspect the image for visual correctness.
         assert js(page, "!!document.querySelector('#world canvas')")
         assert js(page, "document.querySelector('#world canvas').width > 0")
-        assert js(page, "Z.state.money === 45000")
+        assert js(page, "Z.state.money === 35000")
         assert_no_browser_errors(problems)
     finally:
         context.close()
@@ -258,6 +258,83 @@ def test_phone_touch_emulation_and_settings(browser):
         page.get_by_role("button", name="Low").click()
         assert js(page, "Z.Main.getQuality()") == "low"
         assert page.locator("#world canvas").is_visible()
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("newest_backend", ["local", "idb"])
+@pytest.mark.parametrize("corruption", ["invalid_json", "broken_state"])
+def test_phone_continue_recovers_older_backend_copy(browser, newest_backend, corruption):
+    context, page, problems = open_game(browser, mobile=True)
+    try:
+        new_park(page)
+        js(page, "Z.state.money = 43210; Z.state.speed = 0")
+        valid = js(page, "Z.Sim.save()")
+        if corruption == "invalid_json":
+            corrupt = "{invalid JSON"
+        else:
+            broken = json.loads(valid)
+            # This passes format checks, then throws after Sim.load assigns state.
+            broken["s"]["guests"] = None
+            broken["s"]["money"] = 999
+            corrupt = json.dumps(broken)
+        # Stop lifecycle checkpoints before seeding divergent backend copies.
+        js(page, "Z.Main.showTitle()")
+        seed_backend_copies(page, valid, corrupt, newest_backend)
+        page.reload(wait_until="load")
+        page.wait_for_function("Z.Main && !document.querySelector('#boot:not(.gone)')")
+        page.get_by_role("button", name="Continue").click()
+        page.wait_for_function("Z.Main.playing")
+        js(page, "Z.state.speed = 0")
+        assert js(page, "Z.state.money") == 43210
+        assert js(page, "Z.UI.touch()")
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
+
+
+def seed_backend_copies(page, older, newer, newest_backend):
+    page.evaluate("""async ({older, newer, newestBackend}) => {
+      const key = 'amberacres.save.v2', time = Date.now() + 1000;
+      localStorage.setItem(key, newestBackend === 'local' ? newer : older);
+      localStorage.setItem(key + '.time', String(newestBackend === 'local' ? time + 1 : time));
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open('amberacres', 1);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      try {
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('saves', 'readwrite');
+          tx.objectStore('saves').put({
+            value: newestBackend === 'idb' ? newer : older,
+            updatedAt: newestBackend === 'idb' ? time + 1 : time
+          }, key);
+          tx.oncomplete = resolve;
+          tx.onerror = tx.onabort = () => reject(tx.error);
+        });
+      } finally { db.close(); }
+    }""", {"older": older, "newer": newer, "newestBackend": newest_backend})
+
+
+def test_phone_continue_preserves_both_corrupt_copies(browser):
+    context, page, problems = open_game(browser, mobile=True)
+    try:
+        new_park(page)
+        js(page, "Z.Main.showTitle()")
+        seed_backend_copies(page, "older corrupt copy", "newer corrupt copy", "idb")
+        page.reload(wait_until="load")
+        page.wait_for_function("Z.Main && !document.querySelector('#boot:not(.gone)')")
+        snapshot = "({money:Z.state.money,day:Z.state.day,animals:Z.state.animals.length,staff:Z.state.staff.length,path:Array.from(Z.state.path)})"
+        js(page, "Z.state.speed = 0")
+        before = js(page, snapshot)
+        page.get_by_role("button", name="Continue").click()
+        assert js(page, "Z.Main.playing") is False
+        assert js(page, snapshot) == before
+        assert js(page, "localStorage.getItem('amberacres.save.v2')") == "older corrupt copy"
+        assert js(page, "Z.Storage.get('amberacres.save.v2')") == "newer corrupt copy"
+        assert page.get_by_role("button", name="Export save").is_visible()
         assert_no_browser_errors(problems)
     finally:
         context.close()

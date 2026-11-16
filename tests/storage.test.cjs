@@ -44,6 +44,21 @@ test('legacy localStorage raw save is readable after startup', async () => {
 test('newest IndexedDB snapshot wins over stale localStorage', async () => {
   const s = storage({ local: new Map([[SAVE,'old'], [SAVE+'.time','10']]), records: new Map([[SAVE,{value:'new',updatedAt:11}]]) });
   await s.api.init(); assert.equal(s.api.get(SAVE), 'new');
+  assert.deepEqual(Array.from(s.api.getCandidates(SAVE)), ['new', 'old']);
+});
+test('newer localStorage snapshot leads recovery candidates over IndexedDB', async () => {
+  const s = storage({ local: new Map([[SAVE,'new local'], [SAVE+'.time','12']]), records: new Map([[SAVE,{value:'old idb',updatedAt:11}]]) });
+  await s.api.init(); assert.equal(s.api.get(SAVE), 'new local');
+  assert.deepEqual(Array.from(s.api.getCandidates(SAVE)), ['new local', 'old idb']);
+});
+test('startup candidates are newest first and deduplicated when backends match', async () => {
+  const s = storage({ local: new Map([[SAVE,'same'], [SAVE+'.time','11']]), records: new Map([[SAVE,{value:'same',updatedAt:11}]]) });
+  await s.api.init(); assert.deepEqual(Array.from(s.api.getCandidates(SAVE)), ['same']);
+});
+test('new writes replace recovery candidates so old parks cannot return', async () => {
+  const s = storage({ local: new Map([[SAVE,'old'], [SAVE+'.time','10']]), records: new Map([[SAVE,{value:'new',updatedAt:11}]]) });
+  await s.api.init(); await s.api.set(SAVE, 'latest');
+  assert.deepEqual(Array.from(s.api.getCandidates(SAVE)), ['latest']);
 });
 test('synchronous local checkpoint precedes promise completion; reload restores it', async () => {
   const s = storage({ denyIDB: true }); await s.api.init();

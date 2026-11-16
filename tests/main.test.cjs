@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 function main() {
-  const saved = new Map(), notices = [];
+  const saved = new Map(), notices = []; let candidateValues = null;
   function node() { return { appendChild() {}, classList: { add() {}, remove() {} }, style: {}, innerHTML: '' }; }
   const ctx = vm.createContext({ console, setTimeout, clearTimeout,
     btoa: s => Buffer.from(s,'binary').toString('base64'), atob: s => Buffer.from(s,'base64').toString('binary'),
@@ -14,12 +14,12 @@ function main() {
   const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname,'../src',f),'utf8'),ctx);
   ['00-data.js','10-core.js','20-sim.js'].forEach(load);
   const z=ctx.Z;
-  z.Storage={get:k=>saved.get(k)||null,set:(k,v)=>{saved.set(k,v);return Promise.resolve(true)},requestPersistence(){}};
+  z.Storage={get:k=>saved.get(k)||null,getCandidates:k=>candidateValues || [saved.get(k)||null],set:(k,v)=>{saved.set(k,v);candidateValues=null;return Promise.resolve(true)},requestPersistence(){}};
   z.UI={h:node,ic:()=>'',snd(){},toast:message=>notices.push(message),reset(){},closeModal(){},narrow:()=>false,
     Tutorial:{restart(){}},el:{cards:node()}};
   z.World={cam:{target:{x:0,z:0}},resize(){}};
   load('60-main.js'); z.Main.showTitle();
-  return {z,saved,notices};
+  return {z,saved,notices,setCandidates(values){candidateValues=values}};
 }
 test('new park is checkpointed immediately and save returns an awaited boolean', async () => {
   const {z,saved}=main(); z.Main.newGame({seed:17});
@@ -40,11 +40,41 @@ test('invalid imported save preserves current park and stored data', async () =>
   assert.equal(z.state.money,32123);assert.equal(saved.get('amberacres.save.v2'),original);
 });
 test('valid backup loads and checkpoints; corrupt Continue does not overwrite it', async () => {
-  const {z,saved}=main();z.Main.newGame({seed:17});
+  const {z,saved,setCandidates}=main();z.Main.newGame({seed:17});
   const raw=JSON.parse(z.Sim.save());raw.s.money=65432;
   assert.equal(await z.Main.importSave(JSON.stringify(raw)),true);
   assert.equal(JSON.parse(saved.get('amberacres.save.v2')).s.money,65432);
-  z.Main.showTitle();saved.set('amberacres.save.v2','corrupt');z.Main.continueGame();
+  z.Main.showTitle();saved.set('amberacres.save.v2','corrupt');setCandidates(['corrupt']);z.Main.continueGame();
   assert.equal(z.Main.playing,false);assert.equal(z.state.money,65432);
   assert.equal(saved.get('amberacres.save.v2'),'corrupt');
+});
+test('Continue falls back to an older valid backend candidate when the newest is corrupt', () => {
+  const {z,saved,notices,setCandidates}=main(); z.Main.newGame({seed:17});
+  z.state.money=76543; const valid=z.Sim.save(); saved.set('amberacres.save.v2','corrupt newest');
+  setCandidates(['corrupt newest',valid]); z.Main.showTitle(); z.Main.continueGame();
+  assert.equal(z.Main.playing,true); assert.equal(z.state.money,76543);
+  assert.match(notices.at(-1),/older saved park/i);
+});
+test('Continue keeps the newest candidate when it is valid', () => {
+  const {z,setCandidates}=main(); z.Main.newGame({seed:17});
+  const older=JSON.parse(z.Sim.save()); older.s.money=45678;
+  z.state.money=87654; const newest=z.Sim.save(); setCandidates([newest,JSON.stringify(older)]);
+  z.Main.showTitle(); z.Main.continueGame();
+  assert.equal(z.Main.playing,true); assert.equal(z.state.money,87654);
+});
+test('Continue rolls back a partially applied corrupt candidate before trying the older save', () => {
+  const {z,saved,notices,setCandidates}=main(); z.Main.newGame({seed:17});
+  z.state.money=76543; const valid=z.Sim.save(), malformed=JSON.parse(valid); malformed.s.money=999; malformed.s.guests=null;
+  saved.set('amberacres.save.v2',JSON.stringify(malformed)); setCandidates([JSON.stringify(malformed),valid]); z.Main.showTitle(); z.Main.continueGame();
+  assert.equal(z.Main.playing,true); assert.equal(z.state.money,76543);
+  assert.match(notices.at(-1),/older saved park/i);
+});
+test('Continue preserves park and stored data when all backend candidates are corrupt', () => {
+  const {z,saved,setCandidates}=main(); z.Main.newGame({seed:17});
+  z.state.money=76543; const before={money:z.state.money,animals:z.state.animals.length,staff:z.state.staff.length};
+  const malformed=JSON.parse(z.Sim.save()); malformed.s.money=999; malformed.s.guests=null;
+  saved.set('amberacres.save.v2',JSON.stringify(malformed)); setCandidates([JSON.stringify(malformed),'also corrupt']); z.Main.showTitle(); z.Main.continueGame();
+  assert.equal(z.Main.playing,false); assert.equal(z.state.money,76543);
+  assert.equal(saved.get('amberacres.save.v2'),JSON.stringify(malformed));
+  assert.deepEqual({money:z.state.money,animals:z.state.animals.length,staff:z.state.staff.length},before);
 });
