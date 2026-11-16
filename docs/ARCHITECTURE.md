@@ -6,13 +6,13 @@ This refactor extracts the original game's existing sections, preserves their de
 
 `index.html` explicitly lists classic deferred scripts. They run in document order after HTML parsing. No bundler, package registry, CDN, or runtime network API is required. Keep this order when adding files. Do not change individual scripts to ES modules without also replacing their shared `Z` namespace references.
 
-- `00-data.js`: definitions, maps, species, costs, research content.
+- `00-data.js`: definitions, island maps, species (dinosaurs, marine reptiles, pterosaurs, modern safari animals, donor traits), costs, research and news content.
 - `10-core.js`: typed state arrays, random number generator, event bus, serialization helpers.
 - `15-storage.js`: localStorage checkpoints, IndexedDB records, startup selection, storage status. It does not interpret park contents.
-- `20-sim.js`: owns live simulation state and game actions; exports `Z.Sim`. Prefer changing state through those actions rather than editing `Z.state` from the UI.
-- `30-models.js` and `40-world.js`: geometry and presentation. Do not move authoritative simulation state into scene objects.
-- `50` through `59`: UI, construction tools, panels, audio, tutorial, research, guide, street view, weather.
-- `60-main.js`: lifecycle, screens, timing, save coordination and JSON import/export.
+- `20-sim.js` and `22` through `29` (`22-sim-dna.js`, `23-sim-moats.js`, `24-sim-monorail.js`, `25-sim-power.js`, `26-sim-realms.js`, `27-sim-news.js`, `28-sim-director.js`, `29-sim-safari.js`): own live simulation state and game actions; export `Z.Sim` and internal context bridges (`Z.simCtx`, `Z.moatCtx`, `Z.monoCtx`, `Z.powerCtx`, `Z.realmCtx`, `Z.safariCtx`). Prefer changing state through public `Z.Sim` actions rather than editing `Z.state` from the UI.
+- `30-models.js` through `35-models-safari.js` and `40-world.js` through `47-world-patterns.js`: 3D models, realm/moat/monorail/power/safari meshes, overlay patterns and presentation. Do not move authoritative simulation state into scene objects.
+- `50` through `78`: UI, construction tools, panels, modal screens (`53-screens.js`), audio, 14-step tutorial, research and DNA lab (`56-research.js`, `61-minigames.js`, `62-research-dna.js`), guide, street view, weather HUD, 3D portrait (`64-portrait.js`), moat/monorail/realm/power/news/safari UI (`65`–`69`, `74`), Masterclass example games and UI (`70`–`73`), two-level build groups (`75-ui-groups.js`), mobile HUD (`76-ui-mobile.js`), unlock hints (`77-ui-hints.js`) and overlay legend (`78-ui-legend.js`).
+- `90-main.js`: lifecycle, title/setup screens, timing, adaptive quality, save coordination (including Masterclass save protection) and JSON import/export.
 
 Rendering and UI observe `Z.state` and the `Z.bus` event bus. A `reset` event follows simulation resets/loads; renderer and UI rebuild their derived views. Runtime simulation caches are recreated by `Sim.load`, so serialized JSON need not be byte-identical after a load.
 

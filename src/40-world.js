@@ -595,7 +595,8 @@ function resize() {
 }
 
 /* ---------------------------------------------------------------- terrain */
-var S2, TH, TE, tBase, WLT, WLV, tGeo, tPos, tNor, tCol, tUV, tMesh, TC = [], waterIdx = -1, terrDirty = null;
+var SEAM = null, SEAPREV = null, SEA_SAND = null, SEA_DEEP = null;
+var S2, TH, TE, tBase, WLT, WLV, WLS, tGeo, tPos, tNor, tCol, tUV, tMesh, TC = [], waterIdx = -1, terrDirty = null;
 var AMP = { grass: 0.07, savannah: 0.06, dirt: 0.08, sand: 0.035, snow: 0.025, rainforest: 0.08, forest: 0.08, rock: 0.13, water: 0.03 };
 var WATER_Y = -0.1, DEPTH_MAX = 0.42;
 var waterMesh = null;
@@ -659,37 +660,50 @@ function calcVertex(a, b) {
   var i0, i1, j0, j1;
   if (a & 1) { i0 = i1 = (a - 1) >> 1; } else { i0 = (a >> 1) - 1; i1 = a >> 1; }
   if (b & 1) { j0 = j1 = (b - 1) >> 1; } else { j0 = (b >> 1) - 1; j1 = b >> 1; }
-  var r = 0, g = 0, bl = 0, ws = 0, wat = 0, amp = 0, outW = 0, mp = mapB();
+  var r = 0, g = 0, bl = 0, ws = 0, wat = 0, amp = 0, outW = 0, mp = mapB(), seaW = 0;
   for (var j = j0; j <= j1; j++) for (var i = i0; i <= i1; i++) {
     if (i < 0 || j < 0 || i >= N || j >= N) continue;
     var tid = ter ? ter[i + j * N] : 0, tc = TC[tid] || TC[0];
     var w = 0.7 + 0.6 * h2(i * 7 + a, j * 13 + b);
+    if (SEAM && tid === waterIdx && SEAM[i + j * N]) {
+      // sea bed: pale sand in the shallows fading to deep teal (seen through the translucent water)
+      var sdp = clamp(-(elevAt(i, j) + elevAt(i + 1, j + 1) + elevAt(i + 1, j) + elevAt(i, j + 1)) / 4 / 1.6, 0, 1), sk = sstep(0, 1, sdp);
+      r += (SEA_SAND[0] + (SEA_DEEP[0] - SEA_SAND[0]) * sk) * w; g += (SEA_SAND[1] + (SEA_DEEP[1] - SEA_SAND[1]) * sk) * w; bl += (SEA_SAND[2] + (SEA_DEEP[2] - SEA_SAND[2]) * sk) * w;
+      ws += w; amp += 0.02 * w; wat += w; seaW += w;
+      continue;
+    }
     r += tc.c[0] * w; g += tc.c[1] * w; bl += tc.c[2] * w; ws += w; amp += tc.amp * w;
     if (tid === waterIdx) wat += w;
     if (i < mp.i0 || i > mp.i1 || j < mp.j0 || j > mp.j1) outW += w;
   }
   if (ws === 0) { var tc0 = TC[0]; r = tc0.c[0]; g = tc0.c[1]; bl = tc0.c[2]; ws = 1; amp = tc0.amp; }
   r /= ws; g /= ws; bl /= ws; amp /= ws;
-  var fr = wat / ws;
+  var fr = wat / ws, fsea = seaW / ws, ffr = (wat - seaW) / ws;
   // elevation: bilinear over tile corners (even a,b sit exactly on corners)
   var ia = a >> 1, ib = b >> 1, fa = (a & 1) ? 0.5 : 0, fb = (b & 1) ? 0.5 : 0, el;
   if (fa === 0 && fb === 0) el = elevAt(ia, ib);
   else el = (elevAt(ia, ib) * (1 - fa) + elevAt(ia + 1, ib) * fa) * (1 - fb) + (elevAt(ia, ib + 1) * (1 - fa) + elevAt(ia + 1, ib + 1) * fa) * fb;
-  var hgt = el - DEPTH_MAX * sstep(0.3, 0.9, fr);
+  var hgt = el - DEPTH_MAX * sstep(0.3, 0.9, ffr);
+  if (fsea > 0) hgt = lerp(hgt, Math.min(el, -0.25), sstep(0.3, 0.9, fsea));
   if (fr > 0.05 && fr < 0.95) {
     var wet = sstep(0.08, 0.5, fr) * (1 - 0.5 * sstep(0.7, 1.0, fr));
     r = lerp(r, 0.36, wet * 0.28); g = lerp(g, 0.33, wet * 0.28); bl = lerp(bl, 0.26, wet * 0.28);
   }
+  var mv = Z.MoatsWorld ? Z.MoatsWorld.vtx(a, b) : null;   // moats package: trenches cut into the mesh
+  var rv = Z.RealmsWorld ? Z.RealmsWorld.vtx(a, b, hgt) : null;   // realms package: sunk tank basins, sea-bed trenches under tunnels
+  if (rv) mv = rv;
+  if (mv) hgt -= mv.drop;
   var n1 = fbm(x * 0.11 + 3.1, z * 0.11 + 9.7, 3) - 0.5, n2 = h2(a * 3 + 1, b * 7 + 5) - 0.5, n3 = fbm(x * 0.45, z * 0.45, 2) - 0.5;
   var m = 1 + amp * (n1 * 2.2 + n2 * 0.9 + n3 * 1.2);
   var hue = 1 + amp * n1 * 0.9;
   r = r * m * (2 - hue); g = g * m * hue; bl = bl * m;
   if (outW > 0) {
     // land the player does not own: duller, darker, wilder
-    var o = outW / ws, lum = 0.3 * r + 0.59 * g + 0.11 * bl;
+    var o = outW / ws * (1 - fsea), lum = 0.3 * r + 0.59 * g + 0.11 * bl;
     var wr = lum * 0.74 + 0.01, wg = lum * 0.88 + 0.02, wb = lum * 0.58;
     r = lerp(r, wr * 0.82, 0.78 * o); g = lerp(g, wg * 0.82, 0.78 * o); bl = lerp(bl, wb * 0.82, 0.78 * o);
   }
+  if (mv) { r = lerp(r, mv.r, mv.k); g = lerp(g, mv.g, mv.k); bl = lerp(bl, mv.b, mv.k); }
   tBase[v * 3] = r; tBase[v * 3 + 1] = g; tBase[v * 3 + 2] = bl;
   tCol[v * 3] = r; tCol[v * 3 + 1] = g; tCol[v * 3 + 2] = bl;
   TE[v] = el; TH[v] = hgt;
@@ -716,7 +730,19 @@ function calcNormals(a0, a1, b0, b1) {
     tCol[v * 3] = br; tCol[v * 3 + 1] = bg; tCol[v * 3 + 2] = bb;
   }
 }
+function refreshSea(box) {
+  if (!SEA_SAND) { SEA_SAND = lin3('#d9c995'); SEA_DEEP = lin3('#2f6a7a'); }
+  var sm = Z.Sim && Z.Sim.seaMask ? Z.Sim.seaMask(true) : null, k;
+  if (sm && SEAPREV && box) {
+    var a0 = N, b0 = N, a1 = -1, b1 = -1;
+    for (k = 0; k < N * N; k++) if (sm[k] !== SEAPREV[k]) { var x = k % N, y = (k / N) | 0; if (x < a0) a0 = x; if (x > a1) a1 = x; if (y < b0) b0 = y; if (y > b1) b1 = y; }
+    if (a1 >= 0) { box.i0 = Math.min(box.i0, a0 - 1); box.j0 = Math.min(box.j0, b0 - 1); box.i1 = Math.max(box.i1, a1 + 1); box.j1 = Math.max(box.j1, b1 + 1); }
+  }
+  SEAM = sm; SEAPREV = sm ? sm.slice() : null;
+}
 function terrainRange(i0, j0, i1, j1) {
+  var bx = { i0: i0, j0: j0, i1: i1, j1: j1 }; refreshSea(bx);
+  i0 = Math.max(0, bx.i0); j0 = Math.max(0, bx.j0); i1 = Math.min(N - 1, bx.i1); j1 = Math.min(N - 1, bx.j1);
   var a0 = clamp(2 * i0, 0, S2 - 1), a1 = clamp(2 * i1 + 2, 0, S2 - 1), b0 = clamp(2 * j0, 0, S2 - 1), b1 = clamp(2 * j1 + 2, 0, S2 - 1);
   for (var b = b0; b <= b1; b++) for (var a = a0; a <= a1; a++) calcVertex(a, b);
   calcNormals(Math.max(0, a0 - 1), Math.min(S2 - 1, a1 + 1), Math.max(0, b0 - 1), Math.min(S2 - 1, b1 + 1));
@@ -729,28 +755,80 @@ function terrainRange(i0, j0, i1, j1) {
   waterDirty = true;
   var full = i0 <= 0 && j0 <= 0 && i1 >= N - 1 && j1 >= N - 1;
   if (typeof outerSig !== 'undefined') {
-    if (full || i0 <= 0 || j0 <= 0 || i1 >= N - 1 || j1 >= N - 1) refreshOuter();
+    if (full) buildOuter(); else if (i0 <= 0 || j0 <= 0 || i1 >= N - 1 || j1 >= N - 1) refreshOuter();
     if (full) { rebuildWild(); rebuildWall(); }
     else if (wallNear(i0, j0, i1, j1)) rebuildWall();
   }
   if (elevTouched || full) { elevTouched = false; reseatWorld(); }
 }
 var waterDirty = false;
+var SEA_Y = WATER_Y;   // sea surface: elev 0 + WATER_Y
+function ensureWaterMat() {
+  if (MAT.water) return MAT.water;
+  MAT.water = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uTime: { value: 0 }, uLight: { value: 1 }, uSky: { value: new THREE.Color(0.6, 0.8, 1) },
+      uDeep: { value: tcol('#1f6a8c') }, uShallow: { value: tcol('#58b6c0') }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: { value: new THREE.Color(1, 1, 1) }, uSunI: { value: 1 }
+    }]),
+    vertexShader: [
+      'attribute float aDepth; attribute float aSea; varying float vDepth; varying float vSea; varying vec3 vW; uniform float uTime;',
+      '#include <fog_pars_vertex>',
+      'void main(){ vDepth = aDepth; vSea = aSea; vec4 wp = modelMatrix*vec4(position,1.0);',
+      ' float sw = (sin(wp.x*0.9+uTime*1.1+wp.z*0.35)+cos(wp.z*1.1-uTime*0.9))*0.035*aSea*smoothstep(0.1,0.6,aDepth);',
+      ' wp.y += (sin(wp.x*1.9+uTime*1.4)+cos(wp.z*2.3+uTime*1.1))*0.012*smoothstep(0.0,0.2,aDepth) + sw;',
+      ' vW = wp.xyz; vec4 mvPosition = viewMatrix*wp; gl_Position = projectionMatrix*mvPosition;',
+      ' #include <fog_vertex>',
+      '}'
+    ].join('\n'),
+    fragmentShader: [
+      'uniform float uTime; uniform float uLight; uniform vec3 uSky; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunI;',
+      'varying float vDepth; varying float vSea; varying vec3 vW;',
+      '#include <fog_pars_fragment>',
+      'void main(){',
+      ' vec3 V = normalize(cameraPosition - vW); float t = uTime; vec2 p = vW.xz;',
+      ' float dx = cos(p.x*1.7+t*1.3)*0.5 + cos((p.x+p.y)*2.9-t*1.9)*0.35 + cos(p.y*4.1+t*2.3)*0.15;',
+      ' float dz = cos(p.y*1.5-t*1.1)*0.5 + cos((p.x-p.y)*3.3+t*1.7)*0.35 + cos(p.x*3.7-t*2.0)*0.15;',
+      ' float sw = 1.0 - vSea*0.35; dx += vSea*(cos(p.x*0.45+t*0.8)*0.6+cos((p.x-p.y)*0.7-t*0.6)*0.5); dz += vSea*(cos(p.y*0.5-t*0.7)*0.6+cos((p.x+p.y)*0.6+t*0.5)*0.5);',
+      ' vec3 n = normalize(vec3(-dx*0.14*sw*0.7,1.0,-dz*0.14*sw*0.7));',
+      ' float fres = pow(1.0-max(dot(n,V),0.0),3.0);',
+      ' float dd = vDepth; float dm = mix(0.42, 1.1, vSea);',
+      ' vec3 col = mix(uShallow,uDeep,smoothstep(0.0,dm,dd));',
+      ' col = mix(col,uSky,clamp(0.10+fres*0.8,0.0,1.0));',
+      ' vec3 R = reflect(-V,n); float sp = pow(max(dot(R,uSunDir),0.0),80.0)*uSunI;',
+      ' float w1 = sin(p.x*2.3+sin(p.y*1.7+t*0.7)*1.6+t*0.6)*sin(p.y*2.1+sin(p.x*1.9-t*0.5)*1.6); float glint = smoothstep(0.55,1.0,w1)*0.09*(1.0-0.65*vSea);',
+      ' col *= uLight; col += uSunCol*sp + vec3(glint)*uLight;',
+      ' float foam = smoothstep(0.0,0.012,dd)*(1.0-smoothstep(0.012,0.07,dd));',
+      ' float wash = 0.5+0.5*sin(dd*34.0-t*1.6+p.x*0.4); float band = smoothstep(0.0,0.03,dd)*(1.0-smoothstep(0.05,0.2,dd))*wash*vSea;',
+      ' col += vec3(0.55,0.62,0.6)*(foam*(0.6+0.4*sin(p.x*5.0+t*2.0))+band*0.55)*uLight;',
+      ' float a = mix(smoothstep(0.0,0.10,dd)*0.84, 0.28+0.62*smoothstep(0.06,0.9,dd), vSea); a = max(a, max(sp*0.6, max(foam*0.55, band*0.5)));',
+      ' gl_FragColor = vec4(col,a);',
+      ' #include <encodings_fragment>',
+      ' #include <fog_fragment>',
+      '}'
+    ].join('\n')
+  });
+  return MAT.water;
+}
 function rebuildWater() {
   waterDirty = false;
   var ter = Z.state && Z.state.terrain, any = false;
   if (!WLT) WLT = new Float32Array(N * N);
   WLT.fill(-99);
   if (ter && waterIdx >= 0) for (var k = 0; k < ter.length; k++) if (ter[k] === waterIdx) { any = true; break; }
+  if (!any && Z.MoatsWorld && Z.MoatsWorld.hasWater()) any = true;
   if (waterMesh) { root.remove(waterMesh); waterMesh.geometry.dispose(); waterMesh = null; }
   if (!any) return;
-  // connected (8-way) water bodies; each gets one surface level = its lowest tile corner + WATER_Y
+  var sea = Z.Sim && Z.Sim.seaMask ? Z.Sim.seaMask(true) : new Uint8Array(N * N);
+  // connected (8-way) bodies of one kind: fresh bodies get one surface level = their lowest tile corner + WATER_Y; sea tiles sit at SEA_Y
   var lab = new Int16Array(N * N).fill(-1), stack = [], nb = 0, i, j, q, di, dj;
   if (!WLV) WLV = new Float32Array(S2 * S2);
-  WLV.fill(1e9);
+  if (!WLS) WLS = new Uint8Array(S2 * S2);
+  WLV.fill(1e9); WLS.fill(0);
   for (q = 0; q < N * N; q++) {
     if (ter[q] !== waterIdx || lab[q] >= 0) continue;
-    var tiles = [], mn = 1e9;
+    var tiles = [], mn = 1e9, isSea = sea[q] === 1;
     lab[q] = nb; stack.push(q);
     while (stack.length) {
       var t = stack.pop(); tiles.push(t);
@@ -759,23 +837,25 @@ function rebuildWater() {
       if (c0 < mn) mn = c0;
       for (dj = -1; dj <= 1; dj++) for (di = -1; di <= 1; di++) {
         var ni = i + di, nj = j + dj; if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
-        var nq = ni + nj * N; if (ter[nq] === waterIdx && lab[nq] < 0) { lab[nq] = nb; stack.push(nq); }
+        var nq = ni + nj * N; if (ter[nq] === waterIdx && lab[nq] < 0 && (sea[nq] === 1) === isSea) { lab[nq] = nb; stack.push(nq); }
       }
     }
-    var lvl = mn + WATER_Y;
+    var lvl = isSea ? SEA_Y : mn + WATER_Y;
     for (var tt = 0; tt < tiles.length; tt++) {
       var ti = tiles[tt] % N, tj = (tiles[tt] / N) | 0;
       WLT[tiles[tt]] = lvl;
       for (var bb = Math.max(0, 2 * tj - 1); bb <= Math.min(S2 - 1, 2 * tj + 3); bb++) for (var aa = Math.max(0, 2 * ti - 1); aa <= Math.min(S2 - 1, 2 * ti + 3); aa++) {
         var vq = aa + bb * S2; if (lvl < WLV[vq]) WLV[vq] = lvl;
+        if (isSea) WLS[vq] = 1;
       }
     }
     nb++;
   }
-  var vmap = new Int32Array(S2 * S2).fill(-1), pos = [], dep = [], idx = [];
+  if (Z.MoatsWorld) Z.MoatsWorld.water(WLV, WLS, WLT, S2, elevAt);   // moats package: wet ditches share the map water look
+  var vmap = new Int32Array(S2 * S2).fill(-1), pos = [], dep = [], sf = [], idx = [];
   function gv(a, b) {
     var q = a + b * S2, m = vmap[q];
-    if (m < 0) { m = pos.length / 3; vmap[q] = m; pos.push(a * T * 0.5, WLV[q], b * T * 0.5); dep.push(Math.max(0, WLV[q] - TH[q])); }
+    if (m < 0) { m = pos.length / 3; vmap[q] = m; pos.push(a * T * 0.5, WLV[q], b * T * 0.5); dep.push(Math.max(0, WLV[q] - TH[q])); sf.push(WLS[q]); }
     return m;
   }
   for (var b = 0; b < S2 - 1; b++) for (var a = 0; a < S2 - 1; a++) {
@@ -791,50 +871,10 @@ function rebuildWater() {
   var g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
   g.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(dep), 1));
+  g.setAttribute('aSea', new THREE.BufferAttribute(new Float32Array(sf), 1));
   g.setIndex(idx);
   g.computeBoundingSphere();
-  if (!MAT.water) {
-    MAT.water = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, fog: true,
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
-        uTime: { value: 0 }, uLight: { value: 1 }, uSky: { value: new THREE.Color(0.6, 0.8, 1) },
-        uDeep: { value: tcol('#1f6a8c') }, uShallow: { value: tcol('#58b6c0') }, uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uSunCol: { value: new THREE.Color(1, 1, 1) }, uSunI: { value: 1 }
-      }]),
-      vertexShader: [
-        'attribute float aDepth; varying float vDepth; varying vec3 vW; uniform float uTime;',
-        '#include <fog_pars_vertex>',
-        'void main(){ vDepth = aDepth; vec4 wp = modelMatrix*vec4(position,1.0);',
-        ' wp.y += (sin(wp.x*1.9+uTime*1.4)+cos(wp.z*2.3+uTime*1.1))*0.012*smoothstep(0.0,0.2,aDepth);',
-        ' vW = wp.xyz; vec4 mvPosition = viewMatrix*wp; gl_Position = projectionMatrix*mvPosition;',
-        ' #include <fog_vertex>',
-        '}'
-      ].join('\n'),
-      fragmentShader: [
-        'uniform float uTime; uniform float uLight; uniform vec3 uSky; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uSunDir; uniform vec3 uSunCol; uniform float uSunI;',
-        'varying float vDepth; varying vec3 vW;',
-        '#include <fog_pars_fragment>',
-        'void main(){',
-        ' vec3 V = normalize(cameraPosition - vW); float t = uTime; vec2 p = vW.xz;',
-        ' float dx = cos(p.x*1.7+t*1.3)*0.5 + cos((p.x+p.y)*2.9-t*1.9)*0.35 + cos(p.y*4.1+t*2.3)*0.15;',
-        ' float dz = cos(p.y*1.5-t*1.1)*0.5 + cos((p.x-p.y)*3.3+t*1.7)*0.35 + cos(p.x*3.7-t*2.0)*0.15;',
-        ' vec3 n = normalize(vec3(-dx*0.14,1.0,-dz*0.14));',
-        ' float fres = pow(1.0-max(dot(n,V),0.0),3.0);',
-        ' vec3 col = mix(uShallow,uDeep,smoothstep(0.0,0.42,vDepth));',
-        ' col = mix(col,uSky,clamp(0.10+fres*0.8,0.0,1.0));',
-        ' vec3 R = reflect(-V,n); float sp = pow(max(dot(R,uSunDir),0.0),80.0)*uSunI;',
-        ' float w1 = sin(p.x*2.3+sin(p.y*1.7+t*0.7)*1.6+t*0.6)*sin(p.y*2.1+sin(p.x*1.9-t*0.5)*1.6); float glint = smoothstep(0.55,1.0,w1)*0.09;',
-        ' col *= uLight; col += uSunCol*sp + vec3(glint)*uLight;',
-        ' float foam = smoothstep(0.0,0.012,vDepth)*(1.0-smoothstep(0.012,0.07,vDepth));',
-        ' col += vec3(0.55,0.62,0.6)*foam*uLight*(0.6+0.4*sin(p.x*5.0+t*2.0));',
-        ' float a = smoothstep(0.0,0.10,vDepth)*0.84; a = max(a, max(sp*0.6, foam*0.55));',
-        ' gl_FragColor = vec4(col,a);',
-        ' #include <encodings_fragment>',
-        ' #include <fog_fragment>',
-        '}'
-      ].join('\n')
-    });
-  }
+  ensureWaterMat();
   waterMesh = new THREE.Mesh(g, MAT.water);
   waterMesh.renderOrder = 2; waterMesh.frustumCulled = false;
   root.add(waterMesh);
@@ -869,25 +909,14 @@ function footLow(i, j, w, h) {
 }
 
 /* ------------------------------------------------- outside the zoo boundary */
-var RING_D = [0, 1.5, 4, 8, 14, 22, 32, 45, 60, 80, 105, 135, 170, 210, 255, 310];
-var outerMesh;
-function outerH(x, z) {
+var RING_D = [0, 1.5, 4, 8, 14, 22, 32, 45, 60, 80, 105, 135, 170, 210, 255, 310, 380, 480, 640];
+var outerMesh, oceanMesh, horizonObjs = [];
+var SEA_FLOOR = -1.6;
+// seabed height outside the playable grid: continues the grid edge, then shelves down to the open-ocean floor
+function floorH(x, z) {
   var dx = Math.max(-x, 0, x - W), dz = Math.max(-z, 0, z - W), d = Math.sqrt(dx * dx + dz * dz);
-  var hill = sstep(30, 135, d);
-  var n = fbm(x * 0.011 + 13.7, z * 0.011 + 4.2, 4);
-  var ridge = 1 - Math.abs(fbm(x * 0.02 + 50, z * 0.02 + 80, 3) * 2 - 1);
-  var h = hill * (5 + n * 46 + ridge * 16) + (n - 0.5) * 2.5 * sstep(6, 50, d);
-  if (z > W - 4) {
-    var c = sstep(16, 100, Math.abs(x - W / 2)); c = Math.max(c, sstep(130, 240, z - W));
-    h *= lerp(0.03, 1, c);
-  }
-  if (d < 30) {
-    // blend from the playable grid's border elevation into the surroundings
-    var ex = clamp(x, 0, W) / T, ez = clamp(z, 0, W) / T, ei = Math.min(N - 1, ex | 0), ej = Math.min(N - 1, ez | 0), fu = ex - ei, fv = ez - ej;
-    var eb = (elevAt(ei, ej) * (1 - fu) + elevAt(ei + 1, ej) * fu) * (1 - fv) + (elevAt(ei, ej + 1) * (1 - fu) + elevAt(ei + 1, ej + 1) * fu) * fv;
-    h += eb * (1 - sstep(0, 30, d));
-  }
-  return h;
+  var ex = clamp(x, 0, W - 0.01), ez = clamp(z, 0, W - 0.01), he = groundY(ex, ez);
+  return lerp(he, SEA_FLOOR, sstep(0, 12, d));
 }
 function calcOuterSig() {
   var e = Z.state && Z.state.elev, mp = mapB(), sg = (mp.i0 * 7 + mp.j0 * 13 + mp.i1 * 17 + mp.j1 * 19) | 0;
@@ -898,19 +927,19 @@ function calcOuterSig() {
   }
   return sg;
 }
-var outerSig = null, forestGeo = null, forestObjs = [], wildObjs = [], wallMesh = null, gateGrp = null;
+var outerSig = null, forestGeo = null, forestObjs = [], wildObjs = [], wallMesh = null, gateGrp = null, causeGrp = null, ferryGrp = null;
 function refreshOuter() {
   var sg = calcOuterSig();
   if (sg === outerSig) return;
   buildOuter();
 }
+// rings around the playable grid: seabed (opaque, vertex coloured) + the open-ocean surface (water shader, same material as the lakes)
 function buildOuter() {
   if (outerMesh) { root.remove(outerMesh); outerMesh.geometry.dispose(); outerMesh = null; }
-  forestObjs.forEach(function (m) { root.remove(m); m.dispose && m.dispose(); }); forestObjs.length = 0;
+  if (oceanMesh) { root.remove(oceanMesh); oceanMesh.geometry.dispose(); oceanMesh = null; }
   outerSig = calcOuterSig();
-  var M = 56, rings = RING_D.length, pos = [], col = [], uv = [], nor = [], idx = [];
-  var gc = lin3((D.terrain && D.terrain[0] && D.terrain[0].colour) || '#6fae4a');
-  var far = lin3('#4d8a3a'), forest = lin3('#356a30'), rock = lin3('#85827a'), dry = lin3('#7f9a46');
+  var M = 56, rings = RING_D.length, pos = [], col = [], uv = [], nor = [], idx = [], wpos = [], wdep = [], wsea = [];
+  var sand = lin3('#d9c995'), deepc = lin3('#2f6a7a'), gc = lin3((D.terrain && D.terrain[0] && D.terrain[0].colour) || '#6fae4a');
   for (var r = 0; r < rings; r++) {
     var d = RING_D[r];
     var x0 = -d, z0 = -d, x1 = W + d, z1 = W + d;
@@ -920,23 +949,13 @@ function buildOuter() {
       else if (side === 1) { x = x1; z = lerp(z0, z1, f); }
       else if (side === 2) { x = lerp(x1, x0, f); z = z1; }
       else { x = x0; z = lerp(z1, z0, f); }
-      var h = outerH(x, z);
-      var t = sstep(8, 100, d);
-      var c = mix3(gc, far, t);
-      c = mix3(c, dry, sstep(0.3, 0.7, fbm(x * 0.03, z * 0.03, 2)) * 0.35 * t);
-      c = mix3(c, forest, sstep(6, 36, h) * 0.75);
-      c = mix3(c, rock, sstep(36, 58, h) * 0.65);
-      if (!inMapT(clamp(Math.floor(x / T), 0, N - 1), clamp(Math.floor(z / T), 0, N - 1))) {
-        // continue the "land you do not own" tint of the playable grid's wild margin
-        var ow = 0.78 * (1 - 0.6 * sstep(15, 150, d)), lm = 0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2];
-        c = mix3(c, [(lm * 0.74 + 0.01) * 0.82, (lm * 0.88 + 0.02) * 0.82, lm * 0.58 * 0.82], ow);
-      }
-      var nn = 1 + (fbm(x * 0.09, z * 0.09, 2) - 0.5) * 0.35 + (h2(Math.round(x), Math.round(z)) - 0.5) * 0.07;
-      pos.push(x, h - 0.02, z); col.push(c[0] * nn * 1.08, c[1] * nn * 1.08, c[2] * nn * 1.08);
-      uv.push(x / 9, z / 9);
-      var e = 3, hx = outerH(x + e, z) - outerH(x - e, z), hz = outerH(x, z + e) - outerH(x, z - e);
-      var l = Math.sqrt(hx * hx / (4 * e * e) + 1 + hz * hz / (4 * e * e));
-      nor.push(-hx / (2 * e) / l, 1 / l, -hz / (2 * e) / l);
+      var h = floorH(x, z);
+      var c = mix3(sand, deepc, sstep(-0.3, -1.3, h));
+      if (h > -0.05) c = mix3(c, gc, sstep(0.0, 0.5, h) * 0.8);
+      var nn = 1 + (fbm(x * 0.09, z * 0.09, 2) - 0.5) * 0.25;
+      pos.push(x, h - 0.02, z); col.push(c[0] * nn, c[1] * nn, c[2] * nn);
+      uv.push(x / 9, z / 9); nor.push(0, 1, 0);
+      wpos.push(x, SEA_Y, z); wdep.push(Math.max(0, SEA_Y - h)); wsea.push(1);
     }
   }
   for (r = 0; r < rings - 1; r++) for (s = 0; s < 4 * M; s++) {
@@ -949,44 +968,41 @@ function buildOuter() {
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
   g.setIndex(idx);
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(W / 2, 0, W / 2), 500);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(W / 2, 0, W / 2), 900);
   outerMesh = new THREE.Mesh(g, MAT.outer);
   outerMesh.frustumCulled = false;
   root.add(outerMesh);
-  buildForest();
+  var wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wpos), 3));
+  wg.setAttribute('aDepth', new THREE.BufferAttribute(new Float32Array(wdep), 1));
+  wg.setAttribute('aSea', new THREE.BufferAttribute(new Float32Array(wsea), 1));
+  wg.setIndex(idx);
+  wg.boundingSphere = new THREE.Sphere(new THREE.Vector3(W / 2, 0, W / 2), 900);
+  oceanMesh = new THREE.Mesh(wg, ensureWaterMat());
+  oceanMesh.renderOrder = 2; oceanMesh.frustumCulled = false;
+  root.add(oceanMesh);
+  if (!horizonObjs.length) buildHorizon();
 }
-function buildForest() {
+function buildForest(lists) {
   var pb = new MB(), rb = new MB(), m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), ps = new THREE.Vector3();
   var needGeo = !forestGeo;
   var trunk = lin3('#5b3f28'), leaf1 = lin3('#2f6a35'), leaf2 = lin3('#3f8a3c'), leaf3 = lin3('#25582f');
   function M4(x, y, z, sx, sy, sz) { return m.compose(ps.set(x, y, z), q.set(0, 0, 0, 1), sc.set(sx, sy, sz)).clone(); }
   var vary = function (a, b, c, n) { return 0.82 + 0.3 * Math.max(0, n.y) + 0.06 * (h2(Math.round(a.x * 9), Math.round(a.y * 9 + a.z * 7)) - 0.5); };
-  pb.addGeo(new THREE.CylinderGeometry(0.22, 0.34, 1.6, 5), M4(0, 0.8, 0, 1, 1, 1), trunk);
-  pb.addGeo(new THREE.ConeGeometry(1.9, 3.0, 7), M4(0, 2.2, 0, 1, 1, 1), leaf3, vary);
-  pb.addGeo(new THREE.ConeGeometry(1.5, 2.7, 7), M4(0, 3.7, 0, 1, 1, 1), leaf1, vary);
-  pb.addGeo(new THREE.ConeGeometry(1.0, 2.3, 7), M4(0, 5.1, 0, 1, 1, 1), leaf3, vary);
-  rb.addGeo(new THREE.CylinderGeometry(0.25, 0.4, 2.2, 5), M4(0, 1.1, 0, 1, 1, 1), trunk);
-  rb.addGeo(new THREE.IcosahedronGeometry(1.9, 1), M4(0, 3.5, 0, 1, 0.9, 1), leaf2, vary);
-  rb.addGeo(new THREE.IcosahedronGeometry(1.3, 1), M4(1.0, 2.8, 0.5, 1, 0.9, 1), leaf1, vary);
-  rb.addGeo(new THREE.IcosahedronGeometry(1.2, 1), M4(-0.9, 3.0, -0.6, 1, 0.9, 1), leaf2, vary);
-  var NT = 760, rnd = rng32(777), pines = [], rounds = [];
-  var tries = 0;
-  while (pines.length + rounds.length < NT && tries++ < 6000) {
-    var x = -330 + rnd() * (W + 660), z = -330 + rnd() * (W + 660);
-    var dx = Math.max(-x, 0, x - W), dz = Math.max(-z, 0, z - W), d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 5 || d > 320) continue;
-    if (z > W - 2 && Math.abs(x - W / 2) < 16) continue;
-    var fo = fbm(x * 0.022 + 5, z * 0.022 + 9, 3);
-    var p = (fo - 0.40) * 3.2 + (d < 60 ? 0.22 : 0) + sstep(100, 300, d) * 0.2;
-    if (rnd() > p) continue;
-    var h = outerH(x, z), hf = h > 34 ? 0 : 1;
-    if (!hf && rnd() < 0.7) continue;
-    var s = (0.9 + rnd() * 0.9) * (1 + d / 260);
-    var rec = { x: x, y: h - 0.05, z: z, s: s, r: rnd() * TAU, k: 0.85 + rnd() * 0.3, k2: 0.9 + rnd() * 0.2 };
-    (h > 14 || rnd() < 0.55 ? pines : rounds).push(rec);
+  if (needGeo) {
+    pb.addGeo(new THREE.CylinderGeometry(0.22, 0.34, 1.6, 5), M4(0, 0.8, 0, 1, 1, 1), trunk);
+    pb.addGeo(new THREE.ConeGeometry(1.9, 3.0, 7), M4(0, 2.2, 0, 1, 1, 1), leaf3, vary);
+    pb.addGeo(new THREE.ConeGeometry(1.5, 2.7, 7), M4(0, 3.7, 0, 1, 1, 1), leaf1, vary);
+    pb.addGeo(new THREE.ConeGeometry(1.0, 2.3, 7), M4(0, 5.1, 0, 1, 1, 1), leaf3, vary);
+    rb.addGeo(new THREE.CylinderGeometry(0.25, 0.4, 2.2, 5), M4(0, 1.1, 0, 1, 1, 1), trunk);
+    rb.addGeo(new THREE.IcosahedronGeometry(1.9, 1), M4(0, 3.5, 0, 1, 0.9, 1), leaf2, vary);
+    rb.addGeo(new THREE.IcosahedronGeometry(1.3, 1), M4(1.0, 2.8, 0.5, 1, 0.9, 1), leaf1, vary);
+    rb.addGeo(new THREE.IcosahedronGeometry(1.2, 1), M4(-0.9, 3.0, -0.6, 1, 0.9, 1), leaf2, vary);
+    forestGeo = { p: pb.geometry(), r: rb.geometry() };
   }
-  function inst(geo, list, mat) {
-    var im = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length));
+  function inst(geo, list) {
+    if (!list || !list.length) return;
+    var im = new THREE.InstancedMesh(geo, MAT.solid, list.length);
     var mm = new THREE.Matrix4(), cc = new THREE.Color();
     for (var k = 0; k < list.length; k++) {
       var t = list[k];
@@ -995,12 +1011,58 @@ function buildForest() {
       cc.setRGB(t.k * 1.0, t.k * t.k2, t.k * 0.95); im.setColorAt(k, cc);
     }
     im.frustumCulled = false; im.instanceMatrix.needsUpdate = true;
-    root.add(im); forestObjs.push(im); return im;
+    root.add(im); forestObjs.push(im);
   }
-  if (needGeo) forestGeo = { p: pb.geometry(), r: rb.geometry() };
-  var gP = forestGeo.p, gR = forestGeo.r;
-  if (pines.length) inst(gP, pines, MAT.solid);
-  if (rounds.length) inst(gR, rounds, MAT.solid);
+  if (lists) { inst(forestGeo.p, lists.pines); inst(forestGeo.r, lists.rounds); }
+}
+// the view from the island: open sea to the horizon, a few islets and sea stacks, a hazy mainland to the south (where the causeway goes)
+function buildHorizon() {
+  horizonObjs.forEach(function (m) { root.remove(m); m.geometry && m.geometry.dispose(); }); horizonObjs.length = 0;
+  forestObjs.forEach(function (m) { root.remove(m); m.dispose && m.dispose(); }); forestObjs.length = 0;
+  var hb = new MB(), rnd = rng32(2024), pines = [], rounds = [], i, k;
+  var rock = lin3('#8d8a80'), rock2 = lin3('#6f6d66'), sandc = lin3('#d4c493'), grass = lin3('#4d8a3a'), dark = lin3('#2f6a35');
+  var ico = new THREE.IcosahedronGeometry(1, 1), cone = new THREE.ConeGeometry(1, 1, 6), mt = new THREE.Matrix4(), ps = new THREE.Vector3(), qq = new THREE.Quaternion(), sc = new THREE.Vector3();
+  function put(geo, x, y, z, sx, sy, sz, c, lit) { mt.compose(ps.set(x, y, z), qq, sc.set(sx, sy, sz)); hb.addGeo(geo, mt.clone(), c, lit || function (a, b, cc, n) { return 0.72 + 0.3 * Math.max(0, n.y * 0.7 + 0.3) + 0.08 * (h2(Math.round(a.x * 5), Math.round(a.z * 5)) - 0.5); }); }
+  // islets: sand skirt, grassy dome, a few trees (positions chosen clear of the causeway and the playable grid)
+  var spots = [[-70, 40, 11], [-150, 120, 16], [-60, 190, 8], [190, -60, 14], [260, 90, 20], [150, 270, 12], [-230, -40, 24], [60, -140, 15], [330, 220, 18], [-120, -190, 20], [400, -20, 26]];
+  for (i = 0; i < spots.length; i++) {
+    var sp = spots[i], x = sp[0], z = sp[1], r = sp[2], ht = r * (0.35 + rnd() * 0.25);
+    put(ico, x, -0.3, z, r * 1.15, 1.1, r * 1.0, sandc);
+    put(ico, x, ht * 0.15, z, r * 0.82, ht, r * 0.72, grass);
+    if (rnd() < 0.6) put(ico, x + r * 0.3, ht * 0.5, z - r * 0.15, r * 0.4, ht * 0.9, r * 0.38, rock);
+    var nt = 2 + Math.floor(r / 4);
+    for (k = 0; k < nt; k++) {
+      var a = rnd() * TAU, rr = rnd() * r * 0.55, tx = x + Math.cos(a) * rr, tz = z + Math.sin(a) * rr * 0.9;
+      var rec = { x: tx, y: ht * 0.75 * (1 - rr / (r * 1.1)) + 0.1, z: tz, s: 0.8 + rnd() * 0.8, r: rnd() * TAU, k: 0.8 + rnd() * 0.25, k2: 0.9 + rnd() * 0.2 };
+      (rnd() < 0.6 ? pines : rounds).push(rec);
+    }
+  }
+  // sea stacks near the coast
+  [[-26, 60, 4.5, 11], [W + 34, 18, 5, 14], [W + 22, 96, 3.6, 9], [-30, 150, 4, 12], [W + 60, 150, 5, 13]].forEach(function (s0) {
+    put(cone, s0[0], s0[3] * 0.5 - 1.2, s0[1], s0[2], s0[3], s0[2] * 0.9, rock, function (a, b, cc, n) { return 0.7 + 0.35 * Math.max(0, n.y * 0.4 + 0.5) + 0.12 * (h2(Math.round(a.y * 3), Math.round(a.x * 3)) - 0.5); });
+    put(cone, s0[0] + s0[2] * 0.7, s0[3] * 0.3 - 1.2, s0[1] + s0[2] * 0.3, s0[2] * 0.6, s0[3] * 0.6, s0[2] * 0.55, rock2);
+  });
+  // mainland: a wide shore with low hills far to the south, fading into the haze (the causeway runs down to it)
+  var mx0 = -520, mx1 = W + 520, mz0 = W + 178, mz1 = W + 520, nx = 34, nz = 12, mp = [], mc = [], mi = [], mn = [];
+  for (var jz = 0; jz <= nz; jz++) for (var jx = 0; jx <= nx; jx++) {
+    var fx = jx / nx, fz = jz / nz, px = lerp(mx0, mx1, fx), pz = lerp(mz0, mz1, fz) + (fbm(px * 0.02, 3, 2) - 0.5) * 16 * (jz === 0 ? 1 : 0.4);
+    var inland = fz, hh;
+    var bay = 1 - sstep(0, 60, Math.abs(px - W / 2));
+    if (jz === 0) hh = -0.8; else hh = (0.9 + sstep(0.05, 0.5, inland) * (8 + fbm(px * 0.012, pz * 0.012, 3) * 60) + fbm(px * 0.04, pz * 0.04, 2) * 4) * (1 - 0.8 * bay * (1 - sstep(0.1, 0.5, inland)));
+    if (jz === 1) hh = 1.0 - 0.0 * bay;
+    mp.push(px, hh, pz);
+    var cc = mix3(sandc, mix3(grass, dark, sstep(6, 40, hh)), sstep(0.5, 3.2, hh));
+    if (hh > 36) cc = mix3(cc, rock, sstep(36, 55, hh) * 0.7);
+    var nv = 1 + (fbm(px * 0.05, pz * 0.05, 2) - 0.5) * 0.3;
+    mc.push(cc[0] * nv, cc[1] * nv, cc[2] * nv); mn.push(0, 1, 0);
+  }
+  for (jz = 0; jz < nz; jz++) for (jx = 0; jx < nx; jx++) { var q0 = jx + jz * (nx + 1); mi.push(q0, q0 + nx + 1, q0 + 1, q0 + 1, q0 + nx + 1, q0 + nx + 2); }
+  var mg = new THREE.BufferGeometry();
+  mg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(mp), 3)); mg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(mc), 3));
+  mg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(mn), 3)); mg.setIndex(mi); mg.computeVertexNormals();
+  var mm2 = new THREE.Mesh(mg, new THREE.MeshLambertMaterial({ vertexColors: true })); mm2.frustumCulled = false; root.add(mm2); horizonObjs.push(mm2);
+  var hm = new THREE.Mesh(hb.geometry(), MAT.solid); hm.frustumCulled = false; root.add(hm); horizonObjs.push(hm);
+  buildForest({ pines: pines, rounds: rounds });
 }
 
 /* ----------------------------------------- wild land outside the map bounds */
@@ -1038,8 +1100,31 @@ function wallNear(i0, j0, i1, j1) {
   return !(i1 < m.i0 - 2 || i0 > m.i1 + 2 || j1 < m.j0 - 2 || j0 > m.j1 + 2) &&
     (i0 <= m.i0 + 1 || j0 <= m.j0 + 1 || i1 >= m.i1 - 1 || j1 >= m.j1 - 1);
 }
+// island maps: no wall. Marker buoys (sea) and posts (land) show where the owned bounds end.
+function rebuildBuoys() {
+  var mp = mapB(), mb = new MB(), red = lin3('#d9503a'), white = lin3('#f0ece4'), wood = lin3('#7a4e2c'), ter = Z.state && Z.state.terrain, X0 = mp.i0 * T, X1 = (mp.i1 + 1) * T, Z0 = mp.j0 * T, Z1 = (mp.j1 + 1) * T;
+  var ico = new THREE.IcosahedronGeometry(0.34, 0), cone = new THREE.ConeGeometry(0.2, 0.5, 6), mt = new THREE.Matrix4(), ps = new THREE.Vector3(), qq = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
+  function mark(x, z) {
+    var i = clamp(Math.floor(x / T), 0, N - 1), j = clamp(Math.floor(z / T), 0, N - 1), land = ter && ter[i + j * N] !== waterIdx;
+    if (land) { var g = groundY(x, z); mb.box(x - 0.1, g - 0.2, z - 0.1, x + 0.1, g + 0.9, z + 0.1, wood); mb.box(x - 0.12, g + 0.7, z - 0.12, x + 0.12, g + 0.9, z + 0.12, red, true); return; }
+    var y = Math.max(SEA_Y, groundY(x, z)) + 0.05;
+    mb.addGeo(ico, mt.compose(ps.set(x, y + 0.08, z), qq, sc).clone(), red, function (a, b, c, n) { return 0.8 + 0.3 * n.y; });
+    mb.addGeo(cone, mt.compose(ps.set(x, y + 0.5, z), qq, sc).clone(), white, function (a, b, c, n) { return 0.85 + 0.25 * n.y; });
+  }
+  var k, n;
+  n = Math.max(1, Math.round((X1 - X0) / 14)); for (k = 0; k <= n; k++) mark(lerp(X0, X1, k / n), Z0);
+  n = Math.max(1, Math.round((Z1 - Z0) / 14)); for (k = 0; k <= n; k++) { mark(X0, lerp(Z0, Z1, k / n)); mark(X1, lerp(Z0, Z1, k / n)); }
+  n = Math.max(1, Math.round((X1 - X0) / 14)); for (k = 0; k <= n; k++) { var bx = lerp(X0, X1, k / n); if (Math.abs(bx - W / 2) > 24) mark(bx, Z1 - 0.2); }
+  wallMesh = new THREE.Mesh(mb.geometry(), MAT.solid); wallMesh.frustumCulled = false; root.add(wallMesh);
+}
+function setGateY() {
+  var gy = Math.max(0, groundY(W / 2, W - 0.5));
+  if (gateGrp) gateGrp.position.y = gy;
+  if (causeGrp) causeGrp.position.y = gy - CAUSE_Y;
+}
 function rebuildWall() {
   if (wallMesh) { root.remove(wallMesh); wallMesh.geometry.dispose(); wallMesh = null; }
+  if (mapB().island) { rebuildBuoys(); setGateY(); return; }
   var wb = new MB(), stone = lin3('#b3a38b'), stoneD = lin3('#8e8068'), cap = lin3('#cdbfa5'), mp = mapB();
   var X0 = mp.i0 * T, X1 = (mp.i1 + 1) * T, Z0 = mp.j0 * T, Z1 = (mp.j1 + 1) * T, cx = W / 2, PW = 1.0;
   var gx0 = 27 * T, gx1 = 29 * T;
@@ -1078,11 +1163,11 @@ function rebuildWall() {
   }
   for (p = 0; p <= nz; p++) { var pz = lerp(Z0, Z1, p / nz); pillar(X0 - 0.25, pz, 1.95); pillar(X1 + 0.25, pz, 1.95); }
   wallMesh = new THREE.Mesh(wb.geometry(), MAT.solid); wallMesh.frustumCulled = false; root.add(wallMesh);
-  if (gateGrp) gateGrp.position.y = Math.max(0, groundY(cx, W - 0.5));
+  setGateY();
 }
 
 /* ------------------------------------- perimeter wall, gate, road, clouds */
-var clouds = [];
+var clouds = [], CAUSE_Y = 1.0;
 function buildSurroundings() {
   var wb = new MB(), stone = lin3('#b3a38b'), stoneD = lin3('#8e8068'), cap = lin3('#cdbfa5');
   var PW = 1.0;
@@ -1123,25 +1208,55 @@ function buildSurroundings() {
   frame.box(cx - 0.1, 7.0, gz - 0.1, cx + 0.1, sy0, gz + 0.1, fc);
   var fm = new THREE.Mesh(frame.geometry(), MAT.solid); gateGrp.add(fm);
 
-  // road + plaza outside the gate
-  var rb = new MB(), PY = 0.03;
+  // quay + causeway across the sea to the mainland (deck at CAUSE_Y in causeGrp-local space; the group is lifted to the gate ground level)
+  causeGrp = new THREE.Group(); root.add(causeGrp);
+  var rb = new MB(), sb = new MB(), PY = CAUSE_Y + 0.03, DY = CAUSE_Y;
   function cell(k) { return [k * 0.25 + 0.004, k * 0.25 + 0.246]; }
   function tileQ(x0, z0, k, c) { var u = cell(k); rb.quad([x0, PY, z0 + T], [x0 + T, PY, z0 + T], [x0 + T, PY, z0], [x0, PY, z0], 0, 1, 0, c, u[0], 0.01, u[1], 0.99); }
-  var asph = lin3('#5a5d63'), plaza = lin3('#d6cdbb'), plaza2 = lin3('#c4b9a4');
-  for (var rz = W + 1; rz < W + 220; rz += T) for (var rx = cx - 4; rx < cx + 4; rx += T) tileQ(rx, rz, 3, mul3(asph, 0.9 + 0.2 * h2(rx, rz)));
-  for (var pz = W + 1; pz < W + 17; pz += T) for (var px = cx - 10; px < cx + 10; px += T) {
-    var inRoad = Math.abs(px + 1 - cx) < 4 && pz > W + 10;
+  var asph = lin3('#5a5d63'), plaza = lin3('#d6cdbb'), plaza2 = lin3('#c4b9a4'), CZ1 = W + 196, QZ1 = W + 18;
+  // quay: stone platform out beyond the gate, paved like the plaza
+  sb.box(cx - 12, -2.6, W, cx + 12, DY - 0.02, QZ1 + 0.5, mul3(stoneD, 1.0));
+  sb.box(cx - 12.2, DY - 0.3, W, cx + 12.2, DY + 0.22, W + 0.3, mul3(cap, 1.0), true);
+  sb.box(cx - 12.2, DY - 0.3, W, cx - 11.8, DY + 0.5, QZ1 + 0.7, mul3(stone, 1.0)); sb.box(cx + 11.8, DY - 0.3, W, cx + 12.2, DY + 0.5, QZ1 + 0.7, mul3(stone, 1.0));
+  sb.box(cx - 12.2, DY - 0.3, QZ1 + 0.4, cx - 4.4, DY + 0.5, QZ1 + 0.8, mul3(stone, 1.0)); sb.box(cx + 4.4, DY - 0.3, QZ1 + 0.4, cx + 12.2, DY + 0.5, QZ1 + 0.8, mul3(stone, 1.0));
+  for (var pz = W + 0.0; pz < QZ1; pz += T) for (var px = cx - 12; px < cx + 12; px += T) {
+    var inRoad = Math.abs(px + 1 - cx) < 4 && pz > W + 12;
     if (!inRoad) tileQ(px, pz, 1, mul3(((px / T + pz / T) & 1) ? plaza : plaza2, 0.94 + 0.1 * h2(px, pz)));
   }
-  for (var dz = W + 18; dz < W + 210; dz += 7) rb.quad([cx - 0.12, PY + 0.004, dz + 3], [cx + 0.12, PY + 0.004, dz + 3], [cx + 0.12, PY + 0.004, dz], [cx - 0.12, PY + 0.004, dz], 0, 1, 0, lin3('#e8e4d0'), 0.5, 0.5, 0.52, 0.52);
-  // plaza planters: two little hedge boxes with flowers
+  // causeway: asphalt deck on stone piers with low parapets and a centre line
+  for (var rz = QZ1 - 8; rz < CZ1; rz += T) for (var rx = cx - 4; rx < cx + 4; rx += T) tileQ(rx, rz, 3, mul3(asph, 0.9 + 0.2 * h2(rx, rz)));
+  sb.box(cx - 4.4, DY - 0.9, QZ1 - 8, cx + 4.4, DY - 0.02, CZ1, mul3(stoneD, 0.95));
+  sb.box(cx - 4.5, DY - 0.1, QZ1 + 0.4, cx - 4.1, DY + 0.55, CZ1, mul3(stone, 1.0)); sb.box(cx + 4.1, DY - 0.1, QZ1 + 0.4, cx + 4.5, DY + 0.55, CZ1, mul3(stone, 1.0));
+  sb.box(cx - 4.55, DY + 0.55, QZ1 + 0.4, cx - 4.05, DY + 0.7, CZ1, mul3(cap, 1.0), true); sb.box(cx + 4.05, DY + 0.55, QZ1 + 0.4, cx + 4.55, DY + 0.7, CZ1, mul3(cap, 1.0), true);
+  for (var pr = QZ1 + 6; pr < CZ1 - 4; pr += 12) {
+    sb.box(cx - 3.9, -2.8, pr - 0.9, cx - 2.3, DY - 0.9, pr + 0.9, mul3(stoneD, 0.9)); sb.box(cx + 2.3, -2.8, pr - 0.9, cx + 3.9, DY - 0.9, pr + 0.9, mul3(stoneD, 0.9));
+    sb.box(cx - 4.2, DY - 1.3, pr - 1.1, cx + 4.2, DY - 0.9, pr + 1.1, mul3(stone, 0.92), true);
+    sb.box(cx - 4.7, DY + 0.7, pr - 0.3, cx - 3.9, DY + 1.0, pr + 0.3, mul3(cap, 1.0), true); sb.box(cx + 3.9, DY + 0.7, pr - 0.3, cx + 4.7, DY + 1.0, pr + 0.3, mul3(cap, 1.0), true);
+  }
+  for (var dz = QZ1 + 2; dz < CZ1 - 4; dz += 7) rb.quad([cx - 0.12, PY + 0.004, dz + 3], [cx + 0.12, PY + 0.004, dz + 3], [cx + 0.12, PY + 0.004, dz], [cx - 0.12, PY + 0.004, dz], 0, 1, 0, lin3('#e8e4d0'), 0.5, 0.5, 0.52, 0.52);
+  // ferry pier beside the quay: timber jetty with bollards, and a little ferry moored alongside
+  var pw = lin3('#8a6238'), pw2 = lin3('#6f4c2a'), jx0 = cx + 12.2, jx1 = cx + 46, jz0 = W + 5.5, jz1 = W + 9.5;
+  sb.box(jx0, DY - 0.35, jz0, jx1, DY - 0.1, jz1, pw2);
+  for (var jp = jx0; jp < jx1; jp += 1.2) sb.box(jp, DY - 0.1, jz0, jp + 1.08, DY, jz1, mul3(pw, 0.9 + 0.2 * h2(jp, 7)), true);
+  for (var jq = jx0 + 2; jq <= jx1; jq += 5) { [jz0 + 0.1, jz1 - 0.5].forEach(function (zz) { sb.box(jq - 0.2, -2.4, zz, jq + 0.2, DY + 0.7, zz + 0.4, pw2); }); sb.box(jq - 0.28, DY + 0.7, jz0 - 0.05, jq + 0.28, DY + 0.78, jz0 + 0.55, pw, true); }
+  var fb = new MB(), hull = lin3('#e8e4d6'), hull2 = lin3('#2f5d86'), red = lin3('#c4553a'), glass = lin3('#8fc3dd');
+  ferryGrp = new THREE.Group(); ferryGrp.position.set(jx0 + 20, 0, jz1 + 2.3); ferryGrp.rotation.y = 0;
+  fb.box(-6.5, -0.45, -1.4, 6.5, 0.55, 1.4, hull2); fb.box(-6.5, 0.55, -1.4, 6.5, 0.7, 1.4, mul3(hull, 0.95), true);
+  fb.box(7.2, -0.3, -0.7, 8.0, 0.55, 0.7, hull2, true);
+  fb.box(-4.5, 0.7, -1.05, 3.5, 2.1, 1.05, hull); fb.box(-4.4, 1.1, -1.1, 3.4, 1.7, 1.1, glass, true); fb.box(-4.7, 2.1, -1.2, 3.7, 2.25, 1.2, red, true);
+  fb.box(-1.2, 2.25, -0.35, 0.0, 3.5, 0.35, hull); fb.box(-1.25, 3.2, -0.4, 0.05, 3.5, 0.4, red, true);
+  fb.box(4.0, 0.7, -0.3, 4.2, 1.7, 0.3, mul3(hull, 0.9), true);
+  ferryGrp.add(new THREE.Mesh(fb.geometry(), MAT.solid));
+  causeGrp.add(ferryGrp);
+  causeGrp.add(new THREE.Mesh(sb.geometry(), MAT.solid));
+  // plaza planters: four little hedge boxes with flowers, on the quay
   var pl = lin3('#2f6b2a'), fl = lin3('#e0527a'), fl2 = lin3('#f4c84a');
-  [[cx - 7.5, W + 3.4], [cx + 7.5, W + 3.4], [cx - 7.5, W + 11], [cx + 7.5, W + 11]].forEach(function (p, k) {
+  [[cx - 9.5, W + 3.4], [cx + 9.5, W + 3.4], [cx - 9.5, W + 13], [cx + 9.5, W + 13]].forEach(function (p, k) {
     rb.box(p[0] - 1.2, PY, p[1] - 1.2, p[0] + 1.2, PY + 0.5, p[1] + 1.2, lin3('#9a8a70'));
     rb.box(p[0] - 1.05, PY + 0.5, p[1] - 1.05, p[0] + 1.05, PY + 0.62, p[1] + 1.05, pl, true);
     for (var f = 0; f < 9; f++) rb.box(p[0] - 0.9 + (f % 3) * 0.9, PY + 0.62, p[1] - 0.9 + Math.floor(f / 3) * 0.9, p[0] - 0.6 + (f % 3) * 0.9, PY + 0.8, p[1] - 0.6 + Math.floor(f / 3) * 0.9, ((f + k) & 1) ? fl : fl2, true);
   });
-  var rm = new THREE.Mesh(rb.geometry(), MAT.path); rm.frustumCulled = false; root.add(rm);
+  var rm = new THREE.Mesh(rb.geometry(), MAT.path); rm.frustumCulled = false; causeGrp.add(rm);
 
   // clouds
   var cb = new MB(), mat = new THREE.Matrix4(), rr = rng32(99);
@@ -1226,6 +1341,8 @@ function buildPathChunk(ci, cj) {
   function has(i, j) { return i >= 0 && j >= 0 && i < N && j < N && pth[i + j * N] > 0; }
   for (var j = j0; j < j1; j++) for (var i = i0; i < i1; i++) {
     var pv = pth[i + j * N]; if (!pv) continue;
+    if (Z.MoatsWorld && Z.MoatsWorld.isBridge(i, j)) continue;   // moats package draws its own bridge decks
+    if (Z.RealmsWorld && Z.RealmsWorld.isWalk(i, j)) continue;   // realms package draws tunnels, mesh walks, piers and skywalks itself
     any = true;
     var pt = types[pv - 1] || types[0], kind = pathKind(pt, pv);
     var base = PCOL[pv - 1] || PCOL[0] || [0.5, 0.5, 0.5];
@@ -1360,6 +1477,33 @@ function fenceEdge(set, axis, i, j, f, contNext) {
         if (cx * e[1][0] + cy * e[1][1] + cz * e[1][2] >= 0) solid.tri(ids[0], ids[m], ids[m + 1]); else solid.tri(ids[0], ids[m + 1], ids[m]);
       }
     });
+  } else if (st === 'net') {   // realms package: floats on the surface, a mesh curtain hanging to the sea bed; strength 4+ is steel with a rail, 5 is an armoured barrier
+    var yW = -0.1, bedY = Math.min(gA, gB), hang = Math.max(0.5, yW - bedY + 0.1), heavyN = f.strength >= 4, armN = f.strength >= 5;
+    function PA(sv, y, tv) { return axis === 'x' ? [ox + sv, y, oz + tv] : [ox + tv, y, oz + sv]; }
+    function boxA(sa, ya, ta, sb, yb, tb, col) {
+      var a0 = PA(sa, ya, ta), b0 = PA(sb, ya, ta), c0 = PA(sb, ya, tb), d0 = PA(sa, ya, tb), a1 = PA(sa, yb, ta), b1 = PA(sb, yb, ta), c1 = PA(sb, yb, tb), d1 = PA(sa, yb, tb), cs = mul3(col, 0.82);
+      var nt = axis === 'x' ? [0, 0, 1] : [1, 0, 0], ns = axis === 'x' ? [1, 0, 0] : [0, 0, 1];
+      quadN(solid, a1, b1, c1, d1, [0, 1, 0], col); quadN(solid, a0, b0, b1, a1, [-nt[0], 0, -nt[2]], cs); quadN(solid, d0, c0, c1, d1, nt, cs); quadN(solid, a0, d0, d1, a1, [-ns[0], 0, -ns[2]], cs); quadN(solid, b0, c0, c1, b1, ns, cs);
+    }
+    var fl = armN ? [0.55, 0.58, 0.62] : heavyN ? [0.95, 0.5, 0.12] : [0.96, 0.78, 0.2], rope = armN ? [0.3, 0.33, 0.36] : [0.82, 0.8, 0.74];
+    var nb0 = PA(0, yW - hang, 0), nb1 = PA(T, yW - hang, 0), nt1 = PA(T, yW + (armN ? 0.5 : 0.25), 0), nt0 = PA(0, yW + (armN ? 0.5 : 0.25), 0), nfv = axis === 'x' ? [0, 0, 1] : [1, 0, 0], nbv = [-nfv[0], 0, -nfv[2]];
+    quadN(set.chain, nb0, nb1, nt1, nt0, nfv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
+    quadN(set.chain, nb0, nb1, nt1, nt0, nbv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
+    boxA(0, yW + (armN ? 0.5 : 0.22), -0.03, T, yW + (armN ? 0.58 : 0.27), 0.03, rope);
+    var nfl = armN ? 3 : 2; for (var q2 = 0; q2 < nfl; q2++) { var sc2 = (q2 + 0.5) / nfl * T; boxA(sc2 - 0.1, yW - 0.07, -0.1, sc2 + 0.1, yW + 0.2, 0.1, fl); }
+    if (!contNext) { boxA(-0.05, yW - 0.1, -0.08, 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope); }
+    boxA(T - 0.05, yW - 0.1, -0.08, T + 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope);
+  } else if (st === 'electric') {   // power package: live wires pale and bright, dead wires dull grey
+    var live = Z.Power ? Z.Power.fenceLive(i, j) : true, heavyE = f.strength >= 5, pwE = heavyE ? 0.07 : 0.04, ins = [0.92, 0.9, 0.82];
+    var wc = live ? [0.78, 0.9, 1] : [0.36, 0.38, 0.4], pc = heavyE ? [0.3, 0.33, 0.36] : [0.62, 0.64, 0.6], nW = heavyE ? 5 : 3;
+    posts(pwE, h, pc);
+    for (var wI = 0; wI < nW; wI++) {
+      var wy = 0.18 + (h - 0.3) * wI / (nW - 1);
+      bx(solid, 0, wy, -0.012 - (heavyE ? 0.05 : 0), T, wy + 0.025, 0.012 + (heavyE ? 0.05 : 0), wc, true);
+      if (!contNext || wI === 0) bx(solid, -0.03, wy - 0.02, -0.07, 0.03, wy + 0.04, 0.07, ins, true);
+    }
+    if (heavyE) { bx(solid, 0, h, -0.14, T, h + 0.05, 0.14, pc, true); bx(solid, T * 0.5 - 0.1, h * 0.45, -0.06, T * 0.5 + 0.1, h * 0.45 + 0.2, 0.06, live ? [0.95, 0.8, 0.15] : [0.5, 0.45, 0.2], true); }
+  } else if (st === 'gate') {   // safari package: the airlock gate is drawn by 46-world-safari.js (posts, chamber, sliding doors)
   } else {
     posts(0.06, h, [0.4, 0.3, 0.2]); bx(solid, 0, h * 0.7, -0.03, T, h * 0.7 + 0.1, 0.03, [0.5, 0.4, 0.3]);
   }
@@ -1672,13 +1816,16 @@ function rebuildLamps() {
     lampPoints.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(lampList.length * 3 * 2), 3));
     pos = lampPoints.geometry.attributes.position;
   }
-  for (var k = 0; k < lampList.length; k++) { var l = lampList[k]; pos.array[k * 3] = l.x; pos.array[k * 3 + 1] = l.y + l.lampY; pos.array[k * 3 + 2] = l.z; }
-  pos.needsUpdate = true; lampPoints.geometry.setDrawRange(0, lampList.length);
+  var lc = 0;
+  for (var k = 0; k < lampList.length; k++) { var l = lampList[k]; if (Z.Power && !Z.Power.lit(l.x, l.z)) continue; pos.array[lc * 3] = l.x; pos.array[lc * 3 + 1] = l.y + l.lampY; pos.array[lc * 3 + 2] = l.z; lc++; }   // power package: unlit lamps are skipped
+  pos.needsUpdate = true; lampPoints.geometry.setDrawRange(0, lc); lampPoints.userData.lit = lc;
   lampTimer = 0;
 }
+var lightT = 0, lightK = 1, lightS = 1;
 function updateLamps(dt) {
   var n = G.night, i;
-  lampPoints.visible = n > 0.03 && lampList.length > 0;
+  if (Z.Power) { lightT -= dt; if (lightT <= 0) { lightT = 0.5; lightK = Z.Power.lightFrac(); } lightS += (lightK - lightS) * Math.min(1, dt * 3); n *= lightS; }   // power package: blackout dims the night lighting
+  lampPoints.visible = n > 0.03 && lampList.length > 0 && lampPoints.userData.lit !== 0;
   lampPoints.material.opacity = clamp(n * 1.1, 0, 1);
   for (i = 0; i < lampMats.length; i++) { var m = lampMats[i]; if (m.emissiveIntensity !== undefined) m.emissiveIntensity = m.userData._ei * (0.35 + 2.2 * n); }
   if (G.signMat) G.signMat.emissiveIntensity = 0.55 * n;
@@ -1689,7 +1836,7 @@ function updateLamps(dt) {
       var best = -1, bd = 1e9;
       for (var k = 0; k < lampList.length; k++) {
         var l = lampList[k], dx = l.x - view.x, dz = l.z - view.z, d = dx * dx + dz * dz;
-        if (d < bd && l._u !== G.frameNo) { bd = d; best = k; }
+        if (d < bd && l._u !== G.frameNo && !(Z.Power && !Z.Power.lit(l.x, l.z))) { bd = d; best = k; }
       }
       var pl = lampLights[i];
       if (best >= 0 && n > 0.03 && bd < 70 * 70) {
@@ -1729,7 +1876,7 @@ function makeVis(kind, e) {
   var v = null;
   try {
     var m = M();
-    if (kind === 'animal' && m.createAnimal) v = m.createAnimal(e.species, { baby: !!e.baby, sex: e.sex });
+    if (kind === 'animal' && m.createAnimal) v = m.createAnimal(e.species, { baby: !!e.baby, sex: e.sex, traits: e.traits, seed: e.id });   // traits/seed: donor-gene looks (32-models-mods.js)
     else if (kind === 'guest' && m.createGuest) v = m.createGuest(e.seed | 0);
     else if (kind === 'staff' && m.createStaff) v = m.createStaff(e.type);
   } catch (err) { v = null; }
@@ -1786,6 +1933,7 @@ function updateEntities(dt, dtGame) {
   // pass 1: reconcile, cull, place
   for (ki = 0; ki < 3; ki++) {
     var kind = kinds[ki], arr = s[KIND_ARR[kind]] || [], map = ents[kind], far2 = FAR[kind] * FAR[kind];
+    if (kind === 'animal' && Z.SafariWorld) arr = Z.SafariWorld.animals(arr);   // safari package: wild visitors are drawn through the same path
     for (k = 0; k < arr.length; k++) {
       e = arr[k]; rec = map.get(e.id);
       if (!rec) rec = addEnt(kind, e);
@@ -1798,16 +1946,22 @@ function updateEntities(dt, dtGame) {
       var dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz + cy * cy;
       var vis = d2 < far2;
       if (vis && SV.blend > 0.4 && dx * dx + dz * dz < 0.9) vis = false; // street view: never draw a body around the camera
-      if (vis) { _sph.center.set(x, rec.ht * 0.5, z); _sph.radius = rec.ht * 0.8 + 1.2; vis = _fr.intersectsSphere(_sph); }
+      if (vis) { _sph.center.set(x, rec.ht * 0.5 + (e.y || 0), z); _sph.radius = Math.max(rec.ht * 0.8 + 1.2, rec.vis.cullR || 0); vis = _fr.intersectsSphere(_sph); }   // e.y: altitude / depth offset (creatures package); cullR: wing span etc.
       rec.vis_ = vis; rec.imp = false;
       if (!vis) { rec.group.visible = false; continue; }
       rec.d2 = d2;
       var gy;
       var wl = waterLvlAt(x, z);
       if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
-      else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); }
+      else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); if (Z.MoatsWorld) { var bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) gy = bdy; } }
+      if (Z.RealmsWorld) { var rdy = Z.RealmsWorld.deckY(x, z); if (rdy !== null && e.state !== 'swim' && e.wb === undefined) gy = rdy; }   // realms package: piers carry guests and staff
+      if (e.wb !== undefined && e.wb !== null && e.wb !== false) gy = e.wb;   // realms package: sea animals hang from the water surface of their tank or pen
       rec.wl = wl;
       rec.gy = gy + (e.y || 0); rec.gy0 = gy;
+      if (kind === 'animal' && e.wb !== undefined && e.wb !== null && e.wb !== false && Z.RealmsWorld) {   // realms package: sea animals pass over acrylic tunnels, not through them
+        var tct = Z.RealmsWorld.tunnelTop(x, z), tgt = tct === null ? -6 : tct + 0.55; rec.tcl = rec.tcl === undefined ? tgt : rec.tcl + (tgt - rec.tcl) * 0.14;
+        if (rec.tcl > -5 && rec.gy < rec.tcl) rec.gy = rec.tcl;
+      }
       rec.score = kind === 'animal' ? d2 * 0.35 : d2;
       visList.push(rec); totalMc += rec.mc;
     }
@@ -2418,6 +2572,11 @@ function svBounds() {
 }
 function svGround(x, z) {
   var y = groundY(x, z), s = Z.state, ti = Math.floor(x / T), tj = Math.floor(z / T);
+  if (Z.MoatsWorld) { var bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) return bdy + 0.05; }
+  if (Z.RealmsWorld) { var rdy2 = Z.RealmsWorld.deckY(x, z); if (rdy2 !== null) return rdy2 + 0.05; }   // realms package: pier decks
+  if (Z.RealmsWorld) { var rty = Z.RealmsWorld.tunnelY(x, z); if (rty !== null) return rty + 0.05; }   // realms package: the floor of an acrylic tunnel
+  if (Z.MonoWorld) { var mny = Z.MonoWorld.svY(x, z); if (mny !== null) return mny; }   // monorail package: ride-along stands on the carriage floor
+  if (Z.SafariWorld) { var sfy = Z.SafariWorld.svY(x, z); if (sfy !== null) return sfy; }   // safari package: ride-along stands on the truck or boat floor
   if (s && s.path && ti >= 0 && tj >= 0 && ti < N && tj < N && s.path[ti + tj * N]) y = Math.max(y, PY);
   return Math.max(y, WATER_Y);
 }
@@ -2432,7 +2591,9 @@ function svStep(dt) {
   }
   var k = 1 - Math.exp(-dt * (SV.go ? 6 : 10));
   SV.vx += (tx - SV.vx) * k; SV.vz += (tz - SV.vz) * k;
-  SV.x = clamp(SV.x + SV.vx * dt, b.x0, b.x1); SV.z = clamp(SV.z + SV.vz * dt, b.z0, b.z1);
+  var snx = clamp(SV.x + SV.vx * dt, b.x0, b.x1), snz = clamp(SV.z + SV.vz * dt, b.z0, b.z1);
+  if (Z.MoatsWorld && Z.MoatsWorld.svBlocked(snx, snz)) { if (!Z.MoatsWorld.svBlocked(snx, SV.z)) { SV.vz = 0; snz = SV.z; } else if (!Z.MoatsWorld.svBlocked(SV.x, snz)) { SV.vx = 0; snx = SV.x; } else { SV.vx = SV.vz = 0; snx = SV.x; snz = SV.z; SV.go = null; } }   // moats: no walking through ditches
+  SV.x = snx; SV.z = snz;
   var spd = Math.sqrt(SV.vx * SV.vx + SV.vz * SV.vz);
   SV.bobT += spd * dt * 1.6; SV.bob = Math.sin(SV.bobT) * 0.035 * Math.min(1, spd / 4);
   var gt = svGround(SV.x, SV.z);
@@ -2573,6 +2734,7 @@ function resetAll() {
 function hookBus() {
   var b = Z.bus; if (!b || !b.on) return;
   b.on('reset', resetAll);
+  b.on('moats', function () { waterDirty = true; });
   b.on('terrain', function (r) {
     if (!r) r = { i0: 0, j0: 0, i1: N - 1, j1: N - 1 };
     if (!terrDirty) terrDirty = { i0: r.i0, j0: r.j0, i1: r.i1, j1: r.j1 };
@@ -2592,6 +2754,7 @@ function hookBus() {
     if (e.axis === 'x') markRect(fenceDirty, e.i - 1, e.j - 1, e.i + 1, e.j, 1); else markRect(fenceDirty, e.i - 1, e.j - 1, e.i, e.j + 1, 1);
   });
   b.on('fences', function () { fenceDirty.fill(1); });
+  b.on('power', function () { fenceDirty.fill(1); rebuildLamps(); });   // power package: wire colour and lamps follow the grid
   b.on('objectAdded', function () { objDirty = true; });
   b.on('objectRemoved', function () { objDirty = true; });
   b.on('animalRemoved', function (a) { if (a) removeEnt('animal', a.id); });
@@ -2620,6 +2783,7 @@ function frame(dtReal) {
   updateRain(dtReal);
   skyMat.uniforms.uTime.value = G.t; if (MAT.water) MAT.water.uniforms.uTime.value = G.t;
   skyMesh.position.copy(camera.position);
+  if (ferryGrp) { ferryGrp.position.y = Math.sin(G.t * 1.1) * 0.06; ferryGrp.rotation.z = Math.sin(G.t * 0.9) * 0.012; }
   for (var c = 0; c < clouds.length; c++) { var cm = clouds[c]; cm.position.x += cm.userData.sp * dtReal; if (cm.position.x > 280) cm.position.x = -240; }
   // dirty work
   if (terrDirty) { var r = terrDirty; terrDirty = null; terrainRange(r.i0, r.j0, r.i1, r.j1); }
@@ -2635,6 +2799,8 @@ function frame(dtReal) {
   updateFloaters(dtReal);
   updateGrime(dtReal);
   updateLamps(dtReal);
+  if (Z.PowerWorld) Z.PowerWorld.frame(dtReal);
+  if (Z.RealmsWorld) Z.RealmsWorld.preRender(dtReal, SV);   // realms package: dome crackle, geofence shimmer, underwater tint in tunnels
   updatePreview();
   renderer.render(scene, camera);
 }
@@ -2647,6 +2813,7 @@ World.setLockdown = function (on) { G.lockdown = !!on; if (!on) { hemi.color.set
 World.setPreview = setPreview; World.highlightEnclosure = highlightEnclosure;
 // additions (not in the contract)
 World.groundY = groundY;
+World.waterLevelAt = waterLvlAt;
 World.objectBox = function (id) { var r = objRecs.get(id); if (!r || !r.group) return null; var b = new THREE.Box3().setFromObject(r.group); return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z], pos: [r.group.position.x, r.group.position.y, r.group.position.z], w: r.w, h: r.h }; };
 World.project = function (x, y, z) { var o = { x: 0, y: 0, w: 0, vis: false }; if (!G.inited) return o; _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); return projectPoint(x, y, z, o); };
 World.entityPos = function (kind, id) { var r = entityRec(kind, id); return r ? { x: r.ent.x || 0, y: r.gy || 0, z: r.ent.z || 0, h: r.ht } : null; };
@@ -2673,3 +2840,5 @@ World.setQuality = function (pr, budget) { if (pr) G.prCap = pr; if (budget) MES
 World.scene = function () { return scene; };
 World.camera = function () { return camera; };
 })();
+
+

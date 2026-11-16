@@ -69,6 +69,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     leaellynasaura: function () { chirp(3000); }, protoceratops: function () { chirp(1900); }, gallimimus: function () { honk(420); }, pachycephalosaurus: function () { grunt(170); },
     parasaurolophus: function () { hadro(210); }, stegosaurus: function () { grunt(100); }, triceratops: function () { grunt(85); snort(); }, ankylosaurus: function () { grunt(75); },
     diplodocus: function () { rumble(58); }, brachiosaurus: function () { rumble(48); } };
+  if (Z.creatureCalls) Z.creatureCalls(CALLS, { tone: tone, noise: noise, chirp: chirp, grunt: grunt, hiss: hiss, snort: snort, rumble: rumble, honk: honk, roar: roar });   // 31-models-extra.js
   A.call = function (sp) { if (!ready() || !limit('call', 900)) return; try { (CALLS[sp] || function () { chirp(1800); })(); } catch (e) { } };
 
   // ambience (called every frame from main with dt)
@@ -95,3 +96,5 @@ window.Z = window.Z || {}; var Z = window.Z;
   Z.bus.on('path', function () { A.build(); });
   Z.bus.on('terrain', function () { A.build(); });
 })();
+
+

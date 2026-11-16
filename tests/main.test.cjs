@@ -12,13 +12,14 @@ function main() {
     document: {readyState:'loading',addEventListener(){},getElementById:node}, location:{protocol:'http:'} });
   vm.runInContext('var window=globalThis',ctx);
   const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname,'../src',f),'utf8'),ctx);
-  ['00-data.js','10-core.js','20-sim.js'].forEach(load);
+  const simFiles = fs.readdirSync(path.join(__dirname,'../src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
+  simFiles.forEach(load);
   const z=ctx.Z;
   z.Storage={get:k=>saved.get(k)||null,getCandidates:k=>candidateValues || [saved.get(k)||null],set:(k,v)=>{saved.set(k,v);candidateValues=null;return Promise.resolve(true)},requestPersistence(){}};
   z.UI={h:node,ic:()=>'',snd(){},toast:message=>notices.push(message),reset(){},closeModal(){},narrow:()=>false,
     Tutorial:{restart(){}},el:{cards:node()}};
   z.World={cam:{target:{x:0,z:0}},resize(){}};
-  load('60-main.js'); z.Main.showTitle();
+  load('90-main.js'); z.Main.showTitle();
   return {z,saved,notices,setCandidates(values){candidateValues=values}};
 }
 test('new park is checkpointed immediately and save returns an awaited boolean', async () => {

@@ -5,11 +5,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA;
   var Screens = UI.Screens = {}, el, tabEls = {}, curTab = null, tabUpdate = null, pausedBy = false, pressing = false, tick = 0;
-  var TABS = [['ov', 'Overview', 'star'], ['res', 'Research', 'flask'], ['fin', 'Finances', 'coin'], ['ani', 'Dinosaurs', 'paw'], ['gst', 'Guests', 'guests'], ['stf', 'Staff', 'person'], ['goals', 'Goals', 'flag'], ['msg', 'News', 'bell'], ['guide', 'Guide', 'leaf'], ['set', 'Settings', 'gear']];
+  var TABS = [['ov', 'Overview', 'star'], ['res', 'Research', 'flask'], ['fin', 'Finances', 'coin'], ['ani', 'Dinosaurs', 'paw'], ['gst', 'Guests', 'guests'], ['stf', 'Staff', 'person'], ['goals', 'Goals', 'flag'], ['msg', 'Log', 'bell'], ['guide', 'Guide', 'leaf'], ['set', 'Settings', 'gear']];
   var BUILD = { res: function (b) { return UI.Research.build(b); }, ov: ovTab, fin: finTab, ani: aniTab, gst: gstTab, stf: stfTab, goals: goalsTab, msg: msgTab, set: setTab, guide: function (b) { return UI.Guide && UI.Guide.build ? UI.Guide.build(b) : null; } };
 
   Screens.init = function () {
     el = UI.el; var m = el.modal; m.innerHTML = '';
+    if (UI.extraTabs && !Screens._xt) { Screens._xt = 1; UI.extraTabs.forEach(function (x) { var at = -1; TABS.forEach(function (t, k) { if (t[0] === (x.before || 'guide')) at = k; }); TABS.splice(at < 0 ? TABS.length : at, 0, [x.id, x.name, x.icon]); BUILD[x.id] = x.build; }); }   // power / news packages add tabs
     var tabs = h('div#mtabs');
     TABS.forEach(function (t) { var b = h('button', { html: ic(t[2]) + '<span>' + t[1] + '</span>', 'data-t': t[0], on: { click: function () { UI.snd('click'); Screens.open(t[0]); } } }); tabEls[t[0]] = b; tabs.appendChild(b); });
     el.mbody = h('div#mbody');
@@ -59,7 +60,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     top.appendChild(h('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' }, h('div', starsHolder, sub), ratingTxt));
     var openBtn = h('button.btn.sm', { on: { click: function () { Z.Sim.setOpen(!Z.state.open); UI.snd('click'); upd(); } } });
     top.appendChild(h('div.btnrow', openBtn));
-    var parts = h('div.box'), tips = { animals: 'More species, rarer dinosaurs and higher genome quality.', welfare: 'Happy, healthy dinosaurs: read the enclosure reports.', guests: 'Keep guests fed, watered, amused and not charged too much.', facilities: 'Food, drinks, toilets, benches and bins to match the crowds.', cleanliness: 'Cleaners sweep paths; keepers clean enclosures.', scenery: 'Trees, flowers, fountains and statues.' };
+    var parts = h('div.box'), tips = { animals: 'More species, rarer dinosaurs and higher genome quality.', welfare: 'Happy, healthy dinosaurs: read the enclosure reports.', guests: 'Keep guests fed, watered, amused and not charged too much.', facilities: 'Food, drinks, toilets, benches and bins to match the crowds.', cleanliness: 'Cleaners sweep paths; rangers clean enclosures.', scenery: 'Trees, flowers, fountains and statues.' };
     var names = { animals: 'Dinosaur collection (35%)', welfare: 'Dinosaur welfare (17%)', guests: 'Guest happiness (18%)', facilities: 'Facilities (12%)', cleanliness: 'Cleanliness (10%)', scenery: 'Scenery (8%)' };
     parts.appendChild(h('h4', { text: 'How your rating is made' })); var rows = {};
     Object.keys(names).forEach(function (k) { var bb = bar(0), tip = h('div', { style: 'font-size:11.5px;color:var(--ink3);display:none' }), v = h('b.num'); var r = h('div', { style: 'display:flex;flex-direction:column;gap:3px' }, h('div.kv', h('span', { text: names[k] }), v), bb, tip); rows[k] = { bb: bb, v: v, tip: tip }; parts.appendChild(r); });
@@ -118,7 +119,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       table.appendChild(h('tr', h('td', h('b', { text: 'Net' })), h('td.r.num', h('b' + (tot >= 0 ? '.pos' : '.neg'), { text: (tot >= 0 ? '+' : '-') + fmt(Math.abs(tot)).replace('-', '') }))));
       drawChart(chart, hist);
       loanBox.innerHTML = ''; loanBox.appendChild(h('h4', { text: 'Bank loan' }));
-      loanBox.appendChild(h('div.kv', h('span', { text: 'Owed (0.4% interest a day)' }), h('b.num', { text: fmt(S2.loan) })));
+      loanBox.appendChild(h('div.kv', h('span', { text: 'Owed (interest added daily)' }), h('b.num', { text: fmt(S2.loan) })));
       var lr = h('div.btnrow');
       lr.appendChild(h('button.btn.sm', { text: 'Borrow £5,000', on: { click: function () { var r = Z.Sim.takeLoan(5000); UI.toast(r.ok ? 'Borrowed £5,000' : r.msg, r.ok ? 'money' : 'bad'); UI.snd(r.ok ? 'cash' : 'bad'); upd(); } } }));
       lr.appendChild(h('button.btn.sm.alt' + (S2.loan ? '' : '.dis'), { text: 'Repay £1,000', on: { click: function () { var r = Z.Sim.repayLoan(1000); if (!r.ok) UI.toast(r.msg, 'bad'); UI.snd(r.ok ? 'click' : 'bad'); upd(); } } }));
@@ -201,6 +202,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     hire.appendChild(h('h4', { text: 'Hire staff' }));
     D.staff.forEach(function (s) {
       hire.appendChild(h('div.sp-row', { style: 'padding:8px' }, h('div.sth', (function () { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center' }); UI.lazyThumb(d, 'staff', s.id, s.emoji, 64); return d; })()), h('div.sm', s.name + '  ' + fmt(s['wage/day'] || s.wage) + '/day', h('small', { text: s.effect })),
+        s.id === 'scientist' ? h('button.btn.sm', { text: 'Hire in Research', on: { click: function () { UI.closeModal(); UI.Research.open('team'); } } }) :
         h('button.btn.sm', { text: 'Hire ' + fmt(s.hireCost), on: { click: function () { var r = Z.Sim.hireStaff(s.id); if (r.ok) { UI.toast(s.name + ' hired at the main gate.', 'good'); UI.snd('cash'); } else { UI.toast(r.msg, 'bad'); UI.snd('bad'); } upd(); } } })));
     });
     var key = '';
@@ -277,3 +279,5 @@ window.Z = window.Z || {}; var Z = window.Z;
     return function () { status.textContent = Z.Storage.status(); };
   }
 })();
+
+

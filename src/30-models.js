@@ -1280,6 +1280,7 @@ function headParts(g, k) {
   else if (st === 7) { g.sph(r * 1.08, r * 0.95, r * 1.1, 0, hy + 0.06, 0, k.hat, { s: [8, 5] }); g.sph(0.045, 0.045, 0.045, 0, hy + 0.24, 0, shade(k.hat, 1.2), { s: [5, 4] }); }
   else if (st === 8) { /* peaked cap */ g.cyl(r * 1.08, r * 1.12, 0.1, 0, hy + 0.1, 0, k.hat, { seg: 9 }); g.box(0.22 * ks, 0.02, 0.15, 0, hy + 0.07, r * 1.05, shade(k.hat, 0.7)); g.sph(0.025, 0.025, 0.012, 0, hy + 0.12, r * 1.1, 0xe8c030, { s: [4, 3] }); g.sph(r * 1.05, r * 0.5, r * 1.05, 0, hy + 0.04, 0, hc, { s: [7, 4] }); }
   else if (st === 9) { /* bush hat */ g.cyl(0.4 * ks, 0.4 * ks, 0.025, 0, hy + 0.09, 0, k.hat, { seg: 10 }); g.cyl(0.16 * ks, 0.2 * ks, 0.12, 0, hy + 0.15, 0, k.hat, { seg: 8 }); g.cyl(0.165 * ks, 0.165 * ks, 0.03, 0, hy + 0.1, 0, shade(k.hat, 0.6), { seg: 8 }); }
+  else if (st === 10) { /* hard hat: dome, brim all round, centre ridge */ g.sph(r * 1.1, r * 0.85, r * 1.12, 0, hy + 0.05, -0.01, k.hat, { s: [8, 5] }); g.cyl(r * 1.35, r * 1.35, 0.02, 0, hy + 0.045, 0, shade(k.hat, 0.9), { seg: 10 }); g.box(0.05, 0.03, 0.3, 0, hy + 0.17, 0, shade(k.hat, 0.8)); }
   // st 0 = bald
 }
 function bodyGeo(k) {
@@ -1317,6 +1318,7 @@ function propGeo(name) {
   var g = B();
   if (name === 'bucket') { g.cyl(0.12, 0.09, 0.17, 0, -0.08, 0, 0x8d98a4, { seg: 8 }); g.cyl(0.115, 0.115, 0.01, 0, 0.0, 0, 0xd8b24a, { seg: 8 }); g.limb(-0.12, 0.0, 0, 0.12, 0.0, 0, 0.012, 0.012, 0x555a60, { seg: 4 }); }
   else if (name === 'case') { g.box(0.24, 0.17, 0.08, 0, -0.08, 0, 0xf4f4f4); g.box(0.07, 0.02, 0.085, 0, -0.08, 0, 0xd8322e); g.box(0.02, 0.07, 0.085, 0, -0.08, 0, 0xd8322e); g.box(0.1, 0.03, 0.04, 0, 0.01, 0, 0x888d94); }
+  else if (name === 'toolbox') { g.box(0.26, 0.15, 0.1, 0, -0.1, 0, 0xc2402f); g.box(0.27, 0.025, 0.105, 0, -0.03, 0, 0x8d2a1f); g.box(0.12, 0.03, 0.04, 0, 0.01, 0, 0x888d94); g.box(0.04, 0.05, 0.11, 0.07, -0.1, 0, 0xd8d8d8); g.limb(-0.1, -0.06, 0.07, 0.1, -0.06, 0.07, 0.012, 0.012, 0xb8bdc4, { seg: 4 }); g.limb(0.05, -0.06, 0.07, 0.14, 0.02, 0.07, 0.012, 0.012, 0xb8bdc4, { seg: 4 }); }
   else if (name === 'clipboard') { g.box(0.17, 0.22, 0.015, 0, -0.1, 0.03, 0x8a6a3a); g.box(0.14, 0.18, 0.018, 0, -0.1, 0.035, 0xf8f8f2); g.box(0.06, 0.025, 0.02, 0, 0.02, 0.035, 0x888d94); g.box(0.1, 0.01, 0.02, 0, -0.06, 0.045, 0x4a7ac8); g.box(0.1, 0.01, 0.02, 0, -0.1, 0.045, 0x4a7ac8); }
   else if (name === 'broom') { g.limb(0, 0.45, 0, 0, -0.95, 0.0, 0.016, 0.016, 0x8a6a3a, { seg: 5 }); g.box(0.28, 0.06, 0.07, 0, -0.95, 0, 0x6a4a2a); g.box(0.26, 0.17, 0.05, 0, -1.04, 0, 0xd8b24a, { s: [1, 1, 1] }); }
   else if (name === 'flag') { g.limb(0, -0.4, 0, 0, 1.0, 0, 0.014, 0.014, 0xe9e9e9, { seg: 4 }); g.box(0.36, 0.22, 0.015, 0.19, 0.88, 0, 0xd8322e); g.box(0.12, 0.1, 0.018, 0.1, 0.88, 0, 0xf2d43a); g.sph(0.03, 0.03, 0.03, 0, 1.02, 0, 0xf2d43a, { s: [5, 4] }); }
@@ -1335,7 +1337,7 @@ function createPerson(k, prop) {
   }
   var pr = null;
   if (prop) {
-    if (prop === 'bucket' || prop === 'case' || prop === 'clipboard') { pr = grp('prop'); pr.position.set(0, -0.62, 0.02); (prop === 'bucket' ? arms[0] : arms[1]).add(pr); pr.add(mesh(propGeo(prop))); }
+    if (prop === 'bucket' || prop === 'case' || prop === 'clipboard' || prop === 'toolbox') { pr = grp('prop'); pr.position.set(0, -0.62, 0.02); (prop === 'bucket' ? arms[0] : arms[1]).add(pr); pr.add(mesh(propGeo(prop))); }
     else { pr = grp('prop'); pr.position.set(-0.3, 1.0, 0.2); rig.add(pr); pr.add(mesh(propGeo(prop))); }
   }
   var I = { rig: rig, body: body, legs: legs, arms: arms, prop: pr, propName: prop, sc: sc, ph: Math.random() * 6, t: Math.random() * 50, gw: 0, rw: 0, sw: 0, lookY: 0, lookTY: 0, lookT: 1 + Math.random() * 3,
@@ -1372,19 +1374,19 @@ function personUpdate(I, dt, ent) {
     var pn = I.propName, wl = wk;
     if (pn === 'broom') { a0 = lerp(a0, -0.7 + 0.2 * sin(t * 4), wl); a1 = lerp(a1, -0.7 + 0.2 * sin(t * 4), wl); }
     else if (pn === 'bucket') { a0 = lerp(a0, -0.9 + 0.7 * Math.max(0, sin(t * 2)), wl); a1 = lerp(a1, -0.3, wl); }
-    else if (pn === 'case') { a1 = lerp(a1, -0.8, wl); a0 = lerp(a0, -0.4 + 0.15 * sin(t * 3), wl); }
+    else if (pn === 'case' || pn === 'toolbox') { a1 = lerp(a1, -0.8, wl); a0 = lerp(a0, -0.4 + 0.15 * sin(t * 3), wl); }
     else if (pn === 'flag') { a0 = lerp(a0, -0.7, wl); a1 = lerp(a1, -2.3 + 0.2 * sin(t * 3), wl); }
     else { a0 = lerp(a0, -0.5 + 0.15 * sin(t * 2), wl); }
   }
   I.a0 = damp(I.a0, a0, 14, dt); I.a1 = damp(I.a1, a1, 14, dt); I.a0z = damp(I.a0z, a0z, 12, dt); I.a1z = damp(I.a1z, a1z, 12, dt);
   var rg = I.rig;
   rg.position.y = (Math.abs(s) * 0.035 * gw * (1 + rw)) - 0.36 * sw;
-  rg.rotation.x = 0.05 * gw + 0.28 * rw - 0.05 * sw + (st === 'work' && I.propName === 'case' ? 0.35 * wk : 0);
+  rg.rotation.x = 0.05 * gw + 0.28 * rw - 0.05 * sw + (st === 'work' && (I.propName === 'case' || I.propName === 'toolbox') ? 0.35 * wk : 0);
   rg.rotation.z = sway + 0.04 * gw * s;
   I.body.rotation.y = 0.12 * s * gw;
   I.legs[0].rotation.x = l0; I.legs[1].rotation.x = l1;
   I.arms[0].rotation.set(I.a0, 0, I.a0z); I.arms[1].rotation.set(I.a1, 0, -I.a1z);
-  if (I.prop && I.propName !== 'bucket' && I.propName !== 'case') {
+  if (I.prop && I.propName !== 'bucket' && I.propName !== 'case' && I.propName !== 'toolbox') {
     var bw = I.propName === 'broom' ? 0.3 * Math.sin(t * 4) * wk : 0.1 * Math.sin(t * 3 + I.seed) + 0.1 * gw * s;
     I.prop.rotation.set(bw * 0.7 - 0.12, 0, I.propName === 'flag' ? 0.05 * sin(t * 2) : 0);
   }
@@ -1406,6 +1408,7 @@ var STAFF = {
   scientist: { shirt: 0xf8f8f8, trouser: 0x2f6a6a, style: 1, coat: true, prop: 'clipboard', shortSl: false },
   cleaner: { shirt: 0x2f78c4, trouser: 0x24456e, style: 5, hat: 0x2f78c4, prop: 'broom', shortSl: true },
   guide: { shirt: 0xd8322e, trouser: 0x25252b, style: 5, hat: 0xd8322e, prop: 'flag', shortSl: false },
+  mechanic: { shirt: 0xe2762a, trouser: 0xb85a1c, style: 10, hat: 0xf2c230, prop: 'toolbox', vest: true, shortSl: false },
   security: { shirt: 0x2a3042, trouser: 0x1b1f2b, style: 8, hat: 0x2a3042, prop: null, vest: true, shortSl: false }
 };
 API_people = {
@@ -2207,6 +2210,31 @@ function thumbInit() {
   } catch (e) { thumbR = null; thumbFail = true; return false; }
   return true;
 }
+// measure(obj) -> tight bounding data from real vertices (world space): sphere centre/radius around the bbox centre, horizontal radius rh
+// about the vertical axis through (cx,cz), minY/maxY. Used by thumbnails and 64-portrait.js.
+API.measure = function (obj) {
+  obj.updateMatrixWorld(true);
+  var v = new T.Vector3(), mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9], meshes = [];
+  obj.traverse(function (o) {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes.position) return;
+    var pa = o.geometry.attributes.position, n = pa.count, k; meshes.push(o);
+    for (k = 0; k < n; k++) {
+      v.fromBufferAttribute(pa, k).applyMatrix4(o.matrixWorld); if (!isFinite(v.x + v.y + v.z)) continue;
+      if (v.x < mn[0]) mn[0] = v.x; if (v.y < mn[1]) mn[1] = v.y; if (v.z < mn[2]) mn[2] = v.z; if (v.x > mx[0]) mx[0] = v.x; if (v.y > mx[1]) mx[1] = v.y; if (v.z > mx[2]) mx[2] = v.z;
+    }
+  });
+  if (mn[0] > mx[0]) return { cx: 0, cy: 1, cz: 0, r: 2, rh: 2, minY: 0, maxY: 2 };      // nothing measurable: generic frame
+  var cx = (mn[0] + mx[0]) / 2, cy = (mn[1] + mx[1]) / 2, cz = (mn[2] + mx[2]) / 2, r2 = 1e-6, rh2 = 1e-6, i, k2, dx, dy, dz;
+  for (i = 0; i < meshes.length; i++) {
+    var pb = meshes[i].geometry.attributes.position, mw = meshes[i].matrixWorld;
+    for (k2 = 0; k2 < pb.count; k2++) {
+      v.fromBufferAttribute(pb, k2).applyMatrix4(mw); if (!isFinite(v.x + v.y + v.z)) continue;
+      dx = v.x - cx; dy = v.y - cy; dz = v.z - cz; if (dx * dx + dz * dz > rh2) rh2 = dx * dx + dz * dz; if (dx * dx + dy * dy + dz * dz > r2) r2 = dx * dx + dy * dy + dz * dz;
+    }
+  }
+  return { cx: cx, cy: cy, cz: cz, r: Math.sqrt(r2), rh: Math.sqrt(rh2), minY: mn[1], maxY: mx[1] };
+};
+API.thumbRenderer = function () { return thumbInit() ? thumbR : null; };
 API.thumbnail = function (kind, id, size) {
   size = size || 96; var key = kind + '|' + id + '|' + size; if (thumbCache[key]) return thumbCache[key];
   if (!thumbInit()) return null;
@@ -2222,6 +2250,7 @@ API.thumbnail = function (kind, id, size) {
     obj.updateMatrixWorld(true);
     var bb = new T.Box3().setFromObject(obj), c = new T.Vector3(), sz = new T.Vector3(); bb.getCenter(c); bb.getSize(sz);
     var r = Math.max(sz.x, sz.z * 0.9, sz.y) * 0.62 + 0.001, dist = r / Math.tan(14 * PI / 180);
+    if (kind === 'animal') { var ms = API.measure(obj); c.set(ms.cx, ms.cy, ms.cz); dist = ms.r * 1.12 / Math.sin(14 * PI / 180); }   // bounding-sphere fit: head/tail never clip at any angle
     var az = kind === 'animal' ? 0.85 : 0.7, el = kind === 'building' ? 0.42 : 0.32;
     thumbCam.position.set(c.x + Math.sin(az) * dist * Math.cos(el), c.y + Math.sin(el) * dist, c.z + Math.cos(az) * dist * Math.cos(el)); thumbCam.lookAt(c);
     thumbScene.add(obj); thumbR.setSize(size, size, false); thumbR.render(thumbScene, thumbCam);
@@ -2246,5 +2275,9 @@ API.createEgg = function () { return createEgg(); };
 API.sceneryInstancing = SCENERY_API.instancing;
 API.speciesIds = function () { return Object.keys(DINOS); };
 API.buildingFootprint = function (id) { var d = BLD_DEF[id]; return d ? { w: d[0], h: d[1] } : null; };
+// helper kit for sibling model modules (31-models-extra.js builds the sea/air/modern creatures from these)
+API.kit = { T: T, B: B, mesh: mesh, grp: grp, VC: VC, mat: mat, skin: skin, profAt: profAt, clamp: clamp, lerp: lerp, damp: damp, smooth: smooth, mixHex: mixHex, shade: shade, hash3: hash3, fract: fract, eye: eye, fixZ: fixZ };
 return API;
 })();
+
+

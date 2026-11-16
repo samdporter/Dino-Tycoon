@@ -65,9 +65,12 @@ def server():
 
 
 @pytest.fixture(scope="session")
-def browser(server):
+def browser(server, request):
+    if "PLAYWRIGHT_BROWSERS_PATH" not in os.environ and Path("/tmp/dino-playwright-browsers").is_dir():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "/tmp/dino-playwright-browsers"
     with sync_playwright() as p:
-        engine = os.environ.get("TEST_BROWSER", "chromium").lower()
+        ini_engine = request.config.getini("junit_suite_name").lower()
+        engine = (os.environ.get("TEST_BROWSER") or (ini_engine if ini_engine in ("chromium", "webkit", "firefox") else "chromium")).lower()
         browser_type = getattr(p, engine)
         executable = os.environ.get("CHROMIUM_EXECUTABLE_PATH") if engine == "chromium" else None
         if not executable and engine == "chromium":
@@ -282,7 +285,7 @@ def test_phone_touch_emulation_and_settings(browser):
         # Settings route is available through the actual tabbed screen API.
         js(page, "Z.UI.openModal('set')")
         assert page.get_by_text("Sound & picture").is_visible()
-        page.get_by_role("button", name="Low").click()
+        page.get_by_role("button", name="Low", exact=True).click()
         assert js(page, "Z.Main.getQuality()") == "low"
         assert page.locator("#world canvas").is_visible()
         assert_no_browser_errors(problems)
@@ -694,3 +697,36 @@ def test_zoo_park_lockdown(browser, mobile):
     finally:
         context.close()
 
+
+@pytest.mark.parametrize('mobile', [False, True])
+def test_v3_features_and_phone_ui(browser, mobile):
+    context, page, problems = open_game(browser, mobile=mobile)
+    try:
+        vp_w = 390 if mobile else 1280
+        assert page.get_by_role('button', name='Masterclass: watch example games').is_visible()
+        nav_box = page.locator('.tycoon-choice').bounding_box()
+        assert nav_box and nav_box['x'] >= 0 and nav_box['x'] + nav_box['width'] <= vp_w
+        new_park(page)
+        assert js(page, 'Boolean(Z.Sim.isIsland()) && Z.Sim.seaMask().some(v => v > 0)')
+        assert js(page, "document.querySelector('#tut')?.textContent.includes('1/14')")
+        assert js(page, "Z.UI.Portrait.supported('triceratops') === true && Z.UI.Minigames.list.length === 6")
+        for sel in ['#hud', '#build']:
+            box = page.locator(sel).bounding_box()
+            assert box and box['x'] >= -1 and box['x'] + box['width'] <= vp_w + 1, (sel, box)
+        js(page, 'Z.state.money = 98765; Z.Main.save()')
+        # Verify v3 extra tabs (Power, News, Research DNA, Dinosaurs 3D Portrait)
+        for tab in ['power', 'news', 'res', 'ani', 'guide', 'set']:
+            js(page, f"Z.UI.openModal('{tab}')")
+            assert js(page, 'Z.UI.modalOpen()') is True
+        js(page, 'Z.UI.closeModal()')
+        # Verify Masterclass does not overwrite the player's saved park
+        js(page, "Z.UI.Masterclass.start('careful')")
+        assert js(page, 'Z.Main.watching === true && Z.UI.Masterclass.on === true')
+        assert js(page, 'Z.Main.save()') is False
+        js(page, 'Z.UI.Masterclass.exit()')
+        assert js(page, 'Z.Main.watching === false && Z.Main.playing === true')
+        assert js(page, 'Z.state.money') == 98765
+        assert json.loads(js(page, "localStorage.getItem('amberacres.save.v2')"))['s']['money'] == 98765
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
