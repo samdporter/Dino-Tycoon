@@ -263,8 +263,10 @@ window.Z = window.Z || {}; var Z = window.Z;
       var tl = sx.tiles, a3k = x.nodeK[tl[1]], b3k = x.nodeK[tl[2]];
       if (a3k < 0 || b3k < 0 || nodeV[a3k] < 0 || nodeV[b3k] < 0) continue;
       var sA = rs[nodeV[a3k]], sB = rs[nodeV[b3k]];
-      if (L.loop && Math.abs(sB - sA) > tot / 2) { sB = tot; }
-      L.stops.push({ si: k, id: sx.id, o: sx.o, s: (sA + sB) / 2 });
+      if (L.loop && Math.abs(sB - sA) > tot / 2) { if (sA < sB) sA += tot; else sB += tot; }
+      var sm = (sA + sB) / 2;
+      if (L.loop && tot > 0) sm = ((sm % tot) + tot) % tot;
+      L.stops.push({ si: k, id: sx.id, o: sx.o, s: sm });
     }
     L.stops.sort(function (p, q2) { return p.s - q2.s; });
     for (k = 0; k < L.stops.length; k++) x.stations[L.stops[k].si].idx = k;
@@ -404,18 +406,18 @@ window.Z = window.Z || {}; var Z = window.Z;
       rt.line = L; L.trains.push(T);
       if (!L.ok) { if (T.st !== 'idle') { ejectAll(T); } T.st = 'idle'; T.v = 0; continue; }
       if (T.st === 'idle') { // line is back: park at the home station
-        var hk = stopOf(L, T.home); T.s = L.stops[Math.max(0, hk)].s; T.st = 'dwell'; T.dw = 0; T.at = Math.max(0, hk); T.dir = 1; T.v = 0; T.brk = -1; continue;
+        var hk = stopOf(L, T.home); T.s = L.stops[Math.max(0, hk)].s; T.st = 'dwell'; T.dw = 0; T.at = Math.max(0, hk); T.dir = 1; T.v = 0; T.brk = -1; rt.nd = 1; continue;
       }
       if (rt.anchor >= 0 && rt.lineKey !== undefined && (rt.lineKey !== L.key || rt.ver !== X.ver)) {
         var ka = X.nodeK[rt.anchor], kp = rt.prevAnchor >= 0 ? X.nodeK[rt.prevAnchor] : -1;
         if (ka >= 0 && X.nodeLine[rt.anchor] === X.lines.indexOf(L)) {
           var sNew = nodeS(L, ka); if (sNew >= 0) T.s = sNew;
           if (kp >= 0) { T.dir = (L.loop && Math.abs(kp - ka) > 1) ? (kp > ka ? 1 : -1) : (kp < ka ? 1 : -1); if (L.loop) T.dir = 1; }
-        } else { T.s = L.stops[0].s; T.st = 'dwell'; T.dw = 0; T.at = 0; T.v = 0; }
+        } else { T.s = L.stops[0].s; T.st = 'dwell'; T.dw = 0; T.at = 0; T.v = 0; rt.nd = 1; }
       }
       rt.lineKey = L.key; rt.ver = X.ver;
       if (!L.loop) T.s = clamp(T.s, 0, L.len);
-      if (T.st === 'dwell' || T.at === undefined || T.at >= L.stops.length) { var nb = 0, nbd = 1e9; for (i = 0; i < L.stops.length; i++) { var dd = Math.abs(L.stops[i].s - T.s); if (dd < nbd) { nbd = dd; nb = i; } } T.at = nb; if (T.st === 'dwell' && nbd > 1) { T.s = L.stops[nb].s; } }
+      if (T.st === 'dwell' || T.at === undefined || T.at >= L.stops.length) { var nb = 0, nbd = 1e9; for (i = 0; i < L.stops.length; i++) { var dd = Math.abs(L.stops[i].s - T.s); if (L.loop) dd = Math.min(dd, L.len - dd); if (dd < nbd) { nbd = dd; nb = i; } } T.at = nb; if (T.st === 'dwell' && nbd > 1) { T.s = L.stops[nb].s; } if (T.st === 'dwell') { rt.nd = (!L.loop && nb === L.stops.length - 1) ? -1 : (!L.loop && nb === 0) ? 1 : T.dir; } }
     }
   }
   function nodeS(L, k) {   // arclength of a node centre (approximate: nearest sample)
@@ -653,11 +655,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   function nextStop(L, T) {   // {k, dist, dir} of the stop the train will reach next in direction dir
     var n = L.stops.length, s = T.s, dir = T.dir, len = L.len, best = -1, bd = 1e9, rt = TR[T.id], skip = rt && rt.skipK !== undefined ? rt.skipK : -1;
     if (!n) return null;
-    if (skip >= 0 && (!L.stops[skip] || Math.abs(L.stops[skip].s - s) > 0.8)) { skip = -1; if (rt) rt.skipK = -1; }   // far enough from the stop it just left
+    if (skip >= 0) {   // far enough from the stop it just left
+      var sd = L.stops[skip] ? Math.abs(L.stops[skip].s - s) : 1e9;
+      if (L.loop && len > 0) sd = Math.min(sd, len - sd);
+      if (sd > 0.8) { skip = -1; if (rt) rt.skipK = -1; }
+    }
     for (var k = 0; k < n; k++) {
       var d = (L.stops[k].s - s) * dir;
       // a stop that is only just ahead (or just overshot at the creep speed) still counts, except the one the train is pulling out of: otherwise a train could glide past its platform and turn round without dwelling
-      if (L.loop) { d = ((d % len) + len) % len; if (skip === k && d < 0.6) d += len; else if (d > len - 0.3) d = 0; }
+      if (L.loop) { d = ((d % len) + len) % len; if (skip === k) { if (d < 0.6) d += len; } else if (d > len - 0.3) d = 0; }
       else { if (d < -0.3 || (skip === k && d < 0.6)) continue; if (d < 0) d = 0; }
       if (d < bd) { bd = d; best = k; }
     }

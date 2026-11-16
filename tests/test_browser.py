@@ -730,3 +730,84 @@ def test_v3_features_and_phone_ui(browser, mobile):
         assert_no_browser_errors(problems)
     finally:
         context.close()
+
+
+def test_monorail_single_station_loop_and_moat_bridge_staff(browser):
+    context, page, problems = open_game(browser)
+    try:
+        new_park(page, difficulty="easy")
+        setup = js(page, """(() => {
+          Z.state.money = 250000;
+          Z.state.unlocked.star = 5;
+          for (let j = 13; j <= 34; j++) for (let i = 15; i <= 34; i++) {
+            Z.Sim.bulldoze(i, j);
+            Z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+            Z.state.terrain[i + j * Z.N] = 0;
+          }
+          for (let i = 20; i <= 27; i++) Z.Sim.placePath(i, 22, 'paved');
+          for (let j = 22; j <= 39; j++) Z.Sim.placePath(27, j, 'paved');
+          const st = Z.Sim.placeObject('monorail_station', 20, 20, 0);
+          const gen = Z.Sim.placeObject('diesel_gen', 23, 23, 2);
+          const sub = Z.Sim.placeObject('substation', 20, 23, 2);
+          const route = [];
+          for (let i = 23; i <= 26; i++) route.push(i + 20 * Z.N);
+          for (let j = 19; j >= 15; j--) route.push(26 + j * Z.N);
+          for (let i = 25; i >= 17; i--) route.push(i + 15 * Z.N);
+          for (let j = 16; j <= 20; j++) route.push(17 + j * Z.N);
+          route.push(18 + 20 * Z.N, 19 + 20 * Z.N, 20 + 20 * Z.N);
+          const tr = Z.Sim.monorail.buildTrack(route);
+          const bt = Z.Sim.monorail.buyTrain(st.id, 2);
+          // Moat + bridge enclosure
+          const ditch = [];
+          for (let j = 14; j <= 20; j++) for (let i = 28; i <= 34; i++) {
+            if (i >= 30 && i <= 32 && j >= 16 && j <= 18) continue;
+            ditch.push({ i, j });
+          }
+          const dg = Z.Sim.moats.dig(ditch, 2);
+          for (let j = 21; j <= 22; j++) Z.Sim.placePath(31, j, 'paved');
+          for (let i = 27; i <= 31; i++) Z.Sim.placePath(i, 22, 'paved');
+          const b1 = Z.Sim.placePath(31, 20, 'paved');
+          const b2 = Z.Sim.placePath(31, 19, 'paved');
+          Z.Sim.spawnAnimal('triceratops', 31, 17);
+          const enc = Z.state.enclosures[0];
+          enc.foodLevel = 0.2;
+          enc.poop = 4;
+          const kp = Z.Sim.hireStaff('keeper', 27, 22);
+          return {
+            stOk: st.ok, genOk: gen.ok, subOk: sub.ok, trOk: tr.ok, btOk: bt.ok,
+            dgOk: dg.ok, b1Bridge: !!b1.bridge, b2Bridge: !!b2.bridge, kpOk: kp.ok,
+            stationId: st.id, loop: Z.Sim.monorail.state().lines[0].loop
+          };
+        })()""")
+        assert all([setup["stOk"], setup["genOk"], setup["subOk"], setup["trOk"], setup["btOk"],
+                    setup["dgOk"], setup["b1Bridge"], setup["b2Bridge"], setup["kpOk"], setup["loop"]])
+
+        # Open station panel and verify train leaves station on 1-station loop
+        result = js(page, f"""(() => {{
+          Z.UI.Panel.open('object', {setup["stationId"]});
+          Z.state.time = 0.35;
+          const L = Z.Sim.monorail.state().lines[0];
+          const s0 = Z.Sim.monorail.trains()[0].s;
+          let maxDist = 0, leftStation = false, returned = false;
+          for (let k = 0; k < 1000; k++) {{
+            Z.Sim._step(0.05);
+            const T = Z.Sim.monorail.trains()[0];
+            const d = Math.min(Math.abs(T.s - s0), L.len - Math.abs(T.s - s0));
+            if (d > maxDist) maxDist = d;
+            if (T.st === 'run' && d > 5) leftStation = true;
+            if (leftStation && T.st === 'dwell') {{ returned = true; break; }}
+          }}
+          for (let k = 0; k < 400; k++) Z.Sim._step(0.1);
+          const enc = Z.state.enclosures[0];
+          return {{ maxDist, leftStation, returned, food: enc.foodLevel, poop: enc.poop }};
+        }})()""")
+        assert result["leftStation"] is True
+        assert result["maxDist"] > 20
+        assert result["returned"] is True
+        assert result["food"] == 1
+        assert result["poop"] == 0
+        # Let a render frame run after building monorail, bridges, and keeper
+        page.wait_for_timeout(200)
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
