@@ -355,7 +355,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
 
   // ============================================================ update (called after every world change)
-  M.update = function (force) {
+  var _graphOld = null;
+  M.updateGraph = function () {
     var s = S(); if (!s) return;
     if (!s.rail || s.rail.length !== NN) s.rail = new Uint8Array(NN);
     if (!s.mono) s.mono = { trains: [], nextTrain: 1, stats: {}, powered: true };
@@ -364,15 +365,30 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (t = 0; t < NN && !any; t++) if (s.rail[t]) any = true;
     if (!any) for (var k = 0; k < s.objects.length; k++) if (s.objects[k].kind === 'building' && B[s.objects[k].type] && B[s.objects[k].type].mono) { any = true; break; }
     var old = X;
-    if (!any) { X = emptyX(); X.ver = old.ver; if (old.hash !== 0 || old.lines.length) { X.ver++; bus.emit('rail', { ver: X.ver }); } X.hash = 0; }
-    else {
-      X = compute(s, s.rail); X.ver = old.ver;
-      computeOverlooks(X);
-      if (X.hash !== old.hash || X.lines.length !== old.lines.length) { X.ver++; bus.emit('rail', { ver: X.ver }); }
+    if (!_graphOld) _graphOld = old;
+    if (!any) { X = emptyX(); X.ver = old.ver; X.hash = 0; }
+    else { X = compute(s, s.rail); X.ver = old.ver; }
+  };
+  M.update = function (force) {
+    var s = S(); if (!s) return;
+    if (!s.rail || s.rail.length !== NN) s.rail = new Uint8Array(NN);
+    if (!s.mono) s.mono = { trains: [], nextTrain: 1, stats: {}, powered: true };
+    ensureFields(s);
+    var old = _graphOld; _graphOld = null;
+    if (!old) {
+      var any = false, t, B = BD();
+      for (t = 0; t < NN && !any; t++) if (s.rail[t]) any = true;
+      if (!any) for (var k = 0; k < s.objects.length; k++) if (s.objects[k].kind === 'building' && B[s.objects[k].type] && B[s.objects[k].type].mono) { any = true; break; }
+      old = X;
+      if (!any) { X = emptyX(); X.ver = old.ver; X.hash = 0; }
+      else { X = compute(s, s.rail); X.ver = old.ver; }
     }
+    if (X.lines.length) computeOverlooks(X);
+    if (X.hash !== old.hash || X.lines.length !== old.lines.length) { X.ver = old.ver + 1; bus.emit('rail', { ver: X.ver }); }
     nameStations(s);
     attachTrains(s, old);
     for (var li = 0; li < X.lines.length; li++) { var L = X.lines[li]; L.paused = L.stops.some(function (p) { return !!p.o.mpause; }); }
+    if (C.refreshConnectivity) C.refreshConnectivity();
   };
   function nameStations(s) {
     for (var k = 0; k < X.stations.length; k++) {
@@ -804,10 +820,85 @@ window.Z = window.Z || {}; var Z = window.Z;
   function frontTiles(o) { return C.frontPathTiles(o); }
   function frontTile(o) { var f = frontTiles(o); return f.length ? f[0] : -1; }
   function stationConnected(o) {
-    var f = C.getField('exit'); if (!f) return false;
-    var fr = frontTiles(o); for (var k = 0; k < fr.length; k++) if (f[fr[k]] < INF) return true;
+    var fr = frontTiles(o);
+    for (var k = 0; k < fr.length; k++) if (C.isParkConnected ? C.isParkConnected(fr[k]) : (C.getField('exit') && C.getField('exit')[fr[k]] < INF)) return true;
     return false;
   }
+  function lineActive(L) {
+    if (!L || !L.ok || L.paused || !linePowered()) return false;
+    if (!L.trains.some(function (t) { return t.st !== 'idle'; })) return false;
+    for (var k = 0; k < L.stops.length; k++) if (!stationPowered(L.stops[k].o)) return false;
+    return true;
+  }
+  function stopComps(o, compAt) {
+    var out = [], fr = frontTiles(o);
+    for (var k = 0; k < fr.length; k++) {
+      var c = compAt(fr[k]);
+      if (c && out.indexOf(c) < 0) out.push(c);
+    }
+    return out;
+  }
+  function compHopDists(seeds, compAt) {
+    var dist = {}, frontier = [], k, li, q;
+    for (k = 0; k < seeds.length; k++) if (seeds[k] && dist[seeds[k]] === undefined) { dist[seeds[k]] = 0; frontier.push(seeds[k]); }
+    while (frontier.length) {
+      var next = [];
+      for (li = 0; li < X.lines.length; li++) {
+        var L = X.lines[li]; if (!lineActive(L) || L.stops.length < 2) continue;
+        var minD = 9999;
+        for (k = 0; k < L.stops.length; k++) {
+          var cs = stopComps(L.stops[k].o, compAt);
+          for (q = 0; q < cs.length; q++) if (dist[cs[q]] !== undefined && dist[cs[q]] < minD) minD = dist[cs[q]];
+        }
+        if (minD >= 9999) continue;
+        for (k = 0; k < L.stops.length; k++) {
+          var cs2 = stopComps(L.stops[k].o, compAt);
+          for (q = 0; q < cs2.length; q++) if (dist[cs2[q]] === undefined) { dist[cs2[q]] = minD + 1; next.push(cs2[q]); }
+        }
+      }
+      frontier = next;
+    }
+    return dist;
+  }
+  M.markReachable = function (reachComp, comp) {
+    if (!X.lines.length) return;
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (var li = 0; li < X.lines.length; li++) {
+        var L = X.lines[li]; if (!L.ok || L.stops.length < 2) continue;
+        var has = false, k, q, fr;
+        for (k = 0; k < L.stops.length && !has; k++) {
+          fr = frontTiles(L.stops[k].o);
+          for (q = 0; q < fr.length; q++) if (comp[fr[q]] && reachComp[comp[fr[q]]]) { has = true; break; }
+        }
+        if (!has) continue;
+        for (k = 0; k < L.stops.length; k++) {
+          fr = frontTiles(L.stops[k].o);
+          for (q = 0; q < fr.length; q++) {
+            var c = comp[fr[q]];
+            if (c && !reachComp[c]) { reachComp[c] = 1; changed = true; }
+          }
+        }
+      }
+    }
+  };
+  M.canReachComp = function (fromComp, toComp, comp) {
+    if (!fromComp || !toComp) return false;
+    if (fromComp === toComp) return true;
+    if (!X.lines.length) return false;
+    var d = compHopDists([toComp], function (t) { return comp[t]; });
+    return d[fromComp] !== undefined;
+  };
+  M.reachableComps = function (fromComp, comp) {
+    var out = {};
+    if (!fromComp) return out;
+    out[fromComp] = true;
+    if (!X.lines.length) return out;
+    var d = compHopDists([fromComp], function (t) { return comp[t]; });
+    for (var k in d) out[k] = true;
+    return out;
+  };
   function guestById(id) { return C.RT().gById.get(id); }
   // does guest g want to board this train at this stop (given the direction it will leave in)?
   function eligible(g, T, L, k) {
@@ -830,11 +921,12 @@ window.Z = window.Z || {}; var Z = window.Z;
       var g = guestById(q.q[k]);
       if (!g || g.state !== 'queue') { q.q.splice(k, 1); k--; continue; }
       if (!eligible(g, T, L, T.at)) continue;
-      var fare = fareOf(o), WX = C.WX();
-      if (fare > 0 && (fare > g.money * 0.85 || fare > MD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.2)) {
+      var fare = fareOf(o), WX = C.WX(), isLeave = !!(g.rthen && g.rthen.gt === 'leave');
+      if (fare > 0 && !isLeave && (fare > g.money * 0.85 || fare > MD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.2)) {
         q.q.splice(k, 1); g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.rdst = 0; g.rthen = null; g.mood -= 1.5; g.nbuy = C.gxHr() * 0.3; g.rn = now() + 0.5; C.say(g, 'expensive'); return true;
       }
       q.q.splice(k, 1);
+      if (fare > 0 && isLeave && g.money < fare) fare = 0;
       if (fare > 0) { g.money -= fare; g.spent = (g.spent || 0) + fare; C.earn(fare, 'shops', g.x, g.z); o.minc = (o.minc || 0) + fare; o.mtoday = (o.mtoday || 0); S().mono.stats.income += fare; }
       o.mrides = (o.mrides || 0) + 1; o.mtoday = (o.mtoday || 0) + 1;
       var st = S().mono.stats; st.riders++; st.boardings++;
@@ -870,7 +962,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var g = rt.pax[k], off = false;
       if (g.rdst > 0 && g.rdst === o.id) off = true;
       else if (!g.rdst && g.rfrom === o.id && g.rpass >= 1) off = true;
-      else if (g.rend && (g.rpass >= 1 || g.rfrom !== o.id)) off = true;
+      else if (!g.rleave && g.rend && (g.rpass >= 1 || g.rfrom !== o.id)) off = true;
       else if (g.rdst > 0 && stopOf(L, g.rdst) < 0) off = true;
       if (!off) continue;
       rt.pax.splice(k, 1);
@@ -880,9 +972,18 @@ window.Z = window.Z || {}; var Z = window.Z;
     return false;
   }
   function stepOff(g, o) {
-    var fr = frontTiles(o), t = -1;
-    if (fr.length) t = fr[Math.floor(rng.next() * fr.length)];
-    else t = nearestPath(o);
+    var fr = frontTiles(o), t = -1, plan0 = g.rthen;
+    if (fr.length) {
+      var cand = fr;
+      if (plan0 && plan0.gt === 'enc') {
+        var fe = C.getField('t' + plan0.spot);
+        if (fe) { var m1 = fr.filter(function (q) { return fe[q] < INF; }); if (m1.length) cand = m1; }
+      } else if (plan0 && plan0.gt === 'leave') {
+        var fx = C.getField('exit');
+        if (fx) { var m2 = fr.filter(function (q) { return fx[q] < INF; }); if (m2.length) cand = m2; }
+      }
+      t = cand[Math.floor(rng.next() * cand.length)];
+    } else t = nearestPath(o);
     if (t < 0) { C.removeGuest(g); return; }
     var wasRefuge = g.rrefuge;
     g.x = tcx(t) + rng.range(-0.5, 0.5); g.z = tcz(t) + rng.range(-0.5, 0.5); g.y = 0; g.ti = t; g.ni = -1; g.state = 'walk'; g.glide = 0; g.speed = 0; g.gt = ''; g.dk = ''; g.gAge = 0; g.idle = 0; g.pv = 0;
@@ -891,10 +992,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (g.rtr !== undefined) { g.rtr = 0; }
     var rt0 = g.rt0 || now(), dur = (now() - rt0) * C.DAY_SECONDS;
     o.msat = o.msat === undefined ? g.happiness : o.msat + (g.happiness - o.msat) * 0.1;
-    var plan = g.rthen; g.rthen = null; g.rdst = 0;
+    var plan = g.rthen; g.rthen = null; g.rdst = 0; g.rleave = 0;
     if (plan && plan.gt === 'enc') {
       var e = C.encById(plan.gid), f = C.getField('t' + plan.spot);
       if (e && f && f[g.ti] < INF) { g.gt = 'enc'; g.gid = plan.gid; g.dk = 't' + plan.spot; g.spot = plan.spot; C.RT().gtarg[plan.spot]++; }
+      else if (e && f) M.shortcut(g, plan.spot, e, f, true);
     } else if (plan && plan.gt === 'leave') { C.startLeaving(g); }
     else if (wasRefuge) { g.rrefuge = 0; if (!C.getField('exit') || C.getField('exit')[g.ti] === INF) { /* nothing */ } }
     if (rng.chance(0.35) && !g.thoughtT) C.say(g, 'monorail');
@@ -977,7 +1079,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (g.hunger > 70 || g.thirst > 75 || g.bladder > 70) return false;
     var best = null, bp = 0, bdest = 0, bscenic = 0, k, li;
     for (li = 0; li < X.lines.length; li++) {
-      var L = X.lines[li]; if (!L.ok || L.paused || !L.trains.length || !L.trains.some(function (t) { return t.st !== 'idle'; })) continue;
+      var L = X.lines[li]; if (!lineActive(L)) continue;
       var sc = unseenOver(g, L);
       for (k = 0; k < L.stops.length; k++) {
         var o = L.stops[k].o; if (!fareOK(g, o, 0.7)) continue;
@@ -1007,25 +1109,44 @@ window.Z = window.Z || {}; var Z = window.Z;
     return true;
   };
   // a long walk to an exhibit (f = walking-distance field of the viewing spot, may be null) replaced by a ride?
-  M.shortcut = function (g, spot, e, f) {
+  M.shortcut = function (g, spot, e, f, forceTransfer) {
     if (!X.lines.length || g.state !== 'walk' || !C.openNow() || !linePowered()) return false;
-    if (g.rn && now() < g.rn) return false;
     var direct = f ? f[g.ti] : INF;
+    if (!forceTransfer && direct < INF && g.rn && now() < g.rn) return false;
     if (direct < 22) return false;
+    var compAt = C.compOf, dHop = null, myHop = 1;
+    if (direct === INF && compAt) {
+      var fromC = compAt(g.ti), toC = compAt(spot);
+      if (!fromC || !toC) return false;
+      if (fromC !== toC) {
+        dHop = compHopDists([toC], compAt);
+        myHop = dHop[fromC];
+        if (myHop === undefined) return false;
+      }
+    }
     var walkCost = direct * (isTired(g) ? 1.4 : 1);
     var best = null, bc = 1e9;
     for (var li = 0; li < X.lines.length; li++) {
-      var L = X.lines[li]; if (!L.ok || L.paused || !L.trains.some(function (t) { return t.st !== 'idle'; })) continue;
+      var L = X.lines[li]; if (!lineActive(L)) continue;
       var sc = unseenOver(g, L), bonus = Math.min(3, sc.enc) * 4 + Math.min(3, sc.sp) * 2;
       for (var a = 0; a < L.stops.length; a++) {
         var A = L.stops[a].o, fa = C.getField('b' + A.id); if (!fa) continue;
-        var dA = fa[g.ti]; if (!(dA < INF) || dA > 45 || dA > direct * 0.7 || !stationConnected(A)) continue;
+        var dA = fa[g.ti]; if (!(dA < INF) || (direct < INF && dA > 45) || dA > direct * 0.7 || !stationConnected(A)) continue;
         if (!fareOK(g, A, 0.6)) continue;
         var qa = C.RT().bq[A.id]; if (qa && qa.q.length > 14) continue;
         for (var b = 0; b < L.stops.length; b++) {
           if (b === a) continue;
-          var B = L.stops[b].o, tb = frontTile(B); if (tb < 0 || !f) continue;
-          var dB = f[tb]; if (!(dB < INF)) continue;
+          var B = L.stops[b].o, dB = INF;
+          if (f) {
+            var frB = frontTiles(B);
+            for (var q2 = 0; q2 < frB.length; q2++) if (f[frB[q2]] < dB) dB = f[frB[q2]];
+          }
+          if (!(dB < INF)) {
+            if (!(myHop > 1 && dHop)) continue;
+            var csB = stopComps(B, compAt), okHop = false;
+            for (var q3 = 0; q3 < csB.length; q3++) if (dHop[csB[q3]] !== undefined && dHop[csB[q3]] < myHop) { okHop = true; dB = dHop[csB[q3]] * 25; break; }
+            if (!okHop) continue;
+          }
           var tm = lineTiming(L, a, b);
           var tot = dA + dB + (tm.ride + tm.wait) * 1.5 * SEAT_SIT + farePenalty(A) - bonus;
           if (tot < bc) { bc = tot; best = { A: A, B: B }; }
@@ -1038,10 +1159,38 @@ window.Z = window.Z || {}; var Z = window.Z;
     S().mono.stats.shortcuts = (S().mono.stats.shortcuts || 0) + 1;
     return true;
   };
+  M.leaveVia = function (g) {
+    if (!X.lines.length || !linePowered() || !C.compOf || !C.gateComps) return false;
+    var compAt = C.compOf, fromC = compAt(g.ti); if (!fromC) return false;
+    var exitDist = compHopDists(C.gateComps(), compAt), myHop = exitDist[fromC];
+    if (myHop === undefined || myHop === 0) return false;
+    var best = null, bc = 1e9;
+    for (var li = 0; li < X.lines.length; li++) {
+      var L = X.lines[li]; if (!lineActive(L) || L.stops.length < 2) continue;
+      for (var a = 0; a < L.stops.length; a++) {
+        var A = L.stops[a].o, fa = C.getField('b' + A.id); if (!fa) continue;
+        var dA = fa[g.ti]; if (!(dA < INF)) continue;
+        for (var b = 0; b < L.stops.length; b++) {
+          if (b === a) continue;
+          var B = L.stops[b].o, csB = stopComps(B, compAt), bHop = 9999;
+          for (var q = 0; q < csB.length; q++) if (exitDist[csB[q]] !== undefined && exitDist[csB[q]] < bHop) bHop = exitDist[csB[q]];
+          if (bHop >= myHop) continue;
+          var tm = lineTiming(L, a, b);
+          var sc = dA + (tm.ride + tm.wait) * 1.5 + bHop * 25;
+          if (sc < bc) { bc = sc; best = { A: A, B: B }; }
+        }
+      }
+    }
+    if (!best) return false;
+    g.state = 'walk'; g.glide = 0; g.gt = 'bld'; g.gid = best.A.id; g.dk = 'b' + best.A.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = 'ride';
+    g.rdst = best.B.id; g.rfrom = best.A.id; g.rthen = { gt: 'leave' }; g.rleave = 1; g.fleeT = 0;
+    return true;
+  };
   M.arrive = function (g, o) {
     var L = lineOfStationId(o.id), q = C.RT().bq[o.id] || (C.RT().bq[o.id] = { use: 0, q: [] });
-    if (!L || !L.ok || L.paused || !linePowered() || !L.trains.length) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; return; }
-    if (q.q.length >= 18) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; C.say(g, 'crowded'); g.mood -= 1; return; }
+    var isLeave = !!(g.rthen && g.rthen.gt === 'leave');
+    if (!L || !L.ok || L.paused || !linePowered() || !stationPowered(o) || !L.trains.length) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; g.rleave = 0; return; }
+    if (q.q.length >= (isLeave ? 80 : 18)) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; g.rleave = 0; if (!isLeave) { C.say(g, 'crowded'); g.mood -= 1; } return; }
     g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; C.gxPlace(g, false);
     var c = C.objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
   };

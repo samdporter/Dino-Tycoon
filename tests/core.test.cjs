@@ -262,3 +262,166 @@ test('monorail 2-station loop and keepers crossing moat bridges work properly', 
   assert.equal(enc.foodLevel, 1);
   assert.equal(enc.poop, 0);
 });
+
+test('paths disconnected from entrance but connected via monorail work for buildings, facilities, and guests', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 42, map: 'fern_meadow', difficulty: 'easy' });
+  z.state.money = 300000;
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 10, 10, 42, 39);
+
+  // Mainland path from gate (27..28, 40..55) up to (27, 34)
+  for (let j = 34; j <= 40; j++) z.Sim.placePath(27, j, 'paved');
+  for (let i = 20; i <= 27; i++) z.Sim.placePath(i, 34, 'paved');
+
+  // Completely disconnected island path around j=18..25, i=16..26 (no walking path to entrance!)
+  for (let i = 18; i <= 26; i++) z.Sim.placePath(i, 18, 'paved');
+  for (let j = 18; j <= 25; j++) z.Sim.placePath(26, j, 'paved');
+  for (let i = 16; i <= 26; i++) z.Sim.placePath(i, 25, 'paved');
+
+  // Truly isolated path with NO monorail connection
+  for (let i = 36; i <= 38; i++) z.Sim.placePath(i, 18, 'paved');
+  const isoShop = z.Sim.placeObject('burger_stand', 36, 17, 0);
+  assert.equal(isoShop.ok, true);
+
+  // Island buildings & facilities on the disconnected island path
+  const stMain = z.Sim.placeObject('monorail_station', 20, 32, 0); // front at (20..23, 34)
+  const stIsl = z.Sim.placeObject('monorail_station', 20, 16, 0);  // front at (20..23, 18)
+  const islShop = z.Sim.placeObject('burger_stand', 16, 24, 0);    // 1x1, front at (16, 25)
+  const islLab = z.Sim.placeObject('research_lab', 18, 22, 0);     // 4x3, front at (18..21, 25)
+  const islHatch = z.Sim.placeObject('hatchery', 23, 23, 0);       // 3x2, front at (23..25, 25)
+  assert.equal(stMain.ok && stIsl.ok && islShop.ok && islLab.ok && islHatch.ok, true);
+
+  // Power both stations
+  assert.equal(z.Sim.placeObject('diesel_gen', 16, 32, 0).ok, true);
+  assert.equal(z.Sim.placeObject('substation', 18, 32, 0).ok, true);
+  assert.equal(z.Sim.placeObject('diesel_gen', 16, 16, 0).ok, true);
+  assert.equal(z.Sim.placeObject('substation', 18, 16, 0).ok, true);
+
+  // Before monorail track connects them: mainland station is connected, island buildings are not
+  assert.equal(z.Sim.objectReport(stMain.id).connected, true);
+  assert.equal(z.Sim.objectReport(stIsl.id).connected, false);
+  assert.equal(z.Sim.objectReport(islShop.id).connected, false);
+  assert.equal(z.Sim.objectReport(isoShop.id).connected, false);
+  const rt0 = z.Sim._rt();
+  assert.equal(rt0.labs.length, 1);
+  assert.equal(rt0.hatcheries.length, 1);
+
+  // Connect stMain <-> stIsl with track (open 2-station line)
+  const route = [];
+  for (let i = 23; i <= 30; i++) route.push(i + 32 * z.N);
+  for (let j = 31; j >= 16; j--) route.push(30 + j * z.N);
+  for (let i = 29; i >= 23; i--) route.push(i + 16 * z.N);
+  assert.equal(z.Sim.monorail.buildTrack(route).ok, true);
+
+  // Island buildings and facilities are now connected via monorail; truly isolated shop remains disconnected
+  assert.equal(z.Sim.objectReport(stIsl.id).connected, true);
+  assert.equal(z.Sim.objectReport(islShop.id).connected, true);
+  assert.equal(z.Sim.objectReport(islLab.id).connected, true);
+  assert.equal(z.Sim.objectReport(islHatch.id).connected, true);
+  assert.equal(z.Sim.objectReport(isoShop.id).connected, false);
+  assert.equal(z.Sim._rt().labs.length, 2);
+  assert.equal(z.Sim._rt().hatcheries.length, 2);
+
+  // Removing a track tile drops connectivity back to false; rebuilding restores it
+  assert.equal(z.Sim.monorail.removeTiles([30 + 25 * z.N]).ok, true);
+  assert.equal(z.Sim.objectReport(stIsl.id).connected, false);
+  assert.equal(z.Sim.objectReport(islShop.id).connected, false);
+  assert.equal(z.Sim._rt().labs.length, 1);
+  assert.equal(z.Sim.monorail.buildTrack([30 + 26 * z.N, 30 + 25 * z.N, 30 + 24 * z.N]).ok, true);
+  assert.equal(z.Sim.objectReport(islShop.id).connected, true);
+
+  // Add an enclosure on the island (no mainland enclosures!) and buy a train
+  for (let i = 28; i <= 32; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 19 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 23 }, 'reinforced');
+  }
+  for (let j = 19; j <= 22; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 28, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 33, j }, 'reinforced');
+  }
+  z.Sim.spawnAnimal('triceratops', 30, 21);
+  const enc = z.state.enclosures[0];
+  assert.ok(enc.viewTiles.length > 0);
+  assert.equal(z.Sim.monorail.setFree(stMain.id, true).ok, true);
+  assert.equal(z.Sim.monorail.buyTrain(stMain.id, 2).ok, true);
+
+  // Guests arrive at entrance, ride monorail to island, view the enclosure without being deleted as stranded, and leave via monorail
+  z.state.time = 0.35;
+  for (let k = 0; k < 200 && z.state.guests.length < 3; k++) z.Sim.tick(0.1);
+  assert.ok(z.state.guests.length >= 1);
+
+  let guestVisitedIsland = false;
+  let islandGuestId = 0;
+  for (let k = 0; k < 2500; k++) {
+    z.Sim.tick(0.1);
+    for (const g of z.state.guests) {
+      const gj = Math.floor(g.ti / z.N);
+      if (g.state === 'walk' && gj <= 25 && g.seenEnc[enc.id]) {
+        guestVisitedIsland = true;
+        islandGuestId = g.id;
+        assert.equal(g.isl, 0, 'Guest on monorail-connected island path must not be marked stranded');
+      }
+    }
+    if (guestVisitedIsland) break;
+  }
+  assert.equal(guestVisitedIsland, true, 'Guest should ride monorail to island and see the island enclosure');
+
+  // Now simulate the guest finishing their visit while on the island: they should ride the monorail back and exit the park
+  const gIsl = z.state.guests.find(g => g.id === islandGuestId);
+  assert.ok(gIsl);
+  gIsl.stay = -1; // visit time over -> triggers startLeaving on next guestThink
+  const leftBefore = z.state.stats.guestsLeft || 0;
+  let rodeBack = false, reachedMainland = false, exitedViaMonorail = false;
+  for (let k = 0; k < 2500; k++) {
+    z.Sim.tick(0.1);
+    const cur = z.state.guests.find(g => g.id === islandGuestId);
+    if (!cur) {
+      assert.ok((z.state.stats.guestsLeft || 0) > leftBefore);
+      exitedViaMonorail = true;
+      break;
+    }
+    if (cur.state === 'ride' && cur.rfrom === stIsl.id) rodeBack = true;
+    if (cur.state === 'leave' && Math.floor(cur.ti / z.N) >= 34) reachedMainland = true;
+    assert.ok(cur.isl < 5, `Guest leaving via monorail must not time out as stranded (isl=${cur.isl}, state=${cur.state})`);
+  }
+  assert.equal(rodeBack, true, 'Guest must ride monorail back from island station');
+  assert.equal(reachedMainland, true, 'Guest must alight on mainland to walk out the gate');
+  assert.equal(exitedViaMonorail, true, 'Guest on monorail-connected island must ride back and exit cleanly');
+
+  // Save/load preserves monorail-connected island building/facility connectivity
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.Sim.objectReport(islShop.id).connected, true);
+  assert.equal(z.Sim.objectReport(islLab.id).connected, true);
+  assert.equal(z.Sim._rt().labs.length, 2);
+
+  // Safari depot on the monorail-connected island reports connected
+  const islDepot = z.Sim.placeObject('safari_depot', 23, 26, 2); // 3x2, front at (23..25, 25)
+  assert.equal(islDepot.ok, true);
+  assert.equal(z.Sim.safari.depotInfo(islDepot.id).conn, true);
+
+  // Keeper on mainland skips unreachable island enclosure and feeds reachable mainland enclosure
+  for (let i = 30; i <= 33; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 34 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 38 }, 'reinforced');
+  }
+  for (let j = 34; j <= 37; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 30, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 34, j }, 'reinforced');
+  }
+  for (let i = 27; i <= 33; i++) z.Sim.placePath(i, 39, 'paved');
+  z.Sim.spawnAnimal('dryosaurus', 31, 36);
+  const islEnc = z.state.enclosures.find(e => e.id === enc.id);
+  const mainEnc = z.state.enclosures.find(e => e.id !== enc.id);
+  assert.ok(islEnc && mainEnc && mainEnc.viewTiles.length > 0);
+  islEnc.foodLevel = 0.1;   // island enclosure is hungrier, but unreachable from mainland
+  mainEnc.foodLevel = 0.3;  // mainland enclosure is reachable
+  assert.equal(z.Sim.hireStaff('keeper', 27, 39).ok, true);
+  for (let k = 0; k < 400; k++) z.Sim.tick(0.1);
+  assert.equal(mainEnc.foodLevel, 1, 'Mainland keeper must feed reachable mainland enclosure rather than stalling on unreachable island enclosure');
+  assert.ok(islEnc.foodLevel < 0.2, 'Island enclosure remains unfed until an island keeper cares for it');
+  assert.equal(z.Sim.hireStaff('keeper', 26, 21).ok, true);
+  for (let k = 0; k < 400; k++) z.Sim.tick(0.1);
+  assert.equal(islEnc.foodLevel, 1, 'Keeper hired on island path feeds island enclosure');
+});

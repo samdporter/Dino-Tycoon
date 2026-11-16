@@ -543,7 +543,13 @@ window.Z = window.Z || {}; var Z = window.Z;
   function guestById(id) { return RT().gById.get(id); }
   function fareOf(o) { return o.mfree ? 0 : (o.fare === undefined ? SD.fare : o.fare); }
   A.fareOf = fareOf;
-  function depotConnected(o) { var f = C.getField('exit'); if (!f) return false; var fr = frontTiles(o); for (var k = 0; k < fr.length; k++) if (f[fr[k]] < INF) return true; return false; }
+  function depotConnected(o) {
+    var fr = frontTiles(o);
+    if (C.isParkConnected) { for (var k = 0; k < fr.length; k++) if (C.isParkConnected(fr[k])) return true; return false; }
+    var f = C.getField('exit'); if (!f) return false;
+    for (var k2 = 0; k2 < fr.length; k2++) if (f[fr[k2]] < INF) return true;
+    return false;
+  }
   function routesOfDepot(o) { return Object.keys(X.routes).map(function (k) { return X.routes[k]; }).filter(function (P) { return P.depot && P.depot.id === o.id && P.ok; }); }
   function serving(o) { var P = routesOfDepot(o)[0]; return P && ST().veh.some(function (v) { return v.route === P.id; }) && routeGo(P); }
   A.queueLimit = function (g) { var o = RT().oById.get(g.gid); return o && (BD()[o.type] || {}).safari ? 90 : 0; };
