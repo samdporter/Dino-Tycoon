@@ -552,7 +552,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (d.powerNode) return d.powerNode.radius + 't';
     if (d.moat) return d.moat.cap + 'u';
     if (d.realm === 'plant' && D.realms && D.realms.plant) return D.realms.plant.capacity + 'u';
-    if (d.realm === 'tower' && D.realms && D.realms.virtual) return D.realms.virtual.levels[0].radius + 't';
+    if (d.id === 'tagging_tower' && D.realms && D.realms.virtual && D.realms.virtual.towers && D.realms.virtual.towers[0]) return D.realms.virtual.towers[0].radius + 't';
     return '';
   }
   function renderCards(c) {

@@ -221,7 +221,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (def.powerNode) return 'Power relay';
     if (def.moat) return 'Water supply';
     if (def.realm === 'plant') return 'Water filtration';
-    if (def.realm === 'tower') return 'Containment tower';
+    if (def.id === 'tagging_tower') return 'Containment tower';
     if (def.realm === 'boat' || def.realm === 'drone') return 'Recovery station';
     if (def.safariPortal) return 'Safari barrier';
     if (def.safariRanger) return 'Safari rangers';

@@ -402,7 +402,7 @@ test('UI cards, toolstrip, placement plan, and inspect panel render building spe
         return scope;
       },
       focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40,
-      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
       getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
     };
     return node;
@@ -861,4 +861,150 @@ test('paths disconnected from entrance but connected via monorail work for build
   assert.equal(z.Sim.hireStaff('keeper', 26, 21).ok, true);
   for (let k = 0; k < 400; k++) z.Sim.tick(0.1);
   assert.equal(islEnc.foodLevel, 1, 'Keeper hired on island path feeds island enclosure');
+});
+
+test('all build categories including aviary and tagging render all cards at 5 stars', () => {
+  function mkEl(tag) {
+    const attrs = {}, children = [], cls = new Set(), listeners = {};
+    const style = { setProperty() {} };
+    let _html = '', _text = '';
+    const node = {
+      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      classList: {
+        add(...a) { a.forEach(c => c && cls.add(c)); },
+        remove(...a) { a.forEach(c => c && cls.delete(c)); },
+        toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+        contains(c) { return cls.has(c); }
+      },
+      set className(v) { cls.clear(); String(v || '').split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); },
+      get className() { return Array.from(cls).join(' '); },
+      set innerHTML(v) {
+        _html = String(v || ''); children.length = 0;
+        const stack = [node], re = /<(\/?)([a-zA-Z0-9-]+)([^>]*)>|([^<]+)/g;
+        let m;
+        while ((m = re.exec(_html))) {
+          if (m[4]) { stack[stack.length - 1].children.push({ nodeType: 3, textContent: m[4], children: [] }); continue; }
+          if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
+          const ch = mkEl(m[2]), rawAttr = m[3] || '', selfClose = /\/\s*$/.test(rawAttr);
+          let am; const are = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+          while ((am = are.exec(rawAttr))) if (am[1] && am[1] !== '/') ch.setAttribute(am[1], am[2] || '');
+          stack[stack.length - 1].appendChild(ch);
+          if (!selfClose) stack.push(ch);
+        }
+      },
+      get innerHTML() { return _html; },
+      set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
+      get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
+      removeAttribute(k) { delete attrs[k]; },
+      appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
+      insertBefore(c, ref) { if (!c) return c; c.parentNode = node; const idx = children.indexOf(ref); if (idx >= 0) children.splice(idx, 0, c); else children.push(c); return c; },
+      removeChild(c) { const idx = children.indexOf(c); if (idx >= 0) children.splice(idx, 1); return c; },
+      remove() { if (node.parentNode) node.parentNode.removeChild(node); },
+      addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      click() { (listeners.click || []).forEach(fn => fn({ stopPropagation() {}, preventDefault() {} })); },
+      querySelector(sel) { return node.querySelectorAll(sel)[0] || null; },
+      querySelectorAll(sel) {
+        const matchOne = (el, part) => {
+          let s = part.trim(), m;
+          const attrM = s.match(/\[([^\]=]+)="([^"]*)"\]/g) || [];
+          for (const a of attrM) { const p = a.slice(1, -1).split('='); if (el.getAttribute(p[0]) !== p[1].replace(/^"|"$/g, '')) return false; s = s.replace(a, ''); }
+          if ((m = s.match(/#([a-zA-Z0-9_-]+)/))) { if (el.getAttribute('id') !== m[1]) return false; s = s.replace(m[0], ''); }
+          const clsM = s.match(/\.[a-zA-Z0-9_-]+/g) || [];
+          for (const c of clsM) { if (!el.classList.contains(c.slice(1))) return false; s = s.replace(c, ''); }
+          if (s && el.tagName.toLowerCase() !== s.toLowerCase()) return false;
+          return true;
+        };
+        let scope = [node];
+        for (const part of sel.trim().split(/\s+/)) {
+          const next = [];
+          const walk = (el) => { for (const ch of el.children) { if (ch.tagName) { if (matchOne(ch, part)) next.push(ch); walk(ch); } } };
+          scope.forEach(walk); scope = next;
+        }
+        return scope;
+      },
+      focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40, clientWidth: 300, clientHeight: 170,
+      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
+    };
+    return node;
+  }
+
+  const rootUi = mkEl('div'), body = mkEl('body'), head = mkEl('head'), worldEl = mkEl('div');
+  rootUi.setAttribute('id', 'ui'); worldEl.setAttribute('id', 'world');
+  const document = {
+    head, body, createElement: mkEl,
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t == null ? '' : t), children: [] }),
+    getElementById: (id) => id === 'ui' ? rootUi : id === 'world' ? worldEl : null,
+    querySelector: (s) => s === '#ui' ? rootUi : s === '#world' ? worldEl : rootUi.querySelector(s),
+    querySelectorAll: (s) => rootUi.querySelectorAll(s),
+    addEventListener() {}
+  };
+  const ctx = vm.createContext({
+    console, setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() {}, document, window: null, innerWidth: 1280, innerHeight: 900,
+    btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
+  });
+  ctx.window = ctx; ctx.addEventListener = () => {};
+  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const z = ctx.Z;
+  z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  z.RealmsWorld = { overlayOn: () => false, setOverlay() {}, showRange() {} };
+  z.MoatsWorld = { overlayOn: () => false, setOverlay() {} };
+  z.MonoWorld = { overlayOn: false, setOverlay() {} };
+  z.SafariWorld = { overlayOn: false, setOverlay() {} };
+  ['50-ui.js', '51-tools.js', '52-panels.js', '65-ui-moats.js', '66-ui-monorail.js', '67-ui-realms.js', '68-ui-power.js', '74-ui-safari.js', '75-ui-groups.js', '76-ui-mobile.js'].forEach(load);
+
+  z.UI.init();
+  z.Sim.newGame({ seed: 7777, map: 'green', difficulty: 'easy', name: 'Realms UI Test' });
+  z.state.money = 500000;
+  z.state.unlocked.star = 5;
+  for (let j = 10; j <= 18; j++) for (let i = 10; i <= 20; i++) {
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * z.N] = 0;
+  }
+
+  // Every non-tool category renders all of its items cleanly at 5 stars
+  z.UI.CATS.forEach((cat) => {
+    if (cat.tool) return;
+    z.UI.openCat(cat.id, true);
+    assert.equal(z.UI.el.cards.children.length >= cat.items().length, true, `category ${cat.id} rendered all cards`);
+  });
+
+  // Aviary renders all 7 items; canopy_tower does not show a tagging radius badge
+  z.UI.openCat('aviary', true);
+  const aviaryIds = z.UI.el.cards.children.map((c) => c.getAttribute('data-id'));
+  assert.deepEqual(aviaryIds, ['dome', 'mesh', 'canopy_tower', 'drone_hangar', 'perch_crag', 'perch_pole', 'fish_pool']);
+  const canopyCard = z.UI.el.cards.querySelector('.card[data-id="canopy_tower"]');
+  assert.equal(canopyCard.querySelector('.spb'), null);
+
+  // Tagging renders all 6 items; tagging_tower shows 10t range badge and no entrance bar
+  z.UI.openCat('tagging', true);
+  const tagIds = z.UI.el.cards.children.map((c) => c.getAttribute('data-id'));
+  assert.deepEqual(tagIds, ['tagging_tower', 'zl', 'zs', 'za', 'sky', 'overlay']);
+  const towerCard = z.UI.el.cards.querySelector('.card[data-id="tagging_tower"]');
+  assert.equal(towerCard.querySelector('.spb').textContent, '10t');
+  assert.equal(towerCard.querySelector('.fpb').innerHTML.includes('#f2a81d'), false);
+
+  // Tagging tower placement plan shows 10-tile range and skips path prompt
+  towerCard.click();
+  const gp = { i: 12, j: 12, x: 12 * z.TILE, z: 12 * z.TILE };
+  const towerPlan = z.UI.Tools.PLAN.building({ a: gp, b: gp });
+  assert.equal(towerPlan.ok, true);
+  assert.equal(towerPlan.spec.door, false);
+  assert.match(towerPlan.warn, /10-tile range/);
+  assert.doesNotMatch(towerPlan.warn, /entrance needs a path/i);
+  z.UI.Tools.cancel();
+
+  // Inspect panels distinguish tagging_tower from canopy_tower
+  const tw = z.Sim.placeObject('tagging_tower', 10, 10, 0);
+  const cp = z.Sim.placeObject('canopy_tower', 14, 10, 0);
+  assert.equal(tw.ok && cp.ok, true);
+  z.UI.Panel.open('object', tw.id);
+  assert.match(z.UI.el.panel.textContent, /Containment tower/);
+  z.UI.Panel.open('object', cp.id);
+  assert.match(z.UI.el.panel.textContent, /Information/);
+  assert.doesNotMatch(z.UI.el.panel.textContent, /Containment tower/);
 });

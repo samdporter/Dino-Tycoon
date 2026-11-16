@@ -345,7 +345,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var fp = Z.Sim.footprint(t.id, r0.i, r0.j, t.rot), onPath = fp && fp.front.some(function (q) { return Z.state.path[q.i + q.j * N]; });
       if (fp) {
         if (isUtil) {
-          var uSpec = def.gen ? def.gen.kw + ' kW' : def.battery ? def.battery.kwh + ' kWh' : def.powerNode ? def.powerNode.radius + '-tile range' : def.moat ? def.moat.cap + ' water' : '';
+          var uSpec = def.gen ? def.gen.kw + ' kW' : def.battery ? def.battery.kwh + ' kWh' : def.powerNode ? def.powerNode.radius + '-tile range' : def.moat ? def.moat.cap + ' water' : def.realm === 'plant' && D.realms && D.realms.plant ? D.realms.plant.capacity + ' water' : def.id === 'tagging_tower' && D.realms && D.realms.virtual && D.realms.virtual.towers && D.realms.virtual.towers[0] ? D.realms.virtual.towers[0].radius + '-tile range' : '';
           sub = (r0.w + '×' + r0.h) + (uSpec ? ' · ' + uSpec : '') + (r.warn ? ' - ' + r.warn : '');
         } else {
           var extraWarn = r.warn ? r.warn.replace(/^Entrance not on a path yet(?:\.\s*)?/, '') : '';
