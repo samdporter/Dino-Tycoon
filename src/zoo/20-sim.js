@@ -60,7 +60,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
       undo: undoStack, undoStack: undoStack, stroke: null, curEntry: null, strokeDepth: 0,
       bunkers: [], allBunkers: [], dangerEsc: 0, lockdown: false, hunters: {}, undoBusy: false,
-      gstand: new Uint8Array(NN), gtarg: new Uint8Array(NN), gvd: {}, wbuf: [], gload: {}
+      gstand: new Uint8Array(NN), gtarg: new Uint8Array(NN), gvd: {}, wbuf: [], gload: {},
+      comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: []
     };
   }
 
@@ -191,7 +192,49 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
       nb[t] = m;
     }
+    var comp = RT.comp; comp.fill(0);
+    var cn = 0, bq = RT.queue;
+    for (var p = 0; p < pt.length; p++) {
+      var st0 = pt[p]; if (comp[st0]) continue;
+      cn++; comp[st0] = cn;
+      var qh = 0, qt = 0; bq[qt++] = st0;
+      while (qh < qt) {
+        var u = bq[qh++], m2 = nb[u];
+        if ((m2 & 1) && !comp[u - N]) { comp[u - N] = cn; bq[qt++] = u - N; }
+        if ((m2 & 2) && !comp[u + 1]) { comp[u + 1] = cn; bq[qt++] = u + 1; }
+        if ((m2 & 4) && !comp[u + N]) { comp[u + N] = cn; bq[qt++] = u + N; }
+        if ((m2 & 8) && !comp[u - 1]) { comp[u - 1] = cn; bq[qt++] = u - 1; }
+      }
+    }
+    RT.compN = cn;
+    var gc = [];
+    for (var gk = 0; gk < 2; gk++) {
+      var gt = (GATE_I0 + gk) + GATE_J * N;
+      if (comp[gt] && gc.indexOf(comp[gt]) < 0) gc.push(comp[gt]);
+    }
+    RT.gateComps = gc;
+    refreshReach();
     RT.pathVer++; RT.fields = {};
+  }
+
+  function refreshReach() {
+    var cn = RT.compN || 0;
+    if (!RT.reachComp || RT.reachComp.length <= cn) RT.reachComp = new Uint8Array(cn + 16);
+    else RT.reachComp.fill(0);
+    var gc = RT.gateComps || [];
+    for (var k = 0; k < gc.length; k++) RT.reachComp[gc[k]] = 1;
+  }
+  function isParkConnected(t) {
+    if (t < 0 || t >= NN) return false;
+    if (!RT.reachComp) refreshReach();
+    var c = RT.comp[t];
+    return !!(c && RT.reachComp && RT.reachComp[c]);
+  }
+  function canGuestReach(fromT, toT) {
+    var fc = fromT >= 0 && fromT < NN ? RT.comp[fromT] : 0;
+    var tc = toT >= 0 && toT < NN ? RT.comp[toT] : 0;
+    if (!fc || !tc) return false;
+    return fc === tc;
   }
 
   function bfs(sources) {
@@ -340,9 +383,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function buildingConnected(o) {
     var ap = adjacentPathTiles(o);
     if (!ap.length) return false;
-    var f = getField('exit');
-    if (!f) return false;
-    for (var k = 0; k < ap.length; k++) if (f[ap[k]] < INF) return true;
+    for (var k = 0; k < ap.length; k++) if (isParkConnected(ap[k])) return true;
     return false;
   }
 
@@ -627,6 +668,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (navChanged) rebuildNav();
     rebuildObjects();
     RT.fields = {};
+    RT.gaesT = 0;
+    RT.glmPv = -1;
     recomputeEnclosures();
   }
 
@@ -912,11 +955,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var g = 0; g < S.guests.length; g++) {
       var gu = S.guests[g];
       if (gu.gid === o.id && (gu.gt === 'bld' || gu.gt === 'bunker')) {
-        releaseGuest(gu); gu.gt = ''; gu.dk = ''; gu.ni = -1;
+        releaseGuest(gu); gu.gt = ''; gu.dk = ''; gu.ni = -1; gu.glide = 0;
         if (gu.state === 'queue' || gu.state === 'use') gu.state = 'walk';
         gu.shel = 0; gu.ubid = 0;
       }
-      if (gu.bid === o.id) { releaseGuest(gu); if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; } }
+      if (gu.bid === o.id) { releaseGuest(gu); gu.glide = 0; if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; } }
     }
     delete RT.bq[o.id];
     bus.emit('objectRemoved', o);
@@ -1263,10 +1306,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   // ---- guests ----
   function say(g, thoughtKey, spId) {
+    if (g.thoughtT > 0 || g.tcool > 0) return;
     var list = D.guestThoughts[thoughtKey]; if (!list || !list.length) return;
     var text = rng.pick(list);
     if (/{animal}/.test(text)) {
-      var nm = 'animal';
+      var nm = 'animals';
       if (spId && SP[spId]) nm = lc(plural(SP[spId]));
       else if (S.animals.length) { var an = S.animals[Math.floor(rng.next() * S.animals.length)]; nm = lc(plural(SP[an.species])); }
       text = text.replace(/{animal}/g, nm);
@@ -1282,23 +1326,67 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9;
   }
 
+  // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
+  function gxHr() { return DAY_SECONDS / 24; }
+  function gxGrid() {
+    if (RT.gocc) return;
+    RT.gocc = new Uint8Array(NN); RT.gstand = new Uint8Array(NN); RT.gtarg = new Uint8Array(NN); RT.ghead = new Int16Array(NN).fill(-1); RT.gnext = new Int16Array(MAX_GUESTS + 16); RT.gaesInit = 0;
+    RT.gaes = new Float32Array(NN); RT.gaesT = 0; RT.gload = {}; RT.glm = []; RT.glmPv = -1; RT.gvd = {}; RT.gqt = 0;
+  }
+  function gxKind(o) {
+    var def = BD[o.type];
+    if (def.type === 'food') return (def.satisfies && def.satisfies.hunger > 0.25) ? 'meal' : 'treat';
+    if (def.type === 'drink') return 'drink';
+    if (def.type === 'toilet') return 'toilet';
+    if (def.type === 'shop') return 'shop';
+    if (def.type === 'ride' || def.type === 'info') return 'act';
+    return 'act';
+  }
+  function gxIndoor(o) { var d = BD[o.type]; return d.type !== 'ride' && d.w * d.h >= 4; }
+  function gxViewable(e) { var E = RT.encx[e.id]; return !!(E && E.nAn > 0 && e.viewTiles && e.viewTiles.length); }
+  function gxViewCount(g) {
+    var n = 0, seen = 0, encs = S.enclosures;
+    for (var k = 0; k < encs.length; k++) if (gxViewable(encs[k])) { n++; if (g.seenEnc[encs[k].id]) seen++; }
+    g.nView = n; g.nSeen = seen;
+    return n;
+  }
+  function gxPlan(g, hr, ticket) {
+    if (!g.al && g.seen) {
+      for (var sk in g.seen) if (/^\d+$/.test(sk)) delete g.seen[sk];
+    }
+    var left = Math.max(0, (CLOSE_T - S.time) * DAY_SECONDS);
+    var h = rng.range(4.0, 5.6); if (rng.chance(0.2)) h += rng.range(0.6, 1.6);
+    g.stay0 = Math.min(h * hr, Math.max(hr * 0.5, left - rng.range(0.3, 3.2) * hr));
+    g.stay = g.stay0;
+    g.tol = rng.range(1.05, 1.9);
+    g.thor = rng.range(0.75, 1.0);
+    g.tiredAt = rng.range(28, 46);
+    g.al = { meal: rng.chance(0.7) ? 1 + (rng.chance(0.1) ? 1 : 0) : 0, drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0, treat: rng.chance(0.2) ? 1 : 0, shop: rng.chance(0.13) ? 1 : 0, act: rng.chance(0.25) ? 1 : 0 };
+    g.seenEnc = g.seenEnc || {}; g.seenB = g.seenB || {};
+    g.spent = g.spent || 0; g.paid = ticket || 0; g.nSeen = 0; g.nView = 0;
+    g.prettyE = 0.3; g.nbuy = 0; g.done = 0; g.strollNext = 0; g.idle = 0; g.gAge = 0; g.ix = g.x; g.iz = g.z; g.glide = 0; g.sx = g.x; g.sz = g.z; g.spot = 0; g.lm = 0; g.wat = 0;
+  }
+
   function spawnGuest(group, first) {
+    gxGrid();
     var gi = GATE_I0 + (rng.chance(0.5) ? 1 : 0), t = gi + GATE_J * N;
     if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
-    var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12);
+    var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12), hr = gxHr();
+    var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating);
     var g = {
       id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: N * TILE + rng.range(0.3, 1.4),
-      heading: PI, speed: 0, state: 'walk', hunger: rng.range(0, 35), thirst: rng.range(0, 35), bladder: rng.range(0, 30), energy: rng.range(70, 100),
-      happiness: 70, money: Math.round(rng.range(25, 90) + S.rating * 8), thought: '', thoughtT: 0, seen: {}, group: group,
-      ti: t, ni: t, px: cxOf(t), pz: czOf(t), lo: rng.range(-0.55, 0.55), lo2: rng.range(-0.5, 0.5), bs: rng.range(1.5, 2.0),
+      heading: PI, speed: 0, state: 'walk', hunger: rng.range(6, 38), thirst: rng.range(4, 36), bladder: rng.range(0, 34), energy: rng.range(72, 100),
+      happiness: 70, money: Math.round(budget), thought: '', thoughtT: 0, seen: {}, group: group,
+      ti: t, ni: t, px: cxOf(t), pz: czOf(t), lo: rng.range(-0.7, 0.7), lo2: rng.range(-0.5, 0.5), bs: rng.range(2.6, 3.4),
       gt: '', gid: 0, dk: '', wt: 0, nt: rng.range(0.1, 0.9), acc: 0, tcool: rng.range(0, 3), fun: rng.range(50, 90), mood: mood, lit: false,
-      stay: rng.range(45, 85), pv: RT.pathVer, last: 0, bid: 0, fleeT: 0, nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0, shel: 0, ubid: 0
+      stay: 60, pv: RT.pathVer, last: 0, bid: 0, fleeT: 0, nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0, shel: 0, ubid: 0
     };
     g.px += g.lo * 0.5; g.pz = czOf(t);
-    var pay = Math.min(S.ticketPrice, g.money);
+    var pay = S.ticketPrice;
+    gxPlan(g, hr, pay);
     S.guests.push(g); RT.gById.set(g.id, g);
-    earn(pay, 'tickets', g.x, N * TILE - 1); g.money -= pay;
-    S.stats.guestsTotal++;
+    earn(pay, 'tickets', g.x, N * TILE - 1);
+    S.stats.guestsTotal++; S.stats.guestsToday = (S.stats.guestsToday || 0) + 1;
     if (!RT.groupLead.has(group)) RT.groupLead.set(group, g.id);
     bus.emit('guestAdded', g);
     return g;
@@ -1307,7 +1395,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function releaseGuest(g) {
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
-    if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
+    if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.bid = 0; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
   }
   function removeGuest(g) {
     releaseGuest(g);
@@ -1316,12 +1404,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (RT.groupLead.get(g.group) === g.id) RT.groupLead.delete(g.group);
     RT.ghEMA += (g.happiness - RT.ghEMA) * 0.06;
     S.reputation += (g.happiness - S.reputation) * 0.03;
+    S.stats.guestsLeft = (S.stats.guestsLeft || 0) + 1;
     bus.emit('guestRemoved', g);
   }
   function startLeaving(g) {
     if (g.state === 'leave') return;
     releaseGuest(g);
-    g.state = 'leave'; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
+    g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
     g.thoughtT = 0; g.tcool = 0; say(g, 'leaving');
   }
 
@@ -1331,7 +1420,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function pickBunker(g, an) {
-    var best = null, bd = 25;
+    var best = null, bd = 21;
     var bunkers = RT.bunkers || [];
     for (var k = 0; k < bunkers.length; k++) {
       var o = bunkers[k], f = getField('b' + o.id);
@@ -1364,83 +1453,237 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function pickBuilding(g, list, kind) {
-    var best = null, bs = 1e9, k;
+    var best = null, bs = 1e9, k, rejected = 0, cand = 0, tolE = g.tol * clamp(WX.spend, 0.5, 1.6);
     for (k = 0; k < list.length; k++) {
       var o = list[k], def = BD[o.type];
+      if (kind === 'cover') { if (!gxIndoor(o)) continue; }
+      else if (gxKind(o) !== kind) continue;
+      if (kind === 'act' && g.seenB[o.id]) continue;
       var price = o.price === undefined ? def.price : o.price;
-      if (price > g.money) continue;
+      if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
       var f = getField('b' + o.id);
       if (!f || !(f[g.ti] < INF)) continue;
+      cand++;
+      if (price > 0 && (price > g.money * 0.7 || (def.price > 0 && price > def.price * tolE))) { rejected++; continue; }
       var q = RT.bq[o.id], ql = q ? q.q.length : 0;
-      if (ql >= def.capacity * 2) continue;
-      var sc = f[g.ti] + ql * 3 + (price > def.price * 1.5 ? 20 : 0);
+      var cap = Math.max(5, Math.ceil(def.capacity * 1.5) + 2);
+      if (ql >= cap) continue;
+      var sc = f[g.ti] * 1.6 + rng.next() * 12 + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 6 : 0);
       if (sc < bs) { bs = sc; best = o; }
     }
-    if (!best) return false;
-    g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0;
+    if (!best) {
+      if (cand > 0 && rejected === cand && kind !== 'cover') {
+        say(g, 'expensive'); g.mood -= 1.5;
+        if (g.al[kind] !== undefined) g.al[kind] = 0;
+      }
+      g.nbuy = gxHr() * 0.35;
+      return false;
+    }
+    g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = kind;
     return true;
   }
 
-  function pickExhibit(g) {
-    var encs = S.enclosures; if (!encs.length) return false;
-    var best = null, bs = 1e9, k;
-    for (k = 0; k < encs.length; k++) {
-      var e = encs[k]; if (!e.animals.length || !e.viewTiles.length) continue;
-      var f = getField('e' + e.id); if (!f || !(f[g.ti] < INF)) continue;
-      var seen = g.seen[e.id] || 0;
-      var sc = f[g.ti] * 0.7 + seen * 12 + rng.next() * 5;
-      if (sc < bs) { bs = sc; best = e; }
+  function gxEncDist(e, t) {
+    var c = RT.gvd[e.id];
+    if (!c || c.pv !== RT.pathVer || c.nt !== e.tiles.length) c = RT.gvd[e.id] = { pv: RT.pathVer, nt: e.tiles.length, m: {} };
+    var d = c.m[t];
+    if (d === undefined) {
+      var ti = t % N, tj = (t - ti) / N; d = 99;
+      for (var k = 0; k < e.tiles.length; k++) { var u = e.tiles[k], ui = u % N, uj = (u - ui) / N, m = Math.abs(ui - ti) + Math.abs(uj - tj); if (m < d) d = m; }
+      c.m[t] = d;
     }
-    if (!best) return false;
-    g.gt = 'enc'; g.gid = best.id; g.dk = 'e' + best.id; g.ni = -1; g.wt = 0;
+    return d;
+  }
+  function gxPickSpot(g, e) {
+    var vt = e.viewTiles, best = -1, bs = 1e9, gi = g.ti % N, gj = (g.ti - gi) / N, k;
+    for (k = 0; k < vt.length; k++) {
+      var t = vt[k]; if (!canGuestReach(g.ti, t)) continue;
+      var ti = t % N, tj = (t - ti) / N, occ = RT.gstand[t] + RT.gtarg[t], cap = 2;
+      var sc = (Math.abs(ti - gi) + Math.abs(tj - gj)) * 0.45 + gxEncDist(e, t) * 2.2 + occ * 4 + rng.next() * 3.5 + (occ >= cap ? 60 : 0);
+      if (g.lastSpot === t) sc += 5;
+      if (sc < bs) { bs = sc; best = t; }
+    }
+    return best;
+  }
+  function gxGoExhibit(g, e) {
+    var t = gxPickSpot(g, e);
+    if (t < 0) return false;
+    var f = getField('t' + t);
+    if (!f || !(f[g.ti] < INF)) return false;
+    g.gt = 'enc'; g.gid = e.id; g.dk = 't' + t; g.spot = t; g.ni = -1; g.gAge = 0; RT.gtarg[t]++;
     return true;
+  }
+  function pickExhibit(g) {
+    var encs = S.enclosures, tot = 0, k, w = RT.wbuf || (RT.wbuf = []), load = RT.gload;
+    var lead = RT.groupLead.get(g.group);
+    if (lead && lead !== g.id) {
+      var lg = RT.gById.get(lead);
+      if (lg && lg.gt === 'enc' && lg.gid !== g.last && !g.seenEnc[lg.gid] && rng.chance(0.45)) {
+        var le = encById(lg.gid); if (le && gxGoExhibit(g, le)) return true;
+      }
+    }
+    var gc = RT.comp[g.ti], reachMap = null;
+    if (gc) { reachMap = {}; reachMap[gc] = true; }
+    for (k = 0; k < encs.length; k++) {
+      var e = encs[k], E = RT.encx[e.id], wt = 0;
+      var okR = false;
+      if (E && E.nAn > 0 && e.viewTiles.length && reachMap) {
+        for (var vi = 0; vi < e.viewTiles.length; vi++) if (reachMap[RT.comp[e.viewTiles[vi]]]) { okR = true; break; }
+      }
+      if (okR) {
+        wt = (8 + E.appeal) * (0.2 + 0.8 * e.see);
+        var newSp = 0; for (var s = 0; s < e.species.length; s++) if (!g.seen[e.species[s]]) newSp++;
+        wt *= g.seenEnc[e.id] ? 0.1 : 5 + newSp * 0.5;
+        var dx = e.cx - g.x, dz = e.cz - g.z; wt /= 1 + Math.sqrt(dx * dx + dz * dz) / 30;
+        wt /= 1 + (load[e.id] || 0) / 5;
+        if (e.id === g.last) wt *= 0.05;
+        if (E.vis === 0) wt *= 0.3;
+      }
+      w[k] = wt; tot += wt;
+    }
+    if (tot <= 0) return false;
+    for (var tries = 0; tries < 4; tries++) {
+      var r = rng.next() * tot, acc = 0, pick = -1;
+      for (k = 0; k < encs.length; k++) { acc += w[k]; if (r <= acc && w[k] > 0) { pick = k; break; } }
+      if (pick < 0) return false;
+      if (gxGoExhibit(g, encs[pick])) return true;
+      tot -= w[pick]; w[pick] = 0; if (tot <= 0) break;
+    }
+    return false;
+  }
+
+  function gxAes() {
+    var A = RT.gaes, k, o, sd, fp, ci, cj, di, dj, x, y;
+    A.fill(0);
+    for (k = 0; k < S.objects.length; k++) {
+      o = S.objects[k]; if (o.kind !== 'scenery') continue;
+      sd = SC[o.type]; if (!sd || !sd.aesthetic) continue;
+      fp = objFootprint(o); ci = fp.i0 + (fp.w - 1) / 2; cj = fp.j0 + (fp.h - 1) / 2;
+      for (dj = -3; dj <= 3; dj++) for (di = -3; di <= 3; di++) {
+        x = Math.round(ci) + di; y = Math.round(cj) + dj;
+        if (x < 0 || y < 0 || x >= N || y >= N || !S.path[x + y * N]) continue;
+        A[x + y * N] += sd.aesthetic / (1 + Math.abs(di) + Math.abs(dj));
+      }
+    }
+  }
+  function gxLandmarks() {
+    var pt = RT.pathTiles, lm = RT.glm = [], k, n = Math.min(60, pt.length), cands = [];
+    RT.glmPv = RT.pathVer;
+    for (k = 0; k < n; k++) { var t = pt[Math.floor(rng.next() * pt.length)]; if (!isParkConnected(t)) continue; cands.push({ t: t, s: RT.gaes[t] + rng.next() * 4 }); }
+    cands.sort(function (a, b) { return b.s - a.s; });
+    for (k = 0; k < cands.length && lm.length < 14; k++) {
+      var ti = cands[k].t % N, tj = (cands[k].t - ti) / N, ok = true;
+      for (var j = 0; j < lm.length; j++) { var li = lm[j] % N, lj = (lm[j] - li) / N; if (Math.abs(li - ti) + Math.abs(lj - tj) < 5) { ok = false; break; } }
+      if (ok) lm.push(cands[k].t);
+    }
+  }
+  function gxStroll(g) {
+    if (RT.glmPv !== RT.pathVer) { if (!RT.gaesInit) { gxAes(); RT.gaesInit = 1; } gxLandmarks(); }
+    var lm = RT.glm, gi = g.ti % N, gj = (g.ti - gi) / N;
+    for (var tries = 0; tries < 5 && lm.length; tries++) {
+      var t = lm[Math.floor(rng.next() * lm.length)]; if (t === g.lm) continue;
+      var ti = t % N, tj = (t - ti) / N; if (Math.abs(ti - gi) + Math.abs(tj - gj) < 5) continue;
+      var f = getField('t' + t); if (!f || !(f[g.ti] < INF)) continue;
+      g.gt = 'stroll'; g.dk = 't' + t; g.lm = t; g.ni = -1; g.gAge = 0; return true;
+    }
+    return false;
   }
 
   function chooseGoal(g) {
-    if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; return; }
-    var bt = RT.byType;
-    if (g.hunger > 60 && bt.food.length && pickBuilding(g, bt.food, 'food')) return;
-    if (g.thirst > 60 && bt.drink.length && pickBuilding(g, bt.drink, 'drink')) return;
-    if (g.bladder > 70 && bt.toilet.length && pickBuilding(g, bt.toilet, 'toilet')) return;
-    if (g.energy < 30 && bt.bench.length) {
-      var fb = getField('bench');
-      if (fb && fb[g.ti] < 15) { g.gt = 'bench'; g.dk = 'bench'; g.ni = -1; return; }
+    var bt = RT.byType, hr = gxHr(), al = g.al;
+    g.gAge = 0;
+    if (g.bladder > 68) { if (pickBuilding(g, bt.toilet, 'toilet')) return; if (g.bladder > 90) say(g, 'toilet'); }
+    if (WX.thirst > 1.25 && g.thirst > 75 && al.drink <= 0 && !g.hot && g.money > 5) { g.hot = 1; al.drink = 1; }
+    if (g.nbuy <= 0) {
+      if (g.thirst > 40 && al.drink > 0) { if (pickBuilding(g, bt.drink, 'drink')) return; if (g.thirst > 80) say(g, 'thirsty'); }
+      if (g.hunger > 42 && al.meal > 0) { if (pickBuilding(g, bt.food, 'meal')) return; if (g.hunger > 80) say(g, 'hungry'); }
     }
-    if (g.fun < 50 && bt.fun.length && rng.chance(0.5) && pickBuilding(g, bt.fun, 'fun')) return;
-    if (pickExhibit(g)) return;
-    // fallback wander
-    g.gt = 'wander'; g.dk = ''; g.ni = -1; g.wt = rng.range(2, 6);
+    if (g.energy < g.tiredAt && g.nbt <= 0) {
+      var f = getField('bench');
+      if (f && f[g.ti] < INF) { g.gt = 'bench'; g.dk = 'bench'; g.ni = -1; return; }
+      g.nbt = 25; say(g, 'noBench');
+    }
+    if (g.lit) {
+      var fb = getField('bin');
+      if (fb && fb[g.ti] < 10) { g.gt = 'bin'; g.dk = 'bin'; g.ni = -1; return; }
+      if (rng.chance(0.5)) { S.dirt[g.ti] = Math.min(255, S.dirt[g.ti] + Math.round(40 * (WX.dirt || 1))); g.lit = false; }
+    }
+    if (WX.shelter && !g.cov) { g.cov = 1; if (rng.chance(0.5) && pickBuilding(g, bt.food.concat(bt.fun), 'cover')) return; }
+    if (g.nbuy <= 0) {
+      if (al.shop > 0 && (g.done || g.stay < 1.4 * hr || rng.chance(0.06)) && pickBuilding(g, bt.fun, 'shop')) return;
+      if (al.treat > 0 && g.happiness > 55 && rng.chance(0.12) && pickBuilding(g, bt.food, 'treat')) return;
+      if ((al.act > 0 || rng.chance(0.1)) && rng.chance(0.3) && pickBuilding(g, bt.fun, 'act')) return;
+    }
+    if (g.strollNext) { g.strollNext = 0; if (gxStroll(g)) return; }
+    if (!g.done && pickExhibit(g)) return;
+    if (g.fun < 40) say(g, 'bored');
+    if (rng.chance(0.6) && gxStroll(g)) return;
+    g.gt = 'wander'; g.dk = ''; g.wt = rng.int(5, 12); g.ni = -1;
+  }
+
+  function gxPlace(g, own) {
+    var t = g.ti, best = t, bc = RT.gstand[t], nbm = RT.nb[t], d;
+    if (!own && bc >= 2) {
+      for (d = 0; d < 4; d++) if (nbm & (1 << d)) { var n = t + DT4[d]; if (RT.gstand[n] < bc) { bc = RT.gstand[n]; best = n; } }
+    }
+    var s = RT.gstand[best]++, ring = s >> 2, off = [[-0.5, -0.5], [0.5, 0.5], [0.5, -0.5], [-0.5, 0.5]][s & 3], sc = ring > 0 ? 0.55 : 1;
+    g.sx = clamp(cxOf(best) + off[0] * sc + rng.range(-0.2, 0.2), cxOf(best) - 0.85, cxOf(best) + 0.85);
+    g.sz = clamp(czOf(best) + off[1] * sc + rng.range(-0.2, 0.2), czOf(best) - 0.85, czOf(best) + 0.85);
+    g.glide = 1; g.ti = best; g.ni = -1;
+  }
+  function gxFaceEnc(g, e) {
+    var best = 1e9, bx = e.cx, bz = e.cz;
+    for (var k = 0; k < e.tiles.length; k++) {
+      var t = e.tiles[k], dx = cxOf(t) - g.x, dz = czOf(t) - g.z, d = dx * dx + dz * dz;
+      if (d < best) { best = d; bx = cxOf(t); bz = czOf(t); }
+    }
+    g.hd = Math.atan2(bx - g.x, bz - g.z);
   }
 
   function startUse(g, o) {
-    var def = BD[o.type], q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] });
-    q.use++; g.state = 'use'; g.ubid = o.id; g.wt = def.type === 'ride' ? 10 : def.type === 'food' ? 6 : 4; g.speed = 0;
-    var price = o.price === undefined ? def.price : o.price;
-    if (price > 0 && g.money >= price) {
-      g.money -= price; earn(price, def.type === 'food' || def.type === 'drink' ? 'food' : 'shops', g.x, g.z);
-      o.uses = (o.uses || 0) + 1; o.income = (o.income || 0) + price;
-      if (price > def.price * 1.35) { g.mood -= 2; say(g, 'expensive'); }
-      else if (price < def.price * 0.8) say(g, 'cheap');
+    var def = BD[o.type], price = o.price === undefined ? def.price : o.price, kind = gxKind(o), hr = gxHr();
+    var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] });
+    if (price > 0) {
+      var tolE = g.tol * clamp(WX.spend, 0.5, 1.6);
+      if (g.money < price || (def.price > 0 && price > def.price * tolE)) {
+        g.gt = ''; g.dk = ''; g.state = 'walk'; g.glide = 0; g.ni = -1; say(g, 'expensive'); g.mood -= 1.5; g.nbuy = hr * 0.35;
+        if (g.al[kind] !== undefined) g.al[kind] = 0;
+        return;
+      }
+      if (def.price > 0 && price < def.price * 0.6) say(g, 'cheap');
+      g.money -= price; g.spent += price; g.nbuy = hr * 0.7;
+      if (g.al[kind] > 0) g.al[kind]--;
+      var cat = (def.type === 'food' || def.type === 'drink') ? 'food' : (def.type === 'toilet' ? 'other' : 'shops');
+      earn(price, cat, g.x, g.z); o.income = (o.income || 0) + price;
     }
-    if (def.satisfies) {
-      if (def.satisfies.hunger) g.hunger = Math.max(0, g.hunger - def.satisfies.hunger * 100);
-      if (def.satisfies.thirst) g.thirst = Math.max(0, g.thirst - def.satisfies.thirst * 100);
-      if (def.satisfies.bladder) g.bladder = Math.max(0, g.bladder - def.satisfies.bladder * 100);
-      if (def.satisfies.fun) g.fun = Math.min(100, g.fun + def.satisfies.fun * 60);
-      if (def.satisfies.energy) g.energy = Math.min(100, g.energy + def.satisfies.energy * 60);
-    }
-    if (def.type === 'food' || def.type === 'drink') g.lit = true;
+    q.use++; g.state = 'use'; g.ubid = o.id; g.speed = 0; g.seenB[o.id] = 1;
+    g.wt = def.type === 'ride' ? 9 : def.type === 'food' ? (kind === 'treat' ? 3 : 6) : def.type === 'toilet' ? 4 : def.type === 'drink' ? 3 : 4;
+    if (g.pk === 'cover' && WX.shelter) g.wt = clamp(hr * 0.6, 8, 16);
+    var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
   }
   function finishUse(g) {
-    releaseGuest(g);
-    g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1;
+    var o = RT.oById.get(g.ubid), q = RT.bq[g.ubid];
+    if (q && q.use > 0) q.use--; g.ubid = 0;
+    g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1; g.glide = 0;
+    if (!o) return;
+    var def = BD[o.type], s = def.satisfies || {};
+    if (s.hunger) g.hunger = Math.max(0, g.hunger - s.hunger * 100);
+    if (s.thirst) g.thirst = Math.max(0, g.thirst - s.thirst * 100);
+    if (s.bladder) g.bladder = Math.max(0, g.bladder - s.bladder * 100);
+    if (s.energy) g.energy = Math.min(100, g.energy + s.energy * 100);
+    if (s.fun) { g.fun = Math.min(100, g.fun + s.fun * 100); g.mood += s.fun * 8; }
+    if (def.type === 'ride') g.mood += 3;
+    if (def.type === 'food' || def.type === 'drink') { g.mood += 1; if (rng.chance(0.6)) g.lit = true; }
+    o.uses = (o.uses || 0) + 1;
+    if (def.type === 'info' && RT.hasEdu) g.mood += 2;
+    if (rng.chance(0.2)) say(g, 'happy');
   }
 
   function arriveAtGoal(g) {
     if (g.state === 'flee') {
       if (g.gt === 'bunker') {
         var bo = RT.oById.get(g.gid);
-        if (bo) { g.state = 'use'; g.shel = 1; g.ubid = 0; g.gt = ''; g.dk = ''; g.wt = 6; g.speed = 0; var bc = objCentre(bo); g.hd = Math.atan2(bc.x - g.x, bc.z - g.z); g.ni = -1; }
+        if (bo) { g.state = 'use'; g.shel = 1; g.ubid = 0; g.gt = ''; g.dk = ''; g.wt = 6; g.speed = 0; var bc = objCentre(bo); g.hd = Math.atan2(bc.x - g.x, bc.z - g.z); g.ni = -1; gxPlace(g, false); }
         else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
       }
       return;
@@ -1449,63 +1692,73 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (gt === 'bld') {
       var o = RT.oById.get(g.gid); if (!o) { g.gt = ''; return; }
       var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] }), def = BD[o.type];
-      if (q.use < def.capacity && q.q.length === 0) startUse(g, o);
-      else { g.state = 'queue'; q.q.push(g.id); g.speed = 0; }
+      var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
+      if (q.use < def.capacity && q.q.length === 0) { gxPlace(g, false); startUse(g, o); }
+      else if (q.q.length >= Math.max(5, Math.ceil(def.capacity * 1.5) + 2)) { g.gt = ''; g.dk = ''; say(g, 'crowded'); g.mood -= 1; g.nbuy = gxHr() * 0.2; }
+      else { g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; gxPlace(g, false); }
     } else if (gt === 'enc') {
       var e = encById(g.gid);
-      if (e && e.animals.length) {
-        g.state = 'watch'; g.wt = rng.range(6, 14); g.speed = 0; g.seen[e.id] = (g.seen[e.id] || 0) + 1;
-        var app = 0, hpp = 0;
-        for (var k = 0; k < e.animals.length; k++) {
-          var a = RT.aById.get(e.animals[k]); if (a) { app += SP[a.species].appeal * (a.baby ? 1.5 : 1); hpp += a.happiness; }
-        }
-        var avgH = e.animals.length ? hpp / e.animals.length : 50;
-        var see = e.see;
-        g.fun = Math.min(100, g.fun + app * 0.12 * see);
-        g.mood += (avgH > 65 ? 2 : avgH < 40 ? -3 : 0);
-        if (avgH < 40) say(g, 'animalsUnhappy', e.species[0]);
-        else if (see < 0.3) say(g, 'cantSee');
-        else if (app > 80 && rng.chance(0.3)) say(g, 'greatExhibit');
-        // donations
-        if (g.money >= 5 && avgH > 70 && rng.chance(0.25)) {
-          var don = Math.min(g.money, Math.round(rng.range(2, 6)));
-          g.money -= don; earn(don, 'donations', g.x, g.z); S.stats.donations = (S.stats.donations || 0) + don;
-        }
-      } else { g.gt = ''; }
+      if (!e || !e.animals.length) { g.gt = ''; return; }
+      var hr = gxHr();
+      g.state = 'watch'; g.wt = clamp(hr * rng.range(0.25, 0.45), 4, 8) + rng.range(0, 2.5); g.speed = 0; g.wat = 0; g.lastSpot = g.spot;
+      gxPlace(g, true);
+      gxFaceEnc(g, e);
     } else if (gt === 'bench') {
-      var list = RT.byType.bench, found = null;
-      for (var b = 0; b < list.length; b++) {
-        var bn = list[b];
-        if (Math.abs(bn.i - (g.ti % N)) + Math.abs(bn.j - Math.floor(g.ti / N)) === 1) {
-          if ((RT.benchOcc[bn.id] || 0) < 2) { found = bn; break; }
-        }
+      var found = null, benches = RT.byType.bench;
+      for (var b = 0; b < benches.length; b++) {
+        var bo2 = benches[b], bx2 = bo2.i, bz2 = bo2.j, ti = g.ti % N, tj = (g.ti - ti) / N;
+        if (Math.abs(bx2 - ti) + Math.abs(bz2 - tj) === 1 && (RT.benchOcc[bo2.id] || 0) < 2) { found = bo2; break; }
       }
-      if (found) {
-        RT.benchOcc[found.id] = (RT.benchOcc[found.id] || 0) + 1;
-        g.state = 'sit'; g.bid = found.id; g.wt = rng.range(15, 30); g.speed = 0;
-      } else { g.gt = ''; g.nbt = 20; say(g, 'noBench'); }
+      if (!found) { g.gt = ''; g.nbt = 20; say(g, 'noBench'); return; }
+      RT.benchOcc[found.id] = (RT.benchOcc[found.id] || 0) + 1;
+      g.bid = found.id; g.state = 'sit'; g.wt = clamp(gxHr() * 0.6, 8, 20); g.speed = 0; g.glide = 0;
+      var bcx = (found.i + 0.5) * TILE, bcz = (found.j + 0.5) * TILE, tcx = cxOf(g.ti), tcz = czOf(g.ti);
+      var dxx = bcx - tcx, dzz = bcz - tcz;
+      g.x = tcx + dxx * 0.55 + (-dzz) * 0.15 * (RT.benchOcc[found.id] === 1 ? -1 : 1);
+      g.z = tcz + dzz * 0.55 + dxx * 0.15 * (RT.benchOcc[found.id] === 1 ? 1 : -1);
+      g.hd = Math.atan2(-dxx, -dzz); g.heading = g.hd;
     } else if (gt === 'bin') {
-      var bins = RT.byType.bin;
-      for (var bi = 0; bi < bins.length; bi++) {
-        var bin = bins[bi];
-        if (Math.abs(bin.i - (g.ti % N)) + Math.abs(bin.j - Math.floor(g.ti / N)) === 1 && (bin.fill || 0) < 15) {
-          bin.fill = (bin.fill || 0) + 1; g.lit = false; g.mood += 1;
-          if (bin.fill >= 15) delete RT.fields.bin;
+      var bins = RT.byType.bin, tti = g.ti % N, ttj = (g.ti - tti) / N;
+      for (var bb = 0; bb < bins.length; bb++) {
+        var bn = bins[bb];
+        if (Math.abs(bn.i - tti) + Math.abs(bn.j - ttj) === 1 && (bn.fill || 0) < 15) {
+          bn.fill = (bn.fill || 0) + 1; g.lit = false; g.mood += 1;
+          if (bn.fill >= 15) delete RT.fields.bin;
           break;
         }
       }
-      if (g.lit) { S.dirt[g.ti] = Math.min(255, S.dirt[g.ti] + Math.round(40 * WX.dirt)); g.lit = false; }
+      if (g.lit) { S.dirt[g.ti] = Math.min(255, S.dirt[g.ti] + Math.round(40 * (WX.dirt || 1))); g.lit = false; }
       g.gt = '';
+    } else if (gt === 'stroll') {
+      g.mood += 0.6 + 2 * g.prettyE; g.gt = ''; g.dk = '';
     } else if (gt === 'exit') {
       g.gt = 'out'; g.dk = ''; g.px = g.x + rng.range(-0.5, 0.5); g.pz = N * TILE + 3; g.ni = -2;
     } else g.gt = '';
+    g.dk = (g.state === 'walk' && !g.gt) ? '' : g.dk;
+  }
+
+  function gxSep(g, dt) {
+    var t = tileOf(g.x, g.z), i = RT.ghead[t], px = 0, pz = 0, n = 0, gs = S.guests;
+    for (; i >= 0; i = RT.gnext[i]) {
+      var o = gs[i]; if (!o || o === g) continue;
+      var dx = g.x - o.x, dz = g.z - o.z, d2 = dx * dx + dz * dz;
+      if (d2 < 0.5) {
+        var d = Math.sqrt(d2);
+        if (d < 0.03) { dx = rng.range(-1, 1); dz = rng.range(-1, 1); d = 1; }
+        px += dx / d * (0.7 - d); pz += dz / d * (0.7 - d); if (++n > 5) break;
+      }
+    }
+    if (!n) return;
+    var nx = g.x + px * dt * 1.6, nz = g.z + pz * dt * 1.6, cx = cxOf(t), cz = czOf(t);
+    if (nx < cx - 0.9 || nx > cx + 0.9 || nz < cz - 0.9 || nz > cz + 0.9) return;
+    g.x = nx; g.z = nz;
   }
 
   function guestMove(g, dt) {
-    var spd = g.bs, m = 1;
+    var spd = g.bs * (WX.guestSpeed || 1) * (g.state === 'leave' ? 1.12 : 1);
     if (g.ni < 0 && g.gt !== 'out') {
-      var ti = g.ti, nb = RT.nb[ti], best = -1, d;
-      if (g.state === 'flee') {
+      var ti = g.ti, nb = RT.nb[ti], best = -1, d, occ = RT.gocc;
+      if (g.state === 'flee' && g.gt !== 'bunker') {
         var bd2 = -1; spd *= 1.9;
         for (d = 0; d < 4; d++) if (nb & (1 << d)) {
           var n = ti + DT4[d], dx = cxOf(n) - g.fx, dz = czOf(n) - g.fz, dd = dx * dx + dz * dz + rng.next() * 4;
@@ -1513,31 +1766,49 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         }
       } else if (g.dk) {
         var f = getField(g.dk);
-        if (!f) { g.gt = ''; g.dk = ''; g.speed = 0; return 0; }
+        if (g.state === 'flee') spd *= 1.9;
+        if (!f) { if (g.state !== 'leave') { g.gt = ''; g.dk = ''; } g.speed = 0; if (g.state === 'flee') g.state = 'walk'; return 0; }
         var d0 = f[ti];
         if (d0 === 0) { g.speed = 0; return 1; }
-        if (d0 === INF) { g.gt = ''; g.dk = ''; g.speed = 0; g.unr++; return 0; }
-        var bdv = d0;
-        for (d = 0; d < 4; d++) if (nb & (1 << d)) { var n2 = ti + DT4[d]; if (f[n2] < bdv) { bdv = f[n2]; best = n2; } }
+        if (d0 === INF) { if (g.state !== 'leave') { g.gt = ''; g.dk = ''; } g.speed = 0; g.unr++; return 0; }
+        var bsc = 1e9;
+        for (d = 0; d < 4; d++) if (nb & (1 << d)) {
+          var n2 = ti + DT4[d]; if (f[n2] >= d0) continue;
+          var sc = occ[n2] * 1.4 + rng.next() * 2.2; if (sc < bsc) { bsc = sc; best = n2; }
+        }
+        if (best >= 0 && occ[best] >= 5 && g.state === 'walk') {
+          var alt = -1, ao = occ[best];
+          for (d = 0; d < 4; d++) if (nb & (1 << d)) { var n5 = ti + DT4[d]; if (f[n5] <= d0 && n5 !== g.prevT && occ[n5] < ao && occ[n5] < 5) { alt = n5; ao = occ[n5]; } }
+          if (alt >= 0) best = alt;
+          else if ((g.hold = (g.hold || 0) + dt) < 3) { g.speed = 0; return 0; }
+        }
+        if (g.sc > 0) g.sc--;
+        else if (occ[ti] >= 3 && g.state !== 'flee') {
+          for (d = 0; d < 4; d++) if (nb & (1 << d)) {
+            var n4 = ti + DT4[d];
+            if (f[n4] === d0 && n4 !== g.prevT && occ[n4] + 2 <= occ[ti] && occ[n4] < occ[best < 0 ? ti : best]) { best = n4; g.sc = 2; break; }
+          }
+        }
       } else {
-        var cnt = 0, cand = -1;
+        var cand = -1, tw = 0, A = RT.gaes;
         for (d = 0; d < 4; d++) if (nb & (1 << d)) {
           var n3 = ti + DT4[d]; if (n3 === g.prevT && (nb & (nb - 1))) continue;
-          cnt++; if (rng.next() * cnt < 1) cand = n3;
+          var w3 = 1 + (A ? A[n3] * 0.25 : 0) + 1 / (1 + occ[n3]); tw += w3; if (rng.next() * tw < w3) cand = n3;
         }
         if (cand < 0) for (d = 0; d < 4; d++) if (nb & (1 << d)) cand = ti + DT4[d];
         best = cand;
         if (--g.wt <= 0) { g.gt = ''; g.speed = 0; return 1; }
       }
-      if (best < 0) { g.speed = 0; if (g.state === 'flee') return 0; g.gt = ''; g.dk = ''; return 0; }
-      g.ni = best; g.prevT = ti;
+      if (best < 0) { g.speed = 0; if (g.state === 'flee') return 0; if (g.state !== 'leave') { g.gt = ''; g.dk = ''; } return 0; }
+      g.ni = best; g.prevT = ti; g.hold = 0;
       var ddx = best - ti, sx = 0, sz = 0;
       if (ddx === 1) sx = 1; else if (ddx === -1) sx = -1; else if (ddx === N) sz = 1; else sz = -1;
+      g.lo = clamp(g.lo + rng.range(-0.35, 0.35), -0.8, 0.8); g.lo2 = clamp(g.lo2 + rng.range(-0.4, 0.4), -0.7, 0.7);
       g.px = cxOf(best) + (-sz) * g.lo + sx * g.lo2 * 0.6;
       g.pz = czOf(best) + sx * g.lo + sz * g.lo2 * 0.6;
     } else if (g.state === 'flee') spd *= 1.9;
     var pm = g.ti >= 0 && S.path[g.ti] ? D.paths[S.path[g.ti] - 1].speed : 1;
-    spd *= pm * (WX.guestSpeed || 1);
+    spd *= pm;
     var dx2 = g.px - g.x, dz2 = g.pz - g.z, dist = Math.sqrt(dx2 * dx2 + dz2 * dz2), step = spd * dt;
     if (dist <= step + 0.01) {
       g.x = g.px; g.z = g.pz;
@@ -1547,153 +1818,230 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     g.x += dx2 / dist * step; g.z += dz2 / dist * step; g.speed = spd;
     g.heading = turn(g.heading, Math.atan2(dx2, dz2), dt * 10);
+    if (g.gt !== 'out' && g.state !== 'flee') gxSep(g, dt);
     return 0;
   }
 
   function revalidateGuest(g) {
-    if (g.pv === RT.pathVer) return;
     g.pv = RT.pathVer;
-    if (!S.path[g.ti]) {
-      var nbs = [g.ti - 1, g.ti + 1, g.ti - N, g.ti + N], cand = -1;
-      for (var k = 0; k < 4; k++) if (S.path[nbs[k]]) { cand = nbs[k]; break; }
-      if (cand >= 0) { g.ti = cand; g.x = cxOf(cand); g.z = czOf(cand); g.ni = -1; }
+    var t = tileOf(g.x, g.z);
+    if (g.gt === 'out' || g.state === 'sit') return;
+    if (S.path[t]) { if (g.ti !== t && g.ni < 0) g.ti = t; if (g.ni >= 0 && !S.path[g.ni]) g.ni = -1; if (!S.path[g.ti]) g.ti = t; g.ni = g.ni >= 0 && S.path[g.ni] ? g.ni : -1; return; }
+    var i = t % N, j = (t - i) / N, best = -1, bd = 1e9;
+    for (var r = 1; r <= 8 && best < 0; r++) {
+      for (var dj = -r; dj <= r; dj++) for (var di = -r; di <= r; di++) {
+        var x = i + di, y = j + dj; if (!Z.inb(x, y) || !S.path[x + y * N]) continue;
+        var d = di * di + dj * dj; if (d < bd) { bd = d; best = x + y * N; }
+      }
     }
-    g.ni = -1;
+    if (best < 0) { removeGuest(g); return false; }
+    releaseGuest(g);
+    g.x = cxOf(best); g.z = czOf(best); g.ti = best; g.ni = -1; g.glide = 0; g.state = g.state === 'leave' ? 'leave' : 'walk'; if (g.state !== 'leave') { g.gt = ''; g.dk = ''; }
   }
 
   function guestThink(g, a) {
-    var k;
-    g.hunger = Math.min(100, g.hunger + 1.05 * a * WX.hunger);
-    g.thirst = Math.min(100, g.thirst + 1.35 * a * WX.thirst);
-    g.bladder = Math.min(100, g.bladder + 0.95 * a);
-    if (g.state !== 'sit') g.energy = Math.max(0, g.energy - 0.85 * a * WX.energy);
-    g.fun = Math.max(0, g.fun - 0.8 * a + WX.fun * a * 10);
-    g.stay -= a; g.thoughtT -= a; g.tcool -= a; g.nbt -= a;
+    var k, hr = gxHr(), ah = a / hr, st0 = g.state, still = st0 === 'watch' || st0 === 'queue' || st0 === 'use';
+    if (!g.al) gxPlan(g, hr, 0);
+    g.hunger = Math.min(100, g.hunger + 7.5 * WX.hunger * ah);
+    g.thirst = Math.min(100, g.thirst + 10.5 * WX.thirst * ah);
+    g.bladder = Math.min(100, g.bladder + 10 * ah);
+    if (st0 !== 'sit') g.energy = Math.max(0, g.energy - (still ? 5 : 9) * WX.energy * ah);
+    g.fun = Math.max(0, g.fun - 6 * ah);
+    g.stay -= a; g.thoughtT -= a; g.tcool -= a; g.nbt -= a; g.nbuy -= a;
     if (g.thoughtT <= 0 && g.thought) g.thought = '';
-    g.mood -= g.mood * 0.02 * a;
-    // tile dirt
+    g.mood -= g.mood * Math.min(0.5, 0.25 * ah); if (g.mood > 35) g.mood = 35; else if (g.mood < -40) g.mood = -40;
     if (S.dirt[g.ti] > 110 && rng.chance(0.15)) { say(g, 'dirty'); g.mood -= 1.5; }
     if (g.state === 'walk' && S.dirt[g.ti] > 200) g.mood -= 0.5 * a;
-    // happiness
-    var pen = 0;
-    if (g.hunger > 60) pen += (g.hunger - 60) * 0.7;
-    if (g.thirst > 60) pen += (g.thirst - 60) * 0.7;
+    var pretty = Math.min(1, RT.gaes[g.ti] / 4) * (1 - Math.min(1, S.dirt[g.ti] / 160));
+    g.prettyE += (pretty - g.prettyE) * Math.min(1, a * 0.12);
+    var vc = gxViewCount(g), frac = vc ? g.nSeen / vc : 0, pen = 0, al = g.al;
+    if (g.hunger > 60) pen += (g.hunger - 60) * (al.meal > 0 ? 0.6 : 0.3);
+    if (g.thirst > 60) pen += (g.thirst - 60) * (al.drink > 0 ? 0.6 : 0.3);
     if (g.bladder > 60) pen += (g.bladder - 60) * 0.6;
-    if (g.energy < 35) pen += (35 - g.energy) * 0.7;
-    if (g.fun < 30) pen += (30 - g.fun) * 0.4;
-    var target = 72 + g.mood - pen + WX.fun * 10;
-    // guides nearby
+    if (g.energy < 35) pen += (35 - g.energy) * 0.6;
+    if (g.fun < 30) pen += (30 - g.fun) * 0.35;
+    var target = 44 + 22 * frac + 9 * g.prettyE + Math.min(6, (g.nsp || 0) * 1.2) + g.mood - pen;
     for (k = 0; k < RT.guides.length; k++) {
       var gd = RT.guides[k], dx = gd.x - g.x, dz = gd.z - g.z;
       if (dx * dx + dz * dz < 144) { target += 8; g.fun = Math.min(100, g.fun + 1 * a); break; }
     }
     if (RT.guestCrowd > 1.1) target -= (RT.guestCrowd - 1.1) * 6;
     g.happiness += (clamp(target, 0, 100) - g.happiness) * Math.min(1, 0.35 * a);
+    if (WX.fun) g.happiness += WX.fun * a;
     if (g.happiness > 100) g.happiness = 100; else if (g.happiness < 0) g.happiness = 0;
     if (g.happiness > 85 && rng.chance(0.03)) say(g, 'happy');
     if (g.energy < 20 && g.state !== 'sit') say(g, 'tired');
     if (RT.guestCrowd > 1.3 && rng.chance(0.02)) say(g, 'crowded');
-    // closing time / leaving
+    if (WX.shelter) {
+      if (!g.wxd) {
+        g.wxd = 1;
+        var cv = RT.byType.food.concat(RT.byType.fun), anyCover = false;
+        for (k = 0; k < cv.length; k++) if (gxIndoor(cv[k])) { anyCover = true; break; }
+        if (!anyCover || rng.chance(0.2)) g.stay = Math.min(g.stay, hr * rng.range(0.1, 0.7));
+      }
+    } else { g.wxd = 0; g.cov = 0; }
     if (g.state !== 'leave') {
       var leave = false;
       if (!S.open || S.time >= CLOSE_T - 0.004) leave = true;
-      else if (g.stay <= 0) leave = true;
-      else if (g.happiness < 10 && g.stay < 60) leave = true;
-      else if (S.time > CLOSE_T - 0.14) {
-        var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = 0;
-        if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01) leave = true;
+      else if (g.stay <= 0) {
+        if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
+        else leave = true;
+      } else {
+        if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, Math.max(hr * rng.range(0.35, 1.0), rng.range(6, 14))); }
+        if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
+        else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;
+        else if (g.energy < 6 && g.nbt > 0) leave = true;
+        else if (S.time > CLOSE_T - 0.14) {
+          var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = isParkConnected(g.ti) ? 35 : 0;
+          if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01 - (g.lj === undefined ? (g.lj = rng.range(0, 0.07)) : g.lj)) leave = true;
+        }
       }
       if (leave) { startLeaving(g); return; }
     } else {
       var fx = getField('exit');
-      if (fx && fx[g.ti] === INF) { g.isl += a; if (g.isl > 12) { removeGuest(g); return false; } }
+      if (!fx || fx[g.ti] === INF) { g.isl += a; if (g.isl > 12) { removeGuest(g); return false; } }
+      else { g.isl = 0; if (!g.gt) { g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; } }
+      gxWatchdog(g, a);
       return;
     }
     var fx2 = getField('exit');
-    if (!fx2 || fx2[g.ti] === INF) { g.isl += a; if (g.isl > 25) { removeGuest(g); return false; } } else g.isl = 0;
-
-    // bunker flee in lockdown
+    if (!isParkConnected(g.ti) && (!fx2 || fx2[g.ti] === INF)) { g.isl += a; if (g.isl > 25) { removeGuest(g); return false; } } else g.isl = 0;
+    if (g.state !== 'flee' && !g.shel && RT.escaped.length) {
+      for (k = 0; k < RT.escaped.length; k++) {
+        var an = RT.escaped[k], ad = aDanger(an);
+        var ex = an.x - g.x, ez = an.z - g.z, dd = ex * ex + ez * ez;
+        if (ad >= 2 && dd < 144 || ad === 1 && dd < 25) {
+          say(g, 'escaped', an.species);
+          if (ad >= 2) {
+            releaseGuest(g);
+            var bk = RT.bunkers.length ? pickBunker(g, an) : null;
+            g.state = 'flee'; g.glide = 0; g.fx = an.x; g.fz = an.z; g.ni = -1;
+            if (bk) { g.gt = 'bunker'; g.gid = bk.id; g.dk = 'b' + bk.id; g.fleeT = 25; g.mood -= 2; }
+            else { g.gt = ''; g.dk = ''; g.fleeT = 7; g.mood -= RT.secCount > 0 ? 6 : 12; g.happiness -= 6; }
+          }
+          break;
+        }
+      }
+    }
     if (RT.dangerEsc > 0 && !g.shel && g.state !== 'leave' && g.state !== 'flee' && RT.bunkers.length) {
       for (k = 0; k < RT.escaped.length; k++) {
         var an2 = RT.escaped[k]; if (aDanger(an2) < 2) continue;
         var ex2 = an2.x - g.x, ez2 = an2.z - g.z;
         if (ex2 * ex2 + ez2 * ez2 < 1600) {
           var bk2 = pickBunker(g, an2);
-          if (bk2) {
-            releaseGuest(g); g.state = 'flee'; g.gt = 'bunker'; g.gid = bk2.id; g.dk = 'b' + bk2.id; g.ni = -1; g.fleeT = 25; g.fx = an2.x; g.fz = an2.z;
-            break;
-          }
+          if (bk2) { releaseGuest(g); g.state = 'flee'; g.glide = 0; g.gt = 'bunker'; g.gid = bk2.id; g.dk = 'b' + bk2.id; g.ni = -1; g.fleeT = 25; g.fx = an2.x; g.fz = an2.z; }
+          break;
         }
       }
     }
-    // injuries from dangerous animals
     if (!g.shel && RT.escaped.length) {
       for (k = 0; k < RT.escaped.length; k++) {
         var an3 = RT.escaped[k], ad3 = aDanger(an3);
         if (ad3 < 2 || an3.hurtT > 0) continue;
         var ex3 = an3.x - g.x, ez3 = an3.z - g.z;
-        if (ex3 * ex3 + ez3 * ez3 < 7 && rng.chance(0.22 * ad3)) { hurtGuest(g, an3); return false; }
-      }
-    }
-    // escaped animals panic reaction
-    if (g.state !== 'flee' && !g.shel && RT.escaped.length) {
-      for (k = 0; k < RT.escaped.length; k++) {
-        var an = RT.escaped[k], asp = SP[an.species];
-        var ex = an.x - g.x, ez = an.z - g.z, dd = ex * ex + ez * ez;
-        if (asp.danger >= 2 && dd < 144 || asp.danger === 1 && dd < 25) {
-          say(g, 'escaped', an.species);
-          if (asp.danger >= 2) {
-            releaseGuest(g);
-            g.state = 'flee'; g.fleeT = 7; g.fx = an.x; g.fz = an.z; g.ni = -1; g.gt = ''; g.dk = '';
-            g.mood -= RT.secCount > 0 ? 6 : 12; g.happiness -= 6;
-          }
-          break;
-        }
+        if (ex3 * ex3 + ez3 * ez3 < 7 && rng.chance(0.22 * ad3)) { hurtGuest(g, an3); return; }
       }
     }
     if (g.state === 'flee') {
+      if (g.gt !== 'bunker') {
+        for (k = 0; k < RT.escaped.length; k++) {
+          var an4 = RT.escaped[k]; if (aDanger(an4) < 2) continue;
+          var ex4 = an4.x - g.x, ez4 = an4.z - g.z;
+          if (ex4 * ex4 + ez4 * ez4 < 324) { g.fx = an4.x; g.fz = an4.z; if (g.fleeT < 3) g.fleeT = 3; break; }
+        }
+      }
       g.fleeT -= a;
       if (g.fleeT <= 0) { g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1; }
       return;
     }
-    // state specific
-    if (g.state === 'watch') watchTick(g, a);
+    if (g.state === 'watch') { g.idle = 0; watchTick(g, a); }
     else if (g.state === 'queue') {
-      g.wt += a;
-      if (g.wt > 28) {
+      g.idle = 0; g.wt += a;
+      if (g.wt > 22) {
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
-        g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 3; say(g, 'crowded');
+        g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 2; g.nbuy = hr * 0.2; say(g, 'crowded');
       }
     } else if (g.state === 'sit') {
-      g.energy = Math.min(100, g.energy + 6 * a); g.mood += 0.3 * a;
-    } else if (g.state === 'walk' && !g.gt) chooseGoal(g);
+      g.idle = 0; g.energy = Math.min(100, g.energy + 6 * a); g.mood += 0.2 * a;
+    } else if (g.state === 'walk') {
+      if (!g.gt) chooseGoal(g); else gxWatchdog(g, a);
+    } else g.idle = 0;
+  }
+
+  function gxWatchdog(g, a) {
+    var dx = g.x - g.ix, dz = g.z - g.iz;
+    if (dx * dx + dz * dz < 0.25) g.idle += a; else g.idle = 0;
+    g.ix = g.x; g.iz = g.z; g.gAge += a;
+    if (g.idle > 4 || g.gAge > 70) {
+      g.idle = 0; g.gAge = 0; g.ni = -1; g.unr++;
+      var t = tileOf(g.x, g.z); if (S.path[t]) { g.ti = t; }
+      if (g.state !== 'leave') { g.gt = ''; g.dk = ''; g.nbuy = 0; }
+    }
   }
 
   function watchTick(g, a) {
-    g.wt -= a;
-    if (g.wt <= 0) { g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1; }
+    var e = encById(g.gid), E = e && RT.encx[e.id];
+    if (!e || !E || E.nAn === 0) { g.wt = 0; return; }
+    var see = e.see;
+    if (E.vis === 0) { say(g, 'cantSee'); g.mood -= 1.5 * a; g.wt = Math.min(g.wt, 1.5); return; }
+    if (see < 0.35) { say(g, 'cantSee'); g.mood -= 1.2 * a; g.wt = Math.min(g.wt, 2); return; }
+    var q = (E.happy / 100) * 0.6 + 0.4 * Math.min(1, E.vis / Math.max(1, E.nAn));
+    q *= 0.6 + 0.4 * see;
+    g.fun = Math.min(100, g.fun + 7 * a * q); g.mood += 2.4 * a * q;
+    g.wat += a;
+    if (!g.seenEnc[e.id] && g.wat >= 1.5) { g.seenEnc[e.id] = 1; g.nSeen++; g.mood += 4; }
+    for (var s = 0; s < e.species.length; s++) {
+      var sp = e.species[s];
+      if (!g.seen[sp]) { g.seen[sp] = 1; g.nsp = (g.nsp || 0) + 1; g.mood += 3; if (rng.chance(0.5)) say(g, 'happy', sp); }
+    }
+    if (E.happy < 35) { say(g, 'animalsUnhappy', e.species[0]); g.mood -= 2.5 * a; }
+    else {
+      if (E.babies > 0 && rng.chance(0.12)) say(g, 'baby', e.species[0]);
+      if (q > 0.7) {
+        if (rng.chance(0.1)) say(g, 'greatExhibit', e.species[0]);
+        if (g.money > 2 && rng.chance(0.008 * a * (RT.hasEdu ? 1.6 : 1))) {
+          var amt = Math.min(g.money, Math.round((1 + Math.floor(rng.next() * 3)) * (RT.hasEdu ? 1.5 : 1)));
+          g.money -= amt; g.spent += amt; earn(amt, 'donations', g.x, g.z); S.stats.donations = (S.stats.donations || 0) + amt; g.mood += 1.5;
+        }
+      }
+    }
   }
 
   function guestStep(g, dt) {
-    revalidateGuest(g);
+    if (!RT.gocc) gxGrid();
+    if (!g.al) gxPlan(g, gxHr(), 0);
+    if (g.pv !== RT.pathVer) { if (revalidateGuest(g) === false) return; }
     var st = g.state;
-    if (st === 'walk' || st === 'flee' || st === 'leave') {
-      var res = guestMove(g, dt);
-      if (res === 1) arriveAtGoal(g);
-      else if (res === 2) { removeGuest(g); return; }
+    if (st === 'walk' || st === 'leave' || st === 'flee') {
+      g.glide = 0;
+      if (g.gt || st === 'flee') {
+        var r = guestMove(g, dt);
+        if (r === 1) {
+          arriveAtGoal(g);
+          if (g.gt === 'wander') g.gt = '';
+        } else if (r === 2) { removeGuest(g); return; }
+      } else g.speed = 0;
     } else {
       g.speed = 0;
-      if (st === 'watch') watchTick(g, dt);
-      else if (st === 'use') {
+      if (g.glide) {
+        var gx = g.sx - g.x, gz = g.sz - g.z, gd = Math.sqrt(gx * gx + gz * gz), gs = 1.7 * dt;
+        if (gd <= gs) { g.x = g.sx; g.z = g.sz; g.glide = 0; } else { g.x += gx / gd * gs; g.z += gz / gd * gs; g.speed = 1.2; }
+      }
+      if (st === 'watch') {
+        g.heading = turn(g.heading, g.hd, dt * 6); g.wt -= dt;
+        if (g.wt <= 0) { g.last = g.gid; g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.strollNext = rng.chance(0.4) ? 1 : 0; }
+      } else if (st === 'use') {
+        g.heading = turn(g.heading, g.hd, dt * 6);
         if (g.shel && RT.dangerEsc > 0) g.wt = Math.max(g.wt, 3);
         g.wt -= dt;
         if (g.wt <= 0) {
           if (g.shel) { g.shel = 0; g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1; }
           else finishUse(g);
         }
-      } else if (st === 'sit') {
-        g.wt -= dt;
-        if (g.wt <= 0 || g.energy >= 95) {
+      } else if (st === 'queue') g.heading = turn(g.heading, g.hd, dt * 6);
+      else if (st === 'sit') {
+        g.heading = turn(g.heading, g.hd, dt * 6); g.wt -= dt;
+        if (g.wt <= 0 || g.energy >= 90) {
           if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.bid = 0;
           g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); g.state = 'walk'; g.gt = ''; g.dk = ''; g.ni = -1;
         }
@@ -1702,18 +2050,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     g.acc += dt; g.nt -= dt;
     if (g.nt <= 0) {
       var a = g.acc; g.acc = 0; g.nt = 0.7 + rng.next() * 0.3;
-      guestThink(g, a);
+      if (guestThink(g, a) === false) return;
     }
   }
 
   function updateQueues() {
+    gxGrid();
+    var gs = S.guests, k, occ = RT.gocc, stand = RT.gstand, targ = RT.gtarg, head = RT.ghead, nxt = RT.gnext, load = RT.gload = {};
+    if (gs.length > nxt.length) nxt = RT.gnext = new Int16Array(gs.length + 32);
+    occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
+    for (k = 0; k < gs.length; k++) {
+      var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
+      if (occ[t] < 255) occ[t]++;
+      nxt[k] = head[t]; head[t] = k;
+      if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
+      if (g.gt === 'enc' && s === 'walk' && g.spot) targ[g.spot]++;
+      if ((g.gt === 'enc' && s === 'walk') || s === 'watch') load[g.gid] = (load[g.gid] || 0) + 1;
+    }
+    if (--RT.gaesT <= 0) { RT.gaesT = 60; gxAes(); RT.gaesInit = 1; }
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
-      if (!o || o.kind !== 'building') continue;
-      var def = BD[o.type];
-      while (q.use < def.capacity && q.q.length > 0) {
-        var gid = q.q.shift(), g = RT.gById.get(gid);
-        if (g && g.state === 'queue') startUse(g, o);
+      if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
+      var cap = BD[o.type].capacity;
+      while (q.q.length && q.use < cap) {
+        var gq = RT.gById.get(q.q.shift());
+        if (gq && gq.state === 'queue') startUse(gq, o);
       }
     }
   }
@@ -3149,7 +3510,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k;
     for (k = 0; k < S.guests.length; k++) {
       var g = S.guests[k];
-      g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.nt = rng.next();
+      g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.nt = rng.next();
       if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
       if (g.gt === 'out') g.gt = 'exit';
     }

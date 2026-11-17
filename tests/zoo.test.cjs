@@ -428,3 +428,174 @@ test('PlayTimer is present only in Zoo Tycoon and not in Dino Tycoon', () => {
   const dinoCss = fs.readFileSync(path.join(__dirname, '../styles/game.css'), 'utf8');
   assert.ok(!dinoCss.includes('timerchip') && !dinoCss.includes('timerpop'), 'styles/game.css must not include PlayTimer styles');
 });
+
+test('Zoo guests stroll, wander freely across paths, spread along exhibits, and record seen species', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 42, money: 250000 });
+  // Flatten a clear area north of the entrance plaza and connect an extended path network
+  for (let j = 18; j <= 39; j++) {
+    for (let i = 20; i <= 36; i++) {
+      z.Sim.bulldoze(i, j);
+      z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+      z.state.terrain[i + j * z.N] = 0;
+    }
+  }
+  for (let j = 20; j <= 39; j++) {
+    assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(28, j, 'paved').ok, true);
+  }
+  for (let i = 21; i <= 35; i++) {
+    if (i === 27 || i === 28) continue;
+    assert.equal(z.Sim.placePath(i, 20, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(i, 30, 'paved').ok, true);
+  }
+  // Place scenic focal points along the far paths
+  assert.equal(z.Sim.placeObject('fountain', 22, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('flower_bed', 34, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('statue', 22, 31, 0).ok, true);
+
+  // Build an enclosure bordering the main avenue (i=29..34, j=32..37) with multiple viewing tiles
+  for (let i = 29; i <= 34; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 32 }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 38 }, 'low_wood').ok, true);
+  }
+  for (let j = 32; j <= 37; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 29, j }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 35, j }, 'low_wood').ok, true);
+  }
+  assert.equal(z.Sim.addAnimal('meerkat', 31, 35).ok, true);
+
+  z.state.time = 0.35; // morning open hours
+  z.state.speed = 1;
+
+  const observedGoals = new Set();
+  const viewSpots = new Set();
+  const visitedJ = new Set();
+  let sawSpecies = false;
+
+  for (let step = 0; step < 900; step++) {
+    z.Sim.tick(0.05);
+    for (const g of z.state.guests) {
+      assert.ok(Number.isFinite(g.x) && Number.isFinite(g.z), 'guest coordinates stay finite');
+      if (g.gt) observedGoals.add(g.gt);
+      if (g.gt === 'enc' && g.spot) viewSpots.add(g.spot);
+      if (g.seen && g.seen.meerkat) sawSpecies = true;
+      visitedJ.add(Math.floor(g.z / z.TILE));
+    }
+  }
+
+  assert.ok(z.state.stats.guestsTotal >= 5, 'guests entered the zoo');
+  assert.equal(sawSpecies, true, 'guests record species IDs in g.seen after watching an enclosure');
+  assert.ok(observedGoals.has('stroll') || observedGoals.has('wander'),
+    `expected guests to stroll or wander freely even with an exhibit present, saw goals: ${[...observedGoals].join(',')}`);
+  assert.ok(observedGoals.has('stroll'), 'guests should pick scenic stroll landmarks around the zoo');
+  assert.ok(viewSpots.size > 1, `guests should spread across multiple viewing tiles, got ${viewSpots.size}`);
+  const minJ = Math.min(...visitedJ);
+  assert.ok(minJ <= 26, `guests should roam far beyond the entrance and exhibit (min tile j=${minJ})`);
+});
+
+test('Zoo guests wander freely with no enclosures and legacy saves without gxPlan patch cleanly', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 7, money: 200000 });
+  for (let j = 26; j <= 39; j++) {
+    for (let i = 25; i <= 30; i++) {
+      z.Sim.bulldoze(i, j);
+      z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+      z.state.terrain[i + j * z.N] = 0;
+    }
+  }
+  for (let j = 26; j <= 39; j++) {
+    assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(28, j, 'paved').ok, true);
+  }
+  z.state.time = 0.35;
+  z.state.speed = 1;
+
+  const goals = new Set();
+  for (let k = 0; k < 500; k++) {
+    z.Sim.tick(0.05);
+    for (const g of z.state.guests) if (g.gt) goals.add(g.gt);
+  }
+  assert.ok(goals.has('stroll') || goals.has('wander'),
+    `expected guests to stroll/wander without exhibits, got: ${[...goals].join(',')}`);
+  assert.ok(goals.has('wander'), 'guests should also take free random wanders');
+
+  // Simulate loading a legacy Zoo save whose guest lacks g.al and has numeric enclosure key in g.seen
+  const guest = z.state.guests[0];
+  assert.ok(guest);
+  delete guest.al;
+  delete guest.seenEnc;
+  guest.seen = { '1': 3 };
+  const raw = z.Sim.save();
+  assert.equal(z.Sim.load(raw), true);
+  for (let k = 0; k < 40; k++) z.Sim.tick(0.05);
+  const patched = z.state.guests[0];
+  assert.ok(patched && patched.al && patched.seenEnc, 'legacy guest receives gxPlan fields after load and tick');
+  assert.equal(patched.seen['1'], undefined, 'numeric enclosure keys are cleaned from g.seen during migration');
+});
+
+test('Zoo guests use facilities, sit on benches, revalidate across path edits, and exit cleanly', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 11, money: 250000 });
+  for (let j = 32; j <= 39; j++) {
+    for (let i = 24; i <= 32; i++) {
+      z.Sim.bulldoze(i, j);
+      z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+      z.state.terrain[i + j * z.N] = 0;
+    }
+  }
+  for (let j = 33; j <= 39; j++) {
+    assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(28, j, 'paved').ok, true);
+  }
+  assert.equal(z.Sim.placeObject('burger_stand', 26, 37, 0).ok, true);
+  assert.equal(z.Sim.placeObject('drinks_stall', 26, 36, 0).ok, true);
+  assert.equal(z.Sim.placeObject('toilets', 26, 35, 0).ok, true);
+  assert.equal(z.Sim.placeObject('bench', 29, 36, 0).ok, true);
+
+  z.state.time = 0.35;
+  z.state.speed = 1;
+  let sawUse = false, sawSit = false, sawExit = false;
+  for (let k = 0; k < 400; k++) {
+    z.Sim.tick(0.05);
+    for (const g of z.state.guests) {
+      if (g.state === 'use') sawUse = true;
+      if (g.state === 'sit') sawSit = true;
+    }
+  }
+  // Drive one guest's needs to ensure facility and bench usage
+  const g0 = z.state.guests[0];
+  assert.ok(g0);
+  g0.money = 50; g0.al.drink = 2; g0.stay = 60; g0.bladder = 0; g0.hunger = 0;
+  g0.thirst = 90; g0.nbuy = 0; g0.gt = ''; g0.dk = ''; g0.state = 'walk';
+  for (let k = 0; k < 350; k++) {
+    z.Sim.tick(0.05);
+    if (g0.state === 'use') sawUse = true;
+  }
+  g0.stay = 60; g0.bladder = 0; g0.hunger = 0; g0.thirst = 0;
+  g0.energy = 10; g0.nbt = 0; g0.gt = ''; g0.dk = ''; g0.state = 'walk';
+  for (let k = 0; k < 350; k++) {
+    z.Sim.tick(0.05);
+    if (g0.state === 'sit') sawSit = true;
+  }
+  assert.equal(sawUse, true, 'guests should use nearby facilities when needed');
+  assert.equal(sawSit, true, 'tired guests should sit on nearby benches');
+
+  // Bulldozing a path tile under a walking guest moves them cleanly to an adjacent path
+  const tileI = Math.floor(g0.x / z.TILE), tileJ = Math.floor(g0.z / z.TILE);
+  if (tileJ < 52 && z.state.path[tileI + tileJ * z.N]) {
+    z.Sim.bulldoze(tileI, tileJ);
+    z.Sim.tick(0.05);
+    const ni = Math.floor(g0.x / z.TILE), nj = Math.floor(g0.z / z.TILE);
+    assert.ok(z.state.path[ni + nj * z.N] > 0, 'revalidated guest moves onto a valid remaining path tile');
+  }
+
+  // Closing the park causes guests to leave cleanly
+  z.Sim.setOpen(false);
+  for (let k = 0; k < 600 && z.state.guests.length > 0; k++) {
+    z.Sim.tick(0.05);
+    if ((z.state.stats.guestsLeft || 0) > 0) sawExit = true;
+  }
+  assert.equal(sawExit, true, 'guests leave through the gate when closing');
+  assert.equal(z.state.guests.length, 0, 'all guests finish exiting cleanly');
+});
