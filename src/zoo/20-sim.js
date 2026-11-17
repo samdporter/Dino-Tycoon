@@ -396,7 +396,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var eid = match ? match.id : nextEncId++;
       var name = match ? match.name : ('Enclosure ' + eid);
       var enc = { id: eid, name: name, tiles: tiles, area: tiles.length, minFence: 99, see: 1, poop: match ? match.poop : 0, foodLevel: match ? match.foodLevel : 1, waterLevel: match ? match.waterLevel : 1, breach: match ? match.breach : 0, animals: [], species: [], suitability: {}, viewTiles: [] };
-      for (k = 0; k < tiles.length; k++) S.tileEnc[tiles[k]] = eid;
+      var sx = 0, sz = 0;
+      for (k = 0; k < tiles.length; k++) { var et = tiles[k]; S.tileEnc[et] = eid; sx += cxOf(et); sz += czOf(et); }
+      enc.cx = tiles.length ? sx / tiles.length : N * TILE / 2;
+      enc.cz = tiles.length ? sz / tiles.length : N * TILE / 2;
       newEncs.push(enc); RT.eMap[eid] = enc;
     }
     S.enclosures = newEncs;
@@ -1831,7 +1834,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (a.curT !== ct) { a.prevT = a.curT !== undefined ? a.curT : ct; a.curT = ct; }
     var gx = a.wx ? a.wx : a.tx, gz = a.wz ? a.wz : a.tz;
     var dx = gx - a.x, dz = gz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.3) {
+    if (!isFinite(d) || d < 0.3) {
+      if (!isFinite(d)) { a.wx = 0; a.wz = 0; a.aroute = null; a.tx = a.x; a.tz = a.z; a.speed = 0; a.detours = 0; return true; }
       if (a.wx) {
         if (a.aroute && a.aroute.length) {
           var nt = a.aroute.shift();
@@ -1840,7 +1844,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         } else { a.wx = 0; a.wz = 0; }
         gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
         dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
-        if (d < 0.3) { a.speed = 0; a.detours = 0; return true; }
+        if (!isFinite(d) || d < 0.3) { a.speed = 0; a.detours = 0; return true; }
       } else { a.speed = 0; a.detours = 0; return true; }
     }
     var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
@@ -3151,6 +3155,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
+      if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
+      if (!isFinite(a.heading)) a.heading = 0;
       if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
     }

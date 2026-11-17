@@ -191,3 +191,36 @@ test('Zoo animals detour around rocks/trees, walk through bushes, and can reach 
   }
   assert.equal(reachedPlay, true, 'Zoo animal should detour through the bush around rocks/trees and enter the climbing_frame tile to play');
 });
+
+test('Zoo enclosures compute finite centroids across creation, load, and animal movement', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 42, money: 200000 });
+  for (let i = 16; i <= 24; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 16 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 25 }, 'reinforced');
+  }
+  for (let j = 16; j <= 24; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 16, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 25, j }, 'reinforced');
+  }
+  assert.equal(z.state.enclosures.length, 1);
+  const enc = z.state.enclosures[0];
+  assert.ok(Number.isFinite(enc.cx) && Number.isFinite(enc.cz));
+  assert.ok(enc.cx >= 16 * z.TILE && enc.cx <= 25 * z.TILE);
+  assert.ok(enc.cz >= 16 * z.TILE && enc.cz <= 25 * z.TILE);
+
+  const res = z.Sim.addAnimal('meerkat', 20, 20);
+  assert.equal(res.ok, true);
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  const loadedEnc = z.state.enclosures[0];
+  assert.ok(Number.isFinite(loadedEnc.cx) && Number.isFinite(loadedEnc.cz));
+
+  // Missing target coordinates during animal movement must not produce NaN position
+  const a = z.state.animals[0];
+  a.state = 'walk';
+  a.tx = undefined;
+  a.tz = 20 * z.TILE;
+  for (let k = 0; k < 10; k++) z.Sim.tick(0.1);
+  assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
+});

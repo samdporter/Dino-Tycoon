@@ -18,6 +18,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.sel = null;
   };
   function find(arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i]; return null; }
+  function focusEnc(en, dist) {
+    if (!en || !Z.World || !Z.World.focus) return;
+    var cur = (Z.state && Z.state.enclosures && find(Z.state.enclosures, en.id)) || en;
+    var cx = cur.cx, cz = cur.cz, tl = cur.tiles;
+    if ((!isFinite(cx) || !isFinite(cz)) && tl && tl.length) {
+      var T = Z.TILE || 2, sx = 0, sz = 0;
+      for (var k = 0; k < tl.length; k++) { sx += ((tl[k] % N) + 0.5) * T; sz += (((tl[k] / N) | 0) + 0.5) * T; }
+      cx = sx / tl.length; cz = sz / tl.length;
+    }
+    if (isFinite(cx) && isFinite(cz)) Z.World.focus(cx, cz, dist);
+  }
   function bar(frac, goodHigh) {
     var f = UI.clamp(frac, 0, 1), cls = f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low';
     return h('div.bar' + cls, h('i', { style: 'width:' + Math.round(f * 100) + '%' }));
@@ -122,7 +133,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.appendChild(h('div.btnrow',
       h('button.btn.sm', { html: ic('paw') + 'Add animal', on: { click: function () { Panel.hide(); UI.openCat('animals', true); } } }),
       h('button.btn.sm.alt', { html: ic('pencil') + 'Rename', on: { click: function () { rn.style.display = rn.style.display === 'none' ? 'flex' : 'none'; inp.focus(); } } }),
-      h('button.btn.sm.alt', { html: ic('target') + 'Centre', on: { click: function () { Z.World.focus(e.cx, e.cz); } } })));
+      h('button.btn.sm.alt', { html: ic('target') + 'Centre', on: { click: function () { focusEnc(e); } } })));
     cur = {
       kind: 'enclosure', update: function () {
         var en = find(Z.state.enclosures, id); if (!en) return false;
@@ -291,7 +302,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var spot = findSpot(en, id), money = S.money >= sp.cost;
       var btn = h('button.btn.sm' + (spot.ok && money && !locked ? '' : '.dis'), { text: 'Adopt', on: { click: function () {
         var r = Z.Sim.addAnimal(id, spot.i, spot.j);
-        if (r.ok) { UI.snd('cash'); UI.snd('call', id); Panel.closeSheet(); var an = Z.state.animals[Z.state.animals.length - 1]; UI.toast((an ? an.name : 'The ' + sp.name.toLowerCase()) + ' has arrived at ' + en.name + '!', 'good'); Z.World.focus(en.cx, en.cz, Math.min(Z.World.cam.dist, 45)); }
+        if (r.ok) { UI.snd('cash'); UI.snd('call', id); Panel.closeSheet(); var an = Z.state.animals[Z.state.animals.length - 1]; UI.toast((an ? an.name : 'The ' + sp.name.toLowerCase()) + ' has arrived at ' + en.name + '!', 'good'); focusEnc(en, Math.min(Z.World.cam.dist, 45)); }
         else UI.toast(r.msg || 'Cannot adopt here', 'bad');
       } } });
       var msg = locked ? 'Needs a ' + sp.star + '-star zoo' : !spot.ok ? spot.msg : !money ? 'Not enough money' : (f && f.issues.length ? f.issues[0] : 'A fine home');

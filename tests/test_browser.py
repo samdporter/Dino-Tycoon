@@ -916,3 +916,221 @@ def test_building_info_and_utility_path_ui(browser):
         assert_no_browser_errors(problems)
     finally:
         context.close()
+
+
+def _sample_center_png_colors(page):
+    """Return unique color count and clear-color sky-blue (#8fb6d8) hit count in center viewport."""
+    import struct
+    import zlib
+    raw = page.screenshot(type="png")
+    assert raw[:8] == b"\x89PNG\r\n\x1a\n"
+    pos = 8
+    idat = bytearray()
+    w = h = ct = 0
+    while pos < len(raw):
+        length = struct.unpack(">I", raw[pos:pos + 4])[0]
+        ctype = raw[pos + 4:pos + 8]
+        data = raw[pos + 8:pos + 8 + length]
+        if ctype == b"IHDR":
+            w, h, _bd, ct = struct.unpack(">IIBB", data[:10])
+        elif ctype == b"IDAT":
+            idat.extend(data)
+        elif ctype == b"IEND":
+            break
+        pos += 12 + length
+    decomp = zlib.decompress(bytes(idat))
+    bpp = 4 if ct == 6 else 3
+    stride = 1 + w * bpp
+    rows = []
+    prev = bytearray(w * bpp)
+    for y in range(h):
+        ft = decomp[y * stride]
+        row = bytearray(decomp[y * stride + 1:(y + 1) * stride])
+        if ft == 1:
+            for i in range(bpp, len(row)):
+                row[i] = (row[i] + row[i - bpp]) & 0xFF
+        elif ft == 2:
+            for i in range(len(row)):
+                row[i] = (row[i] + prev[i]) & 0xFF
+        elif ft == 3:
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                row[i] = (row[i] + ((a + prev[i]) >> 1)) & 0xFF
+        elif ft == 4:
+            for i in range(len(row)):
+                a = row[i - bpp] if i >= bpp else 0
+                b = prev[i]
+                c = prev[i - bpp] if i >= bpp else 0
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                row[i] = (row[i] + pr) & 0xFF
+        rows.append(row)
+        prev = row
+    samples = []
+    for sy in range(h // 4, 3 * h // 4, 24):
+        row = rows[sy]
+        for sx in range(w // 4, 3 * w // 4, 24):
+            idx = sx * bpp
+            samples.append((row[idx], row[idx + 1], row[idx + 2]))
+    sky_blue = sum(1 for (r, g, b) in samples if abs(r - 143) <= 5 and abs(g - 182) <= 5 and abs(b - 216) <= 5)
+    return {"total": len(samples), "uniq": len(set(samples)), "sky_blue": sky_blue}
+
+
+def _assert_world_rendered(page):
+    state = js(page, """(() => {
+      const vi = Z.World.info();
+      const c = Z.World.cam;
+      const p = Z.World.camera().position;
+      return {
+        view: vi.view,
+        calls: vi.calls,
+        tris: vi.tris,
+        camPos: [p.x, p.y, p.z],
+        cam: [c.target.x, c.target.z, c.dist, c.yaw, c.pitch],
+      };
+    })()""")
+    for v in state["cam"] + state["camPos"] + list(state["view"].values()):
+        assert isinstance(v, (int, float)) and -1e6 < v < 1e6 and v == v, f"Non-finite camera state: {state}"
+    assert state["calls"] > 0 and state["tris"] > 0, f"Empty WebGL render: {state}"
+    shot = _sample_center_png_colors(page)
+    assert shot["uniq"] > 20 and shot["sky_blue"] < shot["total"] * 0.5, f"Solid clear-color screen detected: {shot}"
+
+
+def _exercise_camera_nan_guards(page):
+    js(page, """(() => {
+      Z.World.focus(undefined, undefined, NaN);
+      Z.World.pan(NaN, undefined);
+      Z.World.rotate(NaN, NaN);
+      Z.World.zoom(NaN);
+      Z.World.zoom(0);
+      Z.World.svJump(undefined, NaN, NaN, NaN);
+      const canvas = document.querySelector('#world');
+      if (canvas) {
+        const ev = new Event('wheel', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'deltaY', { value: NaN });
+        canvas.dispatchEvent(ev);
+      }
+      if (Z.state && Z.state.animals && Z.state.animals.length) {
+        const a = Z.state.animals[0];
+        const savedX = a.x, savedZ = a.z;
+        a.x = NaN; a.z = undefined;
+        Z.World.follow('animal', a.id);
+        Z.World.frame(0.016);
+        a.x = savedX; a.z = savedZ;
+        Z.World.follow(null);
+      }
+      Z.World.frame(NaN);
+    })()""")
+    page.wait_for_timeout(150)
+    _assert_world_rendered(page)
+
+
+def test_zoo_adopt_centre_and_camera_resilience(browser):
+    context, page, problems = open_zoo(browser)
+    try:
+        new_zoo_park(page, map_id="lakeland", difficulty="normal")
+        enc = js(page, """(() => {
+          Z.state.money = 250000;
+          Z.state.unlocked.star = 5;
+          for (let j = 15; j <= 25; j++) for (let i = 15; i <= 25; i++) {
+            Z.Sim.bulldoze(i, j);
+            Z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+            Z.state.terrain[i + j * Z.N] = 0;
+          }
+          for (let i = 16; i <= 23; i++) {
+            Z.Sim.placeFence({ axis: 'x', i, j: 16 }, 'reinforced');
+            Z.Sim.placeFence({ axis: 'x', i, j: 24 }, 'reinforced');
+          }
+          for (let j = 16; j <= 23; j++) {
+            Z.Sim.placeFence({ axis: 'z', i: 16, j }, 'reinforced');
+            Z.Sim.placeFence({ axis: 'z', i: 24, j }, 'reinforced');
+          }
+          const e = Z.state.enclosures[0];
+          return e ? { id: e.id, cx: e.cx, cz: e.cz, area: e.area } : null;
+        })()""")
+        assert enc and enc["area"] == 64
+        assert abs(enc["cx"] - 40) < 1 and abs(enc["cz"] - 40) < 1
+
+        # Adopt new animal via species sheet (previously focused on undefined en.cx/cz -> blue screen)
+        js(page, "Z.UI.Panel.species('meerkat')")
+        page.locator("#sheet button.btn:not(.dis)", has_text="Adopt").first.click()
+        page.wait_for_function("Z.state.animals.length === 1")
+        page.wait_for_timeout(250)
+        _assert_world_rendered(page)
+
+        # Follow new animal and inspect
+        aid = js(page, "Z.state.animals[0].id")
+        js(page, f"Z.UI.Panel.open('animal', {aid}); Z.UI.startFollow('animal', {aid});")
+        page.wait_for_timeout(150)
+        _assert_world_rendered(page)
+        js(page, "Z.UI.exitFollow()")
+
+        # Enclosure Centre button
+        js(page, f"Z.UI.Panel.open('enclosure', {enc['id']})")
+        page.get_by_role("button", name="Centre").click()
+        page.wait_for_timeout(150)
+        _assert_world_rendered(page)
+
+        _exercise_camera_nan_guards(page)
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
+
+
+def test_dino_new_animal_hatch_follow_and_camera_resilience(browser):
+    context, page, problems = open_game(browser)
+    try:
+        new_park(page, difficulty="easy")
+        encs = js(page, """(() => {
+          Z.state.money = 1000000;
+          Z.state.unlocked.star = 5;
+          for (const s of Z.DATA.animals) Z.state.research.genomes[s.id] = 100;
+          for (let j = 10; j <= 35; j++) for (let i = 10; i <= 20; i++) {
+            Z.Sim.bulldoze(i, j);
+            Z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+            Z.state.terrain[i + j * Z.N] = 0;
+          }
+          Z.Sim.placeObject('diesel_gen', 24, 45, 0);
+          for (let i = 10; i <= 16; i++) Z.Sim.placePath(i, 9, 'paved');
+          for (let i = 10; i <= 16; i++) {
+            Z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced');
+            Z.Sim.placeFence({ axis: 'x', i, j: 17 }, 'reinforced');
+          }
+          for (let j = 10; j <= 16; j++) {
+            Z.Sim.placeFence({ axis: 'z', i: 10, j }, 'reinforced');
+            Z.Sim.placeFence({ axis: 'z', i: 17, j }, 'reinforced');
+          }
+          const tank = [], dome = [];
+          for (let j = 20; j <= 25; j++) for (let i = 10; i <= 15; i++) tank.push(i + j * Z.N);
+          for (let j = 28; j <= 33; j++) for (let i = 10; i <= 15; i++) dome.push(i + j * Z.N);
+          Z.Sim.realms.place('tank', 'sea', tank, { lvl: 2, wall: 2 });
+          Z.Sim.realms.place('dome', 'air', dome, { lvl: 2, mesh: 2 });
+          return Z.state.enclosures.map(e => ({ id: e.id, cx: e.cx, cz: e.cz, kind: e.kind || 'land' }));
+        })()""")
+        assert len(encs) >= 3
+
+        # Hatch flow -> Lay egg -> Hatch -> Follow across land, sea, and air species
+        js(page, "Z.UI.Panel.species('dryosaurus')")
+        page.locator("#sheet button.btn:not(.dis)", has_text="Hatch").first.click()
+        page.locator("#sheet button.btn:not(.dis)", has_text="Lay egg").click()
+        page.wait_for_timeout(150)
+        _assert_world_rendered(page)
+
+        js(page, "for (let k = 0; k < 3000 && Z.state.animals.length === 0; k++) Z.Sim._step(0.1);")
+        assert js(page, "Z.state.animals.length >= 1") is True
+        js(page, """(() => {
+          const sea = Z.Sim.spawnAnimal('ichthyosaurus', 13, 22);
+          const air = Z.Sim.spawnAnimal('pteranodon', 13, 30);
+          for (let k = 0; k < 20; k++) Z.Sim._step(0.05);
+          return [sea.id, air.id];
+        })()""")
+        for aid in js(page, "Z.state.animals.map(a => a.id)"):
+            js(page, f"Z.UI.Panel.open('animal', {aid}); Z.UI.startFollow('animal', {aid});")
+            page.wait_for_timeout(120)
+            _assert_world_rendered(page)
+        js(page, "Z.UI.exitFollow()")
+
+        _exercise_camera_nan_guards(page)
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()

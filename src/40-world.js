@@ -12,7 +12,9 @@ var SRGB = false; // linear output: matches how Z.Models colours were authored (
 var PI = Math.PI, TAU = PI * 2;
 
 /* ---------------------------------------------------------------- utils */
-function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function isFin(v) { return typeof v === 'number' && isFinite(v); }
+function fin(v, fb) { return isFin(v) ? v : fb; }
+function clamp(v, a, b) { if (!isFin(v)) return a; return v < a ? a : v > b ? b : v; }
 function lerp(a, b, t) { return a + (b - a) * t; }
 function sstep(a, b, x) { var t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }
 function h2(ix, iy) {
@@ -50,7 +52,7 @@ function lin3(h) { var c = hex3(h); return SRGB ? [s2l(c[0]), s2l(c[1]), s2l(c[2
 function tcol(h) { var l = lin3(h); return new THREE.Color().setRGB(l[0], l[1], l[2]); }
 function mix3(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 function mul3(a, k) { return [a[0] * k, a[1] * k, a[2] * k]; }
-function wrapPI(a) { a = (a + PI) % TAU; if (a < 0) a += TAU; return a - PI; }
+function wrapPI(a) { if (!isFin(a)) return 0; a = (a + PI) % TAU; if (a < 0) a += TAU; return a - PI; }
 function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
 /* --------------------------------------------------- merged geometry builder */
@@ -554,6 +556,8 @@ function init(container) {
   var dom = renderer.domElement;
   dom.style.display = 'block'; dom.style.width = '100%'; dom.style.height = '100%'; dom.style.touchAction = 'none';
   dom.style.outline = 'none';
+  dom.addEventListener('webglcontextlost', function (e) { e.preventDefault(); G.lost = true; }, false);
+  dom.addEventListener('webglcontextrestored', function () { G.lost = false; if (renderer) resize(); }, false);
   G.container.appendChild(dom);
   scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xb8dcf5, 150, 430);
@@ -1888,14 +1892,14 @@ function makeVis(kind, e) {
 function addEnt(kind, e) {
   var v = makeVis(kind, e);
   var am = kind === 'animal' ? findIn(D.animals, e.species) : null;
-  var ht = v.height || (kind === 'animal' ? Math.max(0.5, ((am && am.size) || 1) * 1.2) : 1.7);
+  var ht = (isFin(v.height) && v.height > 0) ? v.height : (kind === 'animal' ? Math.max(0.5, ((am && am.size) || 1) * 1.2) : 1.7);
   var rad = kind === 'animal' ? clamp(0.35 + ((am && am.length) || 2) * 0.13, 0.5, 3.1) * (e.baby ? 0.6 : 1) : kind === 'guest' ? 0.38 : 0.42;
   var mc = 0; v.group.traverse(function (o) { if (o.isMesh) mc++; });
   var colSeed = kind === 'animal' ? hash32(String(e.species)) : kind === 'guest' ? (e.seed | 0) * 2654435761 : hash32(String(e.type));
   var c = new THREE.Color().setHSL((((colSeed >>> 0) % 360) / 360), kind === 'animal' ? 0.32 : 0.55, kind === 'animal' ? 0.46 : 0.5);
   if (kind === 'animal') { var ac = avgColour(v.group); if (ac) c = ac; }
-  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: e.heading || 0, baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
-  v.group.position.set(e.x || 0, 0, e.z || 0);
+  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
+  v.group.position.set(fin(e.x, 0), 0, fin(e.z, 0));
   entGroup.add(v.group);
   ents[kind].set(e.id, rec);
   return rec;
@@ -1908,10 +1912,12 @@ function avgColour(g) {
   if (ca) {
     var n = ca.count, step = Math.max(1, (n / 64) | 0), sr = 0, sg = 0, sb = 0, k = 0;
     for (var i = 0; i < n; i += step) { sr += ca.getX(i); sg += ca.getY(i); sb += ca.getZ(i); k++; }
+    if (!k) return null;
     r = sr / k; gg = sg / k; b = sb / k;
   }
   var mc = best.material && best.material.color;
   if (mc) { r *= mc.r; gg *= mc.g; b *= mc.b; }
+  if (!isFin(r) || !isFin(gg) || !isFin(b)) return null;
   return new THREE.Color(r, gg, b);
 }
 function hash32(str) { var h = 0; for (var k = 0; k < str.length; k++) h = (Math.imul(h, 31) + str.charCodeAt(k)) | 0; return h; }
@@ -1942,11 +1948,11 @@ function updateEntities(dt, dtGame) {
         if (kind === 'animal' && !!e.baby !== rec.baby) { entGroup.remove(rec.group); map.delete(e.id); rec = addEnt(kind, e); }
       }
       rec.stamp = G.frameNo;
-      var x = e.x || 0, z = e.z || 0;
+      var x = fin(e.x, 0), z = fin(e.z, 0), ey = fin(e.y, 0);
       var dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz + cy * cy;
-      var vis = d2 < far2;
+      var vis = isFin(d2) && d2 < far2;
       if (vis && SV.blend > 0.4 && dx * dx + dz * dz < 0.9) vis = false; // street view: never draw a body around the camera
-      if (vis) { _sph.center.set(x, rec.ht * 0.5 + (e.y || 0), z); _sph.radius = Math.max(rec.ht * 0.8 + 1.2, rec.vis.cullR || 0); vis = _fr.intersectsSphere(_sph); }   // e.y: altitude / depth offset (creatures package); cullR: wing span etc.
+      if (vis) { _sph.center.set(x, rec.ht * 0.5 + ey, z); _sph.radius = Math.max(rec.ht * 0.8 + 1.2, rec.vis.cullR || 0); vis = _fr.intersectsSphere(_sph); }   // e.y: altitude / depth offset (creatures package); cullR: wing span etc.
       rec.vis_ = vis; rec.imp = false;
       if (!vis) { rec.group.visible = false; continue; }
       rec.d2 = d2;
@@ -1980,8 +1986,9 @@ function updateEntities(dt, dtGame) {
   // pass 3: animate real ones, write impostors/shadows
   var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array, aa = impA.instanceMatrix.array, ac = impA.instanceColor.array;
   for (k = 0; k < n; k++) {
-    rec = visList[k]; e = rec.ent; var g = rec.group, x2 = e.x || 0, z2 = e.z || 0, gy2 = rec.gy;
-    if (dtGame > 0) { var dh = wrapPI((e.heading || 0) - rec.h); rec.h += dh * Math.min(1, dtGame * 9); }
+    rec = visList[k]; e = rec.ent; var g = rec.group, x2 = fin(e.x, 0), z2 = fin(e.z, 0), gy2 = fin(rec.gy, 0);
+    if (!isFin(rec.h)) rec.h = 0;
+    if (dtGame > 0) { var dh = wrapPI(fin(e.heading, rec.h) - rec.h); rec.h += dh * Math.min(1, dtGame * 9); }
     if (rec.imp) {
       g.visible = false;
       var c = Math.cos(rec.h), sn = Math.sin(rec.h), b;
@@ -2248,6 +2255,7 @@ function syncEggs(dt) {
   eggT -= dt; var refresh = eggT <= 0; if (refresh) eggT = 0.25;
   for (k = 0; k < list.length; k++) {
     var eg = list[k], rec = eggRecs.get(eg.id); seen[eg.id] = 1;
+    if (!isFin(eg.i) || !isFin(eg.j)) continue;
     if (!rec) {
       var grp = m.createEgg ? m.createEgg() : new THREE.Group(), cv = mkCanvas(96, 96), tex = texFrom(cv, false);
       var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, fog: false })); sp.renderOrder = 11;
@@ -2483,62 +2491,86 @@ function buildCameraSystem() {
 }
 function clampCam() {
   var chase = !!followK;
+  cam.target.x = fin(cam.target.x, fin(view.x, 56));
+  cam.target.z = fin(cam.target.z, fin(view.z, 78));
+  cam.dist = fin(cam.dist, fin(view.dist, 62));
+  cam.yaw = fin(cam.yaw, fin(view.yaw, 0.3));
+  cam.pitch = fin(cam.pitch, fin(view.pitch, 0.88));
   cam.pitch = clamp(cam.pitch, chase ? 0.1 : (G.pitchMin !== undefined ? G.pitchMin : PITCH_MIN), PITCH_MAX);
   cam.dist = clamp(cam.dist, chase ? 3.2 : DIST_MIN, DIST_MAX);
   cam.target.x = clamp(cam.target.x, 0, W); cam.target.z = clamp(cam.target.z, 0, W);
 }
 function pan(dx, dy) {
-  followK = null; followId = null;
+  if (!isFin(dx) || !isFin(dy)) return;
+  followK = null; followId = null; clampCam();
   var wpp = 2 * cam.dist * Math.tan(camera.fov * PI / 360) / (G.h || 600);
   var sy = Math.sin(clamp(cam.pitch, 0.3, 1.5)), c = Math.cos(cam.yaw), s = Math.sin(cam.yaw);
   var mx = -(c * dx) * wpp - (s * dy) * wpp / sy, mz = (s * dx) * wpp - (c * dy) * wpp / sy;
+  if (!isFin(mx) || !isFin(mz)) return;
   cam.target.x += mx; cam.target.z += mz;
   clampCam();
   var now = G.t, dt = Math.max(0.008, now - lastPan);
-  if (now - lastPan < 0.25) { panVx = lerp(panVx, mx / dt, 0.4); panVz = lerp(panVz, mz / dt, 0.4); } else { panVx = 0; panVz = 0; }
+  if (now - lastPan < 0.25 && isFin(dt)) { panVx = lerp(panVx, mx / dt, 0.4); panVz = lerp(panVz, mz / dt, 0.4); } else { panVx = 0; panVz = 0; }
+  if (!isFin(panVx) || !isFin(panVz)) { panVx = 0; panVz = 0; }
   lastPan = now;
 }
 function rotate(dYaw, dPitch) {
-  cam.yaw += dYaw || 0; cam.pitch += dPitch || 0; lastRot = G.t; clampCam();
+  cam.yaw += fin(dYaw, 0); cam.pitch += fin(dPitch, 0); lastRot = G.t; clampCam();
 }
-function zoom(factor) { cam.dist *= factor; clampCam(); }
+function zoom(factor) {
+  if (!isFin(factor) || factor <= 0) return;
+  clampCam(); cam.dist *= factor; clampCam();
+}
 function focus(x, z, dist) {
+  if (!isFin(x) || !isFin(z)) return;
   followK = null; followId = null;
-  cam.target.x = x; cam.target.z = z; if (dist) cam.dist = dist; clampCam();
+  cam.target.x = x; cam.target.z = z;
+  if (isFin(dist) && dist > 0) cam.dist = dist;
+  clampCam();
 }
 function follow(kind, id) {
   if (!kind || id === null || id === undefined) { followK = null; followId = null; return; }
   followK = kind; followId = id; lastRot = -99;
-  var fr = kind === 'animal' ? entityRec(kind, id) : null; followMin = fr && fr.len ? clamp(fr.len * 1.3 + 4, 14, 36) : 14;
+  var fr = kind === 'animal' ? entityRec(kind, id) : null; followMin = fr && isFin(fr.len) && fr.len > 0 ? clamp(fr.len * 1.3 + 4, 14, 36) : 14;
   if (cam.dist > 22 || cam.dist < followMin) cam.dist = followMin;
   clampCam();
 }
 function updateCamera(dt) {
+  dt = isFin(dt) && dt > 0 ? dt : 0.016;
+  clampCam();
   if (followK) {
     var rec = entityRec(followK, followId), arr = Z.state && Z.state[KIND_ARR[followK]], e = null;
     if (rec) e = rec.ent; else if (arr) e = findIn(arr, followId);
-    if (!e) { followK = null; followId = null; }
+    if (!e || !isFin(e.x) || !isFin(e.z)) { followK = null; followId = null; }
     else {
       cam.target.x = e.x; cam.target.z = e.z;
       if (cam.dist < followMin && rec) {
-        view.ty += ((rec.ht * 0.55) - view.ty) * (1 - Math.exp(-dt * 4));
-        if (G.t - lastRot > 2.2) {
+        var ht = isFin(rec.ht) ? rec.ht : 1.5;
+        view.ty += ((ht * 0.55) - view.ty) * (1 - Math.exp(-dt * 4));
+        if (G.t - lastRot > 2.2 && isFin(rec.h)) {
           cam.yaw += wrapPI(rec.h + PI - cam.yaw) * (1 - Math.exp(-dt * 1.4));
           cam.pitch += (0.3 - cam.pitch) * (1 - Math.exp(-dt * 1.2));
         }
       } else view.ty += (0 - view.ty) * (1 - Math.exp(-dt * 4));
     }
   } else view.ty += (0 - view.ty) * (1 - Math.exp(-dt * 6));
+  if (!isFin(panVx) || !isFin(panVz)) { panVx = 0; panVz = 0; }
   if (G.t - lastPan > 0.07 && (panVx * panVx + panVz * panVz) > 0.01) {
     cam.target.x += panVx * dt; cam.target.z += panVz * dt;
     var dec = Math.exp(-dt * 4.5); panVx *= dec; panVz *= dec;
   }
   clampCam();
+  if (!isFin(view.x)) view.x = cam.target.x; if (!isFin(view.z)) view.z = cam.target.z;
+  if (!isFin(view.ty)) view.ty = 0; if (!isFin(view.dist)) view.dist = cam.dist;
+  if (!isFin(view.yaw)) view.yaw = cam.yaw; if (!isFin(view.pitch)) view.pitch = cam.pitch;
   var kT = 1 - Math.exp(-dt * (followK ? 7 : 11)), kZ = 1 - Math.exp(-dt * 9), kR = 1 - Math.exp(-dt * 11);
   view.x += (cam.target.x - view.x) * kT; view.z += (cam.target.z - view.z) * kT;
   view.dist += (cam.dist - view.dist) * kZ;
   view.yaw += wrapPI(cam.yaw - view.yaw) * kR;
   view.pitch += (cam.pitch - view.pitch) * kR;
+  if (!isFin(view.x) || !isFin(view.z) || !isFin(view.ty) || !isFin(view.dist) || !isFin(view.yaw) || !isFin(view.pitch)) {
+    view.x = cam.target.x; view.z = cam.target.z; view.ty = 0; view.dist = cam.dist; view.yaw = cam.yaw; view.pitch = cam.pitch;
+  }
   var cp = Math.cos(view.pitch), sp = Math.sin(view.pitch);
   camera.position.set(view.x + Math.sin(view.yaw) * cp * view.dist, view.ty + sp * view.dist, view.z + Math.cos(view.yaw) * cp * view.dist);
   var lkx = view.x, lky = view.ty, lkz = view.z, fov = G.baseFov || camera.fov;
@@ -2548,11 +2580,13 @@ function updateCamera(dt) {
     SV.blend = clamp(SV.blend + (SV.on ? dt : -dt) / 0.7, 0, 1);
     if (SV.on) svStep(dt);
     var kb = SV.blend * SV.blend * (3 - 2 * SV.blend), P = svPose(), op = camera.position;
-    op.set(lerp(op.x, P.x, kb), lerp(op.y, P.y, kb), lerp(op.z, P.z, kb));
-    lkx = lerp(lkx, P.lx, kb); lky = lerp(lky, P.ly, kb); lkz = lerp(lkz, P.lz, kb);
-    fov = lerp(fov, (SV.fov + Math.max(0, 1 - camera.aspect) * 32) * SV.zoom, kb); camera.near = lerp(camera.near, 0.1, kb);
+    if (isFin(P.x) && isFin(P.y) && isFin(P.z) && isFin(P.lx) && isFin(P.ly) && isFin(P.lz)) {
+      op.set(lerp(op.x, P.x, kb), lerp(op.y, P.y, kb), lerp(op.z, P.z, kb));
+      lkx = lerp(lkx, P.lx, kb); lky = lerp(lky, P.ly, kb); lkz = lerp(lkz, P.lz, kb);
+      fov = lerp(fov, (SV.fov + Math.max(0, 1 - camera.aspect) * 32) * fin(SV.zoom, 1), kb); camera.near = lerp(camera.near, 0.1, kb);
+    } else { SV.on = false; SV.blend = 0; }
   }
-  camera.fov = fov;
+  camera.fov = isFin(fov) && fov > 1 ? fov : (G.baseFov || 42);
   camera.updateProjectionMatrix();
   camera.lookAt(lkx, lky, lkz);
   camera.updateMatrixWorld();
@@ -2770,8 +2804,8 @@ function hookBus() {
 
 /* ------------------------------------------------------------------- frame */
 function frame(dtReal) {
-  if (!G.inited) return;
-  dtReal = clamp(+dtReal || 0.016, 0, 0.1);
+  if (!G.inited || G.lost) return;
+  dtReal = isFin(dtReal) ? clamp(dtReal, 0, 0.1) : 0.016;
   G.t += dtReal; G.frameNo++;
   var s = Z.state, speed = s && typeof s.speed === 'number' ? s.speed : 1, dtGame = dtReal * speed;
   G.speed = speed;
@@ -2816,24 +2850,25 @@ World.groundY = groundY;
 World.waterLevelAt = waterLvlAt;
 World.objectBox = function (id) { var r = objRecs.get(id); if (!r || !r.group) return null; var b = new THREE.Box3().setFromObject(r.group); return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z], pos: [r.group.position.x, r.group.position.y, r.group.position.z], w: r.w, h: r.h }; };
 World.project = function (x, y, z) { var o = { x: 0, y: 0, w: 0, vis: false }; if (!G.inited) return o; _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); return projectPoint(x, y, z, o); };
-World.entityPos = function (kind, id) { var r = entityRec(kind, id); return r ? { x: r.ent.x || 0, y: r.gy || 0, z: r.ent.z || 0, h: r.ht } : null; };
+World.entityPos = function (kind, id) { var r = entityRec(kind, id); return r ? { x: fin(r.ent.x, 0), y: fin(r.gy, 0), z: fin(r.ent.z, 0), h: fin(r.ht, 1.5) } : null; };
 World.setStreetView = setStreetView;
 World.isStreetView = function () { return SV.on; };
 World.svInput = function (fwd, strafe, run, turn) { SV.fwd = clamp(+fwd || 0, -1, 1); SV.str = clamp(+strafe || 0, -1, 1); SV.run = !!run; SV.turn = clamp(+turn || 0, -1, 1); };
-World.svLook = function (dyaw, dpitch) { SV.yaw = wrapPI(SV.yaw + (dyaw || 0)); SV.pitch = clamp(SV.pitch + (dpitch || 0), -1.2, 1.2); };
-World.svZoom = function (factor) { SV.zoom = clamp(SV.zoom * factor, 0.4, 1.15); };
-World.svGoto = function (x, z) { var b = svBounds(); SV.go = { x: clamp(x, b.x0, b.x1), z: clamp(z, b.z0, b.z1) }; SV.fwd = SV.str = 0; };
+World.svLook = function (dyaw, dpitch) { SV.yaw = wrapPI(SV.yaw + fin(dyaw, 0)); SV.pitch = clamp(SV.pitch + fin(dpitch, 0), -1.2, 1.2); };
+World.svZoom = function (factor) { if (!isFin(factor) || factor <= 0) return; SV.zoom = clamp(SV.zoom * factor, 0.4, 1.15); };
+World.svGoto = function (x, z) { if (!isFin(x) || !isFin(z)) return; var b = svBounds(); SV.go = { x: clamp(x, b.x0, b.x1), z: clamp(z, b.z0, b.z1) }; SV.fwd = SV.str = 0; };
 // teleport (optionally turning to face lx,lz)
 World.svJump = function (x, z, lx, lz) {
+  if (!isFin(x) || !isFin(z)) return;
   var b = svBounds(); SV.x = clamp(x, b.x0, b.x1); SV.z = clamp(z, b.z0, b.z1); SV.vx = SV.vz = 0; SV.go = null; SV.gy = svGround(SV.x, SV.z);
-  if (typeof lx === 'number') { SV.yaw = Math.atan2(lx - SV.x, lz - SV.z); SV.pitch = -0.05; }
+  if (isFin(lx) && isFin(lz)) { SV.yaw = Math.atan2(lx - SV.x, lz - SV.z); SV.pitch = -0.05; }
 };
 World.svInfo = function () { return { on: SV.on, x: SV.x, z: SV.z, yaw: SV.yaw, pitch: SV.pitch, zoom: SV.zoom, blend: SV.blend, walking: !!SV.go || Math.abs(SV.vx) + Math.abs(SV.vz) > 0.3, bounds: svBounds() }; };
 // weather (test hook): the renderer reads Z.state.weather every frame, this just forces an immediate look
 World.weatherInfo = function () { return { type: WXV.type, cur: WXV.cur, flash: WXV.flash }; };
 World.isFollowing = function () { return followK ? { kind: followK, id: followId } : null; };
 World.info = function () { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries, tex: renderer.info.memory.textures, night: G.night, daylight: G.daylight, view: { x: view.x, z: view.z, dist: view.dist, yaw: view.yaw, pitch: view.pitch } }; };
-World.snapCamera = function () { view.x = cam.target.x; view.z = cam.target.z; view.dist = cam.dist; view.yaw = cam.yaw; view.pitch = cam.pitch; };
+World.snapCamera = function () { clampCam(); view.x = cam.target.x; view.z = cam.target.z; view.dist = cam.dist; view.yaw = cam.yaw; view.pitch = cam.pitch; };
 World._G = G;
 World.renderer = function () { return renderer; };
 World.setQuality = function (pr, budget) { if (pr) G.prCap = pr; if (budget) MESH_BUDGET = budget; resize(); };

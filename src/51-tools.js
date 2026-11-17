@@ -15,7 +15,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     world.addEventListener('pointerup', onUp); world.addEventListener('pointercancel', onCancel);
     world.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse' && !nptr) { hover = null; if (UI.tool && POINT[UI.tool.kind] || UI.tool) clearPreview(); } });
     world.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-    world.addEventListener('wheel', function (e) { e.preventDefault(); if (UI.SV && UI.SV.active) return UI.SV.wheel(e); Z.World.zoom(Math.exp(UI.clamp(e.deltaY, -120, 120) * 0.0013)); }, { passive: false });
+    world.addEventListener('wheel', function (e) { e.preventDefault(); if (UI.SV && UI.SV.active) return UI.SV.wheel(e); if (typeof e.deltaY === 'number' && isFinite(e.deltaY)) Z.World.zoom(Math.exp(UI.clamp(e.deltaY, -120, 120) * 0.0013)); }, { passive: false });
     window.addEventListener('keydown', onKey); window.addEventListener('keyup', function (e) { delete keys[e.key.toLowerCase()]; });
     window.addEventListener('blur', function () { keys = {}; });
     UI.held.keys = keysFrame;
@@ -87,10 +87,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     else if (g.mode === 'rot') { Z.World.rotate(-dx * 0.008, dy * 0.006); }
     else if (g.mode === 'multi' && nptr >= 2) {
       var q = pts(), cx = (q[0].x + q[1].x) / 2, cy = (q[0].y + q[1].y) / 2, d = dist(q[0], q[1]), a = ang(q[0], q[1]);
-      Z.World.pan(cx - g.cx, cy - g.cy);
-      if (g.d > 10 && d > 10) Z.World.zoom(g.d / d);
+      if (isFinite(cx - g.cx) && isFinite(cy - g.cy)) Z.World.pan(cx - g.cx, cy - g.cy);
+      if (g.d > 10 && d > 10 && isFinite(g.d / d)) Z.World.zoom(g.d / d);
       var da = a - g.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
-      if (Math.abs(da) < 1.2) Z.World.rotate(da, 0);
+      if (isFinite(da) && Math.abs(da) < 1.2) Z.World.rotate(da, 0);
       g.cx = cx; g.cy = cy; g.d = d; g.a = a;
     }
   }

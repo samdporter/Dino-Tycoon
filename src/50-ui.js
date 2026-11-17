@@ -32,7 +32,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function fmt(n) { n = Math.round(n || 0); return (n < 0 ? '-' : '') + '£' + Math.abs(n).toLocaleString('en-GB'); }
   function fmt2(n) { return '£' + (Math.round(n * 100) / 100).toFixed(2); }
   UI.fmt = fmt; UI.fmt2 = fmt2;
-  UI.clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
+  UI.clamp = function (v, a, b) { if (typeof v !== 'number' || !isFinite(v)) return a; return v < a ? a : v > b ? b : v; };
   UI.pct = function (v) { return Math.round(UI.clamp(v, 0, 1) * 100); };
   UI.byId = function (arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i]; return null; };
   UI.sp = function (id) { return UI.byId(D.animals, id); };
@@ -653,7 +653,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   UI.jumpTo = function (kind, id) {
     var p = Z.World.entityPos(kind, id);
     if (!p) { var arr = kind === 'animal' ? Z.state.animals : kind === 'guest' ? Z.state.guests : Z.state.staff, e = arr.filter(function (x) { return x.id === id; })[0]; if (e) p = { x: e.x, z: e.z }; }
-    if (!p) return; Z.World.focus(p.x, p.z, Math.min(Z.World.cam.dist, 26));
+    if (!p) return;
+    if (isFinite(p.x) && isFinite(p.z)) Z.World.focus(p.x, p.z, Math.min(Z.World.cam.dist, 26));
     if (UI.Panel && !UI.tool) UI.Panel.open(kind, id);
   };
   UI.gameOver = function () {

@@ -452,7 +452,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       enc.tiles = tiles2; enc.area = tiles2.length;
       var sx = 0, sz = 0;
       for (k = 0; k < tiles2.length; k++) { t = tiles2[k]; S.tileEnc[t] = enc.id; sx += cxOf(t); sz += czOf(t); }
-      enc.cx = sx / tiles2.length; enc.cz = sz / tiles2.length;
+      enc.cx = tiles2.length ? sx / tiles2.length : N * TILE / 2;
+      enc.cz = tiles2.length ? sz / tiles2.length : N * TILE / 2;
       if (Z.Realms) { if (tiles2.kind) Z.Realms.stampPen(enc, tiles2); else Z.Realms.unstamp(enc); }   // realms package
       enc.animals = []; enc.species = []; enc.suitability = enc.suitability || {};
       newEncs.push(enc);
@@ -2518,7 +2519,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (a.curT !== ct) { a.prevT = a.curT !== undefined ? a.curT : ct; a.curT = ct; }
     var gx = a.wx ? a.wx : a.tx, gz = a.wz ? a.wz : a.tz;
     var dx = gx - a.x, dz = gz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.3) {
+    if (!isFinite(d) || d < 0.3) {
+      if (!isFinite(d)) { a.wx = 0; a.wz = 0; a.aroute = null; a.tx = a.x; a.tz = a.z; a.speed = 0; a.detours = 0; return true; }
       if (a.wx) {
         if (a.aroute && a.aroute.length) {
           var nt = a.aroute.shift();
@@ -2527,7 +2529,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         } else { a.wx = 0; a.wz = 0; }
         gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
         dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
-        if (d < 0.3) { a.speed = 0; a.detours = 0; return true; }
+        if (!isFinite(d) || d < 0.3) { a.speed = 0; a.detours = 0; return true; }
       } else { a.speed = 0; a.detours = 0; return true; }
     }
     var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
@@ -4789,6 +4791,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (S.research.firstDone === undefined) S.research.firstDone = (S.research.stats.successes + S.research.stats.failures) > 0;   // old saves with a finished extraction skip the guarantee
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
+      if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
+      if (!isFinite(a.heading)) a.heading = 0;
       if (a.genomeQ === undefined) a.genomeQ = 100; if (!a.traits) a.traits = [];
       if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;

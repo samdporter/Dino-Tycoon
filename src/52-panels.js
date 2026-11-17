@@ -18,6 +18,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.sel = null;
   };
   function find(arr, id) { for (var i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i]; return null; }
+  function focusEnc(en, dist) {
+    if (!en || !Z.World || !Z.World.focus) return;
+    var cur = (Z.state && Z.state.enclosures && find(Z.state.enclosures, en.id)) || en;
+    var cx = cur.cx, cz = cur.cz, tl = cur.tiles;
+    if ((!isFinite(cx) || !isFinite(cz)) && tl && tl.length) {
+      var T = Z.TILE || 2, sx = 0, sz = 0;
+      for (var k = 0; k < tl.length; k++) { sx += ((tl[k] % N) + 0.5) * T; sz += (((tl[k] / N) | 0) + 0.5) * T; }
+      cx = sx / tl.length; cz = sz / tl.length;
+    }
+    if (isFinite(cx) && isFinite(cz)) Z.World.focus(cx, cz, dist);
+  }
   function bar(frac, goodHigh) {
     var f = UI.clamp(frac, 0, 1), cls = f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low';
     return h('div.bar' + cls, h('i', { style: 'width:' + Math.round(f * 100) + '%' }));
@@ -139,7 +150,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.appendChild(h('div.btnrow',
       h('button.btn.sm', { html: ic('egg') + 'Hatch', on: { click: function () { Panel.hide(); if (UI.Realms) UI.Realms.hatchFor(id); UI.openCat('hatch', true); } } }),
       h('button.btn.sm.alt', { html: ic('pencil') + 'Rename', on: { click: function () { rn.style.display = rn.style.display === 'none' ? 'flex' : 'none'; inp.focus(); } } }),
-      h('button.btn.sm.alt', { html: ic('target') + 'Centre', on: { click: function () { Z.World.focus(e.cx, e.cz); } } })));
+      h('button.btn.sm.alt', { html: ic('target') + 'Centre', on: { click: function () { focusEnc(e); } } })));
     cur = {
       kind: 'enclosure', update: function () {
         var en = find(Z.state.enclosures, id); if (!en) return false;
@@ -388,7 +399,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       encs.forEach(function (en) {
         var f = Z.Sim.suitabilityFor(en.id, id), pct = f ? Math.round(f.value * 100) : 0;
         var spot = findSpot(en, id);
-        var btn = h('button.btn.sm' + (spot.ok ? '' : '.dis'), { text: 'Hatch', on: { click: function () { Panel.confirmEgg(id, spot.i, spot.j, function () { Panel.closeSheet(); Z.World.focus(en.cx, en.cz, Math.min(Z.World.cam.dist, 45)); }); } } });
+        var btn = h('button.btn.sm' + (spot.ok ? '' : '.dis'), { text: 'Hatch', on: { click: function () { Panel.confirmEgg(id, spot.i, spot.j, function () { Panel.closeSheet(); focusEnc(en, Math.min(Z.World.cam.dist, 45)); }); } } });
         var msg = !spot.ok ? spot.msg : (f && f.issues.length ? f.issues[0] : 'A fine home');
         list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, h('small', { text: msg })),
           h('div', { style: 'min-width:62px;text-align:center' }, h('div.num', { style: 'font:700 17px var(--serif);color:' + (pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)'), text: pct + '%' }), bar(f ? f.value : 0)), btn));

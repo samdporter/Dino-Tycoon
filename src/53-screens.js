@@ -50,7 +50,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return d;
   }
   function jump(kind, id, x, z) {
-    UI.closeModal(); Z.World.focus(x, z, Math.min(Z.World.cam.dist, 30));
+    UI.closeModal(); if (isFinite(x) && isFinite(z)) Z.World.focus(x, z, Math.min(Z.World.cam.dist, 30));
     if (UI.tool) UI.Tools.cancel(); UI.Panel.open(kind, id);
   }
 

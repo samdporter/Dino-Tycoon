@@ -136,7 +136,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       enc.kind = def.kind; enc.realm = def.realm; enc.lvl = def.lvl || 1; enc.wall = def.wall || 0; enc.mesh = def.mesh || 0; enc.band = def.band || 0; enc.paid = def.paid || 0;
       enc.tiles = tiles.slice(); enc.area = tiles.length;
       for (q = 0; q < tiles.length; q++) { t = tiles[q]; S().tileEnc[t] = enc.id; sx += C.cxOf(t); sz += C.czOf(t); }
-      enc.cx = sx / tiles.length; enc.cz = sz / tiles.length;
+      enc.cx = tiles.length ? sx / tiles.length : N * TILE / 2;
+      enc.cz = tiles.length ? sz / tiles.length : N * TILE / 2;
       enc.animals = []; enc.species = []; enc.suitability = enc.suitability || {};
       newEncs.push(enc);
     }
@@ -706,8 +707,9 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function setTarget(a, t, jit) { a.tx = C.cxOf(t) + rng.range(-jit, jit); a.tz = C.czOf(t) + rng.range(-jit, jit); }
   function steer(a, dt, spd, enc, free, turnK) {
+    if (!isFinite(a.tx) || !isFinite(a.tz)) { a.speed = 0; return 1; }
     var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.35) { a.speed = 0; return 1; }
+    if (!isFinite(d) || d < 0.35) { a.speed = 0; return 1; }
     a.heading = C.turn(a.heading, Math.atan2(dx, dz), dt * (turnK || 3));
     var step = Math.min(spd * dt, d), nx = a.x + dx / d * step, nz = a.z + dz / d * step;
     if (!free && S().tileEnc[tileOf(nx, nz)] !== enc.id) { a.speed = 0; return 2; }
@@ -883,8 +885,9 @@ window.Z = window.Z || {}; var Z = window.Z;
   function landBolt(a, dt, enc, sp) {
     var s = S(), spd = sp.speed * C.fxOf(a).speed * 0.9;
     if (a.state === 'sleep' || a.state === 'eat' || a.state === 'drink' || a.state === 'idle' || a.state === 'sick' || a.state === 'play') a.state = 'walk';
+    if (!isFinite(a.tx) || !isFinite(a.tz)) { var ang0 = rng.next() * PI * 2, r0 = 8 + rng.next() * 12; a.tx = clamp(enc.cx + Math.cos(ang0) * r0, 2, N * TILE - 2); a.tz = clamp(enc.cz + Math.sin(ang0) * r0, 2, N * TILE - 2); return; }
     var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.8 || a.tx === undefined) { var ang = rng.next() * PI * 2, r = 8 + rng.next() * 12; a.tx = clamp(enc.cx + Math.cos(ang) * r, 2, N * TILE - 2); a.tz = clamp(enc.cz + Math.sin(ang) * r, 2, N * TILE - 2); return; }
+    if (!isFinite(d) || d < 0.8) { var ang = rng.next() * PI * 2, r = 8 + rng.next() * 12; a.tx = clamp(enc.cx + Math.cos(ang) * r, 2, N * TILE - 2); a.tz = clamp(enc.cz + Math.sin(ang) * r, 2, N * TILE - 2); return; }
     var nx = a.x + dx / d * spd * dt, nz = a.z + dz / d * spd * dt, nt = tileOf(nx, nz), cur = tileOf(a.x, a.z);
     var ne = s.tileEnc[nt];
     if (nt !== cur && (RT().block[nt] || C.cliffT(nt) || s.terrain[nt] === wi() || (ne && ne !== enc.id) || s.ditch[nt])) { a.tx = undefined; a.speed = 0; return; }

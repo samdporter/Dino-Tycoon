@@ -1008,3 +1008,40 @@ test('all build categories including aviary and tagging render all cards at 5 st
   assert.match(z.UI.el.panel.textContent, /Information/);
   assert.doesNotMatch(z.UI.el.panel.textContent, /Containment tower/);
 });
+
+test('enclosure centroids, realm bolting, and animal movement stay finite under edge cases', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 19, map: 'green', money: 500000 });
+  z.state.unlocked.star = 5;
+  for (let j = 10; j <= 16; j++) for (let i = 10; i <= 16; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * z.N] = 0;
+  }
+  const vTiles = [];
+  for (let j = 10; j <= 14; j++) for (let i = 10; i <= 14; i++) vTiles.push(i + j * z.N);
+  assert.equal(z.Sim.realms.place('virtual', 'land', vTiles, { band: 1 }).ok, true);
+
+  // Empty realm definition tiles must fall back to a finite center instead of 0/0 NaN
+  z.state.realms.defs.push({ id: 9999, kind: 'virtual', realm: 'land', tiles: [], lvl: 1, wall: 0, mesh: 0, band: 1, paid: 0 });
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  for (const e of z.state.enclosures) {
+    assert.ok(Number.isFinite(e.cx) && Number.isFinite(e.cz), `enclosure ${e.id} centroid should be finite`);
+  }
+
+  // Missing target coordinates during landBolt or animalMove must not produce NaN positions
+  const a = z.Sim.spawnAnimal('dryosaurus', 12, 12);
+  a.bolt = 1;
+  a.tx = a.x + 4;
+  a.tz = undefined;
+  for (let k = 0; k < 20; k++) z.Sim._step(0.05);
+  assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
+
+  a.bolt = 0;
+  a.state = 'walk';
+  a.tx = undefined;
+  a.tz = undefined;
+  for (let k = 0; k < 10; k++) z.Sim._step(0.05);
+  assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
+});

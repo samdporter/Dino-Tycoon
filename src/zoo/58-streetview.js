@@ -60,11 +60,20 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.sel.value = '';
   }
   // a spot on the viewing side of an enclosure: the nearest path tile within 3 tiles of it (else any free neighbouring tile)
+  function encCenter(enc) {
+    var cx = enc.cx, cz = enc.cz, tl = enc.tiles;
+    if ((!isFinite(cx) || !isFinite(cz)) && tl && tl.length) {
+      var sx = 0, sz = 0;
+      for (var k = 0; k < tl.length; k++) { sx += ((tl[k] % N) + 0.5) * T; sz += (((tl[k] / N) | 0) + 0.5) * T; }
+      cx = sx / tl.length; cz = sz / tl.length;
+    }
+    return { x: isFinite(cx) ? cx : N * T / 2, z: isFinite(cz) ? cz : N * T / 2 };
+  }
   function viewSpot(enc) {
     var S = Z.state, tiles = enc.tiles || [], i0 = N, j0 = N, i1 = 0, j1 = 0, k;
     if (!tiles.length) return null;
     for (k = 0; k < tiles.length; k++) { var ti = tiles[k] % N, tj = (tiles[k] / N) | 0; if (ti < i0) i0 = ti; if (ti > i1) i1 = ti; if (tj < j0) j0 = tj; if (tj > j1) j1 = tj; }
-    var best = null, bd = 1e9, R = 3, cx = enc.cx, cz = enc.cz;
+    var ctr = encCenter(enc), best = null, bd = 1e9, R = 3, cx = ctr.x, cz = ctr.z;
     for (var j = Math.max(0, j0 - R); j <= Math.min(N - 1, j1 + R); j++) for (var i = Math.max(0, i0 - R); i <= Math.min(N - 1, i1 + R); i++) {
       var idx = i + j * N; if (S.tileEnc[idx] === enc.id) continue;
       var isPath = !!S.path[idx]; if (!isPath && (S.tileObj && S.tileObj[idx])) continue;
@@ -84,7 +93,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (v === 'gate') spot = { x: 56, z: 106, lx: 56, lz: 60 };
     else if (v.indexOf('enc:') === 0) {
       var id = +v.slice(4), enc = null; (S.enclosures || []).forEach(function (e) { if (e.id === id || String(e.id) === v.slice(4)) enc = e; });
-      if (enc) spot = viewSpot(enc) || { x: enc.cx, z: enc.cz + 2, lx: enc.cx, lz: enc.cz };
+      if (enc) { var ec = encCenter(enc); spot = viewSpot(enc) || { x: ec.x, z: ec.z + 2, lx: ec.x, lz: ec.z }; }
     }
     el.sel.value = '';
     if (!spot) { UI.toast('Could not find a spot there', 'info'); return; }
