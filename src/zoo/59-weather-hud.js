@@ -72,7 +72,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.pop.style.left = Math.max(6, Math.min(r.left, window.innerWidth - w - 6)) + 'px';
     el.pop.style.top = (r.bottom + 6) + 'px';
   }
-  function open(on) { if (!el.chip) return; if (on) { render(true); place(); } el.pop.classList.toggle('on', on); el.chip.classList.toggle('open', on); if (!on) pinned = false; }
+  function open(on) { if (!el.chip) return; if (on) { if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false); render(true); place(); } el.pop.classList.toggle('on', on); el.chip.classList.toggle('open', on); if (!on) pinned = false; }
 
   function init() {
     var clock = UI.el && UI.el.clock; if (!clock || el.chip) return;

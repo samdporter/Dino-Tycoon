@@ -41,8 +41,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       return false;
     }
   };
-  Main.saveSettings = function () { settings.sound = Z.Audio.enabled(); sset(SET_KEY, JSON.stringify(settings)); };
-  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; } catch (e) { } Z.Audio.setEnabled(settings.sound); }
+  Main.saveSettings = function () { settings.sound = Z.Audio.enabled(); if (UI.PlayTimer && UI.PlayTimer.hudVisible) settings.timerHud = UI.PlayTimer.hudVisible(); sset(SET_KEY, JSON.stringify(settings)); };
+  Main.setTimerHud = function (on) { settings.timerHud = !!on; Main.saveSettings(); };
+  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; if (s.timerHud === false) settings.timerHud = false; else if (s.timerHud === true) settings.timerHud = true; } catch (e) { } Z.Audio.setEnabled(settings.sound); if (settings.timerHud === false && UI.PlayTimer && UI.PlayTimer.setHudVisible) UI.PlayTimer.setHudVisible(false, true); }
   function saveNotice(ok) {
     if (!ok && !saveFailed) { saveFailed = true; UI.toast('Saving failed. Export a backup in Settings before closing.', 'bad'); }
     if (ok) saveFailed = false;
@@ -149,6 +150,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.titleOpen = false; titleEl.classList.remove('on'); document.getElementById('ui').style.display = ''; Main.playing = true; saveT = 0;
     if (Z.Storage && Z.Storage.requestPersistence) Z.Storage.requestPersistence();
     UI.reset(); UI.cat = null; UI.markTabs && UI.markTabs(); if (UI.el && UI.el.cards) UI.el.cards.className = 'empty';
+    if (UI.PlayTimer && UI.PlayTimer.startSession) UI.PlayTimer.startSession();
     UI.snd('unlock');
   }
   function startCam() {
@@ -249,6 +251,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   Main.toTitle = function () {
     Main.save(); UI.closeModal(); if (UI.Tutorial) UI.Tutorial.active() && UI.el.tut.classList.remove('on');
     if (UI.Panel) UI.Panel.hide(true); if (UI.Tools) UI.Tools.cancel(true);
+    if (UI.PlayTimer && UI.PlayTimer.endSession) UI.PlayTimer.endSession();
     buildDemo(); Z.bus.emit('reset'); Main.showTitle();
   };
 
@@ -261,6 +264,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (Main.playing) {
         Z.Sim.tick(dt);
         UI.update(dt); Z.Audio.update(dt);
+        if (UI.PlayTimer && UI.PlayTimer.tick) UI.PlayTimer.tick(Math.min(raw, 2));
         saveT += raw; if (saveT >= 10) { saveT = 0; Main.save(); }
       } else { Z.Sim.tick(dt); var c = Z.World.cam; c.yaw += dt * 0.07; }
       Z.World.frame(dt);

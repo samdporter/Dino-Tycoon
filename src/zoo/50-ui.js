@@ -104,7 +104,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     raise: 'M12 19V5M5 12l7-7 7 7',
     lower: 'M12 5v14M5 12l7 7 7-7',
     level: 'M3 12h18M3 8h18M3 16h18',
-    smooth: 'M2 15c4-6 8-6 10 0s6 6 10 0'
+    smooth: 'M2 15c4-6 8-6 10 0s6 6 10 0',
+    timer: 'M12 7v5l3.5 2M12 22a8.5 8.5 0 100-17 8.5 8.5 0 000 17zM9.5 2h5'
   };
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
@@ -236,7 +237,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
   };
 
-  UI.hideUI = function (on) { root.classList.toggle('ui-hidden', !!on); if (on) UI.toast('Tap the eye to bring the controls back', 'info'); };
+  UI.hideUI = function (on) { root.classList.toggle('ui-hidden', !!on); if (on) { if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false); UI.toast('Tap the eye to bring the controls back', 'info'); } };
   UI.setSpeed = function (n) { Z.Sim.setSpeed(n); UI.snd('click'); lastHud.speed = -1; };
 
   // ------------------------------------------------------------------ HUD
@@ -652,6 +653,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (UI.Panel && UI.Panel.hide) UI.Panel.hide(true);
     if (UI.Tools && UI.Tools.cancel) UI.Tools.cancel(true);
     if (UI.WeatherHud && UI.WeatherHud.close) UI.WeatherHud.close();
+    if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false);
   };
   UI.exitFollowQuiet = function () { UI.following = null; el.follow.classList.remove('on'); };
   UI.jumpTo = function (kind, id) {

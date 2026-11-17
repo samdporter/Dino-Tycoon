@@ -266,7 +266,7 @@ canvas.chart{width:100%;height:170px;display:block;background:#fffdf3;border-rad
   #hud{flex-direction:row;justify-content:flex-start;align-items:stretch;gap:6px;right:auto}
   .hud-row{gap:6px}
   .hud-row.r1{justify-content:flex-start}
-  #clock,#speed,.hbtn{height:42px}
+  #clock,#speed,.hbtn,#wxchip,#timerchip{height:42px}
   #cash{max-width:none;min-width:130px;font-size:19px}
   #menuBtn{order:9}
   #stack{top:calc(60px + var(--sat));right:auto;width:400px}
@@ -278,6 +278,13 @@ canvas.chart{width:100%;height:170px;display:block;background:#fffdf3;border-rad
   #cards{min-height:124px}
   #mbox{margin:18px auto;max-height:calc(100% - 36px)}
   #modal{padding:0}
+}
+@media (min-width:820px) and (max-width:1059px){
+  #wxchip .wxn{display:none}
+  #wxchip{padding:0 8px}
+  #cash{min-width:106px;font-size:17px}
+  .hud-cell{padding:0 7px;gap:5px}
+  #speed button{width:34px}
 }
 @media (max-height:520px){
   #panel{max-height:60vh}
@@ -372,7 +379,7 @@ body.sv-on #svbar{display:flex}
 #svbar .svdial svg{width:100%;height:100%;display:block}
 #svbar .svsel{height:38px;border-radius:10px;border:2px solid rgba(58,42,26,.35);background:var(--paper2);color:var(--ink);font:600 13px var(--sans);padding:0 8px;max-width:210px;min-width:0}
 #svbar .svexit{min-height:38px}
-body.sv-on #hud,body.sv-on #side,body.sv-on #build,body.sv-on #panel,body.sv-on #unhide,body.sv-on #goalchip,body.sv-on #follow,body.sv-on #tut,body.sv-on #pausebadge,body.sv-on #costtip,body.sv-on #wxpop{display:none!important}
+body.sv-on #hud,body.sv-on #side,body.sv-on #build,body.sv-on #panel,body.sv-on #unhide,body.sv-on #goalchip,body.sv-on #follow,body.sv-on #tut,body.sv-on #pausebadge,body.sv-on #costtip,body.sv-on #wxpop,body.sv-on #timerpop{display:none!important}
 body.sv-on #stack{top:calc(62px + var(--sat))}
 #svhint{position:absolute;left:50%;bottom:calc(14px + var(--sab));transform:translateX(-50%);max-width:92vw;padding:7px 14px;border-radius:20px;background:rgba(58,42,26,.78);color:var(--paper);font:600 12.5px var(--sans);text-align:center;pointer-events:none;opacity:0;transition:opacity .5s;z-index:6}
 body.sv-on #svhint.on{display:block;opacity:1}
@@ -417,4 +424,55 @@ body.sv-on.sv-drag #world{cursor:grabbing}
 #wxpop .wxe1 b{font-weight:700}
 #wxpop .wxe1 em{font:700 11px var(--sans);font-style:normal;color:#8a5a0a;background:#fbe6b4;border-radius:8px;padding:2px 6px;white-space:nowrap}
 #wxpop .wxnone{color:var(--ink2)}
-@media (max-width:560px){#wxchip .wxn{display:none}#wxchip{padding:0 8px}}
+@media (max-width:599px){#wxchip .wxn{display:none}#wxchip{padding:0 8px}}
+
+/* ===== play timer app ===== */
+#timerchip{font:700 13px var(--sans);gap:5px;height:36px;padding:0 9px;position:relative;white-space:nowrap;color:var(--ink)}
+#timerchip .pt-ic{display:inline-flex;color:var(--moss2)}
+#timerchip.open{background:var(--paper2)}
+#timerchip.pt-paused{color:var(--ink2)}
+#timerchip.pt-paused .pt-ic{color:var(--ink3)}
+#timerchip.pt-alert{background:rgba(251,235,196,.98);border-color:#c47a16}
+#timerchip .pt-dot{position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;background:#e8942a;border:2px solid var(--paper)}
+#timerpop{position:fixed;z-index:20;display:none;padding:11px 12px;font:500 13px/1.35 var(--sans);color:var(--ink);pointer-events:auto;max-height:calc(100vh - 80px);overflow:auto;flex-direction:column;gap:10px}
+#timerpop.on{display:flex}
+.pt-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:7px;border-bottom:1px solid rgba(58,42,26,.16)}
+.pt-title{display:flex;align-items:center;gap:6px;min-width:0}
+.pt-hic{display:inline-flex;color:var(--moss)}
+.pt-title b{font:700 16px var(--serif)}
+.pt-status{font:700 10.5px var(--sans);text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:8px;background:#d4ecc3;color:#1f6a35}
+.pt-status.paused{background:var(--paper3);color:var(--ink2)}
+.pt-x{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--ink2)}
+.pt-x:hover{background:rgba(58,42,26,.08)}
+.pt-hero{background:var(--paper2);border:1.5px solid rgba(58,42,26,.2);border-radius:12px;padding:10px 12px;text-align:center}
+.pt-clock{font:700 32px/1.1 var(--serif);letter-spacing:.5px;color:var(--ink)}
+.pt-sub{font-size:12px;color:var(--ink2);margin-top:4px}
+.pt-meta{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.pt-banner{display:flex;flex-direction:column;gap:7px;padding:8px 10px;border-radius:11px;background:#fbe9bf;border:2px solid #d4901a;font-size:12.5px}
+.pt-banner p{margin:0;font-weight:700;color:#664007}
+.pt-actions .btn{min-height:36px;font-size:13px}
+.pt-rem{display:flex;flex-direction:column;gap:6px;padding-top:8px;border-top:1px solid rgba(58,42,26,.16)}
+.pt-rem-head{display:flex;justify-content:space-between;align-items:center;font-size:12px}
+.pt-rem-head span:first-child{font:700 10.5px var(--sans);letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
+.pt-rem-st{font-weight:700;color:var(--ink2)}
+.pt-seg{display:flex;width:100%}
+.pt-seg button{flex:1 1 0;min-height:32px;padding:0 4px;justify-content:center;font-size:12px}
+.pt-mini{height:7px}
+.pt-laps{display:flex;flex-direction:column;gap:5px;padding-top:8px;border-top:1px solid rgba(58,42,26,.16)}
+.pt-laps-head{display:flex;justify-content:space-between;align-items:center}
+.pt-laps-head span{font:700 10.5px var(--sans);letter-spacing:.6px;text-transform:uppercase;color:var(--ink3)}
+.pt-clear{font:700 11.5px var(--sans);color:var(--terra);padding:2px 6px;border-radius:6px}
+.pt-lap-list{display:flex;flex-direction:column;gap:4px;max-height:112px;overflow-y:auto}
+.pt-lap{display:grid;grid-template-columns:30px 1fr auto auto;gap:6px;align-items:center;font-size:12px;padding:4px 7px;border-radius:8px;background:rgba(255,255,255,.55);border:1px solid rgba(58,42,26,.14)}
+.pt-lap-n{font-weight:700;color:var(--ink3)}
+.pt-lap-d{color:var(--ink2)}
+.pt-lap-delta{color:var(--moss);font-size:11.5px}
+.pt-lap-at{color:var(--ink)}
+@media (max-width:599px){
+  .hud-row.r2{flex-wrap:wrap}
+  #clock{padding:0 7px;gap:4px;font-size:12px}
+  #speed button{width:33px}
+  .hbtn{width:36px}
+  #timerchip{order:5;height:30px;padding:0 8px;font-size:12px;gap:4px}
+  body:not(.pt-hud-off) #stack{top:calc(130px + var(--sat))}
+}

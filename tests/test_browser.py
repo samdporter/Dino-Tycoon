@@ -1134,3 +1134,140 @@ def test_dino_new_animal_hatch_follow_and_camera_resilience(browser):
         assert_no_browser_errors(problems)
     finally:
         context.close()
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+def test_zoo_play_timer_app(browser, mobile):
+    context, page, problems = open_zoo(browser, mobile=mobile)
+    try:
+        vp_w = 390 if mobile else 1280
+        vp_h = 844 if mobile else 900
+
+        # Title screen: session timer is not active yet
+        assert js(page, "Boolean(Z.UI.PlayTimer) && Z.UI.PlayTimer.state().active === false") is True
+
+        # Start a park: play timer starts at 00:00 and is visible in HUD without overlapping other HUD items
+        new_zoo_park(page, map_id="meadow", difficulty="normal")
+        chip = page.locator("#timerchip")
+        assert chip.is_visible()
+        assert js(page, "Z.UI.PlayTimer.state().active") is True
+
+        # Ensure real time ticks even when simulation speed is paused (speed == 0)
+        page.wait_for_function("Z.UI.PlayTimer.elapsed() >= 1.2", timeout=5000)
+        assert js(page, "Z.UI.PlayTimer.formatted()") != "00:00"
+
+        # Layout & non-overlap verification on both desktop and mobile
+        boxes = js(page, """(() => {
+          const get = s => {
+            const e = document.querySelector(s);
+            if (!e) return null;
+            const r = e.getBoundingClientRect();
+            return { x: r.left, y: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height };
+          };
+          return {
+            timer: get('#timerchip'),
+            clock: get('#clock'),
+            wx: get('#wxchip'),
+            speed: get('#speed'),
+            goal: get('#goalchip'),
+            side: get('#side')
+          };
+        })()""")
+        tb = boxes["timer"]
+        assert tb and tb["w"] > 40 and tb["h"] >= 28
+        assert tb["x"] >= 0 and tb["r"] <= vp_w and tb["y"] >= 0 and tb["b"] <= vp_h
+        for other_name in ["clock", "wx", "speed", "goal", "side"]:
+            ob = boxes[other_name]
+            if not ob or ob["w"] == 0 or ob["h"] == 0:
+                continue
+            overlap = (tb["x"] < ob["r"] - 1 and tb["r"] > ob["x"] + 1 and tb["y"] < ob["b"] - 1 and tb["b"] > ob["y"] + 1)
+            assert not overlap, f"#timerchip overlapped #{other_name}: {tb} vs {ob}"
+
+        # Open Play Timer app popover
+        chip.click()
+        page.wait_for_function("document.querySelector('#timerpop.on')")
+        pop = page.locator("#timerpop.on")
+        assert pop.is_visible()
+        pop_box = pop.bounding_box()
+        assert pop_box and pop_box["x"] >= 0 and pop_box["x"] + pop_box["width"] <= vp_w
+
+        # Pause & Resume inside the Play Timer app
+        pop.get_by_role("button", name="Pause").click()
+        assert js(page, "Z.UI.PlayTimer.state().paused") is True
+        paused_at = js(page, "Z.UI.PlayTimer.elapsed()")
+        page.wait_for_timeout(350)
+        assert js(page, "Z.UI.PlayTimer.elapsed()") == paused_at
+        pop.get_by_role("button", name="Resume").click()
+        assert js(page, "Z.UI.PlayTimer.state().paused") is False
+
+        # Mark a checkpoint and clear it
+        pop.get_by_role("button", name="Mark").click()
+        assert page.locator(".pt-lap").count() == 1
+        pop.get_by_role("button", name="Clear").click()
+        assert page.locator(".pt-lap").count() == 0
+
+        # Break reminder (15m) -> trigger -> snooze -> trigger -> dismiss
+        pop.locator(".pt-seg button[data-m='15']").click()
+        js(page, "Z.UI.PlayTimer.tick(900)")
+        page.wait_for_function("Z.UI.PlayTimer.state().alertFired === true && document.querySelector('#timerpop .pt-banner').style.display !== 'none'")
+        assert page.locator("#timerchip.pt-alert").is_visible()
+        pop.get_by_role("button", name="Snooze +15m").click()
+        assert js(page, "Z.UI.PlayTimer.state().alertFired") is False
+        js(page, "Z.UI.PlayTimer.tick(900)")
+        page.wait_for_function("Z.UI.PlayTimer.state().alertFired === true")
+        pop.get_by_role("button", name="Dismiss").click()
+        assert js(page, "Z.UI.PlayTimer.state().alertDismissed") is True
+
+        # Reset (confirm two-step when >= 5s)
+        pop.get_by_role("button", name="Reset").click()
+        assert "Reset?" in pop.locator(".pt-actions button").nth(2).inner_text()
+        pop.get_by_role("button", name="Reset?").click()
+        assert js(page, "Z.UI.PlayTimer.elapsed() < 2") is True
+
+        # Close via close button, then reopen and close via Escape key
+        pop.get_by_role("button", name="Close play timer").click()
+        page.wait_for_function("!document.querySelector('#timerpop.on')")
+        chip.click()
+        page.wait_for_function("document.querySelector('#timerpop.on')")
+        page.keyboard.press("Escape")
+        page.wait_for_function("!document.querySelector('#timerpop.on')")
+
+        # Verify Overview and Settings integration
+        js(page, "Z.UI.openModal('ov')")
+        page.wait_for_function("document.querySelector('#modal.on')")
+        assert "Session play time" in page.locator("#mbody").inner_text()
+
+        js(page, "Z.UI.Screens.open('set')")
+        assert "Current play session" in page.locator("#mbody").inner_text()
+        page.get_by_role("button", name="Show play timer on HUD").click()
+        assert js(page, "Z.UI.PlayTimer.hudVisible()") is False
+        assert not chip.is_visible()
+        page.get_by_role("button", name="Show play timer on HUD").click()
+        assert js(page, "Z.UI.PlayTimer.hudVisible()") is True
+        assert chip.is_visible()
+        page.get_by_role("button", name="Open Play Timer").click()
+        page.wait_for_function("!Z.UI.modalOpen() && document.querySelector('#timerpop.on')")
+        page.keyboard.press("Escape")
+        page.wait_for_function("!document.querySelector('#timerpop.on')")
+
+        # Return to title ends session, Continue starts a new session
+        js(page, "Z.Main.toTitle()")
+        page.wait_for_function("!Z.Main.playing && Z.UI.PlayTimer.state().active === false")
+        page.get_by_role("button", name="Continue").click()
+        page.wait_for_function("Z.Main.playing && Z.UI.PlayTimer.state().active === true")
+        assert js(page, "Z.UI.PlayTimer.elapsed() < 5") is True
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
+
+
+def test_dino_tycoon_has_no_play_timer(browser):
+    context, page, problems = open_game(browser)
+    try:
+        new_park(page)
+        assert js(page, "Z.UI.PlayTimer === undefined") is True
+        assert page.locator("#timerchip").count() == 0
+        assert page.locator("#timerpop").count() == 0
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()

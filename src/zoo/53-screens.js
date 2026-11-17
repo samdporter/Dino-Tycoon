@@ -23,6 +23,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var S = Z.state;
     if (!UI.modalOpen()) { if (S.speed > 0) { UI.lastSpeed = S.speed; Z.Sim.setSpeed(0); pausedBy = true; } else pausedBy = false; }
     if (UI.Panel) UI.Panel.closeSheet();
+    if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false);
     el.modal.classList.add('on'); UI.unread = 0; Screens.open(tab || 'ov');
   };
   UI.closeModal = function () {
@@ -79,6 +80,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your zoo' }));
       var stList = [['Day', S2.day], ['Animals', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Guests in the zoo', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
+      if (UI.PlayTimer && UI.PlayTimer.formatted) stList.push(['Session play time', UI.PlayTimer.formatted()]);
       if (S2.panic > 0) stList.push(['Park panic', Math.round(S2.panic * 100) + '%']);
       if (S2.stats && S2.stats.injuries) stList.push(['Guest injuries', S2.stats.injuries]);
       if (S2.stats && S2.stats.compensation) stList.push(['Compensation paid', fmt(S2.stats.compensation)]);
@@ -258,6 +260,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     [['auto', 'Auto'], ['low', 'Low'], ['med', 'Medium'], ['high', 'High']].forEach(function (o) { q.appendChild(h('button' + (qv === o[0] ? '.on' : ''), { text: o[1], on: { click: function () { Z.Main.setQuality(o[0]); Array.prototype.forEach.call(q.children, function (c) { c.classList.toggle('on', c.textContent === o[1]); }); UI.snd('click'); } } })); });
     snd.appendChild(h('div.kv', h('span', { text: 'Graphics quality' }), h('span', { style: 'font-size:12px;color:var(--ink3)', text: 'Lower it if the game feels slow' }))); snd.appendChild(q);
     b.appendChild(snd);
+    var ptVal = null;
+    if (UI.PlayTimer) {
+      var ptBox = box('Play timer');
+      ptVal = h('b.num', { text: UI.PlayTimer.formattedLong ? UI.PlayTimer.formattedLong() : UI.PlayTimer.formatted() });
+      ptBox.appendChild(h('div.kv', h('span', { text: 'Current play session' }), ptVal));
+      ptBox.appendChild(toggle('Show play timer on HUD', function () { return UI.PlayTimer.hudVisible(); }, function (v) { UI.PlayTimer.setHudVisible(v); }));
+      ptBox.appendChild(h('div.btnrow', h('button.btn.sm.alt', { html: ic('timer') + 'Open Play Timer', on: { click: function () { UI.snd('click'); UI.closeModal(); UI.PlayTimer.open(true); } } })));
+      b.appendChild(ptBox);
+    }
     var game = box('Game');
     game.appendChild(h('div.btnrow', h('button.btn.sm', { html: ic('save') + 'Save now', on: { click: function () { var ok = Z.Main.save(); UI.toast(ok ? 'Game saved' : 'Could not save in this browser', ok ? 'good' : 'bad'); } } }),
       h('button.btn.sm.alt', { html: ic('flag') + 'Replay tutorial', on: { click: function () { UI.closeModal(); UI.Tutorial.restart(); } } }),
@@ -282,7 +293,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       '<p><b>Mouse:</b> left click uses the tool or pans; right-drag rotates; wheel zooms. <b>Keys:</b> WASD or arrows pan, Q/E rotate, +/- zoom, R rotates the item, B bulldoze, Space pause, 1-2-3 speed, H hides the interface, Esc cancels.</p>' +
       '<p><b>Tip:</b> ' + (D.tips[(Math.random() * D.tips.length) | 0]) + '</p>' }));
     b.appendChild(how);
-    return function () { if (Z.Storage && Z.Storage.status) status.textContent = Z.Storage.status(); };
+    return function () { if (Z.Storage && Z.Storage.status) status.textContent = Z.Storage.status(); if (ptVal && UI.PlayTimer && UI.PlayTimer.formattedLong) ptVal.textContent = UI.PlayTimer.formattedLong(); };
   }
   Screens.buildSettings = setTab;
 })();

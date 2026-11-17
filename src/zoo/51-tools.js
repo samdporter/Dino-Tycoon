@@ -32,7 +32,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if ((e.ctrlKey || e.metaKey) && k === 'z') { if (!(UI.modalOpen && UI.modalOpen())) { UI.doUndo(); e.preventDefault(); } return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var S = Z.state;
-    if (k === 'escape') { if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
+    if (k === 'escape') { if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.PlayTimer && UI.PlayTimer.isOpen && UI.PlayTimer.isOpen()) UI.PlayTimer.open(false); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
     if (UI.modalOpen && UI.modalOpen()) return;
     if (k === ' ') { UI.setSpeed(S.speed === 0 ? (UI.lastSpeed || 1) : 0); if (S.speed) UI.lastSpeed = S.speed; e.preventDefault(); return; }
     if (k === '1') UI.setSpeed(1); else if (k === '2') UI.setSpeed(2); else if (k === '3') UI.setSpeed(4);

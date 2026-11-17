@@ -29,6 +29,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (SV.active || UI.titleOpen || !Z.state || !Z.World.setStreetView) return;
     if (UI.tool && UI.Tools) UI.Tools.cancel(true);
     if (UI.Panel && UI.Panel.hide) UI.Panel.hide(true);
+    if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false);
     if (UI.modalOpen && UI.modalOpen() && UI.closeModal) UI.closeModal();
     Z.World.setStreetView(true, x, z, yaw);
   };

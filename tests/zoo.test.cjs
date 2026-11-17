@@ -224,3 +224,207 @@ test('Zoo enclosures compute finite centroids across creation, load, and animal 
   for (let k = 0; k < 10; k++) z.Sim.tick(0.1);
   assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
 });
+
+function zooWithPlayTimer(opts) {
+  const values = new Map();
+  function node(tag) {
+    const attrs = {};
+    const classes = new Set();
+    const n = {
+      nodeType: 1,
+      tagName: (tag || 'div').toUpperCase(),
+      children: [],
+      parentNode: null,
+      style: {},
+      innerHTML: '',
+      textContent: '',
+      className: '',
+      listeners: {},
+      classList: {
+        add(...c) { c.forEach(x => classes.add(x)); },
+        remove(...c) { c.forEach(x => classes.delete(x)); },
+        toggle(c, f) { const on = f === undefined ? !classes.has(c) : !!f; if (on) classes.add(c); else classes.delete(c); return on; },
+        contains(c) { return classes.has(c); }
+      },
+      appendChild(c) { if (c && typeof c === 'object') { c.parentNode = n; n.children.push(c); } return c; },
+      insertBefore(c, ref) {
+        if (c && typeof c === 'object') {
+          c.parentNode = n;
+          const idx = n.children.indexOf(ref);
+          if (idx >= 0) n.children.splice(idx, 0, c); else n.children.push(c);
+        }
+        return c;
+      },
+      setAttribute(k, v) { attrs[k] = String(v); },
+      getAttribute(k) { return k in attrs ? attrs[k] : null; },
+      addEventListener(ev, fn) { (n.listeners[ev] = n.listeners[ev] || []).push(fn); },
+      contains(target) { return target === n || n.children.some(c => c && c.contains && c.contains(target)); },
+      getBoundingClientRect() { return { left: 120, right: 200, top: 6, bottom: 48, width: 80, height: 42 }; },
+      offsetParent: {}
+    };
+    return n;
+  }
+  const title = node('div'), ui = node('div'), body = node('body');
+  const speed = node('div'), r2 = node('div');
+  r2.appendChild(speed);
+  const toasts = [];
+  const doc = {
+    readyState: 'loading',
+    hidden: !!(opts && opts.hidden),
+    body,
+    addEventListener() {},
+    createElement: tag => node(tag),
+    createTextNode: t => ({ nodeType: 3, textContent: String(t) }),
+    getElementById: id => id === 'title' ? title : ui,
+    querySelector: sel => sel === '#ui' ? ui : null
+  };
+  const ctx = vm.createContext({
+    console, setTimeout, clearTimeout,
+    URL: globalThis.URL || {}, Blob: globalThis.Blob || {}, FileReader: globalThis.FileReader || {},
+    localStorage: {
+      getItem: key => values.has(key) ? values.get(key) : null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: key => values.delete(key)
+    },
+    document: doc,
+    location: { protocol: 'http:' },
+    performance: { now: () => 0 },
+    addEventListener() {},
+    innerWidth: 1280,
+    innerHeight: 900
+  });
+  vm.runInContext('var window=globalThis', ctx);
+  const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx);
+  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  const z = ctx.Z;
+  z.UI = {
+    h: (sel, a, ...kids) => {
+      const el = node(sel.split(/[.#]/)[0] || 'div');
+      if (a && a.constructor === Object) {
+        if (a.text != null) el.textContent = a.text;
+        if (a.html != null) el.innerHTML = a.html;
+        if (a.on) Object.keys(a.on).forEach(ev => el.addEventListener(ev, a.on[ev]));
+        Object.keys(a).forEach(k => {
+          if (k !== 'text' && k !== 'html' && k !== 'on' && k !== 'style' && a[k] !== false && a[k] != null) {
+            el.setAttribute(k, a[k] === true ? '' : a[k]);
+          }
+        });
+      } else if (a !== undefined) {
+        kids.unshift(a);
+      }
+      kids.flat().forEach(c => { if (c && c.nodeType) el.appendChild(c); });
+      return el;
+    },
+    $: (sel, r) => (sel === '#ui' ? ui : null),
+    ic: n => `<svg data-ic="${n}"></svg>`,
+    snd() {},
+    toast(text, kind) { toasts.push({ text, kind }); },
+    reset() {},
+    closeModal() {},
+    narrow: () => false,
+    Tutorial: { restart() {}, active: () => false },
+    el: { cards: node('div'), speed }
+  };
+  z.UI.init = () => {};
+  z.World = { cam: { target: { x: 0, z: 0 } }, resize() {} };
+  z.Audio = { enabled: () => true, setEnabled() {} };
+  load('56-playtimer.js');
+  load('60-main.js');
+  z.UI.init();
+  z.Main.showTitle();
+  return { z, doc, toasts, r2 };
+}
+
+test('Zoo PlayTimer tracks active session time, pause/resume, checkpoints, break reminders, and reset', () => {
+  const { z, doc, toasts } = zooWithPlayTimer();
+  const pt = z.UI.PlayTimer;
+  assert.ok(pt);
+  assert.equal(pt.state().active, false);
+  assert.equal(pt.formatted(), '00:00');
+  assert.equal(pt.formattedLong(), '00:00:00');
+
+  // Inactive on title screen: ticking must not advance timer
+  pt.tick(10);
+  assert.equal(pt.elapsed(), 0);
+
+  // Starting a park starts the session from 00:00
+  z.Main.newGame();
+  assert.equal(pt.state().active, true);
+  assert.equal(pt.elapsed(), 0);
+
+  // Advance by 65 seconds and ignore invalid deltas
+  pt.tick(65);
+  pt.tick(-5);
+  pt.tick(Number.NaN);
+  pt.tick(Infinity);
+  assert.equal(pt.formatted(), '01:05');
+  assert.equal(pt.formattedLong(), '00:01:05');
+
+  // Hidden tab does not count play time
+  doc.hidden = true;
+  pt.tick(30);
+  assert.equal(pt.formatted(), '01:05');
+  doc.hidden = false;
+
+  // Manual pause stops advancing until resumed
+  pt.pause();
+  assert.equal(pt.state().paused, true);
+  pt.tick(40);
+  assert.equal(pt.formatted(), '01:05');
+  pt.resume();
+  assert.equal(pt.state().paused, false);
+  pt.tick(3595); // total 3660s -> 1h 01m 00s
+  assert.equal(pt.formatted(), '1:01:00');
+  assert.equal(pt.formattedLong(), '01:01:00');
+
+  // Checkpoints / laps record deltas and day
+  pt.mark();
+  pt.tick(30);
+  pt.mark();
+  const st = pt.state();
+  assert.equal(st.laps.length, 2);
+  assert.equal(Math.floor(st.laps[0].delta), 3660);
+  assert.equal(Math.floor(st.laps[1].delta), 30);
+  pt.clearLaps();
+  assert.equal(pt.state().laps.length, 0);
+
+  // Break reminder fires toast once, supports snooze and dismiss
+  pt.reset();
+  pt.setReminder(15);
+  pt.tick(899);
+  assert.equal(pt.state().alertFired, false);
+  pt.tick(1);
+  assert.equal(pt.state().alertFired, true);
+  assert.ok(toasts.some(t => t.text.includes('15 minutes')));
+  pt.snooze(15);
+  assert.equal(pt.state().alertFired, false);
+  pt.tick(900);
+  assert.equal(pt.state().alertFired, true);
+  pt.dismissAlert();
+  assert.equal(pt.state().alertDismissed, true);
+
+  // Returning to title ends session; new/continue starts fresh session
+  z.Main.toTitle();
+  assert.equal(pt.state().active, false);
+  const prev = pt.elapsed();
+  pt.tick(20);
+  assert.equal(pt.elapsed(), prev);
+  z.Main.continueGame();
+  assert.equal(pt.state().active, true);
+  assert.equal(pt.elapsed(), 0);
+});
+
+test('PlayTimer is present only in Zoo Tycoon and not in Dino Tycoon', () => {
+  const indexHtml = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const zooHtml = fs.readFileSync(path.join(__dirname, '../zoo.html'), 'utf8');
+  assert.ok(!indexHtml.includes('playtimer'), 'index.html must not load playtimer');
+  assert.ok(zooHtml.includes('src/zoo/56-playtimer.js'), 'zoo.html must load 56-playtimer.js');
+
+  const dinoSrcFiles = fs.readdirSync(path.join(__dirname, '../src')).filter(f => f.endsWith('.js'));
+  for (const file of dinoSrcFiles) {
+    const content = fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
+    assert.ok(!content.includes('PlayTimer') && !content.includes('timerchip'), `Dino script ${file} must not include PlayTimer`);
+  }
+  const dinoCss = fs.readFileSync(path.join(__dirname, '../styles/game.css'), 'utf8');
+  assert.ok(!dinoCss.includes('timerchip') && !dinoCss.includes('timerpop'), 'styles/game.css must not include PlayTimer styles');
+});
