@@ -541,6 +541,14 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   function markTabs() { Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); }
   function itemPriceText(it) { return fmt(it.cost) + (it.unit ? '<small style="font:500 9.5px var(--sans);color:var(--ink2)"> ' + it.unit + '</small>' : ''); }
+  function cardSpec(it) {
+    var d = it.def; if (!d) return '';
+    if (it.kind === 'building' && (d.id === 'keeper_hut' || d.id === 'vet_clinic')) {
+      var cov = Z.Sim && Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : { keeperHutTiles: 48, vetClinicTiles: 48 };
+      return (d.id === 'vet_clinic' ? cov.vetClinicTiles : cov.keeperHutTiles) + 't';
+    }
+    return '';
+  }
   function renderCards(c) {
     var cards = el.cards, items = c.items(), S = Z.state; cards.innerHTML = ''; cards.className = '';
     cards.scrollLeft = 0;
@@ -565,10 +573,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star;
       if (it.first && (!UI.terrainDrawerMode || UI.terrainDrawerMode === 'all')) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
-      var card = h('button.card' + (locked ? '.lock' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || it.name });
+      var card = h('button.card' + (locked ? '.lock' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && (it.def.info || it.def.effect)) || it.name });
       var th = h('div.th'); card.appendChild(th);
       card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: it.priceHtml || itemPriceText(it) }));
       if (locked) card.appendChild(h('span.lk', { html: ic('lock') + '★' + it.star }));
+      else { var spb = cardSpec(it); if (spb) card.appendChild(h('span.spb', { text: spb })); }
       if (it.sculpt) th.innerHTML = sculptIcon(it.id);
       else if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));
       else lazyThumb(th, it.kind === 'animal' ? 'animal' : it.kind === 'staff' ? 'staff' : it.kind, it.id, it.emoji || '', 96);

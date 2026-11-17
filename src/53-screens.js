@@ -246,16 +246,28 @@ window.Z = window.Z || {}; var Z = window.Z;
     D.staff.forEach(function (s) {
       hire.appendChild(h('div.sp-row', { style: 'padding:8px' }, h('div.sth', (function () { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center' }); UI.lazyThumb(d, 'staff', s.id, s.emoji, 64); return d; })()), h('div.sm', s.name + '  ' + fmt(s['wage/day'] || s.wage) + '/day', h('small', { text: s.effect })),
         s.id === 'scientist' ? h('button.btn.sm', { text: 'Hire in Research', on: { click: function () { UI.closeModal(); UI.Research.open('team'); } } }) :
-        h('button.btn.sm', { text: 'Hire ' + fmt(s.hireCost), on: { click: function () { var r = Z.Sim.hireStaff(s.id); if (r.ok) { UI.toast(s.name + ' hired at the main gate.', 'good'); UI.snd('cash'); } else { UI.toast(r.msg, 'bad'); UI.snd('bad'); } upd(); } } })));
+        h('button.btn.sm', { text: 'Hire ' + fmt(s.hireCost), on: { click: function () {
+          var r = Z.Sim.hireStaff(s.id);
+          if (r.ok) {
+            if (s.id === 'keeper') {
+              var cov = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32 };
+              UI.toast(s.name + ' hired at the main gate (' + cov.baseTiles + '-tile range). Place rangers on paths via Staff bar or build a Ranger station to reach far enclosures.', 'good');
+            } else UI.toast(s.name + ' hired at the main gate.', 'good');
+            UI.snd('cash');
+          } else { UI.toast(r.msg, 'bad'); UI.snd('bad'); }
+          upd();
+        } } })));
     });
     var key = '';
     function upd() {
       var S = Z.state, k = S.staff.map(function (s) { return s.id + s.task; }).join('|'); if (k === key) return; key = k;
       list.innerHTML = ''; list.appendChild(h('h4', { text: 'Your team (' + S.staff.length + ')' }));
       if (!S.staff.length) list.appendChild(h('div.fact', { text: 'No staff yet. Rangers feed dinosaurs and clean enclosures; cleaners sweep the paths; security recaptures escapees; scientists work in the lab (hire them in Research).' }));
+      var baseT = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage().baseTiles : 32;
       S.staff.forEach(function (s) {
         var def = UI.byId(D.staff, s.type);
-        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', s.name + ' the ' + def.name.toLowerCase(), h('small', { text: s.task || '' })),
+        var sub = (s.task || '') + (s.type === 'keeper' ? ' · ' + baseT + 't range' : '');
+        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', s.name + ' the ' + def.name.toLowerCase(), h('small', { text: sub })),
           h('button.btn.sm.alt', { html: ic('eye'), 'aria-label': 'Follow', on: { click: function () { UI.closeModal(); UI.startFollow('staff', s.id); } } }),
           h('button.btn.sm.alt', { html: ic('close'), 'aria-label': 'Fire', on: { click: function () { Z.Sim.fireStaff(s.id); UI.toast(s.name + ' has left.', 'info'); key = ''; upd(); } } })));
       });

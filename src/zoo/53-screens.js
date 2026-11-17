@@ -217,7 +217,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (!S.staff.length) list.appendChild(h('div.fact', { text: 'No staff yet. Keepers feed animals and clean enclosures; cleaners sweep the paths; security recaptures escapees.' }));
       S.staff.forEach(function (s) {
         var def = UI.byId(D.staff, s.type);
-        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', s.name + ' the ' + def.name.toLowerCase(), h('small', { text: s.task || '' })),
+        var sub = (s.task || '') + ((s.type === 'keeper' || s.type === 'vet') ? ' · radio on call' : '');
+        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', s.name + ' the ' + def.name.toLowerCase(), h('small', { text: sub })),
           h('button.btn.sm.alt', { html: ic('eye'), 'aria-label': 'Follow', on: { click: function () { UI.closeModal(); UI.startFollow('staff', s.id); } } }),
           h('button.btn.sm.alt', { html: ic('close'), 'aria-label': 'Fire', on: { click: function () { Z.Sim.fireStaff(s.id); UI.toast(s.name + ' has left.', 'info'); key = ''; upd(); } } })));
       });

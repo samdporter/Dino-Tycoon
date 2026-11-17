@@ -545,8 +545,16 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function cardSpec(it) {
     var d = it.def; if (!d) return '';
+    if (it.kind === 'staff' && d.id === 'keeper') {
+      var baseT = Z.Sim && Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage().baseTiles : 32;
+      return baseT + 't';
+    }
     if (it.kind === 'fence' && d.strength) return 'Str ' + d.strength;
     if (it.kind !== 'building') return '';
+    if (d.id === 'keeper_hut' || d.id === 'vet_clinic') {
+      var cov = Z.Sim && Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { stationTiles: 48, vetClinicTiles: 48 };
+      return (d.id === 'vet_clinic' ? (cov.vetClinicTiles || 48) : cov.stationTiles) + 't';
+    }
     if (d.gen) return d.gen.kw + 'kW';
     if (d.battery) return d.battery.kwh + 'kWh';
     if (d.powerNode) return d.powerNode.radius + 't';
@@ -561,7 +569,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star || !!it.locked;
       if (it.first) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
-      var card = h('button.card' + (locked ? '.lock' : '') + (it.kind === 'animal' ? '.dino' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && (it.kind === 'scenery' || it.kind === 'building') && UI.itemInfo(it.def)) || it.name });
+      var card = h('button.card' + (locked ? '.lock' : '') + (it.kind === 'animal' ? '.dino' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && (it.kind === 'scenery' || it.kind === 'building') && UI.itemInfo(it.def)) || (it.def && it.def.effect) || it.name });
       var th = h('div.th'); card.appendChild(th);
       if (it.kind === 'animal') {
         card.appendChild(h('div.nm', { text: it.genome > 0 ? it.name : '???' }));

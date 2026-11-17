@@ -2173,6 +2173,7 @@ function buildPreview() {
   cx2.fillStyle = '#3b2204'; cx2.font = 'bold 34px sans-serif'; cx2.textAlign = 'center'; cx2.textBaseline = 'middle'; cx2.fillText('ENTRANCE', 128, 34);
   var tx = new THREE.CanvasTexture(cv); pv.label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tx, transparent: true, depthTest: false, fog: false })); pv.label.renderOrder = 20; pv.label.visible = false; root.add(pv.label);
   pv.ghost = null; pv.ghostCache = {}; pv.spec = null; pv.enc = null;
+  pv.rangeGrp = new THREE.Group(); pv.rangeGrp.visible = false; root.add(pv.rangeGrp); pv.rangeKey = '';
   pv.okCol = new THREE.Color(0.35, 1, 0.45); pv.badCol = new THREE.Color(1, 0.3, 0.28);
 }
 function writeQuad(a, n, x, y, z) {
@@ -2244,11 +2245,76 @@ function ghostMake(kind, id) {
   return c;
 }
 var _ghostEnt = { speed: 0, state: 'idle', heading: 0, x: 0, z: 0 };
+function clearRangePreview() {
+  pv.rangeKey = '';
+  if (!pv.rangeGrp) return;
+  while (pv.rangeGrp.children.length) {
+    var ch = pv.rangeGrp.children.pop();
+    if (ch.geometry) ch.geometry.dispose();
+    if (ch.material) ch.material.dispose();
+  }
+  pv.rangeGrp.visible = false;
+}
+function syncRangePreview(ranges) {
+  if (!pv.rangeGrp) return;
+  if (!ranges || !ranges.length) { clearRangePreview(); return; }
+  var key = '', k, rg;
+  for (k = 0; k < ranges.length; k++) {
+    rg = ranges[k];
+    key += Math.round(rg.x * 10) + ',' + Math.round(rg.z * 10) + ',' + Math.round(rg.r * 10) + ',' + (rg.col || 0) + ',' + (rg.alpha || 1) + ';';
+  }
+  if (key === pv.rangeKey) { pv.rangeGrp.visible = true; return; }
+  clearRangePreview();
+  pv.rangeKey = key;
+  var SEG = 64;
+  for (k = 0; k < ranges.length; k++) {
+    rg = ranges[k];
+    var col = rg.col !== undefined ? rg.col : 0x42f578, al = rg.alpha !== undefined ? rg.alpha : 1;
+    var cx = rg.x, cz = rg.z, rad = rg.r;
+    var cs0 = clamp(cx, 0, N * T), cz0 = clamp(cz, 0, N * T);
+    var yc = Math.max(groundY(cs0, cz0), waterLvlAt(cs0, cz0)) + 0.14;
+    var dPos = new Float32Array((SEG + 1) * 3), dIdx = [];
+    dPos[0] = cx; dPos[1] = yc; dPos[2] = cz;
+    var rPos = new Float32Array((SEG + 1) * 2 * 3), rIdx = [];
+    var halfW = al < 0.8 ? 0.34 : 0.5;
+    for (var s = 0; s <= SEG; s++) {
+      var ang = s * PI * 2 / SEG, cs = Math.cos(ang), sn = Math.sin(ang);
+      var px = cx + cs * rad, pz = cz + sn * rad;
+      var sx = clamp(px, 0, N * T), sz = clamp(pz, 0, N * T);
+      var gy = Math.max(groundY(sx, sz), waterLvlAt(sx, sz));
+      if (s < SEG) {
+        dPos[(s + 1) * 3] = px; dPos[(s + 1) * 3 + 1] = gy + 0.14; dPos[(s + 1) * 3 + 2] = pz;
+        dIdx.push(0, s + 1, s + 1 < SEG ? s + 2 : 1);
+      }
+      var ri = rad - halfW, ro = rad + halfW;
+      rPos[s * 6] = cx + cs * ri; rPos[s * 6 + 1] = gy + 0.25; rPos[s * 6 + 2] = cz + sn * ri;
+      rPos[s * 6 + 3] = cx + cs * ro; rPos[s * 6 + 4] = gy + 0.25; rPos[s * 6 + 5] = cz + sn * ro;
+      if (s < SEG) {
+        var b = s * 2;
+        rIdx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2);
+      }
+    }
+    var dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+    dg.setIndex(dIdx);
+    var dm = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.08 * al, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    var disc = new THREE.Mesh(dg, dm); disc.renderOrder = 3; disc.frustumCulled = false;
+    var eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', new THREE.BufferAttribute(rPos, 3));
+    eg.setIndex(rIdx);
+    var em = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.78 * al, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    var ring = new THREE.Mesh(eg, em); ring.renderOrder = 4; ring.frustumCulled = false;
+    ring.userData.baseOp = 0.78 * al; ring.userData.isEdge = true;
+    pv.rangeGrp.add(disc); pv.rangeGrp.add(ring);
+  }
+  pv.rangeGrp.visible = true;
+}
 function setPreview(spec) {
   pv.spec = spec || null;
   if (pv.ghost) { root.remove(pv.ghost.group); pv.ghost = null; }
   pv.tilesBad.visible = false; pv.front.visible = false; pv.door.visible = false; pv.label.visible = false;
-  if (!spec) { pv.tiles.visible = false; pv.bars.visible = false; return; }
+  syncRangePreview(spec && (spec.ranges || (spec.range ? [spec.range] : null)));
+  if (!spec || spec.type === 'ranges') { pv.tiles.visible = false; pv.bars.visible = false; return; }
   var ok = spec.ok !== false;
   pv.tileMat.color.copy(ok ? pv.okCol : pv.badCol); pv.barMat.color.copy(ok ? pv.okCol : pv.badCol);
   if (spec.type === 'tiles') { fillTiles(pv.tiles, spec.tiles || [], 1200); pv.bars.visible = false; }
@@ -2320,6 +2386,12 @@ function updatePreview() {
   if (pv.front.visible) pv.frontMat.opacity = 0.45 + 0.3 * p;
   if (pv.bars.visible) pv.barMat.opacity = 0.45 + 0.2 * p;
   if (pv.encTiles.visible) { pv.encTileMat.opacity = 0.3 + 0.12 * p; pv.encBarMat.opacity = 0.65 + 0.25 * p; }
+  if (pv.rangeGrp && pv.rangeGrp.visible) {
+    for (var rk = 0; rk < pv.rangeGrp.children.length; rk++) {
+      var rc = pv.rangeGrp.children[rk];
+      if (rc.userData && rc.userData.isEdge && rc.material) rc.material.opacity = rc.userData.baseOp * (0.8 + 0.2 * p);
+    }
+  }
   if (pv.ghost && pv.ghost.upd) { try { pv.ghost.upd(0.016, _ghostEnt); } catch (e) { pv.ghost.upd = null; } }
 }
 

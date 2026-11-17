@@ -216,6 +216,23 @@ window.Z = window.Z || {}; var Z = window.Z;
       b.appendChild(h('div.kv', h('span', { text: 'Working on' }), h('b', { text: job ? (job.kind === 'extract' ? 'An extraction, ' : 'A splice, ') + Math.ceil(job.t) + ' h left' : 'Free' })));
       b.appendChild(h('button.btn.sm.gold', { style: 'margin-bottom:6px', html: ic('flask') + 'Open research', on: { click: function () { UI.Research.open('lab'); } } }));
     }
+    if (s.type === 'keeper' || s.type === 'vet') {
+      var cov = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32, stationTiles: 48, vetClinicTiles: 48, hasHut: false, huts: [], clinics: [] };
+      var T2 = Z.TILE || 2, hx = (s.home % N + 0.5) * T2, hz = (((s.home - s.home % N) / N) + 0.5) * T2;
+      if (s.type === 'keeper') {
+        var rngs = [{ x: hx, z: hz, r: cov.baseTiles * T2, col: 0x42f578 }];
+        cov.huts.forEach(function (ht) { rngs.push({ x: ht.x, z: ht.z, r: ht.radius * T2, col: 0x58c7ff, alpha: 0.55 }); });
+        try { Z.World.setPreview({ type: 'ranges', ranges: rngs }); } catch (e) { }
+        var inR = cov.enclosuresInRadius ? cov.enclosuresInRadius(hx, hz, cov.baseTiles) : 0;
+        b.appendChild(h('div.kv', h('span', { text: 'Radio range' }), h('b', { text: cov.baseTiles + ' tiles' + (cov.huts.length ? ' (+' + cov.stationTiles + 't stations)' : '') })));
+        b.appendChild(h('div.kv', h('span', { text: 'Base sector' }), h('b', { text: inR + ' enclosure' + (inR === 1 ? '' : 's') + ' in base circle' })));
+      } else {
+        var cl = cov.clinics || [];
+        if (cl.length) try { Z.World.setPreview({ type: 'ranges', ranges: cl.map(function (c) { return { x: c.x, z: c.z, r: c.radius * T2, col: 0x58c7ff, alpha: 0.55 }; }) }); } catch (e) { }
+        b.appendChild(h('div.kv', h('span', { text: 'Dispatch' }), h('b', { text: 'Radio on call (reachable paths)' })));
+        b.appendChild(h('div.kv', h('span', { text: 'Vet clinics' }), h('b', { text: cl.length ? cl.length + ' (' + (cov.vetClinicTiles || 48) + 't fast triage)' : 'None (field speed)' })));
+      }
+    }
     b.appendChild(h('div.fact', { text: def.effect }));
     b.appendChild(h('div.btnrow', h('button.btn.sm', { html: ic('eye') + 'Follow', on: { click: function () { UI.startFollow('staff', id); } } }),
       confirmBtn(ic('close') + 'Fire', 'Really fire?', function () { Z.Sim.fireStaff(id); UI.toast(s.name + ' has left the park.', 'info'); Panel.hide(); }, 'alt')));
@@ -244,7 +261,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     var isB = o.kind === 'building', def = UI.byId(isB ? D.buildings : D.scenery, o.type);
     var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, isB ? buildingSub(def) : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || ''), b = f.body;
     var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tiles = []; if (fp) for (var a = 0; a < fp.w; a++) for (var c = 0; c < fp.h; c++) tiles.push({ i: fp.i0 + a, j: fp.j0 + c });
-    if (tiles.length) Z.World.setPreview({ type: 'tiles', tiles: tiles, ok: true });
+    if (tiles.length) {
+      var pvSpec = { type: 'tiles', tiles: tiles, ok: true };
+      if (isB && (o.type === 'keeper_hut' || o.type === 'vet_clinic') && fp) {
+        var covR = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { stationTiles: 48, vetClinicTiles: 48 };
+        var stR = o.type === 'vet_clinic' ? (covR.vetClinicTiles || 48) : covR.stationTiles;
+        pvSpec.ranges = [{ x: fp.cx, z: fp.cz, r: stR * (Z.TILE || 2), col: o.type === 'vet_clinic' ? 0x58c7ff : 0x42f578 }];
+      }
+      Z.World.setPreview(pvSpec);
+    }
     var st = h('div'), slider = null, pv = null, stats = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
     b.appendChild(st);
     if (isB && def.price > 0) {
@@ -284,7 +309,9 @@ window.Z = window.Z || {}; var Z = window.Z;
         var q = find(Z.state.objects, id); if (!q) return false;
         var r = Z.Sim.objectReport(id); if (!r) return false;
         if (sciUpd) sciUpd();
-        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, r.issues]);
+        var covO = (q.type === 'keeper_hut' || q.type === 'vet_clinic') && Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : null;
+        var hutCov = covO && fp ? covO.enclosuresInRadius(fp.cx, fp.cz, q.type === 'vet_clinic' ? (covO.vetClinicTiles || 48) : covO.stationTiles) : 0;
+        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, r.issues, hutCov]);
         if (k !== key) {
           key = k; stats.innerHTML = ''; var rows = [];
           if (isB) {
@@ -293,6 +320,11 @@ window.Z = window.Z || {}; var Z = window.Z;
               if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]);
               rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]);
               if (def.capacity > 0) rows.push(['Capacity', def.capacity + ' guests']);
+            }
+            if (q.type === 'keeper_hut' || q.type === 'vet_clinic') {
+              var stTiles = covO ? (q.type === 'vet_clinic' ? (covO.vetClinicTiles || 48) : covO.stationTiles) : 48;
+              rows.push([q.type === 'vet_clinic' ? 'Clinic triage zone' : 'Radio range', stTiles + ' tiles']);
+              rows.push(['Enclosures in zone', hutCov]);
             }
             rows.push(['Running cost', fmt(r.upkeep) + ' / day']);
           } else { rows.push(['Beauty', '★'.repeat(def.aesthetic) + '☆'.repeat(5 - def.aesthetic)]); if (q.type === 'bin') rows.push(['Bin', Math.round((q.fill || 0) * 100) + '% full']); }

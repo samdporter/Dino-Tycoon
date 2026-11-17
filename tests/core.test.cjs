@@ -1045,3 +1045,372 @@ test('enclosure centroids, realm bolting, and animal movement stay finite under 
   for (let k = 0; k < 10; k++) z.Sim._step(0.05);
   assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z));
 });
+
+function fenceRect(z, i0, j0, i1, j1, kind) {
+  let n = 0;
+  for (let i = i0; i <= i1; i++) {
+    if (z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok) n++;
+    if (z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok) n++;
+  }
+  for (let j = j0; j <= j1; j++) {
+    if (z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok) n++;
+    if (z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok) n++;
+  }
+  return n;
+}
+
+test('rangers interrupt patrols immediately via radio to feed, clean, and repair breached enclosures', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 901, map: 'fern_meadow', money: 200000 });
+  setupFlatZone(z, 18, 22, 34, 39);
+  for (let j = 24; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+  for (let i = 20; i <= 26; i++) assert.equal(z.Sim.placePath(i, 24, 'paved').ok, true);
+  assert.ok(fenceRect(z, 21, 25, 25, 29, 'chainlink') > 0);
+  const a1 = z.Sim.spawnAnimal('dryosaurus', 23, 27);
+  assert.ok(a1 && a1.enc);
+  const enc = z.state.enclosures.find(e => e.id === a1.enc);
+  assert.ok(enc && enc.viewTiles.length > 0);
+
+  // Hire ranger while enclosure is completely clean & full so patrol starts immediately
+  const hk = z.Sim.hireStaff('keeper', 27, 38);
+  assert.equal(hk.ok, true);
+  const keeper = z.state.staff.find(s => s.id === hk.id);
+  for (let t = 0; t < 15 && (!keeper.tk || keeper.tk.k !== 'patrol'); t++) z.Sim._step(0.5);
+  assert.equal(keeper.tk.k, 'patrol');
+  assert.match(keeper.task, /Patrol/i);
+
+  // Lowered food threshold (0.7 < 0.75) + breach must pull patrolling ranger off patrol within ~2s
+  enc.foodLevel = 0.7;
+  enc.poop = 1;
+  enc.breach = 1;
+  for (let t = 0; t < 5; t++) z.Sim._step(0.5);
+  assert.equal(keeper.tk.k, 'enc', 'ranger must interrupt patrol via radio right away');
+  assert.equal(keeper.tk.enc, enc.id);
+  assert.match(keeper.task, /Securing/);
+
+  // Step until ranger reaches feeder and finishes work
+  for (let t = 0; t < 60 && (enc.breach > 0 || enc.foodLevel < 1 || enc.poop > 0); t++) z.Sim._step(0.5);
+  assert.equal(enc.breach, 0, 'ranger repaired breached fence');
+  assert.equal(enc.foodLevel, 1, 'ranger refilled food');
+  assert.equal(enc.poop, 0, 'ranger cleaned single poop pile');
+});
+
+test('ranger station radio hubs extend gate-hired ranger reach and enclosureReport flags out-of-range', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 902, map: 'highland_ridge', money: 300000 });
+  setupFlatZone(z, 26, 8, 46, 39);
+  setupFlatZone(z, 35, 3, 46, 9);
+  for (let j = 8; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+  for (let i = 28; i <= 42; i++) assert.equal(z.Sim.placePath(i, 8, 'paved').ok, true);
+  for (let j = 3; j <= 7; j++) assert.equal(z.Sim.placePath(42, j, 'paved').ok, true);
+  assert.ok(fenceRect(z, 37, 3, 40, 6, 'chainlink') > 0);
+  const aFar = z.Sim.spawnAnimal('dryosaurus', 38, 4);
+  assert.ok(aFar && aFar.enc);
+  const farEnc = z.state.enclosures.find(e => e.id === aFar.enc);
+  assert.ok(farEnc && farEnc.viewTiles.length > 0);
+  farEnc.foodLevel = 0.25;
+  farEnc.poop = 3;
+
+  // Gate-hired ranger (home at 27, 52) is > 48 tiles from (37..40, 3..6)
+  const hk = z.Sim.hireStaff('keeper');
+  assert.equal(hk.ok, true);
+  const keeper = z.state.staff.find(s => s.id === hk.id);
+  const repBefore = z.Sim.enclosureReport(farEnc.id);
+  assert.equal(repBefore.outOfRange, true);
+  assert.ok(repBefore.issues.some(x => /Out of ranger range/i.test(x)));
+
+  for (let t = 0; t < 20; t++) z.Sim._step(0.5);
+  assert.ok(!keeper.tk || keeper.tk.enc !== farEnc.id, 'out-of-range enclosure must not be assigned before station');
+
+  // Build Ranger station at (43, 6) facing west onto the path at i=42 (rot=3)
+  const hutRes = z.Sim.placeObject('keeper_hut', 43, 6, 3);
+  assert.equal(hutRes.ok, true);
+  const cov = z.Sim.rangerCoverage();
+  assert.equal(cov.hasHut, true);
+  assert.equal(cov.baseTiles, 48);
+  assert.equal(cov.huts.length, 1);
+  assert.equal(cov.enclosuresCoveredByHut(hutRes.id), 1);
+
+  const repAfter = z.Sim.enclosureReport(farEnc.id);
+  assert.ok(!repAfter.outOfRange, 'enclosureReport clears outOfRange once covered by Ranger station');
+
+  // Gate-hired ranger immediately interrupts patrol via station relay and walks to feed/clean farEnc
+  for (let t = 0; t < 10 && (!keeper.tk || keeper.tk.enc !== farEnc.id); t++) z.Sim._step(0.5);
+  assert.equal(keeper.tk.k, 'enc');
+  assert.equal(keeper.tk.enc, farEnc.id);
+  for (let t = 0; t < 180 && (farEnc.foodLevel < 1 || farEnc.poop > 0); t++) z.Sim._step(0.5);
+  assert.equal(farEnc.foodLevel, 1);
+  assert.equal(farEnc.poop, 0);
+});
+
+test('sick ranger claim release, off-path recovery, and sea-pen pier walkway access', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 903, map: 'fern_meadow', money: 250000 });
+  setupFlatZone(z, 20, 22, 32, 39);
+  for (let j = 25; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+  fenceRect(z, 22, 25, 25, 29, 'chainlink');
+  const a1 = z.Sim.spawnAnimal('dryosaurus', 23, 27);
+  assert.ok(a1 && a1.enc);
+  const enc = z.state.enclosures.find(e => e.id === a1.enc);
+  enc.foodLevel = 0.2;
+
+  const h1 = z.Sim.hireStaff('keeper', 27, 27);
+  const h2 = z.Sim.hireStaff('keeper', 27, 32);
+  assert.equal(h1.ok && h2.ok, true);
+  const k1 = z.state.staff.find(s => s.id === h1.id);
+  const k2 = z.state.staff.find(s => s.id === h2.id);
+
+  for (let t = 0; t < 10 && (!k1.tk || k1.tk.enc !== enc.id); t++) z.Sim._step(0.5);
+  assert.equal(k1.tk && k1.tk.enc, enc.id);
+
+  // K1 falls sick mid-claim -> must release claim so K2 picks up immediately
+  k1.sickUntil = z.state.day + z.state.time + 0.5;
+  z.Sim._step(0.1);
+  assert.equal(z.Sim._rt().claim['e' + enc.id], undefined);
+  for (let t = 0; t < 10 && (!k2.tk || k2.tk.enc !== enc.id); t++) z.Sim._step(0.5);
+  assert.equal(k2.tk && k2.tk.enc, enc.id, 'second ranger immediately takes released enclosure');
+
+  // Off-path stranding > 12 tiles from any path recovers cleanly
+  enc.foodLevel = 1; enc.poop = 0;
+  k2.tk = null; k2.route = null; k2.wt = 0;
+  k2.x = 2; k2.z = 2;
+  z.Sim._step(0.1);
+  const tile = Math.floor(k2.x / z.TILE) + Math.floor(k2.z / z.TILE) * z.N;
+  assert.ok(z.state.path[tile] > 0, 'ranger stranded far off-path recovers onto nearest path');
+
+  // Sea pen with glass_pier crossing sea_net must connect path components for keepers
+  const zp = game();
+  zp.Sim.newGame({ seed: 904, map: 'lakeland', money: 300000 });
+  zp.state.unlocked.star = 5;
+  const sm = zp.Sim.seaMask();
+  let shoreI = -1, shoreJ = -1;
+  for (let j = 10; j < zp.N - 12 && shoreI < 0; j++) {
+    for (let i = 10; i < zp.N - 14; i++) {
+      const landOk = !sm[i + j * zp.N] && !sm[(i - 1) + j * zp.N] && zp.Sim.inMap(i, j);
+      let seaOk = landOk;
+      for (let dj = 0; dj < 3 && seaOk; dj++) for (let di = 1; di <= 3 && seaOk; di++) {
+        if (!sm[(i + di) + (j + dj) * zp.N] || !zp.Sim.inMap(i + di, j + dj)) seaOk = false;
+      }
+      if (seaOk) { shoreI = i; shoreJ = j; break; }
+    }
+  }
+  assert.ok(shoreI > 0, 'found flat coast cell beside 3x3 sea block');
+  for (let di = 1; di <= 3; di++) {
+    zp.Sim.placeFence({ axis: 'x', i: shoreI + di, j: shoreJ }, 'sea_net');
+    zp.Sim.placeFence({ axis: 'x', i: shoreI + di, j: shoreJ + 3 }, 'sea_net');
+  }
+  for (let dj = 0; dj < 3; dj++) {
+    zp.Sim.placeFence({ axis: 'z', i: shoreI + 1, j: shoreJ + dj }, 'sea_net');
+    zp.Sim.placeFence({ axis: 'z', i: shoreI + 4, j: shoreJ + dj }, 'sea_net');
+  }
+  const pathTile = shoreI + shoreJ * zp.N;
+  zp.Sim.bulldoze(shoreI, shoreJ);
+  zp.Sim.terraform(shoreI, shoreJ, 'level', 0, { sharp: true, target: 0 });
+  zp.state.terrain[pathTile] = 0;
+  assert.equal(zp.Sim.placePath(shoreI, shoreJ, 'paved').ok, true);
+  const walkRes = zp.Sim.realms.placeWalk([(shoreI + 1) + shoreJ * zp.N, (shoreI + 2) + shoreJ * zp.N], 'pier');
+  assert.equal(walkRes.ok, true);
+  const comp = zp.Sim._rt().comp;
+  assert.ok(comp[pathTile] > 0 && comp[(shoreI + 1) + shoreJ * zp.N] === comp[pathTile], 'glass_pier across sea_net shares connected nav component with shore path');
+});
+
+test('UI displays ranger and ranger station range badges, placement preview rings, and inspect stats', () => {
+  function mkEl(tag) {
+    const attrs = {}, children = [], cls = new Set(), listeners = {};
+    const style = { setProperty() {} };
+    let _html = '', _text = '';
+    const node = {
+      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      classList: {
+        add(...a) { a.forEach(c => c && cls.add(c)); },
+        remove(...a) { a.forEach(c => c && cls.delete(c)); },
+        toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+        contains(c) { return cls.has(c); }
+      },
+      set className(v) { cls.clear(); String(v || '').split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); },
+      get className() { return Array.from(cls).join(' '); },
+      set innerHTML(v) {
+        _html = String(v || ''); children.length = 0;
+        const stack = [node], re = /<(\/?)([a-zA-Z0-9-]+)([^>]*)>|([^<]+)/g;
+        let m;
+        while ((m = re.exec(_html))) {
+          if (m[4]) { stack[stack.length - 1].children.push({ nodeType: 3, textContent: m[4], children: [] }); continue; }
+          if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
+          const ch = mkEl(m[2]), rawAttr = m[3] || '', selfClose = /\/\s*$/.test(rawAttr);
+          let am; const are = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+          while ((am = are.exec(rawAttr))) if (am[1] && am[1] !== '/') ch.setAttribute(am[1], am[2] || '');
+          stack[stack.length - 1].appendChild(ch);
+          if (!selfClose) stack.push(ch);
+        }
+      },
+      get innerHTML() { return _html; },
+      set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
+      get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
+      removeAttribute(k) { delete attrs[k]; },
+      appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
+      insertBefore(c, ref) { if (!c) return c; c.parentNode = node; const idx = children.indexOf(ref); if (idx >= 0) children.splice(idx, 0, c); else children.push(c); return c; },
+      addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      click() { (listeners.click || []).forEach(fn => fn({ stopPropagation() {}, preventDefault() {} })); },
+      querySelector(sel) { return node.querySelectorAll(sel)[0] || null; },
+      querySelectorAll(sel) {
+        const matchOne = (el, part) => {
+          let s = part.trim(), m;
+          const attrM = s.match(/\[([^\]=]+)="([^"]*)"\]/g) || [];
+          for (const a of attrM) {
+            const p = a.slice(1, -1).split('=');
+            if (el.getAttribute(p[0]) !== p[1].replace(/^"|"$/g, '')) return false;
+            s = s.replace(a, '');
+          }
+          if ((m = s.match(/#([a-zA-Z0-9_-]+)/))) { if (el.getAttribute('id') !== m[1]) return false; s = s.replace(m[0], ''); }
+          const clsM = s.match(/\.[a-zA-Z0-9_-]+/g) || [];
+          for (const c of clsM) { if (!el.classList.contains(c.slice(1))) return false; s = s.replace(c, ''); }
+          if (s && el.tagName.toLowerCase() !== s.toLowerCase()) return false;
+          return true;
+        };
+        const parts = sel.trim().split(/\s+/);
+        let scope = [node];
+        for (const part of parts) {
+          const next = [];
+          const walk = (el) => { for (const ch of el.children) { if (ch.tagName) { if (matchOne(ch, part)) next.push(ch); walk(ch); } } };
+          scope.forEach(walk);
+          scope = next;
+        }
+        return scope;
+      },
+      focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40,
+      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
+    };
+    return node;
+  }
+  const rootUi = mkEl('div'), body = mkEl('body'), head = mkEl('head'), worldEl = mkEl('div');
+  rootUi.setAttribute('id', 'ui'); worldEl.setAttribute('id', 'world');
+  const document = {
+    head, body, createElement: mkEl, createTextNode: t => ({ nodeType: 3, textContent: String(t ?? ''), children: [] }),
+    getElementById: id => id === 'ui' ? rootUi : id === 'world' ? worldEl : null,
+    querySelector: s => s === '#ui' ? rootUi : s === '#world' ? worldEl : rootUi.querySelector(s),
+    querySelectorAll: s => rootUi.querySelectorAll(s), addEventListener() {}
+  };
+  const ctx = vm.createContext({
+    console, setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() {}, document, window: null, innerWidth: 1280, innerHeight: 900,
+    btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
+  });
+  ctx.window = ctx; ctx.addEventListener = () => {};
+  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const z = ctx.Z;
+  let lastPreview = null;
+  z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  load('50-ui.js'); load('51-tools.js'); load('52-panels.js'); load('53-screens.js');
+  z.UI.init();
+  z.Sim.newGame({ seed: 905, map: 'fern_meadow', money: 200000 });
+  setupFlatZone(z, 20, 20, 32, 32);
+  assert.equal(z.Sim.placePath(22, 24, 'paved').ok, true);
+  assert.equal(z.Sim.placePath(22, 25, 'paved').ok, true);
+
+  // 1. Staff category cards display 32t for Ranger and 48t for Ranger station
+  z.UI.openCat('staff', true);
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="keeper"] .spb').textContent, '32t');
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="keeper_hut"] .spb').textContent, '48t');
+
+  // 2. Selecting Ranger tool populates strip hint + PLAN.staff 32-tile range ring
+  z.UI.el.cards.querySelector('.card[data-id="keeper"]').click();
+  assert.match(z.UI.el.strip.textContent, /32-tile base range/);
+  const kpPlan = z.UI.Tools.PLAN.staff({ a: { i: 22, j: 24 }, b: { i: 22, j: 24 } });
+  assert.equal(kpPlan.ok, true);
+  assert.match(kpPlan.label, /32-tile range/);
+  assert.equal(kpPlan.spec.ranges.length, 1);
+  assert.equal(kpPlan.spec.ranges[0].r, 32 * z.TILE);
+  z.UI.Tools.cancel();
+
+  // 3. Placing & inspecting Ranger station + Ranger shows station/base range rings and stats
+  z.UI.el.cards.querySelector('.card[data-id="keeper_hut"]').click();
+  const hutPlan = z.UI.Tools.PLAN.building({ a: { i: 23, j: 24 }, b: { i: 23, j: 24 } });
+  assert.match(hutPlan.warn, /48-tile radio range/);
+  assert.equal(hutPlan.spec.ranges[0].r, 48 * z.TILE);
+  z.UI.Tools.cancel();
+
+  const hut = z.Sim.placeObject('keeper_hut', 23, 24, 3);
+  assert.equal(hut.ok, true);
+  const kh = z.Sim.hireStaff('keeper', 22, 24);
+  assert.equal(kh.ok, true);
+
+  z.UI.Panel.open('object', hut.id);
+  assert.match(z.UI.el.panel.textContent, /Radio range.*48 tiles/);
+  assert.ok(lastPreview && lastPreview.ranges && lastPreview.ranges[0].r === 48 * z.TILE);
+
+  z.UI.Panel.open('staff', kh.id);
+  assert.match(z.UI.el.panel.textContent, /Radio range.*48 tiles/);
+  assert.equal(lastPreview.type, 'ranges');
+  assert.equal(lastPreview.ranges.length, 2);
+
+  z.UI.Panel.hide();
+  z.UI.openModal('stf');
+  assert.match(z.UI.el.mbody.textContent, /48t range/);
+  z.UI.closeModal();
+
+  // 4. Vet & Vet clinic show 48t triage zone badges, preview ring, and dispatch info
+  z.state.unlocked.star = 5;
+  z.UI.openCat('staff', true);
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="vet_clinic"] .spb').textContent, '48t');
+  z.UI.el.cards.querySelector('.card[data-id="vet_clinic"]').click();
+  const vcPlan = z.UI.Tools.PLAN.building({ a: { i: 23, j: 24 }, b: { i: 23, j: 24 } });
+  assert.match(vcPlan.warn, /48-tile triage zone/);
+  assert.equal(vcPlan.spec.ranges[0].r, 48 * z.TILE);
+  z.UI.Tools.cancel();
+
+  const vc = z.Sim.placeObject('vet_clinic', 26, 24, 3);
+  assert.equal(vc.ok, true);
+  const vh = z.Sim.hireStaff('vet', 22, 24);
+  assert.equal(vh.ok, true);
+  z.UI.Panel.open('object', vc.id);
+  assert.match(z.UI.el.panel.textContent, /Clinic triage zone.*48 tiles/);
+  z.UI.Panel.open('staff', vh.id);
+  assert.match(z.UI.el.panel.textContent, /Radio on call.*reachable paths/);
+});
+
+test('dino vets interrupt patrols via radio, heal low-health & sick animals faster with vet_clinic, and report unreachable enclosures', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 906, map: 'fern_meadow', money: 300000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 18, 22, 34, 39);
+  for (let j = 24; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+  for (let i = 20; i <= 26; i++) assert.equal(z.Sim.placePath(i, 24, 'paved').ok, true);
+  fenceRect(z, 21, 25, 25, 29, 'chainlink');
+  const a1 = z.Sim.spawnAnimal('dryosaurus', 23, 27);
+  assert.ok(a1 && a1.enc);
+
+  const vh = z.Sim.hireStaff('vet', 27, 38);
+  assert.equal(vh.ok, true);
+  const vet = z.state.staff.find(s => s.id === vh.id);
+  for (let t = 0; t < 15 && (!vet.tk || vet.tk.k !== 'patrol'); t++) z.Sim._step(0.5);
+  assert.equal(vet.tk.k, 'patrol');
+
+  // Animal injured (health=40, !sick) must pull patrolling vet off patrol right away
+  a1.health = 40;
+  for (let t = 0; t < 5; t++) z.Sim._step(0.5);
+  assert.equal(vet.tk.k, 'vet', 'vet must interrupt patrol via radio for injured/sick animal');
+  assert.equal(vet.tk.a, a1.id);
+
+  // Build Vet clinic inside 48 tiles -> vet heals to full health quickly and returns cleanly to path
+  assert.equal(z.Sim.placeObject('vet_clinic', 28, 28, 3).ok, true);
+  for (let t = 0; t < 60 && (a1.health < 100 || (vet.tk && vet.tk.k === 'vet')); t++) z.Sim._step(0.5);
+  assert.equal(a1.health, 100, 'vet_clinic nearby enables full clinic recovery');
+  assert.equal(a1.claim, 0);
+
+  // Sick animal on disconnected path network reports noVetRoute & animalReport warning
+  setupFlatZone(z, 14, 14, 19, 19);
+  fenceRect(z, 15, 15, 18, 18, 'chainlink');
+  assert.equal(z.Sim.placePath(15, 14, 'paved').ok, true);
+  assert.equal(z.Sim.placePath(16, 14, 'paved').ok, true); // disconnected from mainland at 27,24
+  const aIso = z.Sim.spawnAnimal('dryosaurus', 16, 16);
+  aIso.sick = true;
+  const encRep = z.Sim.enclosureReport(aIso.enc);
+  const anRep = z.Sim.animalReport(aIso.id);
+  assert.equal(encRep.noVetRoute, true);
+  assert.ok(encRep.issues.some(x => /Vets cannot reach/i.test(x)));
+  assert.ok(anRep.issues.some(x => /Vets cannot reach/i.test(x)));
+});

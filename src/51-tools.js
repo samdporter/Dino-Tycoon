@@ -166,6 +166,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
     var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
+    else if (t.kind === 'staff' && (t.id === 'keeper' || t.id === 'vet')) {
+      var covH = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32, stationTiles: 48, vetClinicTiles: 48 };
+      hint = t.id === 'keeper'
+        ? 'Tap a path to place. Circle shows ' + covH.baseTiles + '-tile base range (+ ' + covH.stationTiles + 't around stations).'
+        : 'Tap a path to deploy. Responds park-wide on connected paths (' + (covH.vetClinicTiles || 48) + 't fast clinic zone when a Vet clinic is built).';
+    }
     else if ((t.kind === 'scenery' || t.kind === 'building') && t.def && UI.itemInfo && UI.itemInfo(t.def, true)) hint = UI.itemInfo(t.def, true);
     else if (t.kind === 'building' && t.def && t.def.utility) hint = 'Tap to place. Slide to adjust.';
     s.appendChild(h('div.tname', { html: name + '<small>' + hint + '</small>' }));
@@ -332,6 +338,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     var S = Z.state; if (!Z.inb(i, j)) return true; var idx = i + j * N;
     return !!S.tileObj[idx] || (D.terrain[S.terrain[idx]] && D.terrain[S.terrain[idx]].id === 'water');
   }
+  function rangerRangesFor(px, pz, radTiles, ok, cov) {
+    var ranges = [{ x: px, z: pz, r: radTiles * T, col: ok ? 0x42f578 : 0xff5a4a }];
+    if (cov && cov.huts) cov.huts.forEach(function (ht) {
+      ranges.push({ x: ht.x, z: ht.z, r: ht.radius * T, col: 0x58c7ff, alpha: 0.55 });
+    });
+    return ranges;
+  }
   PLAN.scenery = PLAN.building = function (d) {
     var t = UI.tool, gp = d.b || d.a, r0 = objRect(t.id, t.kind, gp, t.rot), r = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot, { dry: true });
     var def = t.def || (t.kind === 'building' ? UI.byId(D.buildings, t.id) : UI.byId(D.scenery, t.id));
@@ -350,6 +363,16 @@ window.Z = window.Z || {}; var Z = window.Z;
         } else {
           var extraWarn = r.warn ? r.warn.replace(/^Entrance not on a path yet(?:\.\s*)?/, '') : '';
           sub = (r0.w + '×' + r0.h) + ' - entrance ' + (onPath ? 'on a path' : 'needs a path') + (extraWarn ? ' · ' + extraWarn : '');
+          if (t.id === 'keeper_hut' || t.id === 'vet_clinic') {
+            var isClinic = t.id === 'vet_clinic';
+            var covS = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { stationTiles: 48, vetClinicTiles: 48, huts: [], clinics: [] };
+            var stR = isClinic ? (covS.vetClinicTiles || 48) : covS.stationTiles;
+            var hitS = Z.Sim.rangerCoverage ? covS.enclosuresInRadius(fp.cx, fp.cz, stR) : 0;
+            var hubs = isClinic ? (covS.clinics || []) : (covS.huts || []);
+            spec.ranges = [{ x: fp.cx, z: fp.cz, r: stR * T, col: r.ok ? (isClinic ? 0x58c7ff : 0x42f578) : 0xff5a4a }];
+            hubs.forEach(function (ht) { spec.ranges.push({ x: ht.x, z: ht.z, r: ht.radius * T, col: 0x58c7ff, alpha: 0.55 }); });
+            sub += ' · ' + stR + '-tile ' + (isClinic ? 'triage zone' : 'radio range') + ' (' + hitS + ' enc' + (hitS === 1 ? '' : 's') + ')';
+          }
         }
       }
     }
@@ -381,7 +404,23 @@ window.Z = window.Z || {}; var Z = window.Z;
   PLAN.staff = function (d) {
     var t = UI.tool, gp = d.b || d.a, r = Z.Sim.hireStaff(t.id, gp.i, gp.j, { dry: true }), onPath = Z.Sim.walkable(gp.i, gp.j);
     var ok = r.ok && onPath;
-    return { spec: { type: 'object', kind: 'staff', id: t.id, i: gp.i, j: gp.j, rot: 0, ok: ok }, ok: ok, cost: r.cost || 0, msg: !onPath ? 'Tap a path tile' : r.ok ? '' : failMsg(r), label: '',
+    var spec = { type: 'object', kind: 'staff', id: t.id, i: gp.i, j: gp.j, rot: 0, ok: ok }, label = '', warn = '';
+    if (t.id === 'keeper' || t.id === 'vet') {
+      var cov = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32, stationTiles: 48, vetClinicTiles: 48, hasHut: false, huts: [], clinics: [] };
+      var px = (gp.i + 0.5) * T, pz = (gp.j + 0.5) * T;
+      if (t.id === 'keeper') {
+        var hitEnc = Z.Sim.rangerCoverage ? cov.enclosuresInRadius(px, pz, cov.baseTiles) : 0;
+        spec.ranges = rangerRangesFor(px, pz, cov.baseTiles, ok, cov);
+        label = cov.baseTiles + '-tile range' + (cov.huts.length ? ' +' + cov.huts.length + ' station' + (cov.huts.length > 1 ? 's' : '') : '');
+        warn = hitEnc + ' enclosure' + (hitEnc === 1 ? '' : 's') + ' covered';
+      } else {
+        var cl = cov.clinics || [];
+        if (cl.length) spec.ranges = cl.map(function (c) { return { x: c.x, z: c.z, r: c.radius * T, col: 0x58c7ff, alpha: 0.55 }; });
+        label = 'Radio on call (all reachable paths)';
+        warn = cl.length ? cl.length + ' Vet clinic' + (cl.length > 1 ? 's' : '') + ' (' + (cov.vetClinicTiles || 48) + 't fast zone)' : 'No Vet clinic yet';
+      }
+    }
+    return { spec: spec, ok: ok, cost: r.cost || 0, msg: !onPath ? 'Tap a path tile' : r.ok ? '' : failMsg(r), label: label, warn: warn,
       run: function () { var rr = Z.Sim.hireStaff(t.id, gp.i, gp.j); if (rr.ok) { UI.toast(t.name + ' hired. They will start work straight away.', 'good'); setTimeout(Tools.cancel, 30); } return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 }; } };
   };
   PLAN.bulldoze = function (d) {

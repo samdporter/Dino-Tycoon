@@ -358,15 +358,17 @@ window.Z.DATA = {
     { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0 },
     { id: "viewing_platform", name: "Viewing Tower", icon: "tower", emoji: "🔭", cost: 950, upkeep: 30, type: "info", price: 0, capacity: 20, w: 2, d: 2, h: 2, color: 0x7b6248, roof: 0x4d7c47, appeal: 14, boost: { fun: 20 }, satisfies: { fun: 0.3 }, star: 0, info: "Elevated lookout platform giving guests panoramic views over adjacent enclosures." },
     { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 2, h: 2, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 3 },
-    { id: "keeper_hut", name: "Keeper hut", emoji: "🛖", cost: 800, upkeep: 8, type: "staff", price: 0, capacity: 4, w: 1, h: 1, satisfies: {}, star: 0 },
-    { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 2, h: 2, satisfies: {}, star: 1 },
+    { id: "keeper_hut", name: "Keeper hut", emoji: "🛖", cost: 800, upkeep: 8, type: "staff", price: 0, capacity: 4, w: 1, h: 1, satisfies: {}, star: 0,
+      info: "Keeper dispatch hub: speeds up Keeper care park-wide and adds a 48-tile fast-response station zone. Entrance must touch a path." },
+    { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 2, h: 2, satisfies: {}, star: 1,
+      info: "Veterinary clinic & triage hub: speeds up Vet treatment park-wide and adds a 48-tile full-recovery zone. Entrance must touch a path." },
     { id: "education_centre", name: "Education centre", emoji: "🎓", cost: 5000, upkeep: 60, type: "info", price: 3, capacity: 40, w: 2, h: 2, satisfies: { fun: 0.5 }, star: 2 },
     { id: "emergency_bunker", name: "Emergency Shelter", icon: "bunker", emoji: "🚨", cost: 850, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, d: 2, h: 2, color: 0x6a7882, roof: 0xd8623b, appeal: 4, satisfies: {}, star: 1, info: "Reinforced guest shelter used during dangerous animal escapes and park lockdowns." }
   ],
 
   staff: [
-    { id: "keeper", name: "Keeper", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, effect: "Feeds animals and cleans their enclosures" },
-    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick animals" },
+    { id: "keeper", name: "Keeper", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, effect: "Feeds animals, cleans enclosures & repairs fences across reachable paths (responds immediately by radio)" },
+    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick & injured animals across reachable paths (responds immediately by radio)" },
     { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
     { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
     { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped animals" }

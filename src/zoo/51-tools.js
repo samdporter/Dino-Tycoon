@@ -166,6 +166,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
     var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
+    else if (t.kind === 'staff' && (t.id === 'keeper' || t.id === 'vet')) {
+      hint = t.id === 'keeper'
+        ? 'Tap a path to deploy. Responds by radio across reachable paths (faster around Keeper huts).'
+        : 'Tap a path to deploy. Treats sick & injured animals park-wide on reachable paths (faster around Vet clinics).';
+    } else if (t.kind === 'building' && t.def && t.def.info) hint = t.def.info;
     s.appendChild(h('div.tname', { html: name + '<small>' + hint + '</small>' }));
     function seg(opts, cur, fn) {
       var sg = h('div.seg'); opts.forEach(function (o) { sg.appendChild(h('button' + (o[0] === cur ? '.on' : ''), { html: o[2] ? ic(o[2]) + o[1] : o[1], 'aria-label': o[3] || o[1], on: { click: function () { UI.snd('click'); fn(o[0]); buildStrip(); } } })); }); return sg;
@@ -338,7 +343,20 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   PLAN.scenery = PLAN.building = function (d) {
     var t = UI.tool, gp = d.b || d.a, r0 = objRect(t.id, t.kind, gp, t.rot), r = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot, { dry: true });
-    return { spec: { type: 'object', kind: t.kind, id: t.id, i: r0.i, j: r0.j, rot: t.rot, ok: r.ok }, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), warn: r.warn, label: '',
+    var spec = { type: 'object', kind: t.kind, id: t.id, i: r0.i, j: r0.j, rot: t.rot, ok: r.ok }, warn = r.warn;
+    if (t.kind === 'building' && (t.id === 'keeper_hut' || t.id === 'vet_clinic')) {
+      var fp = Z.Sim.footprint(t.id, r0.i, r0.j, t.rot);
+      var cov = Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : { stationTiles: 48, vetClinicTiles: 48, huts: [], clinics: [] };
+      var isClinic = t.id === 'vet_clinic', rad = isClinic ? cov.vetClinicTiles : cov.stationTiles;
+      if (fp) {
+        var hit = cov.enclosuresInRadius ? cov.enclosuresInRadius(fp.cx, fp.cz, rad) : 0;
+        var hubs = isClinic ? (cov.clinics || []) : (cov.huts || []);
+        spec.ranges = [{ x: fp.cx, z: fp.cz, r: rad * T, col: r.ok ? (isClinic ? 0x58c7ff : 0x42f578) : 0xff5a4a }];
+        hubs.forEach(function (ht) { spec.ranges.push({ x: ht.x, z: ht.z, r: ht.radius * T, col: 0x58c7ff, alpha: 0.55 }); });
+        warn = (rad + '-tile ' + (isClinic ? 'triage zone' : 'dispatch zone') + ' (' + hit + ' enc' + (hit === 1 ? '' : 's') + ')') + (r.warn ? ' · ' + r.warn : '');
+      }
+    }
+    return { spec: spec, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), warn: warn, label: '',
       run: function () { var rr = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot); if (rr.ok) { rerollRot(); if (rr.warn) UI.toast(rr.warn + ' - lay a path next to it.', 'info'); } return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 }; } };
   };
   function forecastFor(species, i, j) {
@@ -360,7 +378,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   PLAN.staff = function (d) {
     var t = UI.tool, gp = d.b || d.a, r = Z.Sim.hireStaff(t.id, gp.i, gp.j, { dry: true }), onPath = Z.Sim.walkable(gp.i, gp.j);
     var ok = r.ok && onPath;
-    return { spec: { type: 'object', kind: 'staff', id: t.id, i: gp.i, j: gp.j, rot: 0, ok: ok }, ok: ok, cost: r.cost || 0, msg: !onPath ? 'Tap a path tile' : r.ok ? '' : failMsg(r), label: '',
+    var spec = { type: 'object', kind: 'staff', id: t.id, i: gp.i, j: gp.j, rot: 0, ok: ok }, label = '', warn = '';
+    if (t.id === 'keeper' || t.id === 'vet') {
+      var cov = Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : { huts: [], clinics: [], stationTiles: 48, vetClinicTiles: 48 };
+      var hubs = t.id === 'vet' ? (cov.clinics || []) : (cov.huts || []);
+      if (hubs.length) spec.ranges = hubs.map(function (ht) { return { x: ht.x, z: ht.z, r: ht.radius * T, col: t.id === 'vet' ? 0x58c7ff : 0x42f578, alpha: 0.55 }; });
+      label = 'Radio on call (all reachable paths)';
+      warn = hubs.length ? hubs.length + ' ' + (t.id === 'vet' ? 'Vet clinic' : 'Keeper hut') + (hubs.length > 1 ? 's' : '') + ' boosting speed' : '';
+    }
+    return { spec: spec, ok: ok, cost: r.cost || 0, msg: !onPath ? 'Tap a path tile' : r.ok ? '' : failMsg(r), label: label, warn: warn,
       run: function () { var rr = Z.Sim.hireStaff(t.id, gp.i, gp.j); if (rr.ok) { UI.toast(t.name + ' hired. They will start work straight away.', 'good'); setTimeout(Tools.cancel, 30); } return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 }; } };
   };
   PLAN.bulldoze = function (d) {
@@ -489,5 +515,6 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (UI.tool && hover && !drag && !nptr) refreshPlan();
   };
   Tools.current = function () { return UI.tool; };
+  Tools.PLAN = PLAN; Tools.refresh = refreshPlan;
   UI.markTabs = function () { Array.prototype.forEach.call(el.tabs.children, function (b) { b.classList.toggle('on', b.getAttribute('data-cat') === UI.cat); }); };
 })();

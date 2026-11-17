@@ -516,9 +516,9 @@ window.Z.DATA = {
     { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 4, h: 3, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 2,
       info: "Full sit-down dining (capacity 30, full hunger, -30% thirst, +30% energy). Entrance must touch a path." },
     { id: "keeper_hut", name: "Ranger station", emoji: "🛖", cost: 1200, upkeep: 12, type: "staff", price: 0, capacity: 6, w: 2, h: 2, satisfies: {}, star: 0,
-      info: "Extends ranger enclosure patrol range from 32 to 48 tiles. Entrance must touch a path." },
+      info: "Radio & dispatch hub: extends ranger base range from 32 to 48 tiles and adds a 48-tile station relay zone. Entrance must touch a path." },
     { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 3, h: 2, satisfies: {}, star: 1,
-      info: "Veterinary station for treating sick dinosaurs. Entrance must touch a path." },
+      info: "Veterinary triage & dispatch hub: cuts vet treatment time park-wide and adds a 48-tile full-recovery clinic zone. Entrance must touch a path." },
     { id: "education_centre", name: "Discovery museum", emoji: "🎓", cost: 9000, upkeep: 90, type: "info", price: 5, capacity: 40, w: 4, h: 3, satisfies: { fun: 0.5 }, star: 2,
       info: "Museum (capacity 40, +50% fun): boosts guest donations park-wide (+50% amount). Entrance must touch a path." },
     { id: "emergency_bunker", name: "Emergency bunker", emoji: "🚨", cost: 3000, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, h: 2, satisfies: {}, star: 1,
@@ -530,8 +530,8 @@ window.Z.DATA = {
   ],
 
   staff: [
-    { id: "keeper", name: "Ranger", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, effect: "Feeds dinosaurs and cleans their enclosures" },
-    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick dinosaurs" },
+    { id: "keeper", name: "Ranger", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, effect: "Feeds dinosaurs, cleans enclosures & responds by radio (32t range; 48t + station hubs with a Ranger station)" },
+    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick & injured dinosaurs on reachable paths (responds immediately by radio)" },
     { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
     { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
     { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped dinosaurs" },

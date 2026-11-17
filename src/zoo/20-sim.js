@@ -54,7 +54,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
       encx: {}, bq: {}, benchOcc: {}, byType: { food: [], drink: [], toilet: [], fun: [], bench: [], bin: [] },
       t1: 0, t2: 0, escAcc: 0, arrAcc: 0, rate: 0.3, arrMul: 1, arrMulT: 0, pendingSpawn: 0,
-      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, hasHut: false, hasVet: false, hasEdu: false,
+      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
       advice: {}, claim: {}, groupLead: new Map(), nextGroup: 1, dirtyCount: 0, ghEMA: 65, value: 10,
       queue: new Int32Array(NN), prev: new Int32Array(NN), stamp: new Int32Array(NN), stampN: 0, binVer: 0,
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
@@ -351,7 +351,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function rebuildObjects() {
     RT.oById.clear(); RT.block.fill(0); RT.shelter.fill(0);
     var bt = RT.byType; bt.food = []; bt.drink = []; bt.toilet = []; bt.fun = []; bt.bench = []; bt.bin = [];
-    RT.hasHut = false; RT.hasVet = false; RT.hasEdu = false;
+    RT.hasHut = false; RT.huts.length = 0; RT.hasVet = false; RT.vets.length = 0; RT.hasEdu = false;
     RT.bunkers = []; RT.allBunkers = [];
     S.tileObj.fill(0);
     for (var k = 0; k < S.objects.length; k++) {
@@ -363,7 +363,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         else if (def.type === 'toilet') bt.toilet.push(o);
         else if (def.type === 'shop' || def.type === 'ride' || def.type === 'info') { if (o.type !== 'emergency_bunker') bt.fun.push(o); }
         if (o.type === 'emergency_bunker') { RT.bunkers.push(o); RT.allBunkers.push(o); }
-        if (o.type === 'keeper_hut') RT.hasHut = true; if (o.type === 'vet_clinic') RT.hasVet = true; if (o.type === 'education_centre') RT.hasEdu = true;
+        if (o.type === 'keeper_hut') { RT.hasHut = true; RT.huts.push(o); } if (o.type === 'vet_clinic') { RT.hasVet = true; RT.vets.push(o); } if (o.type === 'education_centre') RT.hasEdu = true;
       } else {
         def = SC[o.type];
         solid = def.kind === 'tree' || def.kind === 'rock';
@@ -1248,20 +1248,26 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (dry) return okr(cost);
     var sx = (i !== undefined && Z.inb(i, j)) ? cxOf(i + j * N) : cxOf(GATE_I0 + GATE_J * N);
     var sz = (j !== undefined && Z.inb(i, j)) ? czOf(i + j * N) : czOf(GATE_I0 + GATE_J * N);
+    var stTile = tileOf(sx, sz);
     var s = {
       id: newId(), type: type, name: rng.pick(D.guestNames), x: sx, z: sz,
       heading: PI, speed: 0, state: 'idle', task: 'Ready for duty',
-      wage: stf.wage, ti: tileOf(sx, sz), tk: null, route: null, ri: 0, wt: 0, lo: rng.range(-0.4, 0.4)
+      wage: stf.wage, ti: stTile, home: stTile, tk: null, route: null, ri: 0, wt: 0, lo: rng.range(-0.4, 0.4)
     };
     S.staff.push(s); RT.sById.set(s.id, s);
     spend(cost, 'wages');
     bus.emit('staffAdded', s);
     return okr(cost, { id: s.id });
   }
+  function releaseClaims(s) {
+    if (!s) return;
+    for (var q in RT.claim) if (RT.claim[q] === s.id || (RT.claim[q] && RT.claim[q].by === s.id)) delete RT.claim[q];
+  }
   function fireStaff(id) {
     var k = -1; for (var q = 0; q < S.staff.length; q++) if (S.staff[q].id === id) { k = q; break; }
     if (k < 0) return fail('Staff member not found');
     var s = S.staff.splice(k, 1)[0]; RT.sById.delete(id);
+    releaseClaims(s);
     bus.emit('staffRemoved', s);
     return okr(0);
   }
@@ -2550,23 +2556,151 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     s.heading = turn(s.heading, Math.atan2(dx, dz), dt * 10);
     return false;
   }
-  function staffOnPath(s) {
-    var ti = s.ti;
-    if (!S.path[ti]) {
-      var nbs = [ti - 1, ti + 1, ti - N, ti + N], cand = -1;
-      for (var k = 0; k < 4; k++) if (S.path[nbs[k]]) { cand = nbs[k]; break; }
-      if (cand >= 0) { s.ti = cand; s.x = cxOf(cand); s.z = czOf(cand); }
-      else if (RT.pathTiles.length) { var p = RT.pathTiles[0]; s.ti = p; s.x = cxOf(p); s.z = czOf(p); }
+  var STATION_TILES = 48;
+  function objCenter(o) {
+    var fp = objFootprint(o);
+    return { x: (fp.i0 + fp.w * 0.5) * TILE, z: (fp.j0 + fp.h * 0.5) * TILE };
+  }
+  function inStationZone(x, z, list, rTiles) {
+    var r2 = (rTiles * TILE) * (rTiles * TILE);
+    for (var k = 0; k < list.length; k++) {
+      var c = objCenter(list[k]), dx = x - c.x, dz = z - c.z;
+      if (dx * dx + dz * dz <= r2) return true;
     }
+    return false;
+  }
+  function encReachesComp(e, c) {
+    if (!c) return true;
+    for (var k = 0; k < e.viewTiles.length; k++) if (RT.comp[e.viewTiles[k]] === c) return true;
+    return false;
+  }
+  function encNeedsKeeper(e) {
+    return e.breach > 0 || e.foodLevel < 0.75 || (e.waterLevel !== undefined && e.waterLevel < 0.6) || e.poop >= 1;
+  }
+  function vetNeedsAnimal(a) { return !!(a && a.enc && (a.sick || a.health < 55)); }
+  function claimed(key, s) {
+    var c = RT.claim[key];
+    return !!(c && (!s || c !== s.id) && RT.sById.has(c));
+  }
+  function pickKeeperEnc(s, sc0) {
+    var best = null, bs = -1e9;
+    for (var k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (!e.animals.length || !e.viewTiles.length || !encReachesComp(e, sc0)) continue;
+      if (claimed('e' + e.id, s) || claimed('f' + e.id, s) || claimed('p' + e.id, s) || !encNeedsKeeper(e)) continue;
+      var wl = e.waterLevel === undefined ? 1 : e.waterLevel;
+      var need = (e.breach > 0 ? 5 : 0) + (e.foodLevel < 0.35 ? 2 : 0) + (1 - e.foodLevel) * 1.4 + (1 - wl) * 1.1 + e.poop * 0.35;
+      var dx = e.cx - s.x, dz = e.cz - s.z, dist = Math.sqrt(dx * dx + dz * dz);
+      var sc = need - dist * 0.01;
+      if (!best || sc > bs) { best = e; bs = sc; }
+    }
+    return best;
+  }
+  function pickVetAnimal(s, sc0) {
+    var best = null, bs = -1e9;
+    for (var k = 0; k < S.animals.length; k++) {
+      var a = S.animals[k];
+      if (!vetNeedsAnimal(a) || claimed('v' + a.id, s)) continue;
+      var enc = RT.eMap[a.enc]; if (!enc || !enc.viewTiles.length || !encReachesComp(enc, sc0)) continue;
+      var dist = Math.hypot(a.x - s.x, a.z - s.z);
+      var sc = (a.sick ? 4 : 0) + Math.max(0, 80 - a.health) * 0.05 + (inStationZone(a.x, a.z, RT.vets, STATION_TILES) ? 0.4 : 0) - dist * 0.01;
+      if (!best || sc > bs) { best = a; bs = sc; }
+    }
+    return best;
+  }
+  function hasCleanerWork(s, sc0) {
+    var bins = RT.byType.bin;
+    for (var k = 0; k < bins.length; k++) {
+      var bin = bins[k]; if ((bin.fill || 0) < 8 || claimed('b' + bin.id, s)) continue;
+      for (var d = 0; d < 4; d++) {
+        var ni = bin.i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = bin.j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+        if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+        var nt = ni + nj * N;
+        if (S.path[nt] && (!sc0 || RT.comp[nt] === sc0)) return true;
+      }
+    }
+    var pt = RT.pathTiles;
+    for (k = 0; k < pt.length; k++) {
+      var t = pt[k];
+      if ((!sc0 || RT.comp[t] === sc0) && S.dirt[t] >= 40 && !claimed('t' + t, s)) return true;
+    }
+    return false;
+  }
+  function hasEscapeeToCatch(s) {
+    for (var k = 0; k < RT.escaped.length; k++) {
+      var a = RT.escaped[k];
+      if (!claimed('a' + a.id, s)) return true;
+    }
+    return false;
+  }
+  function urgentTaskReady(s) {
+    var t = tileOf(s.x, s.z), sc0 = RT.comp[S.path[t] ? t : s.ti];
+    if (s.type === 'security') return hasEscapeeToCatch(s);
+    if (s.type === 'keeper') return !!pickKeeperEnc(s, sc0) || (RT.secCount === 0 && hasEscapeeToCatch(s));
+    if (s.type === 'vet') return !!pickVetAnimal(s, sc0);
+    if (s.type === 'cleaner') return hasCleanerWork(s, sc0);
+    return false;
+  }
+  function staffCoverage() {
+    var huts = RT.huts.map(function (o) { var c = objCenter(o); return { id: o.id, i: o.i, j: o.j, x: c.x, z: c.z, radius: STATION_TILES }; });
+    var clinics = RT.vets.map(function (o) { var c = objCenter(o); return { id: o.id, i: o.i, j: o.j, x: c.x, z: c.z, radius: STATION_TILES }; });
+    return {
+      keeperHutTiles: STATION_TILES,
+      vetClinicTiles: STATION_TILES,
+      stationTiles: STATION_TILES,
+      hasHut: RT.hasHut,
+      hasVet: RT.hasVet,
+      huts: huts,
+      clinics: clinics,
+      enclosuresInRadius: function (hx, hz, radiusTiles) {
+        var r = (radiusTiles || STATION_TILES) * TILE, n = 0;
+        for (var k = 0; k < S.enclosures.length; k++) {
+          var e = S.enclosures[k]; if (!e.viewTiles.length) continue;
+          var best = Math.hypot(e.cx - hx, e.cz - hz);
+          for (var v = 0; v < e.viewTiles.length; v++) {
+            var d = Math.hypot(cxOf(e.viewTiles[v]) - hx, czOf(e.viewTiles[v]) - hz);
+            if (d < best) best = d;
+          }
+          if (best <= r) n++;
+        }
+        return n;
+      }
+    };
+  }
+  function staffOnPath(s) {
+    var t = tileOf(s.x, s.z);
+    if (S.path[t]) { s.ti = t; return true; }
+    var i = t % N, j = (t - i) / N, best = -1, bd = 1e9;
+    for (var r = 1; r <= 10 && best < 0; r++) for (var dj = -r; dj <= r; dj++) for (var di = -r; di <= r; di++) {
+      var x = i + di, y = j + dj; if (!Z.inb(x, y) || !S.path[x + y * N]) continue;
+      var d = di * di + dj * dj; if (d < bd) { bd = d; best = x + y * N; }
+    }
+    if (best < 0) {
+      var pt = RT.pathTiles;
+      for (var k = 0; k < pt.length; k++) {
+        var c = pt[k], ci = c % N, cj = (c - ci) / N, dx = ci - i, dy = cj - j, d2 = dx * dx + dy * dy;
+        if (d2 < bd) { bd = d2; best = c; }
+      }
+    }
+    if (best < 0) return false;
+    s.ti = best; s.x = cxOf(best); s.z = czOf(best); s.tk = null; s.route = null; releaseClaims(s);
+    return true;
   }
   function startPatrol(s) {
-    s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 2); s.tk = null; s.task = 'Patrolling';
-    if (!RT.pathTiles.length) return;
-    var r = findRoute(s.ti, function () { return rng.chance(0.08); }, 8);
-    if (r && r.length) { s.route = r; s.ri = 0; s.state = 'walk'; }
+    s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 1.2); s.tk = null; s.route = null;
+    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner') ? 'Patrolling (radio ready)' : 'Patrolling';
+    var pt = RT.pathTiles; if (!pt.length || !S.path[s.ti]) return;
+    var sc0 = RT.comp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.comp[c] === sc0; }) : pt;
+    if (!pool.length) return;
+    var homeT = s.home >= 0 ? s.home : s.ti, hi = homeT % N, hj = (homeT - hi) / N;
+    var tgt = pool[Math.floor(rng.next() * pool.length)];
+    for (var k = 0; k < 6; k++) {
+      var c = pool[Math.floor(rng.next() * pool.length)], ci = c % N, cj = (c - ci) / N;
+      if (Math.abs(ci - hi) + Math.abs(cj - hj) < 26) { tgt = c; break; }
+    }
+    var r = findRoute(s.ti, function (t) { return t === tgt; });
+    if (r && r.length) { s.tk = { k: 'patrol', chk: 1 }; s.route = r; s.ri = 0; s.state = 'walk'; }
   }
-
-  function claimed(key) { return RT.claim[key] && RT.claim[key] !== 0; }
 
   function tryRecapture(s, dt) {
     var a = RT.aById.get(s.tk.id);
@@ -2594,11 +2728,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function assignTask(s) {
     var k, enc, a;
-    staffOnPath(s);
+    if (!staffOnPath(s)) { s.state = 'idle'; s.speed = 0; s.wt = 1; s.task = 'Waiting for path'; return; }
+    var sc0 = RT.comp[s.ti];
     if (s.type === 'security') {
       if (RT.escaped.length) {
         for (k = 0; k < RT.escaped.length; k++) {
-          a = RT.escaped[k]; if (claimed('a' + a.id)) continue;
+          a = RT.escaped[k]; if (claimed('a' + a.id, s)) continue;
           RT.claim['a' + a.id] = s.id; s.tk = { k: 'cap', id: a.id }; s.task = 'Responding to escape';
           var r0 = planCapRoute(s, a); if (r0) { s.route = r0; s.ri = 0; }
           return;
@@ -2606,27 +2741,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     if (s.type === 'keeper') {
-      for (k = 0; k < S.enclosures.length; k++) {
-        enc = S.enclosures[k];
-        if (enc.foodLevel < 0.35 && !claimed('f' + enc.id) && enc.viewTiles.length) {
-          RT.claim['f' + enc.id] = s.id; s.tk = { k: 'feed', id: enc.id }; s.task = 'Refilling ' + enc.name;
-          var r = findRoute(s.ti, function (t) { return enc.viewTiles.indexOf(t) >= 0; });
-          if (r) { s.route = r; s.ri = 0; return; }
-          delete RT.claim['f' + enc.id]; s.tk = null;
-        }
-      }
-      for (k = 0; k < S.enclosures.length; k++) {
-        enc = S.enclosures[k];
-        if (enc.poop > 2 && !claimed('p' + enc.id) && enc.viewTiles.length) {
-          RT.claim['p' + enc.id] = s.id; s.tk = { k: 'poop', id: enc.id }; s.task = 'Mucking out ' + enc.name;
-          var r2 = findRoute(s.ti, function (t) { return enc.viewTiles.indexOf(t) >= 0; });
-          if (r2) { s.route = r2; s.ri = 0; return; }
-          delete RT.claim['p' + enc.id]; s.tk = null;
+      var bestEnc = pickKeeperEnc(s, sc0);
+      if (bestEnc) {
+        var vs = new Set(bestEnc.viewTiles), rk = findRoute(s.ti, function (t) { return vs.has(t); });
+        if (rk) {
+          RT.claim['e' + bestEnc.id] = s.id; s.tk = { k: 'enc', id: bestEnc.id };
+          s.task = (bestEnc.breach > 0 ? 'Securing ' : 'Caring for ') + bestEnc.name;
+          s.route = rk; s.ri = 0; return;
         }
       }
       if (RT.escaped.length && RT.secCount === 0) {
         for (k = 0; k < RT.escaped.length; k++) {
-          a = RT.escaped[k]; if (claimed('a' + a.id)) continue;
+          a = RT.escaped[k]; if (claimed('a' + a.id, s)) continue;
           RT.claim['a' + a.id] = s.id; s.tk = { k: 'cap', id: a.id }; s.task = 'Helping catch ' + a.name;
           var r3 = planCapRoute(s, a); if (r3) { s.route = r3; s.ri = 0; }
           return;
@@ -2634,16 +2760,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     if (s.type === 'vet') {
-      for (k = 0; k < S.animals.length; k++) {
-        a = S.animals[k];
-        if (a.sick && a.enc && !claimed('v' + a.id)) {
-          enc = RT.eMap[a.enc];
-          if (enc && enc.viewTiles.length) {
-            RT.claim['v' + a.id] = s.id; s.tk = { k: 'vet', id: a.id, encId: enc.id }; s.task = 'Treating ' + a.name;
-            var r4 = findRoute(s.ti, function (t) { return enc.viewTiles.indexOf(t) >= 0; });
-            if (r4) { s.route = r4; s.ri = 0; return; }
-            delete RT.claim['v' + a.id]; s.tk = null;
-          }
+      var bestAn = pickVetAnimal(s, sc0);
+      if (bestAn) {
+        enc = RT.eMap[bestAn.enc];
+        var vs2 = new Set(enc.viewTiles), r4 = findRoute(s.ti, function (t) { return vs2.has(t); });
+        if (r4) {
+          RT.claim['v' + bestAn.id] = s.id; s.tk = { k: 'vet', id: bestAn.id, encId: enc.id };
+          s.task = (bestAn.sick ? 'Treating ' : 'Checking ') + bestAn.name;
+          s.route = r4; s.ri = 0; return;
         }
       }
     }
@@ -2651,14 +2775,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var bins = RT.byType.bin;
       for (k = 0; k < bins.length; k++) {
         var bin = bins[k];
-        if ((bin.fill || 0) >= 8 && !claimed('b' + bin.id)) {
-          RT.claim['b' + bin.id] = s.id; s.tk = { k: 'bin', id: bin.id, i: bin.i, j: bin.j }; s.task = 'Emptying litter bin';
+        if ((bin.fill || 0) >= 8 && !claimed('b' + bin.id, s)) {
           var r5 = findRoute(s.ti, function (t) { return Math.abs((t % N) - bin.i) + Math.abs(Math.floor(t / N) - bin.j) === 1; });
-          if (r5) { s.route = r5; s.ri = 0; return; }
-          delete RT.claim['b' + bin.id]; s.tk = null;
+          if (r5) { RT.claim['b' + bin.id] = s.id; s.tk = { k: 'bin', id: bin.id, i: bin.i, j: bin.j }; s.task = 'Emptying litter bin'; s.route = r5; s.ri = 0; return; }
         }
       }
-      var rc = findRoute(s.ti, function (t) { return S.dirt[t] >= 40 && !claimed('t' + t); });
+      var rc = findRoute(s.ti, function (t) { return S.dirt[t] >= 40 && !claimed('t' + t, s); });
       if (rc) {
         var dt = rc.length ? rc[rc.length - 1] : s.ti;
         RT.claim['t' + dt] = s.id; s.tk = { k: 'dirt', t: dt }; s.task = 'Sweeping path';
@@ -2669,7 +2791,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function staffStep(s, dt) {
-    if (s.sickUntil > S.day + S.time) { s.state = 'idle'; s.speed = 0; s.task = 'Off sick'; return; }
+    if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.speed = 0; s.task = 'Off sick'; return; }
+    if (s.tk && s.tk.k === 'patrol') {
+      s.tk.chk = (s.tk.chk === undefined ? 1 : s.tk.chk) - dt;
+      if (s.tk.chk <= 0) {
+        s.tk.chk = s.type === 'cleaner' ? 1.5 : 1.0;
+        if (urgentTaskReady(s)) { s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; assignTask(s); return; }
+      }
+    }
     if (s.tk && s.tk.k === 'cap') {
       var an = RT.aById.get(s.tk.id);
       if (an && an.state === 'escaped') {
@@ -2677,17 +2806,26 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (dx * dx + dz * dz < 64) { tryRecapture(s, dt); return; }
       }
     }
-    if (s.route && s.ri < s.route.length) {
+    if (s.route) {
+      if (s.tk && s.tk.k === 'vet') {
+        var va = RT.aById.get(s.tk.id);
+        if (!va || (!va.sick && va.health >= 65)) { releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return; }
+      }
+      if ((s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop')) && !encById(s.tk.id)) {
+        releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
+      }
       if (walkRoute(s, dt)) {
         s.route = null;
         if (s.tk) {
           var tk = s.tk;
-          if (tk.k === 'feed') {
-            s.state = 'work'; s.wt = 3; s.task = 'Feeding animals';
-          } else if (tk.k === 'poop') {
-            s.state = 'work'; s.wt = 4; s.task = 'Cleaning enclosure';
+          if (tk.k === 'patrol') {
+            s.tk = null; s.state = 'idle'; s.wt = rng.range(0.6, 1.2); s.task = 'Ready';
+          } else if (tk.k === 'enc' || tk.k === 'feed' || tk.k === 'poop') {
+            var inHut = inStationZone(s.x, s.z, RT.huts, STATION_TILES);
+            s.state = 'work'; s.wt = RT.hasHut ? (inHut ? 1.8 : 2.3) : 3.2; s.task = 'Tending animals';
           } else if (tk.k === 'vet') {
-            s.state = 'work'; s.wt = 5; s.task = 'Administering treatment';
+            var pa = RT.aById.get(tk.id);
+            s.state = 'work'; s.wt = RT.hasVet ? (pa && inStationZone(pa.x, pa.z, RT.vets, STATION_TILES) ? 1.8 : 2.5) : 4.2; s.task = 'Administering treatment';
           } else if (tk.k === 'bin') {
             s.state = 'work'; s.wt = 2; s.task = 'Emptying bin';
           } else if (tk.k === 'dirt') {
@@ -2702,16 +2840,32 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (s.wt <= 0) {
         var done = s.tk;
         if (done) {
-          if (done.k === 'feed') { var e = encById(done.id); if (e) { e.foodLevel = 1; delete RT.claim['f' + e.id]; } }
-          else if (done.k === 'poop') { var e2 = encById(done.id); if (e2) { e2.poop = 0; delete RT.claim['p' + e2.id]; } }
-          else if (done.k === 'vet') { var a2 = RT.aById.get(done.id); if (a2) { a2.sick = false; a2.health = Math.min(100, a2.health + 40); delete RT.claim['v' + a2.id]; msg(a2.name + ' was treated and is feeling better.', 'good'); } }
-          else if (done.k === 'bin') { var b = RT.oById.get(done.id); if (b) { b.fill = 0; delete RT.claim['b' + b.id]; } }
+          if (done.k === 'enc' || done.k === 'feed' || done.k === 'poop') {
+            var e = encById(done.id);
+            if (e) {
+              var hadBreach = e.breach > 0;
+              e.foodLevel = 1; e.waterLevel = 1; e.poop = 0;
+              if (hadBreach) { e.breach = 0; msg(s.name + ' secured the damaged fence at ' + e.name + '.', 'good', false); }
+              encStats(e);
+            }
+            delete RT.claim['e' + done.id]; delete RT.claim['f' + done.id]; delete RT.claim['p' + done.id];
+          }
+          else if (done.k === 'vet') {
+            var a2 = RT.aById.get(done.id);
+            if (a2) {
+              var heal = RT.hasVet ? (inStationZone(a2.x, a2.z, RT.vets, STATION_TILES) ? 100 : 70) : 45;
+              a2.sick = false; a2.health = Math.min(100, a2.health + heal);
+              msg(a2.name + ' was treated and is feeling better.', 'good');
+            }
+            delete RT.claim['v' + done.id];
+          }
+          else if (done.k === 'bin') { var b = RT.oById.get(done.id); if (b) { b.fill = 0; } delete RT.claim['b' + done.id]; }
           else if (done.k === 'dirt') {
             S.dirt[done.t] = 0;
             delete RT.claim['t' + done.t];
           }
         }
-        s.tk = null; s.state = 'idle'; s.wt = 1; s.task = 'Ready';
+        s.tk = null; s.state = 'idle'; s.wt = 0.6; s.task = 'Ready';
       }
       return;
     }
@@ -3027,7 +3181,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (stCandidate.length) {
           var st = rng.pick(stCandidate), role = STF[st.type] ? STF[st.type].name.toLowerCase() : 'staff member';
           var sHrs = hrs || 24;
-          st.sickUntil = S.day + S.time + sHrs / 24; st.tk = null; st.route = null; st.state = 'idle'; st.speed = 0; st.task = 'Off sick';
+          st.sickUntil = S.day + S.time + sHrs / 24; st.tk = null; st.route = null; st.state = 'idle'; st.speed = 0; st.task = 'Off sick'; releaseClaims(st);
           addActive(ev, 'staff', st.name + ' (' + role + ') is off sick for a day.', sHrs, {}, { staffId: st.id });
           text = st.name + ', one of your ' + role + 's, has gone home with a stomach bug and is off sick for about a day. Their duties will go undone.'; kind = 'bad';
         }
@@ -3548,6 +3702,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (k = 0; k < r.issues.length; k++) out.issues.push(name + ': ' + r.issues[k]);
     }
     var cm = compatibleReport(e); if (cm) out.issues.push(cm);
+    if (e.animals.length && !e.viewTiles.length) {
+      out.noAccess = true;
+      out.issues.unshift('Keepers and vets cannot reach this enclosure: no path within 3 tiles. Lay a path beside it.');
+    } else if (e.animals.length && e.viewTiles.length) {
+      var keepersZ = S.staff.filter(function (st) { return st.type === 'keeper'; });
+      if (keepersZ.length && !keepersZ.some(function (ks) { return encReachesComp(e, RT.comp[ks.ti]); })) {
+        out.noKeeperRoute = true;
+        out.issues.unshift('Keepers cannot reach this enclosure from their paths. Hire a keeper on this path network or connect it.');
+      }
+      var vetsZ = S.staff.filter(function (st) { return st.type === 'vet'; });
+      if (vetsZ.length && e.animals.some(function (aid) { return vetNeedsAnimal(RT.aById.get(aid)); }) && !vetsZ.some(function (v) { return encReachesComp(e, RT.comp[v.ti]); })) {
+        out.noVetRoute = true;
+        out.issues.unshift('Vets cannot reach this enclosure from their paths. Hire a vet on this path network or connect it.');
+      }
+    }
     return out;
   }
   function compatibleReport(e) {
@@ -3563,6 +3732,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (a.health < 40) iss.push('Poor health');
     var enc = a.enc ? RT.eMap[a.enc] : null;
     if (enc) {
+      if (vetNeedsAnimal(a)) {
+        var vetsA = S.staff.filter(function (st) { return st.type === 'vet'; });
+        if (vetsA.length && (!enc.viewTiles.length || !vetsA.some(function (v) { return encReachesComp(enc, RT.comp[v.ti]); }))) {
+          iss.push('Vets cannot reach this enclosure (missing or disconnected path)');
+        }
+      }
       var E = RT.encx[enc.id], r = suitFor(enc, E, a.species, E.bySp[a.species] || 1);
       for (var k = 0; k < r.issues.length; k++) iss.push(r.issues[k]);
       if (enc.foodLevel < 0.15) iss.push('Food has run out');
@@ -3611,7 +3786,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     habitatGuide: habitatGuide, plantOk: plantOk,
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke,
-    addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff,
+    addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, staffCoverage: staffCoverage,
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex); insertAnimal(a); return a; },
     setTicketPrice: setTicketPrice, setPrice: setPrice, takeLoan: takeLoan, repayLoan: repayLoan, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
