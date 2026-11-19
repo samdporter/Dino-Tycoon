@@ -1975,7 +1975,17 @@ function updateEntities(dt, dtGame) {
   for (k = 0; k < n; k++) {
     rec = visList[k]; e = rec.ent; var g = rec.group, x2 = fin(e.x, 0), z2 = fin(e.z, 0), gy2 = fin(rec.gy, 0);
     if (!isFin(rec.h)) rec.h = 0;
-    if (dtGame > 0) { var dh = wrapPI(fin(e.heading, rec.h) - rec.h); rec.h += dh * Math.min(1, dtGame * 9); }
+    var isFight = e.state === 'fight';
+    if (dtGame > 0) {
+      if (isFight) rec.h = wrapPI(rec.h + dtGame * 18);
+      else { var dh = wrapPI(fin(e.heading, rec.h) - rec.h); rec.h += dh * Math.min(1, dtGame * 9); }
+    }
+    var fightRock = 0;
+    if (isFight) {
+      var fph = G.t * 22 + (e.id | 0) * 1.7;
+      gy2 += Math.abs(Math.sin(fph)) * 0.32;
+      fightRock = Math.sin(fph * 1.15) * 0.35;
+    }
     if (rec.imp) {
       g.visible = false;
       var c = Math.cos(rec.h), sn = Math.sin(rec.h), b;
@@ -1996,7 +2006,7 @@ function updateEntities(dt, dtGame) {
       }
     } else {
       g.visible = true;
-      g.position.set(x2, gy2, z2); g.rotation.y = rec.h;
+      g.position.set(x2, gy2, z2); g.rotation.y = rec.h; g.rotation.z = fightRock;
       if (!rec.bad && (dtGame > 0 || rec.fresh)) {
         var step = dtGame;
         if (rec.fresh) { step = 0.016; rec.fresh = false; }
@@ -2063,6 +2073,23 @@ function drawEmote(kind) {
   } else if (kind === 'bite' || kind === 'egg') {
     x.font = '70px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.fillStyle = '#fff'; x.fillText(kind === 'bite' ? '🦷' : '🥚', 48, 52);
     if (kind === 'bite') { x.strokeStyle = '#e63a2e'; x.lineWidth = 6; x.beginPath(); x.arc(48, 48, 40, 0, TAU); x.stroke(); }
+  } else if (kind === 'fight') {
+    x.save(); x.translate(48, 48);
+    var spikes = 10, i, r, ang;
+    x.beginPath();
+    for (i = 0; i < spikes * 2; i++) {
+      r = (i & 1) ? 22 : 42; ang = (i * PI) / spikes - PI / 2;
+      if (i === 0) x.moveTo(Math.cos(ang) * r, Math.sin(ang) * r); else x.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+    }
+    x.closePath(); x.fillStyle = '#ff3b1f'; x.fill(); x.lineWidth = 4; x.strokeStyle = '#ffdf2b'; x.stroke();
+    x.beginPath();
+    for (i = 0; i < spikes * 2; i++) {
+      r = (i & 1) ? 13 : 27; ang = (i * PI) / spikes - PI / 2 + 0.15;
+      if (i === 0) x.moveTo(Math.cos(ang) * r, Math.sin(ang) * r); else x.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+    }
+    x.closePath(); x.fillStyle = '#ffd93d'; x.fill();
+    x.restore();
+    x.font = '46px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'; x.fillText('💥', 48, 50);
   } else {
     x.fillStyle = '#e63a2e'; x.strokeStyle = '#fff'; x.lineWidth = 5;
     x.beginPath(); x.arc(48, 48, 36, 0, TAU); x.fill(); x.stroke();
@@ -2079,7 +2106,7 @@ function drawMoney(c, text, good) {
 }
 function buildOverlays() {
   Object.keys(EMOJI).forEach(function (k) { BUB[k] = mkSpriteMat(drawBubble(EMOJI[k], k === 'escaped' ? '#c33' : '#556')); });
-  EMO.heart = mkSpriteMat(drawEmote('heart')); EMO.alert = mkSpriteMat(drawEmote('alert')); EMO.bite = mkSpriteMat(drawEmote('bite')); EMO.egg = mkSpriteMat(drawEmote('egg'));
+  EMO.heart = mkSpriteMat(drawEmote('heart')); EMO.alert = mkSpriteMat(drawEmote('alert')); EMO.bite = mkSpriteMat(drawEmote('bite')); EMO.egg = mkSpriteMat(drawEmote('egg')); EMO.fight = mkSpriteMat(drawEmote('fight'));
   var k, sp;
   for (k = 0; k < MAXB; k++) { sp = new THREE.Sprite(BUB.happy); sp.visible = false; sp.renderOrder = 10; root.add(sp); bubSprites.push(sp); }
   for (k = 0; k < 14; k++) {
@@ -2259,6 +2286,116 @@ function syncEggs(dt) {
     rec.sp.scale.set(sc, sc, 1); rec.sp.position.set(rec.x, rec.g.position.y + 1.5 * sc * 0.6 + 0.6, rec.z); rec.sp.visible = true;
   }
   eggRecs.forEach(function (rec, id) { if (!seen[id]) { root.remove(rec.g); root.remove(rec.sp); rec.sp.material.dispose(); rec.tex.dispose(); eggRecs.delete(id); } });
+}
+
+/* ------------------------------------------------ cartoon fight dust clouds */
+var fightClouds = new Map(), _fightPuffGeo = null, _fightStarGeo = null;
+var FIGHT_PUFF_COLS = ['#e8d4ad', '#f4e8ce', '#d8be8e'];
+var FIGHT_STAR_COLS = ['#ffe033', '#ff8c1a', '#ff3322'];
+function disposeFightCloud(rec) {
+  if (!rec) return;
+  root.remove(rec.grp);
+  var k;
+  for (k = 0; k < rec.puffMats.length; k++) rec.puffMats[k].dispose();
+  for (k = 0; k < rec.starMats.length; k++) rec.starMats[k].dispose();
+  if (rec.sp && rec.sp.material) rec.sp.material.dispose();
+}
+function clearFightClouds() {
+  fightClouds.forEach(function (rec) { disposeFightCloud(rec); });
+  fightClouds.clear();
+}
+function makeFightCloud(f) {
+  if (!_fightPuffGeo) _fightPuffGeo = new THREE.IcosahedronGeometry(0.42, 1);
+  if (!_fightStarGeo) _fightStarGeo = new THREE.OctahedronGeometry(0.22, 0);
+  var grp = new THREE.Group(), puffs = [], stars = [], puffMats = [], starMats = [], k;
+  for (k = 0; k < FIGHT_PUFF_COLS.length; k++) {
+    puffMats.push(new THREE.MeshLambertMaterial({ color: tcol(FIGHT_PUFF_COLS[k]), transparent: true, opacity: 0.88, depthWrite: false }));
+  }
+  for (k = 0; k < FIGHT_STAR_COLS.length; k++) {
+    starMats.push(new THREE.MeshBasicMaterial({ color: FIGHT_STAR_COLS[k], transparent: true, opacity: 0.95 }));
+  }
+  for (k = 0; k < 11; k++) {
+    var pm = new THREE.Mesh(_fightPuffGeo, puffMats[k % puffMats.length]);
+    var ang = (k / 11) * TAU, rad = 0.22 + (k % 3) * 0.22, y0 = (k < 4 ? 0.42 : 0.14) + (k % 2) * 0.16;
+    var sc = 0.72 + (k % 4) * 0.18;
+    pm.position.set(Math.cos(ang) * rad, y0, Math.sin(ang) * rad);
+    pm.scale.setScalar(sc);
+    grp.add(pm);
+    puffs.push({ mesh: pm, ang: ang, rad: rad, y0: y0, sc: sc, spd: (k & 1 ? 4.4 : -3.8), ph: k * 0.9 });
+  }
+  for (k = 0; k < 6; k++) {
+    var sm = new THREE.Mesh(_fightStarGeo, starMats[k % starMats.length]);
+    var sang = (k / 6) * TAU;
+    sm.scale.setScalar(0.01);
+    grp.add(sm);
+    stars.push({ mesh: sm, ang: sang, y0: 0.3 + (k % 2) * 0.35, ph: k * 1.15, freq: 7.5 + (k % 3) * 1.4 });
+  }
+  var spMat = EMO.fight ? EMO.fight.clone() : new THREE.SpriteMaterial({ transparent: true, depthTest: false, depthWrite: false, fog: false });
+  var sp = new THREE.Sprite(spMat);
+  sp.renderOrder = 12;
+  sp.position.set(0, 1.25, 0);
+  grp.add(sp);
+  var sz = f.size || 1.2;
+  grp.position.set(f.x, groundY(f.x, f.z) + 0.32 * sz, f.z);
+  grp.scale.setScalar(sz);
+  root.add(grp);
+  return { grp: grp, puffs: puffs, stars: stars, puffMats: puffMats, starMats: starMats, sp: sp, x: f.x, z: f.z, size: sz, age: 0, fade: 0 };
+}
+function syncFights(dtReal) {
+  var s = Z.state, list = (s && s.fights) || [], seen = {}, k;
+  for (k = 0; k < list.length; k++) {
+    var f = list[k];
+    if (!isFin(f.x) || !isFin(f.z)) continue;
+    seen[f.id] = 1;
+    var rec = fightClouds.get(f.id);
+    if (!rec) { rec = makeFightCloud(f); fightClouds.set(f.id, rec); }
+    rec.x = f.x; rec.z = f.z; rec.size = f.size || 1.2; rec.fade = 0;
+  }
+  fightClouds.forEach(function (rec, id) {
+    var active = !!seen[id], dt = isFin(dtReal) ? dtReal : 0.016;
+    rec.age += dt;
+    var t = rec.age, i, p, st;
+    if (active) {
+      rec.grp.position.set(rec.x, groundY(rec.x, rec.z) + 0.32 * rec.size, rec.z);
+      rec.grp.scale.setScalar(rec.size * (0.94 + 0.08 * Math.sin(t * 14)));
+      for (i = 0; i < rec.puffMats.length; i++) rec.puffMats[i].opacity = 0.88;
+      for (i = 0; i < rec.starMats.length; i++) rec.starMats[i].opacity = 0.95;
+      rec.sp.material.opacity = 1;
+    } else {
+      rec.fade += dt;
+      var u = clamp(rec.fade / 0.65, 0, 1);
+      if (u >= 1) {
+        disposeFightCloud(rec);
+        fightClouds.delete(id);
+        return;
+      }
+      rec.grp.position.set(rec.x, groundY(rec.x, rec.z) + 0.32 * rec.size + u * 0.75, rec.z);
+      rec.grp.scale.setScalar(rec.size * (1 + u * 0.65));
+      for (i = 0; i < rec.puffMats.length; i++) rec.puffMats[i].opacity = (1 - u) * 0.88;
+      for (i = 0; i < rec.starMats.length; i++) rec.starMats[i].opacity = (1 - u) * 0.95;
+      rec.sp.material.opacity = 1 - u;
+    }
+    for (i = 0; i < rec.puffs.length; i++) {
+      p = rec.puffs[i];
+      var a = p.ang + t * p.spd;
+      var br = p.rad * (0.88 + 0.22 * Math.sin(t * 7.5 + p.ph));
+      p.mesh.position.set(Math.cos(a) * br, p.y0 + Math.sin(t * 6.5 + p.ph) * 0.12, Math.sin(a) * br);
+      var bsc = p.sc * (0.85 + 0.25 * Math.sin(t * 9 + p.ph));
+      p.mesh.scale.setScalar(bsc);
+      p.mesh.rotation.set(t * 2 + p.ph, t * 2.5, 0);
+    }
+    for (i = 0; i < rec.stars.length; i++) {
+      st = rec.stars[i];
+      var pop = Math.pow(Math.max(0, Math.sin(t * st.freq + st.ph)), 1.5);
+      var srad = 0.35 + pop * 0.75, sang = st.ang + t * 3.2;
+      st.mesh.position.set(Math.cos(sang) * srad, st.y0 + pop * 0.45, Math.sin(sang) * srad);
+      st.mesh.scale.setScalar(Math.max(0.01, pop * 1.15));
+      st.mesh.rotation.set(t * 9, t * 7, st.ph);
+    }
+    rec.sp.position.set(0, 1.18 + Math.sin(t * 7) * 0.14, 0);
+    var sps = 0.85 + 0.18 * Math.sin(t * 10);
+    rec.sp.scale.set(sps, sps, 1);
+  });
 }
 /* ------------------------------------------------ preview / highlighting */
 var pv = {};
@@ -2838,6 +2975,7 @@ function resetAll() {
   objRecs.forEach(function (r) { removeRec(r); }); objRecs.clear();
   for (var t in pools) { root.remove(pools[t].mesh); } pools = {};
   clearEnts();
+  clearFightClouds();
   objDirty = true; G.poopSig = -1; G.litterSig = -1; G.ovTimer = 0;
   followK = null; followId = null;
   setPreview(null);
@@ -2881,6 +3019,7 @@ function hookBus() {
   b.on('money', function (m) { if (m && typeof m.x === 'number' && typeof m.z === 'number') spawnMoney(m.delta, m.x, m.z); });
   b.on('birth', function (a) { if (a && typeof a.x === 'number') spawnEmote('heart', a.x, a.z, (entityRec('animal', a.id) ? entityRec('animal', a.id).ht : 1.5) + 0.6); });
   b.on('predation', function (e) { var p = e && (e.prey || e.predator); if (p && typeof p.x === 'number') spawnEmote('bite', p.x, p.z, (entityRec('animal', p.id) ? entityRec('animal', p.id).ht : 1.5) + 0.8); });
+  b.on('fightStart', function (f) { if (f && typeof f.x === 'number' && typeof f.z === 'number') spawnEmote('fight', f.x, f.z, 1.8 + (f.size || 1) * 0.45); });
   b.on('hatch', function (e) { var a = e && e.ok && e.animal; if (a && typeof a.x === 'number') spawnEmote('heart', a.x, a.z, (entityRec('animal', a.id) ? entityRec('animal', a.id).ht : 1.5) + 0.6); });
   b.on('escape', function (a) { if (a && typeof a.x === 'number') spawnEmote('alert', a.x, a.z, (entityRec('animal', a.id) ? entityRec('animal', a.id).ht : 1.5) + 0.8); });
 }
@@ -2911,6 +3050,7 @@ function frame(dtReal) {
   updateEntities(dtReal, dtGame);
   updateBuildings(dtGame);
   syncEggs(dtReal);
+  syncFights(dtReal);
   updateBubbles();
   updateFloaters(dtReal);
   updateGrime(dtReal);

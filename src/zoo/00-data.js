@@ -77,7 +77,7 @@ window.Z.DATA = {
       cost: 5000, "upkeep/day": 125, appeal: 50, space: 6, social: [3, 8], diet: "carnivore",
       foliage: ["acacia", "boulder", "tall_grass"],
       needsWater: true, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.4, size: 1.1,
-      lifespan: 900, breedChance: 0.1, star: 2, danger: 3,
+      lifespan: 900, breedChance: 0.1, star: 2, danger: 3, packHunter: true,
       fact: "Lions are the only cats that live in groups, known as prides."
     },
     {
@@ -149,7 +149,7 @@ window.Z.DATA = {
       cost: 2200, "upkeep/day": 55, appeal: 28, space: 6, social: [4, 8], diet: "carnivore",
       foliage: ["pine", "oak", "bush"],
       needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.5, size: 0.8,
-      lifespan: 780, breedChance: 0.1, star: 1, danger: 2,
+      lifespan: 780, breedChance: 0.1, star: 1, danger: 2, packHunter: true,
       fact: "Wolves howl to keep in touch with their pack across long distances."
     },
     {
@@ -248,7 +248,7 @@ window.Z.DATA = {
       cost: 4200, "upkeep/day": 105, appeal: 40, space: 6, social: [3, 10], diet: "carnivore",
       foliage: ["acacia", "boulder", "rock_pile", "tall_grass"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.5, size: 0.85,
-      lifespan: 1080, breedChance: 0.1, star: 2, danger: 2,
+      lifespan: 1080, breedChance: 0.1, star: 2, danger: 2, packHunter: true,
       fact: "Spotted hyenas live in complex, female-led clans and communicate across miles with eerie whoops and giggles."
     },
     {
@@ -365,7 +365,7 @@ window.Z.DATA = {
       cost: 2000, "upkeep/day": 50, appeal: 46, space: 3, social: [2, 6], diet: "carnivore",
       foliage: ["snow_pine", "ice_floe", "boulder"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 3, speed: 1.45, size: 0.45,
-      lifespan: 900, breedChance: 0.12, star: 1, danger: 1,
+      lifespan: 900, breedChance: 0.12, star: 1, danger: 1, packHunter: true,
       fact: "Arctic foxes change coat colour with the seasons, turning snowy white in winter and earthy brown in summer."
     },
     {

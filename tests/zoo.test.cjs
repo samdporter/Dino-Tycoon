@@ -1498,4 +1498,201 @@ test('Zoo 8 new starter/early-game animals have exact star ratings and unlock at
   }
 });
 
+test('Zoo predator enclosure freedom, pack hunting, large-prey retaliation, predator vs predator fights, and vet healing', () => {
+  const { z } = zoo();
+  const buildFlatEnc = (seed, i0, j0, i1, j1) => {
+    z.Sim.newGame({ seed, map: 'meadow', money: 2000000 });
+    z.state.unlocked.star = 4;
+    z.state.time = 0.45; // daytime
+    for (let j = j0 - 1; j <= j1 + 1; j++) {
+      for (let i = i0 - 1; i <= i1 + 1; i++) {
+        z.Sim.paintTerrain(i, j, 'grass', 0);
+      }
+    }
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, 'reinforced').ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, 'reinforced').ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, 'reinforced').ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, 'reinforced').ok, true);
+    }
+    return z.Sim.enclosureAt(i0 + 1, j0 + 1);
+  };
+
+  // 1. Data flags + placing/moving predators with herbivores & rival predators succeeds with warning
+  for (const spId of ['wolf', 'hyena', 'lion', 'arctic_fox']) {
+    const sp = z.DATA.animals.find(a => a.id === spId);
+    assert.equal(sp.packHunter, true, `${spId} should have packHunter: true`);
+  }
+  const enc1 = buildFlatEnc(77, 14, 14, 22, 22);
+  const enc2 = (() => {
+    for (let j = 13; j <= 19; j++) for (let i = 24; i <= 30; i++) z.Sim.paintTerrain(i, j, 'grass', 0);
+    for (let i = 25; i <= 29; i++) {
+      z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'reinforced');
+      z.Sim.placeFence({ axis: 'x', i, j: 19 }, 'reinforced');
+    }
+    for (let j = 14; j <= 18; j++) {
+      z.Sim.placeFence({ axis: 'z', i: 25, j }, 'reinforced');
+      z.Sim.placeFence({ axis: 'z', i: 30, j }, 'reinforced');
+    }
+    return z.Sim.enclosureAt(26, 15);
+  })();
+
+  const zRes = z.Sim.addAnimal('zebra', 16, 16);
+  assert.equal(zRes.ok, true);
+  assert.equal(zRes.warn, undefined);
+
+  const lDry = z.Sim.addAnimal('lion', 17, 16, { dry: true });
+  assert.equal(lDry.ok, true);
+  assert.match(lDry.warn, /Predators in this enclosure may hunt smaller animals or fight rival predators/);
+
+  const lRes = z.Sim.addAnimal('lion', 17, 16);
+  assert.equal(lRes.ok, true);
+  assert.match(lRes.warn, /Predators in this enclosure may hunt smaller animals or fight rival predators/);
+
+  // Adding a second predator species in same enclosure also succeeds with warning
+  const wRes = z.Sim.addAnimal('wolf', 18, 16);
+  assert.equal(wRes.ok, true);
+  assert.match(wRes.warn, /Predators in this enclosure may hunt smaller animals or fight rival predators/);
+
+  // Moving a herbivore into an enclosure containing a predator succeeds with warning
+  const gRes = z.Sim.addAnimal('kangaroo', 27, 16);
+  assert.equal(gRes.ok, true);
+  const mRes = z.Sim.moveAnimal(gRes.id, 19, 16);
+  assert.equal(mRes.ok, true);
+  assert.match(mRes.warn, /Predators in this enclosure may hunt smaller animals or fight rival predators/);
+
+  // Adding same-species predator in empty/same-species enclosure has no cross-species warning
+  const w2Res = z.Sim.addAnimal('wolf', 27, 16);
+  assert.equal(w2Res.ok, true);
+  assert.equal(w2Res.warn, undefined);
+  const er1 = z.Sim.enclosureReport(enc1.id);
+  assert.ok(er1.issues.some(iss => /Predators are sharing with prey species/i.test(iss)));
+
+  // Rival predator enclosure report warning (no prey)
+  const w3Res = z.Sim.addAnimal('lion', 28, 16);
+  assert.equal(w3Res.ok, true);
+  const er2 = z.Sim.enclosureReport(enc2.id);
+  assert.ok(er2.issues.some(iss => /Rival predator species/i.test(iss)));
+
+  // 2. Hunting small/similar prey starts a fight in S.fights and resolves
+  buildFlatEnc(101, 14, 14, 18, 18);
+  let fightStarted = 0, fightEnded = 0;
+  z.bus.on('fightStart', () => fightStarted++);
+  z.bus.on('fightEnd', () => fightEnded++);
+  const lion = z.Sim.spawnAnimal('lion', 16, 16);
+  const meerkat = z.Sim.spawnAnimal('meerkat', 16, 16);
+  lion.hunger = 80; lion.st = 0;
+  meerkat.x = lion.x + 0.5; meerkat.z = lion.z;
+
+  for (let k = 0; k < 20 && z.state.fights.length === 0; k++) z.Sim._step(0.1);
+  assert.equal(z.state.fights.length, 1, 'Hunting small prey should initiate an active fight in S.fights');
+  assert.equal(fightStarted, 1);
+  const activeF = z.state.fights[0];
+  assert.equal(activeF.kind, 'hunt');
+  assert.equal(lion.state, 'fight');
+  assert.equal(meerkat.state, 'fight');
+  assert.equal(lion.fid, activeF.id);
+
+  // Save/load mid-fight preserves fight and cleans dangling fid on stray animals
+  const stray = z.Sim.spawnAnimal('zebra', 15, 15);
+  stray.fid = 999999;
+  const savedMid = z.Sim.save();
+  assert.equal(z.Sim.load(savedMid), true);
+  assert.equal(z.state.fights.length, 1, 'Active fight survives save/load');
+  const loadedStray = z.state.animals.find(a => a.species === 'zebra');
+  assert.equal(loadedStray.fid, 0, 'Dangling fid on non-fighting animal is cleared on load');
+
+  // Step until fight resolves
+  for (let k = 0; k < 60 && z.state.fights.length > 0; k++) z.Sim._step(0.1);
+  assert.equal(z.state.fights.length, 0, 'Fight should resolve and clear from S.fights');
+
+  // Also verify normal non-loaded fight emits fightEnd cleanly
+  const lionB = z.Sim.spawnAnimal('lion', 16, 16);
+  const rabbit = z.Sim.spawnAnimal('meerkat', 16, 16);
+  rabbit.x = lionB.x + 0.4; rabbit.z = lionB.z;
+  const startedBefore = fightStarted, endedBefore = fightEnded;
+  z.Sim._combat.startFight(lionB, rabbit, 'hunt', z.Sim.enclosureAt(16, 16));
+  assert.equal(fightStarted, startedBefore + 1);
+  for (let k = 0; k < 40 && z.state.fights.length > 0; k++) z.Sim._step(0.1);
+  assert.equal(z.state.fights.length, 0);
+  assert.equal(fightEnded, endedBefore + 1);
+  assert.equal(z.state.stats.predations >= 1, true);
+
+  // 3. Pack animals (Wolves) gang up together in a fight
+  const packEnc = buildFlatEnc(202, 14, 14, 20, 20);
+  const wolves = [
+    z.Sim.spawnAnimal('wolf', 16, 16),
+    z.Sim.spawnAnimal('wolf', 16, 17),
+    z.Sim.spawnAnimal('wolf', 17, 16),
+    z.Sim.spawnAnimal('wolf', 17, 17)
+  ];
+  const zebra = z.Sim.spawnAnimal('zebra', 17, 17);
+  zebra.x = wolves[0].x + 0.8; zebra.z = wolves[0].z;
+  wolves.forEach(w => { w.hunger = 80; w.st = 0; });
+  let packFight = null;
+  z.bus.on('fightStart', f => { packFight = f; });
+  for (let k = 0; k < 80 && !packFight; k++) {
+    z.state.time = 0.45;
+    z.Sim._step(0.1);
+  }
+  assert.ok(packFight, 'Wolves should initiate a fight against zebra');
+  assert.ok(packFight.attackers.length > 1, `Wolf pack should gang up together (attackers=${packFight.attackers.length})`);
+
+  // 4. Larger prey (Elephant / Rhino) can injure or kill a smaller predator
+  let injuredOrDead = 0;
+  for (let trial = 0; trial < 20; trial++) {
+    const encR = buildFlatEnc(300 + trial, 14, 14, 18, 18);
+    const fox = z.Sim.spawnAnimal('arctic_fox', 16, 16);
+    const elephant = z.Sim.spawnAnimal('elephant', 16, 16);
+    elephant.x = fox.x + 0.3; elephant.z = fox.z;
+    z.Sim._combat.startFight(fox, elephant, 'hunt', encR);
+    for (let k = 0; k < 60 && z.state.fights.length > 0; k++) z.Sim._step(0.1);
+    const foxAlive = z.state.animals.find(a => a.id === fox.id);
+    if (!foxAlive || foxAlive.injured) injuredOrDead++;
+  }
+  assert.ok(injuredOrDead >= 15, `Large prey should injure or kill smaller predator most of the time (got ${injuredOrDead}/20)`);
+
+  // 5. Predator vs predator fights: Polar Bear vs Arctic Fox across trials
+  let bearWins = 0, foxWins = 0;
+  const totalTrials = 160;
+  for (let trial = 0; trial < totalTrials; trial++) {
+    const encP = buildFlatEnc(1000 + trial, 14, 14, 18, 18);
+    const fox = z.Sim.spawnAnimal('arctic_fox', 16, 16);
+    const bear = z.Sim.spawnAnimal('polar_bear', 16, 16);
+    bear.x = fox.x + 0.3; bear.z = fox.z;
+    let outcome = null;
+    z.bus.on('fightEnd', ev => { outcome = ev; });
+    z.Sim._combat.startFight(fox, bear, 'predator', encP);
+    for (let k = 0; k < 60 && z.state.fights.length > 0; k++) z.Sim._step(0.1);
+    assert.ok(outcome, 'Predator vs predator fight should resolve');
+    if (outcome.atkWins) foxWins++; else bearWins++;
+  }
+  assert.ok(bearWins > foxWins * 4, `Polar Bear should win significantly more often than Arctic Fox (bear=${bearWins}, fox=${foxWins})`);
+  assert.ok(foxWins >= 1, `Arctic Fox should still have a chance to win sometimes (fox=${foxWins})`);
+
+  // 6. Vets detect and heal injured animals (vetNeedsAnimal + treatment)
+  buildFlatEnc(555, 14, 14, 18, 18);
+  // Lay path right next to enclosure and hire vet
+  for (let j = 19; j <= 42; j++) z.Sim.placePath(27, j, 'paved');
+  for (let i = 16; i <= 27; i++) z.Sim.placePath(i, 19, 'paved');
+  assert.equal(z.Sim.placeObject('vet_clinic', 28, 25, 3).ok, true);
+  const hv = z.Sim.hireStaff('vet', 27, 26);
+  assert.equal(hv.ok, true);
+
+  const wolf = z.Sim.spawnAnimal('wolf', 16, 16);
+  wolf.injured = true;
+  wolf.health = 68; // >= 55 so only injured flag triggers vet!
+  assert.equal(z.Sim.vetNeedsAnimal(wolf), true, 'vetNeedsAnimal should detect injured animals even when health >= 55');
+  const repInj = z.Sim.animalReport(wolf.id);
+  assert.equal(repInj.injured, true);
+  assert.ok(repInj.issues.includes('Injured and needs a vet'));
+
+  for (let k = 0; k < 160 && wolf.injured; k++) z.Sim._step(0.5);
+  assert.equal(wolf.injured, false, 'Vet should treat and clear injured status');
+  assert.ok(wolf.health > 68, 'Vet should heal injured animal health');
+});
+
+
 

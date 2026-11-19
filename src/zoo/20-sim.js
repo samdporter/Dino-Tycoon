@@ -1190,14 +1190,46 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- animals ----
+  function isPredator(sp) { return !!(sp && (sp.predator || sp.diet === 'carnivore')); }
+  function isPackHunter(sp) { return !!(sp && isPredator(sp) && (sp.packHunter || (sp.social && sp.social[0] >= 2))); }
+  function animalBulk(a) { var sp = SP[a.species]; return ((sp && sp.size) || 1) * (a.baby ? 0.45 : 1); }
+  function combatPower(a) {
+    var sp = SP[a.species], d = (sp && sp.danger) || 0;
+    var p = animalBulk(a) * (1 + d * 0.28) * (isPredator(sp) ? 1.18 : 1.0);
+    var hm = 0.4 + 0.6 * clamp(a.health / 100, 0, 1);
+    if (a.injured) hm *= 0.72;
+    if (a.sick) hm *= 0.65;
+    return Math.max(0.15, p * hm);
+  }
+  function gatherPack(leader, enc) {
+    if (!enc || !isPackHunter(SP[leader.species])) return [leader];
+    var mates = [], k;
+    for (k = 0; k < enc.animals.length; k++) {
+      var m = RT.aById.get(enc.animals[k]);
+      if (!m || m === leader || m.species !== leader.species || m.baby || m.sick || m.injured ||
+          m.state === 'escaped' || m.state === 'sleep' || m.state === 'fight') continue;
+      var dx = m.x - leader.x, dz = m.z - leader.z;
+      mates.push({ a: m, d2: dx * dx + dz * dz });
+    }
+    mates.sort(function (u, v) { return u.d2 - v.d2; });
+    var pack = [leader], lim = Math.min(3, mates.length);
+    for (k = 0; k < lim; k++) pack.push(mates[k].a);
+    return pack;
+  }
+  function packPower(pack) {
+    if (!pack || !pack.length) return 0;
+    var tot = combatPower(pack[0]);
+    for (var i = 1; i < pack.length; i++) tot += 0.65 * combatPower(pack[i]);
+    return tot;
+  }
   function compatible(enc, spId) {
-    var sp = SP[spId];
+    return null;
+  }
+  function mixWarn(enc, spId) {
+    var sp = SP[spId], isP = isPredator(sp);
     for (var k = 0; k < enc.species.length; k++) {
       var o = enc.species[k]; if (o === spId) continue;
-      var os = SP[o];
-      if (sp.diet === 'carnivore' || os.diet === 'carnivore' || sp.predator || os.predator) {
-        return "Predators can't share an enclosure with other animals - they will hunt them";
-      }
+      if (isP || isPredator(SP[o])) return 'Predators in this enclosure may hunt smaller animals or fight rival predators.';
     }
     return null;
   }
@@ -1213,7 +1245,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       age: baby ? 0 : adultAge(sp), baby: !!baby, enc: enc ? enc.id : 0, state: 'idle',
       x: x, z: z, y: 0, heading: rng.range(-PI, PI), speed: 0,
       hunger: rng.range(10, 40), thirst: rng.range(10, 40), energy: rng.range(60, 95), health: 100, happiness: 75,
-      stuck: 0, st: rng.range(1, 3), tx: x, tz: z, tg: '', sick: false, pregnant: 0, esc: 0, pt: rng.range(30, 90),
+      stuck: 0, st: rng.range(1, 3), tx: x, tz: z, tg: '', sick: false, injured: false, fid: 0, fightCd: 0,
+      pregnant: 0, esc: 0, pt: rng.range(30, 90),
       flyCooldown: sp && sp.canFlyOver ? rng.range(40, 90) : 0, flyover: null, flyAlt: 0
     };
   }
@@ -1233,14 +1266,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!enc) return fail('Place animals inside an enclosure');
     var badComp = compatible(enc, speciesId);
     if (badComp) return fail(badComp);
+    var warn = mixWarn(enc, speciesId);
     var cost = sp.cost;
     if (S.money < cost) return fail('Not enough money');
-    if (dry) return okr(cost);
+    if (dry) return okr(cost, warn ? { warn: warn } : undefined);
     var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex);
     spend(cost, 'animals');
     insertAnimal(a);
     msg(a.name + ' the ' + sp.name.toLowerCase() + ' arrived at ' + enc.name + '.', 'good');
-    return okr(cost, { id: a.id });
+    var extra = { id: a.id };
+    if (warn) extra.warn = warn;
+    return okr(cost, extra);
   }
   function sellAnimal(id, opts) {
     var dry = dryOf(arguments);
@@ -1251,7 +1287,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     removeAnimal(a);
     return okr(-refund);
   }
+  function stripFromFights(id) {
+    if (!S || !S.fights || !S.fights.length) return;
+    for (var k = S.fights.length - 1; k >= 0; k--) {
+      var f = S.fights[k], ai = f.attackers.indexOf(id), di = f.defenders.indexOf(id);
+      if (ai >= 0) f.attackers.splice(ai, 1);
+      if (di >= 0) f.defenders.splice(di, 1);
+    }
+  }
   function removeAnimal(a) {
+    stripFromFights(a.id);
+    a.fid = 0;
     var k = S.animals.indexOf(a); if (k >= 0) S.animals.splice(k, 1);
     RT.aById.delete(a.id);
     refreshEncAnimals();
@@ -1266,13 +1312,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!enc) return fail('Place animals inside an enclosure');
     var badComp = compatible(enc, a.species);
     if (badComp) return fail(badComp);
-    if (dry) return okr(0);
+    var warn = mixWarn(enc, a.species);
+    if (dry) return okr(0, warn ? { warn: warn } : undefined);
+    stripFromFights(a.id);
     a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z;
-    a.state = 'idle'; a.st = 1; a.tg = ''; a.esc = 0; a.flyover = null; a.flyAlt = 0;
+    a.state = 'idle'; a.st = 1; a.tg = ''; a.hid = 0; a.fid = 0; a.esc = 0; a.flyover = null; a.flyAlt = 0;
     refreshEncAnimals();
     for (var k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     msg(a.name + ' was moved to ' + enc.name + '.', 'info');
-    return okr(0);
+    return okr(0, warn ? { warn: warn } : undefined);
   }
 
   // ---- staff ----
@@ -2314,16 +2362,65 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     removeAnimal(a);
   }
 
-  // hunting
+  // hunting & fights
   function findPrey(a, enc) {
-    var sp = SP[a.species], best = null, bd = 1e9;
+    var pack = gatherPack(a, enc), pPow = packPower(pack);
+    var best = null, bestTier = 99, bd = 1e9;
     for (var k = 0; k < enc.animals.length; k++) {
-      var p = RT.aById.get(enc.animals[k]); if (!p || p === a || p.state === 'escaped') continue;
+      var p = RT.aById.get(enc.animals[k]);
+      if (!p || p === a || p.state === 'escaped' || p.state === 'fight' || p.flyover) continue;
       var ps = SP[p.species];
-      if (ps.diet === 'carnivore' || ps.size > (sp.size || 1) * 1.5) continue;
-      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz; if (d < bd) { bd = d; best = p; }
+      if (!ps || isPredator(ps)) continue;
+      var ratio = combatPower(p) / pPow, tier;
+      if (ratio <= 1.15) {
+        tier = 0;
+      } else if (ratio <= 2.3) {
+        if (!(a.hunger > 50 && rng.chance(clamp(0.32 - (ratio - 1.15) * 0.24, 0.04, 0.32)))) continue;
+        tier = 1;
+      } else if (a.hunger > 80 && ratio <= 3.2 && rng.chance(0.05)) {
+        tier = 1;
+      } else {
+        continue;
+      }
+      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz;
+      if (!best || tier < bestTier || (tier === bestTier && d < bd)) { best = p; bestTier = tier; bd = d; }
     }
     return best;
+  }
+  function findRivalPredator(a, enc) {
+    var pPow = packPower(gatherPack(a, enc));
+    var best = null, bestTier = 99, bd = 1e9;
+    for (var k = 0; k < enc.animals.length; k++) {
+      var p = RT.aById.get(enc.animals[k]);
+      if (!p || p === a || p.baby || p.state === 'escaped' || p.state === 'fight' || p.sick) continue;
+      var ps = SP[p.species];
+      if (!ps || !isPredator(ps)) continue;
+      if (p.species === a.species && !(a.happiness < 45 && rng.chance(0.15))) continue;
+      var ratio = combatPower(p) / pPow;
+      if (ratio > 1.25 && !rng.chance(clamp(0.45 / ratio, 0.08, 0.4))) continue;
+      var tier = p.species !== a.species ? 0 : 1;
+      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz;
+      if (!best || tier < bestTier || (tier === bestTier && d < bd)) { best = p; bestTier = tier; bd = d; }
+    }
+    return best;
+  }
+  function rallyPack(leader, enc, target, tg) {
+    if (!enc || !target) return;
+    var cands = [], k;
+    for (k = 0; k < enc.animals.length; k++) {
+      var m = RT.aById.get(enc.animals[k]);
+      if (!m || m === leader || m.species !== leader.species || m.baby || m.sick || m.injured || (m.fightCd || 0) > 0 || m.health <= 35) continue;
+      if (m.state === 'idle' || (m.state === 'walk' && m.tg === 'wander')) {
+        var dx = m.x - leader.x, dz = m.z - leader.z;
+        cands.push({ a: m, d2: dx * dx + dz * dz });
+      }
+    }
+    cands.sort(function (u, v) { return u.d2 - v.d2; });
+    var lim = Math.min(3, cands.length);
+    for (k = 0; k < lim; k++) {
+      var pm = cands[k].a;
+      pm.tg = tg; pm.hid = target.id; pm.hunt = 0; pm.state = 'run'; pm.tx = target.x; pm.tz = target.z; pm.stuck = 0;
+    }
   }
   function killPrey(pred, prey) {
     var ps = SP[prey.species], ks = SP[pred.species];
@@ -2333,15 +2430,205 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     removeAnimal(prey);
     pred.hunger = Math.max(0, pred.hunger - 70); pred.state = 'eat'; pred.st = rng.range(5, 7); pred.tg = ''; pred.speed = 0; pred.hid = 0; pred.kill = 1;
   }
+  function startFight(attacker, defender, kind, enc) {
+    if (!attacker || !defender || attacker === defender) return null;
+    if (attacker.state === 'fight' || defender.state === 'fight') return null;
+    if (!S.fights) S.fights = [];
+    var fx = (attacker.x + defender.x) * 0.5, fz = (attacker.z + defender.z) * 0.5;
+    var attackers = [attacker], k;
+    if (isPackHunter(SP[attacker.species]) && enc) {
+      for (k = 0; k < enc.animals.length; k++) {
+        var m = RT.aById.get(enc.animals[k]);
+        if (!m || m === attacker || m === defender) continue;
+        if (m.species === attacker.species && m.state !== 'fight' && m.state !== 'escaped' && !m.baby && !m.sick && !m.injured) {
+          if ((m.tg === 'hunt' || m.tg === 'fight_rival') && m.hid === defender.id) {
+            var mdx = m.x - fx, mdz = m.z - fz;
+            if (mdx * mdx + mdz * mdz <= 4.5 * 4.5) attackers.push(m);
+          }
+        }
+      }
+    }
+    var dur = (combatPower(defender) < packPower(attackers) * 0.3 && ((SP[defender.species] && SP[defender.species].danger) || 0) === 0)
+      ? 1.6 : rng.range(3.0, 4.5);
+    var size = clamp(Math.max(SP[attacker.species].size || 1, SP[defender.species].size || 1) * 1.1 + attackers.length * 0.25, 0.9, 3.8);
+    var fight = {
+      id: newId(), x: fx, z: fz, y: 0, enc: enc ? enc.id : (attacker.enc || 0), kind: kind || 'hunt',
+      attackers: attackers.map(function (u) { return u.id; }),
+      defenders: [defender.id],
+      t: 0, dur: dur, size: size
+    };
+    for (k = 0; k < attackers.length; k++) {
+      attackers[k].state = 'fight'; attackers[k].fid = fight.id; attackers[k].tg = ''; attackers[k].hid = 0; attackers[k].speed = 0;
+    }
+    defender.state = 'fight'; defender.fid = fight.id; defender.tg = ''; defender.hid = 0; defender.speed = 0;
+    S.fights.push(fight);
+    bus.emit('fightStart', fight);
+    return fight;
+  }
+  function resolveFight(f) {
+    var atks = [], defs = [], k, u;
+    for (k = 0; k < f.attackers.length; k++) { u = RT.aById.get(f.attackers[k]); if (u) { u.fid = 0; u.tg = ''; u.hid = 0; atks.push(u); } }
+    for (k = 0; k < f.defenders.length; k++) { u = RT.aById.get(f.defenders[k]); if (u) { u.fid = 0; u.tg = ''; u.hid = 0; defs.push(u); } }
+    if (!atks.length || !defs.length) {
+      for (k = 0; k < atks.length; k++) { atks[k].state = 'idle'; atks[k].st = 1; atks[k].speed = 0; }
+      for (k = 0; k < defs.length; k++) { defs[k].state = 'idle'; defs[k].st = 1; defs[k].speed = 0; }
+      return;
+    }
+    var enc = f.enc ? RT.eMap[f.enc] : null;
+    var lead = atks[0], def = defs[0];
+    var leadSp = SP[lead.species], defSp = SP[def.species];
+    var atkPow = packPower(atks), defPow = packPower(defs);
+    var winChance = clamp(Math.pow(atkPow, 1.35) / (Math.pow(atkPow, 1.35) + Math.pow(defPow, 1.35)), 0.08, 0.94);
+    var atkWins = rng.chance(winChance);
+    if (f.kind === 'hunt') {
+      if (atkWins) {
+        msg(def.name + ' the ' + lc(defSp.name) + ' was caught and eaten by ' + lead.name + ' the ' + lc(leadSp.name) + (atks.length > 1 ? ' and its pack!' : '!'), 'bad');
+        S.stats.deaths++;
+        S.stats.predations = (S.stats.predations || 0) + 1;
+        bus.emit('death', def);
+        bus.emit('predation', { predator: lead, prey: def, pack: atks.length });
+        removeAnimal(def);
+        var dangerousPrey = (defPow / atkPow > 0.5) || ((defSp.danger || 0) >= 1);
+        for (k = 0; k < atks.length; k++) {
+          var au = atks[k];
+          au.hunger = Math.max(0, au.hunger - 70);
+          au.state = 'eat'; au.st = rng.range(5, 7); au.tg = ''; au.hid = 0; au.speed = 0; au.kill = 1;
+          au.fightCd = rng.range(18, 28);
+          if (dangerousPrey) {
+            au.health -= rng.range(10, 35) * (k === 0 ? 1 : 0.65);
+            if (au.health <= 0) {
+              animalDie(au, 'fighting ' + def.name + ' the ' + lc(defSp.name));
+              continue;
+            }
+            if (au.health < 70) au.injured = true;
+          }
+        }
+      } else {
+        var dmg = rng.range(25, 80) * clamp(defPow / atkPow, 0.7, 2.2);
+        lead.health -= dmg;
+        if (lead.health <= 0) {
+          animalDie(lead, 'fighting ' + def.name + ' the ' + lc(defSp.name));
+        } else {
+          lead.injured = true; lead.state = 'idle'; lead.st = 1; lead.fightCd = 32;
+          if (enc) fleeFrom(lead, enc, def.x, def.z);
+          msg(def.name + ' the ' + lc(defSp.name) + ' fought off and injured ' + lead.name + ' the ' + lc(leadSp.name) + '!', 'info');
+        }
+        for (k = 1; k < atks.length; k++) {
+          var pm = atks[k];
+          pm.health -= rng.range(8, 22);
+          if (pm.health <= 0) {
+            animalDie(pm, 'fighting ' + def.name + ' the ' + lc(defSp.name));
+          } else {
+            if (pm.health < 70) pm.injured = true;
+            pm.state = 'idle'; pm.st = 1; pm.fightCd = 32;
+            if (enc) fleeFrom(pm, enc, def.x, def.z);
+          }
+        }
+        def.health -= rng.range(8, 24);
+        if (def.health <= 0) {
+          animalDie(def, 'of injuries');
+        } else {
+          if (def.health < 65) def.injured = true;
+          def.state = 'idle'; def.st = 1;
+          if (enc) fleeFrom(def, enc, lead.x, lead.z);
+        }
+      }
+    } else {
+      var winners = atkWins ? atks : defs, losers = atkWins ? defs : atks;
+      var winLead = winners[0], loseLead = losers[0];
+      for (k = 0; k < winners.length; k++) {
+        var wu = winners[k];
+        wu.health -= rng.range(10, 30) * (k === 0 ? 1 : 0.65);
+        if (wu.health <= 0) {
+          animalDie(wu, 'fighting ' + loseLead.name + ' the ' + lc(SP[loseLead.species].name));
+        } else {
+          if (wu.health < 65) wu.injured = true;
+          wu.state = 'idle'; wu.st = rng.range(1, 3); wu.speed = 0; wu.fightCd = rng.range(28, 38);
+        }
+      }
+      for (k = 0; k < losers.length; k++) {
+        var lu = losers[k];
+        lu.health -= rng.range(35, 75) * (k === 0 ? 1 : 0.7);
+        if (lu.health <= 0 || (k === 0 && rng.chance(0.4))) {
+          animalDie(lu, 'fighting ' + winLead.name + ' the ' + lc(SP[winLead.species].name));
+        } else {
+          lu.injured = true;
+          lu.health = clamp(lu.health, 12, 45);
+          lu.state = 'idle'; lu.st = 1; lu.speed = 0; lu.fightCd = rng.range(28, 38);
+          if (enc) fleeFrom(lu, enc, winLead.x, winLead.z);
+          if (k === 0) msg(lu.name + ' the ' + lc(SP[lu.species].name) + ' was injured in a fight with ' + winLead.name + ' the ' + lc(SP[winLead.species].name) + '!', 'bad');
+        }
+      }
+    }
+    bus.emit('fightEnd', { fight: f, atkWins: atkWins, x: f.x, z: f.z });
+  }
+  function stepFights(dt) {
+    if (!S.fights || !S.fights.length) return;
+    for (var i = S.fights.length - 1; i >= 0; i--) {
+      var f = S.fights[i];
+      var parts = [], k, pa;
+      var hasAtk = false, hasDef = false;
+      for (k = 0; k < f.attackers.length; k++) {
+        pa = RT.aById.get(f.attackers[k]);
+        if (pa && pa.state === 'fight' && pa.fid === f.id) { parts.push(pa); hasAtk = true; }
+      }
+      for (k = 0; k < f.defenders.length; k++) {
+        pa = RT.aById.get(f.defenders[k]);
+        if (pa && pa.state === 'fight' && pa.fid === f.id) { parts.push(pa); hasDef = true; }
+      }
+      if (!hasAtk || !hasDef) {
+        for (k = 0; k < parts.length; k++) { parts[k].state = 'idle'; parts[k].fid = 0; parts[k].st = 1; parts[k].speed = 0; }
+        S.fights.splice(i, 1);
+        continue;
+      }
+      f.t += dt;
+      var rad = Math.min(0.85, 0.3 + f.size * 0.18) * 0.65;
+      for (k = 0; k < parts.length; k++) {
+        pa = parts[k];
+        var ang = f.t * 8.5 + (k * TAU / parts.length);
+        pa.x = clamp(f.x + Math.cos(ang) * rad, 1, N * TILE - 1);
+        pa.z = clamp(f.z + Math.sin(ang) * rad, 1, N * TILE - 1);
+        pa.heading = ang + PI * 0.5;
+        pa.speed = 0;
+      }
+      if (f.t >= f.dur) {
+        S.fights.splice(i, 1);
+        resolveFight(f);
+      }
+    }
+  }
   function huntStep(a, dt, enc, E, sp) {
     var pr = RT.aById.get(a.hid);
-    if (!pr || pr.enc !== a.enc || pr.state === 'escaped') { a.tg = ''; a.state = 'idle'; a.st = 1; a.speed = 0; return; }
-    a.hunt = (a.hunt || 0) + dt; a.tx = pr.x; a.tz = pr.z;
+    if (!pr || pr.enc !== a.enc || pr.state === 'escaped' || pr.flyover) {
+      a.tg = ''; a.hid = 0; a.state = 'idle'; a.st = 1; a.speed = 0; return;
+    }
     var dx = pr.x - a.x, dz = pr.z - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 1.3 + (sp.size || 1) * 0.12) { killPrey(a, pr); return; }
-    if (a.hunt > 40) { a.tg = ''; a.state = 'idle'; a.st = rng.range(3, 6); a.speed = 0; return; }
+    if (pr.state === 'fight' && pr.fid) {
+      var f = null;
+      if (S.fights) for (var fk = 0; fk < S.fights.length; fk++) if (S.fights[fk].id === pr.fid) { f = S.fights[fk]; break; }
+      if (f && isPackHunter(sp) && f.defenders.indexOf(pr.id) >= 0 && f.attackers.length > 0) {
+        var leadAtk = RT.aById.get(f.attackers[0]);
+        if (leadAtk && leadAtk.species === a.species) {
+          if (f.attackers.indexOf(a.id) < 0 && d < 2.2 + (sp.size || 1) * 0.25) {
+            f.attackers.push(a.id);
+            a.state = 'fight'; a.fid = f.id; a.tg = ''; a.hid = 0; a.speed = 0;
+            return;
+          }
+        } else {
+          a.tg = ''; a.hid = 0; a.state = 'idle'; a.st = 1; a.speed = 0; return;
+        }
+      } else {
+        a.tg = ''; a.hid = 0; a.state = 'idle'; a.st = 1; a.speed = 0; return;
+      }
+    }
+    a.hunt = (a.hunt || 0) + dt; a.tx = pr.x; a.tz = pr.z;
+    if (d < 1.3 + (sp.size || 1) * 0.25) {
+      startFight(a, pr, a.tg === 'fight_rival' ? 'predator' : 'hunt', enc);
+      return;
+    }
+    if (a.hunt > 40) { a.tg = ''; a.hid = 0; a.state = 'idle'; a.st = rng.range(3, 6); a.speed = 0; return; }
     a.state = 'run';
-    animalMove(a, dt, sp.speed * 1.7 * 1.12);
+    animalMove(a, dt, sp.speed * 1.7 * 1.12 * (a.injured ? 0.65 : 1));
   }
   function fleeFrom(a, enc, hx, hz) {
     var best = -1, bd = -1;
@@ -2354,23 +2641,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function decide(a, enc, E, sp) {
+    if (a.state === 'fight') return;
     var t = tileOf(a.x, a.z);
     if (!aok(a, t)) { relocateAnimal(a, enc); t = tileOf(a.x, a.z); }
     if (a.sick) { a.state = 'sick'; a.speed = 0; return; }
-    var target = -1, pry = null;
+    var target = -1, pry = null, rival = null;
     if (isNight() || a.energy < 18) {
       a.tg = 'sleep';
       if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = pickPassable(a, E.shelter);
       if (target < 0 || (tileOf(a.x, a.z) === target)) { a.state = 'sleep'; a.speed = 0; a.tg = ''; return; }
-    } else if ((sp.diet === 'carnivore' || sp.predator) && !a.baby && a.hunger > 45 && E.nAn > 1 && (pry = findPrey(a, enc)) && rng.chance(0.85)) {
-      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.stuck = 0; return;
-    } else if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = E.feed; }
-    else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
-      a.tg = 'drink';
-      target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp) ? pickPassable(a, E.water) : E.feed);
-    } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = pickPassable(a, E.toy); }
-    else if (E.water.length && swimmer(sp) && rng.chance(0.18)) { a.tg = 'swim'; target = pickPassable(a, E.water); }
-    else { a.tg = 'wander'; target = randomEncTile(a, enc, 14); }
+    } else {
+      if (isPredator(sp) && !a.baby && !a.injured && a.health > 35 && (a.fightCd || 0) <= 0) {
+        var hasOtherPred = false;
+        for (var pk = 0; pk < enc.animals.length; pk++) {
+          var pa = RT.aById.get(enc.animals[pk]);
+          if (pa && pa !== a && !pa.baby && isPredator(SP[pa.species])) { hasOtherPred = true; break; }
+        }
+        if (hasOtherPred && rng.chance(a.hunger > 55 ? 0.32 : 0.18) && (rival = findRivalPredator(a, enc))) {
+          a.tg = 'fight_rival'; a.hid = rival.id; a.hunt = 0; a.state = 'run'; a.tx = rival.x; a.tz = rival.z; a.stuck = 0;
+          if (isPackHunter(sp)) rallyPack(a, enc, rival, 'fight_rival');
+          return;
+        }
+        if (a.hunger > 35 && E.nAn > 1 && (pry = findPrey(a, enc)) && rng.chance(a.hunger > 55 ? 0.85 : 0.45)) {
+          a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.stuck = 0;
+          if (isPackHunter(sp)) rallyPack(a, enc, pry, 'hunt');
+          return;
+        }
+      }
+      if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = E.feed; }
+      else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
+        a.tg = 'drink';
+        target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp) ? pickPassable(a, E.water) : E.feed);
+      } else if (E.toy.length && rng.chance(0.12)) { a.tg = 'play'; target = pickPassable(a, E.toy); }
+      else if (E.water.length && swimmer(sp) && rng.chance(0.18)) { a.tg = 'swim'; target = pickPassable(a, E.water); }
+      else { a.tg = 'wander'; target = randomEncTile(a, enc, 14); }
+    }
     if (target < 0 || !aok(a, target)) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
     setTargetTile(a, target);
     a.state = (a.tg === 'wander' && rng.chance(0.06)) || (a.baby && rng.chance(0.15)) ? 'run' : 'walk';
@@ -2491,6 +2796,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function animalStep(a, dt) {
     var sp = SP[a.species];
+    if (a.fightCd > 0) a.fightCd = Math.max(0, a.fightCd - dt);
     if (a.state === 'escaped') { a.flyAlt = 0; escapedStep(a, dt, sp); return; }
     var enc = RT.eMap[a.enc], E = enc && RT.encx[a.enc];
     if (!enc || !E) { a.flyAlt = a.flyover ? a.flyover.alt : 0; return; }
@@ -2500,10 +2806,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     a.energy = clamp(a.energy + (sleeping ? 1.2 : -0.12) * dt, 0, 100);
     if (a.hunger >= 95 || a.thirst >= 95) a.health -= (a.thirst >= 95 ? 0.12 : 0.08) * dt;
     else if (a.sick) a.health -= 0.05 * dt;
+    else if (a.injured) a.health -= 0.03 * dt;
     else if (a.health < 100 && a.hunger < 70 && a.thirst < 70) a.health = Math.min(100, a.health + 0.04 * dt);
     if (enc.poop > enc.area * 0.4 + 3) a.health -= 0.01 * dt;
     if (a.health <= 0) {
-      animalDie(a, a.sick ? 'of illness' : (a.thirst >= 95 ? 'of thirst' : a.hunger >= 95 ? 'of hunger' : 'of neglect'));
+      animalDie(a, a.sick ? 'of illness' : a.injured ? 'of injuries' : (a.thirst >= 95 ? 'of thirst' : a.hunger >= 95 ? 'of hunger' : 'of neglect'));
       return;
     }
     a.ht = (a.ht || 0) - dt;
@@ -2512,6 +2819,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var suit = enc.suitability[a.species]; if (suit === undefined) suit = 0.5;
       var tgt = 12 + suit * 50 + (100 - a.hunger) * 0.12 + (100 - a.thirst) * 0.12 + a.health * 0.08 + a.energy * 0.06;
       if (a.sick) tgt *= 0.6;
+      if (a.injured) tgt *= 0.72;
       if (enc.minFence < sp.minFence) tgt -= 6;
       if (sp.needsCage && !enc.isCage) tgt -= 10;
       tgt += (WX.animalMood || 0);
@@ -2526,7 +2834,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
       if (a.flyCooldown === undefined) a.flyCooldown = rng.range(40, 90);
       a.flyCooldown -= dt;
-      if (a.flyCooldown <= 0 && !a.baby && !a.sick && a.state !== 'sleep') {
+      if (a.flyCooldown <= 0 && !a.baby && !a.sick && a.state !== 'sleep' && a.state !== 'fight') {
         if (launchFlyover(a)) { stepFlyover(a, 0, sp); return; }
       }
     }
@@ -2535,13 +2843,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     a.y = inWater ? -0.3 : 0;
 
     // prey reactions when hunted
-    if (E.nAn > 1 && sp.diet !== 'carnivore' && !sp.predator) {
+    if (E.nAn > 1 && !isPredator(sp) && a.state !== 'fight') {
       a.fl = (a.fl || 0) - dt;
       if (a.fl <= 0) {
         a.fl = 0.6;
         for (var hk = 0; hk < enc.animals.length; hk++) {
           var hp = RT.aById.get(enc.animals[hk]);
-          if (hp && hp.tg === 'hunt' && hp.hid === a.id) {
+          if (hp && (hp.tg === 'hunt' || hp.tg === 'fight_rival') && hp.hid === a.id) {
             var hdx = hp.x - a.x, hdz = hp.z - a.z;
             if (hdx * hdx + hdz * hdz < 100) { if (a.tg !== 'flee' || a.state !== 'run') fleeFrom(a, enc, hp.x, hp.z); break; }
           }
@@ -2550,6 +2858,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
 
     switch (a.state) {
+      case 'fight':
+        a.speed = 0;
+        if (!a.fid || !S.fights || !S.fights.some(function (f) { return f.id === a.fid; })) {
+          a.state = 'idle'; a.fid = 0; a.st = 1;
+        }
+        break;
       case 'sleep':
         a.speed = 0;
         if (!isNight() && a.energy >= 60) { a.state = 'idle'; a.st = rng.range(0.5, 3); }
@@ -2563,8 +2877,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (a.st <= 0) decide(a, enc, E, sp);
         break;
       case 'walk': case 'run': case 'swim': {
-        if (a.tg === 'hunt') { huntStep(a, dt, enc, E, sp); break; }
-        var spd = sp.speed * (a.baby ? 0.8 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
+        if (a.tg === 'hunt' || a.tg === 'fight_rival') { huntStep(a, dt, enc, E, sp); break; }
+        var spd = sp.speed * (a.baby ? 0.8 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75) * (a.injured ? 0.65 : 1);
         if (inWater && a.state !== 'swim') spd *= 0.7;
         if (animalMove(a, dt, spd)) {
           var tg = a.tg;
@@ -2740,7 +3054,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function encNeedsKeeper(e) {
     return e.breach > 0 || e.foodLevel < 0.75 || (e.waterLevel !== undefined && e.waterLevel < 0.6) || e.poop >= 1;
   }
-  function vetNeedsAnimal(a) { return !!(a && a.enc && (a.sick || a.health < 55)); }
+  function vetNeedsAnimal(a) { return !!(a && a.enc && (a.sick || a.injured || a.health < 55)); }
   function claimed(key, s) {
     var c = RT.claim[key];
     return !!(c && (!s || c !== s.id) && RT.sById.has(c));
@@ -2766,7 +3080,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!vetNeedsAnimal(a) || claimed('v' + a.id, s)) continue;
       var enc = RT.eMap[a.enc]; if (!enc || !enc.viewTiles.length || !encReachesComp(enc, sc0)) continue;
       var dist = Math.hypot(a.x - s.x, a.z - s.z);
-      var sc = (a.sick ? 4 : 0) + Math.max(0, 80 - a.health) * 0.05 + (inStationZone(a.x, a.z, RT.vets, STATION_TILES) ? 0.4 : 0) - dist * 0.01;
+      var sc = (a.sick ? 4 : 0) + (a.injured ? 3.5 : 0) + Math.max(0, 80 - a.health) * 0.05 + (inStationZone(a.x, a.z, RT.vets, STATION_TILES) ? 0.4 : 0) - dist * 0.01;
       if (!best || sc > bs) { best = a; bs = sc; }
     }
     return best;
@@ -2929,7 +3243,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var vs2 = new Set(enc.viewTiles), r4 = findRoute(s.ti, function (t) { return vs2.has(t); });
         if (r4) {
           RT.claim['v' + bestAn.id] = s.id; s.tk = { k: 'vet', id: bestAn.id, encId: enc.id };
-          s.task = (bestAn.sick ? 'Treating ' : 'Checking ') + bestAn.name;
+          s.task = (bestAn.sick || bestAn.injured ? 'Treating ' : 'Checking ') + bestAn.name;
           s.route = r4; s.ri = 0; return;
         }
       }
@@ -2972,7 +3286,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (s.route) {
       if (s.tk && s.tk.k === 'vet') {
         var va = RT.aById.get(s.tk.id);
-        if (!va || (!va.sick && va.health >= 65)) { releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return; }
+        if (!va || (!va.sick && !va.injured && va.health >= 65)) { releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return; }
       }
       if ((s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop')) && !encById(s.tk.id)) {
         releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
@@ -3017,7 +3331,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             var a2 = RT.aById.get(done.id);
             if (a2) {
               var heal = RT.hasVet ? (inStationZone(a2.x, a2.z, RT.vets, STATION_TILES) ? 100 : 70) : 45;
-              a2.sick = false; a2.health = Math.min(100, a2.health + heal);
+              a2.sick = false; a2.injured = false; a2.health = Math.min(100, a2.health + heal);
               msg(a2.name + ' was treated and is feeling better.', 'good');
             }
             delete RT.claim['v' + done.id];
@@ -3604,6 +3918,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     updateQueues();
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
+    stepFights(dt);
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
     RT.t1 += dt;
@@ -3867,6 +4182,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (sizeN !== Z.N || N !== sizeN) Z.setGridSize(sizeN);
     rng.seed(opts.seed || (Date.now() & 0x7fffffff));
     S = Z.newState(undefined, sizeN); Z.state = S; RT = newRT();
+    S.fights = [];
     S.gridN = sizeN;
     S.mapSize = SIZE_MAP[sizeId] ? sizeId : sizeIdOfN(sizeN);
     var paved = PI_.paved || 1;
@@ -3941,6 +4257,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!ns.map || typeof ns.map.i0 !== 'number') ns.map = tpl.map;
       if (!ns.weather || !ns.weather.type) ns.weather = tpl.weather || { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' };
       if (!ns.activeEvents) ns.activeEvents = [];
+      if (!ns.fights) ns.fights = [];
       if (!ns.difficulty) ns.difficulty = 'normal';
       if (ns.panic === undefined) ns.panic = 0;
       if (ns.eventAt === undefined) ns.eventAt = tpl.eventAt !== undefined ? tpl.eventAt : -1;
@@ -3966,11 +4283,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
         if (g.gt === 'out') g.gt = 'exit';
       }
+      var fightIds = {};
+      for (k = 0; k < S.fights.length; k++) fightIds[S.fights[k].id] = 1;
       for (k = 0; k < S.animals.length; k++) {
         var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
         if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
         if (!isFinite(a.heading)) a.heading = 0;
-        if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
+        if (a.injured === undefined) a.injured = false;
+        if (a.fightCd === undefined) a.fightCd = 0;
+        if (a.state === 'fight' && (!a.fid || !fightIds[a.fid])) { a.state = 'idle'; a.fid = 0; }
+        else if (a.state !== 'fight') a.fid = 0;
+        if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick' && a.state !== 'fight') a.state = 'idle';
         a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
         a.flyAlt = a.flyover ? (a.flyover.alt || 0) : 0;
       }
@@ -4023,14 +4346,24 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return out;
   }
   function compatibleReport(e) {
-    if (e.species.length > 1) for (var k = 0; k < e.species.length; k++) if (SP[e.species[k]].diet === 'carnivore') return 'Predators are sharing with other species!';
+    if (e.species.length > 1) {
+      var hasPred = false, hasPrey = false, predCount = 0;
+      for (var k = 0; k < e.species.length; k++) {
+        if (isPredator(SP[e.species[k]])) { hasPred = true; predCount++; }
+        else hasPrey = true;
+      }
+      if (hasPred && hasPrey) return 'Predators are sharing with prey species and may hunt them!';
+      if (predCount > 1) return 'Rival predator species are sharing an enclosure and may fight!';
+    }
     return null;
   }
   function animalReport(id) {
     var a = RT.aById.get(id); if (!a) return null;
     var sp = SP[a.species], iss = [];
     if (a.state === 'escaped') iss.push('Escaped! Security or keepers must recapture it');
+    if (a.state === 'fight') iss.push('In a fight!');
     if (a.sick) iss.push('Unwell and needs a vet');
+    if (a.injured) iss.push('Injured and needs a vet');
     if (a.hunger > 70) iss.push('Hungry'); if (a.thirst > 70) iss.push('Thirsty'); if (a.energy < 25) iss.push('Tired');
     if (a.health < 40) iss.push('Poor health');
     var enc = a.enc ? RT.eMap[a.enc] : null;
@@ -4046,7 +4379,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (enc.foodLevel < 0.15) iss.push('Food has run out');
       if (enc.waterLevel < 0.15 && !E.water.length) iss.push('Water has run out');
     }
-    return { id: a.id, name: a.name, species: a.species, speciesName: sp.name, sex: a.sex, age: a.age, baby: a.baby, state: a.state, enclosure: enc ? enc.name : null,
+    return { id: a.id, name: a.name, species: a.species, speciesName: sp.name, sex: a.sex, age: a.age, baby: a.baby, state: a.state, injured: !!a.injured, enclosure: enc ? enc.name : null,
       needs: { hunger: a.hunger, thirst: a.thirst, energy: a.energy, health: a.health, happiness: a.happiness }, suitability: enc ? (enc.suitability[a.species] || 0) : 0, issues: iss, fact: sp.fact };
   }
   function guestReport(id) {
@@ -4092,8 +4425,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, staffCoverage: staffCoverage,
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex); insertAnimal(a); return a; },
     setTicketPrice: setTicketPrice, setPrice: setPrice, takeLoan: takeLoan, repayLoan: repayLoan, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
-    enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
+    enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, vetNeedsAnimal: vetNeedsAnimal, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
     // extras
+    _combat: { isPredator: isPredator, isPackHunter: isPackHunter, animalBulk: animalBulk, combatPower: combatPower, packPower: packPower, gatherPack: gatherPack, findPrey: findPrey, findRivalPredator: findRivalPredator, startFight: startFight, resolveFight: resolveFight },
     isLockdown: function () { return !!(RT && RT.lockdown); },
     lockdown: function () { return !!(RT && RT.lockdown); },
     weatherReport: weatherReport, weatherInfo: weatherReport, weatherForecast: weatherForecast, stepWeather: stepWeather, stepEvents: stepEvents,

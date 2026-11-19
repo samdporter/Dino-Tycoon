@@ -716,7 +716,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < enc.animals.length; k++) {
       var a = RT.aById.get(enc.animals[k]); if (!a) continue;
       bySp[a.species] = (bySp[a.species] || 0) + 1;
-      if (SP[a.species].predator) E.pred++;
+      if (isPredator(SP[a.species])) E.pred++;
       if (a.traits && a.traits.length) { var tt = E.tr[a.species] || (E.tr[a.species] = {}); for (var q = 0; q < a.traits.length; q++) tt[a.traits[q]] = (tt[a.traits[q]] || 0) + 1; }
       E.nAn++; E.happy += a.happiness; E.appeal += aAppeal(a);
       if (a.baby) E.babies++;
@@ -1281,12 +1281,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- animals ----
-  function compatible(enc, spId) {
-    var sp = SP[spId];
+  function isPredator(sp) { return !!(sp && (sp.predator || sp.diet === 'carnivore')); }
+  function isPackHunter(sp) { return !!(sp && isPredator(sp) && (sp.packHunter || (sp.social && sp.social[0] >= 2))); }
+  function compatible(enc, spId) { return null; }
+  function compatibleWarn(enc, spId) {
+    if (!enc || !enc.species || !enc.species.length) return null;
+    var sp = SP[spId], spPred = isPredator(sp);
     for (var k = 0; k < enc.species.length; k++) {
       var o = enc.species[k]; if (o === spId) continue;
-      var os = SP[o];
-      if (sp.predator || os.predator) return "Predators can't share an enclosure with other dinosaurs - they will hunt them";
+      if (spPred || isPredator(SP[o])) return 'Predators in this enclosure may hunt smaller animals or fight rival predators.';
     }
     return null;
   }
@@ -1328,6 +1331,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       age: baby ? 0 : sp.lifespan * rng.range(0.05, 0.4) + 3, baby: !!baby, x: x, z: z, y: 0, heading: rng.range(-PI, PI), speed: 0,
       state: 'idle', enc: enc ? enc.id : 0, hunger: rng.range(10, 35), thirst: rng.range(5, 30), health: 100, happiness: 60, energy: rng.range(70, 100),
       pregnant: 0, tx: x, tz: z, st: rng.range(0.5, 3), tg: '', pt: rng.range(30, 80), stuck: 0, sick: false,
+      injured: false, fid: 0, fightCd: 0,
       genomeQ: q === undefined ? 100 : q, traits: traits ? traits.slice() : []
     };
     return a;
@@ -1375,6 +1379,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var extra = { chance: od.chance, hours: od.hours, egg: true };
     if (Z.Moats) { var mwn = Z.Moats.advice(encOfTile(t), speciesId); if (mwn) extra.warn = mwn; }
     { var ee = encOfTile(t); if (ee && ee.viewTiles && !ee.viewTiles.length && !extra.warn) extra.warn = 'No path or pier within 3 tiles: keepers could not reach this enclosure to feed it. Lay one first.'; }   // QA   // moats package: warn before the egg is laid
+    if (!extra.warn) { var cwn = compatibleWarn(encOfTile(t), speciesId); if (cwn) extra.warn = cwn; }
     if (dry) return okr(ecost, extra);
     var egg = { id: newId(), species: speciesId, i: i, j: j, t: od.hours, total: od.hours, chance: od.chance, paid: ecost, guaranteed: !!od.guaranteed };
     if (od.guaranteed) R.guaranteed--;
@@ -1395,7 +1400,24 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     removeAnimal(a, true);
     return okr(-price);
   }
+  function stripFromFights(id) {
+    if (!S.fights || !S.fights.length) return;
+    for (var fk = S.fights.length - 1; fk >= 0; fk--) {
+      var fl = S.fights[fk], ai = fl.attackers.indexOf(id), di = fl.defenders.indexOf(id);
+      if (ai >= 0) fl.attackers.splice(ai, 1);
+      if (di >= 0) fl.defenders.splice(di, 1);
+      if (!fl.attackers.length || !fl.defenders.length) {
+        var rem = fl.attackers.concat(fl.defenders);
+        for (var ri = 0; ri < rem.length; ri++) {
+          var ra = RT.aById.get(rem[ri]);
+          if (ra) { ra.fid = 0; if (ra.state === 'fight') { ra.state = 'idle'; ra.st = 1; } }
+        }
+        S.fights.splice(fk, 1);
+      }
+    }
+  }
   function removeAnimal(a, quiet) {
+    stripFromFights(a.id);
     var k = S.animals.indexOf(a); if (k >= 0) { S.animals[k] = S.animals[S.animals.length - 1]; S.animals.pop(); }
     RT.aById.delete(a.id);
     refreshEncAnimals();
@@ -1414,17 +1436,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (typeof rmc === 'string') return fail(rmc);
     if (rmc === undefined && cliffT(t)) return fail('Too steep for dinosaurs');
     if (rmc === undefined && S.terrain[t] === WATER && !sp.needsWater) return fail("That dinosaur can't swim");
+    var extra = {};
     if (rmc === undefined && enc.id !== a.enc) {
       var bad = compatible(enc, a.species); if (bad) return fail(bad);
       var n = 0; for (var k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === a.species) n++;
       if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped');
+      var cwn = compatibleWarn(enc, a.species); if (cwn) extra.warn = cwn;
     }
-    if (dry) return okr(0);
+    if (dry) return okr(0, extra.warn ? extra : undefined);
+    stripFromFights(a.id);
     var oldE = a.enc ? encById(a.enc) : null;
-    a.x = cxOf(t); a.z = czOf(t); a.enc = enc.id; a.state = 'idle'; a.tg = ''; a.st = 1; a.speed = 0; a.tx = a.x; a.tz = a.z;
+    a.x = cxOf(t); a.z = czOf(t); a.enc = enc.id; a.state = 'idle'; a.fid = 0; a.tg = ''; a.st = 1; a.speed = 0; a.tx = a.x; a.tz = a.z;
     if (Z.Realms) Z.Realms.landed(a);   // realms package
     refreshEncAnimals(); encStats(enc); if (oldE) encStats(oldE);
-    return okr(0);
+    return okr(0, extra.warn ? extra : undefined);
   }
 
   // ---- staff ----
@@ -2615,32 +2640,263 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     return -1;
   }
-  function findPrey(a, enc) {
-    var sp = SP[a.species], best = null, bd = 1e9;
-    for (var k = 0; k < enc.animals.length; k++) {
-      var p = RT.aById.get(enc.animals[k]); if (!p || p === a || p.state === 'escaped') continue;
-      var ps = SP[p.species]; if (ps.predator || ps.length > sp.length * 1.5) continue;
-      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz; if (d < bd) { bd = d; best = p; }
-    }
-    return best;
+  function animalBulk(a) {
+    var sp = SP[a.species];
+    return (sp.size * 0.7 + (sp.length || sp.size * 2) * 0.15) * (a.baby ? 0.45 : 1);
   }
-  function killPrey(pred, prey) {
-    var ps = SP[prey.species], ks = SP[pred.species];
-    msg(prey.name + ' the ' + lc(ps.name) + ' was caught and eaten by ' + pred.name + ' the ' + lc(ks.name) + '!', 'bad');
-    S.stats.deaths++; S.stats.predations++;
-    bus.emit('death', prey); bus.emit('predation', { predator: pred, prey: prey });
-    removeAnimal(prey);
-    pred.hunger = Math.max(0, pred.hunger - 70); pred.state = 'eat'; pred.st = rng.range(5, 7); pred.tg = ''; pred.speed = 0; pred.hid = 0; pred.kill = 1;
+  function combatPower(a) {
+    var sp = SP[a.species], d = aDanger(a);
+    var p = animalBulk(a) * (1 + d * 0.28) * (isPredator(sp) ? 1.18 : 1.0);
+    var hm = 0.4 + 0.6 * clamp(a.health / 100, 0, 1);
+    if (a.injured) hm *= 0.72;
+    if (a.sick) hm *= 0.65;
+    return Math.max(0.15, p * hm);
+  }
+  function gatherPack(leader, enc) {
+    if (!enc || !isPackHunter(SP[leader.species])) return [leader];
+    var mates = [];
+    for (var k = 0; k < enc.animals.length; k++) {
+      var m = RT.aById.get(enc.animals[k]);
+      if (!m || m === leader || m.species !== leader.species || m.baby || m.sick || m.injured || m.state === 'escaped' || m.state === 'sleep' || m.state === 'fight') continue;
+      var dx = m.x - leader.x, dz = m.z - leader.z;
+      mates.push({ a: m, d2: dx * dx + dz * dz });
+    }
+    mates.sort(function (u, v) { return u.d2 - v.d2; });
+    var pack = [leader];
+    for (var i = 0; i < mates.length && i < 3; i++) pack.push(mates[i].a);
+    return pack;
+  }
+  function packPower(pack) {
+    if (!pack || !pack.length) return 0;
+    var sum = combatPower(pack[0]);
+    for (var i = 1; i < pack.length; i++) sum += 0.65 * combatPower(pack[i]);
+    return sum;
+  }
+  function fightById(fid) {
+    if (!fid || !S.fights) return null;
+    for (var k = 0; k < S.fights.length; k++) if (S.fights[k].id === fid) return S.fights[k];
+    return null;
+  }
+  function findPrey(a, enc) {
+    var pack = gatherPack(a, enc), pPow = packPower(pack);
+    var bestNorm = null, bdNorm = 1e9, bestBig = null, bdBig = 1e9;
+    for (var k = 0; k < enc.animals.length; k++) {
+      var p = RT.aById.get(enc.animals[k]);
+      if (!p || p === a || p.state === 'escaped' || p.state === 'fight') continue;
+      if (isPredator(SP[p.species])) continue;
+      var ratio = combatPower(p) / pPow;
+      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz;
+      if (ratio <= 1.15) {
+        if (d < bdNorm) { bdNorm = d; bestNorm = p; }
+      } else if (ratio <= 2.3) {
+        if (a.hunger > 50 && rng.chance(clamp(0.32 - (ratio - 1.15) * 0.24, 0.04, 0.32))) {
+          if (d < bdBig) { bdBig = d; bestBig = p; }
+        }
+      } else if (a.hunger > 80 && ratio <= 3.2 && rng.chance(0.05)) {
+        if (d < bdBig) { bdBig = d; bestBig = p; }
+      }
+    }
+    return bestNorm || bestBig;
+  }
+  function findRivalPredator(a, enc) {
+    var pPow = packPower(gatherPack(a, enc));
+    var bestDiff = null, bdDiff = 1e9, bestSame = null, bdSame = 1e9;
+    for (var k = 0; k < enc.animals.length; k++) {
+      var p = RT.aById.get(enc.animals[k]);
+      if (!p || p === a || p.baby || p.state === 'escaped' || p.state === 'fight' || p.sick) continue;
+      if (!isPredator(SP[p.species])) continue;
+      var same = p.species === a.species;
+      if (same && !(a.happiness < 45 && rng.chance(0.15))) continue;
+      var ratio = combatPower(p) / pPow;
+      if (ratio > 1.25 && !rng.chance(clamp(0.45 / ratio, 0.08, 0.4))) continue;
+      var dx = p.x - a.x, dz = p.z - a.z, d = dx * dx + dz * dz;
+      if (!same) { if (d < bdDiff) { bdDiff = d; bestDiff = p; } }
+      else { if (d < bdSame) { bdSame = d; bestSame = p; } }
+    }
+    return bestDiff || bestSame;
+  }
+  function startChase(a, tg, target) {
+    a.tg = tg; a.hid = target.id; a.hunt = 0; a.state = 'run';
+    a.tx = target.x; a.tz = target.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.stuck = 0;
+  }
+  function rallyPack(leader, enc, tg, target) {
+    if (!isPackHunter(SP[leader.species])) return;
+    var pack = gatherPack(leader, enc);
+    for (var i = 1; i < pack.length; i++) {
+      var m = pack[i];
+      if ((m.state === 'idle' || (m.state === 'walk' && m.tg === 'wander')) && !m.injured && m.health > 35 && (m.fightCd || 0) <= 0) {
+        startChase(m, tg, target);
+      }
+    }
+  }
+  function startFight(attacker, defender, kind, enc) {
+    if (!attacker || !defender || attacker === defender || attacker.state === 'fight' || defender.state === 'fight') return null;
+    if (!enc) enc = RT.eMap[attacker.enc || defender.enc];
+    var attackers = [attacker];
+    if (enc && isPackHunter(SP[attacker.species])) {
+      for (var k = 0; k < enc.animals.length && attackers.length < 4; k++) {
+        var m = RT.aById.get(enc.animals[k]);
+        if (!m || m === attacker || m === defender || m.species !== attacker.species || m.baby || m.sick || m.injured) continue;
+        if (m.state === 'escaped' || m.state === 'fight') continue;
+        if ((m.tg === 'hunt' || m.tg === 'fight_rival') && m.hid === defender.id) {
+          var mdx = m.x - defender.x, mdz = m.z - defender.z;
+          if (mdx * mdx + mdz * mdz <= 4.5 * 4.5) attackers.push(m);
+        }
+      }
+    }
+    var atkSp = SP[attacker.species], defSp = SP[defender.species];
+    var tiny = kind === 'hunt' && combatPower(defender) < packPower(attackers) * 0.3 && aDanger(defender) === 0;
+    var dur = tiny ? 1.6 : rng.range(3.0, 4.5);
+    var size = clamp(Math.max(atkSp.size, defSp.size) * 0.9 + attackers.length * 0.25, 0.9, 4.2);
+    var fx = (attacker.x + defender.x) * 0.5, fz = (attacker.z + defender.z) * 0.5, fy = Math.max(attacker.y || 0, defender.y || 0);
+    var fight = {
+      id: newId(), x: fx, z: fz, y: fy, enc: enc ? enc.id : (attacker.enc || defender.enc || 0),
+      kind: kind || 'hunt',
+      attackers: attackers.map(function (u) { return u.id; }),
+      defenders: [defender.id],
+      t: 0, dur: dur, size: size
+    };
+    for (var i = 0; i < attackers.length; i++) {
+      attackers[i].state = 'fight'; attackers[i].fid = fight.id; attackers[i].tg = ''; attackers[i].speed = 0;
+    }
+    defender.state = 'fight'; defender.fid = fight.id; defender.tg = ''; defender.speed = 0;
+    if (!S.fights) S.fights = [];
+    S.fights.push(fight);
+    bus.emit('fightStart', fight);
+    return fight;
+  }
+  function resolveFight(f, atks, defs) {
+    var i, all = atks.concat(defs);
+    for (i = 0; i < all.length; i++) all[i].fid = 0;
+    var lead = atks[0], def = defs[0];
+    var enc = RT.eMap[f.enc];
+    var atkPow = packPower(atks), defPow = packPower(defs);
+    var ap = Math.pow(atkPow, 1.35), dp = Math.pow(defPow, 1.35);
+    var winChance = clamp(ap / (ap + dp), 0.08, 0.94);
+    var atkWins = rng.chance(winChance);
+    var defSp = SP[def.species], leadSp = SP[lead.species];
+    if (f.kind === 'hunt') {
+      if (atkWins) {
+        msg(def.name + ' the ' + lc(defSp.name) + ' was caught and eaten by ' + (atks.length > 1 ? 'a pack of ' + lc(plural(leadSp)) : lead.name + ' the ' + lc(leadSp.name)) + '!', 'bad');
+        S.stats.deaths++; S.stats.predations++;
+        bus.emit('death', def);
+        bus.emit('predation', { predator: lead, prey: def, pack: atks.length });
+        removeAnimal(def);
+        var retal = (defPow / atkPow > 0.5) || aDanger(def) >= 1;
+        for (i = 0; i < atks.length; i++) {
+          var aa = atks[i];
+          aa.hunger = Math.max(0, aa.hunger - (atks.length > 1 ? 55 : 70));
+          aa.state = 'eat'; aa.st = rng.range(4, 6.5); aa.tg = ''; aa.speed = 0; aa.hid = 0; aa.kill = 1;
+          aa.fightCd = rng.range(18, 28);
+          if (retal && (i === 0 || rng.chance(0.45))) {
+            aa.health = Math.max(5, aa.health - rng.range(10, 35));
+            if (aa.health < 70) aa.injured = true;
+          }
+        }
+      } else {
+        var dmg = rng.range(25, 80) * clamp(defPow / atkPow, 0.7, 2.2);
+        lead.health -= dmg;
+        if (lead.health <= 0) {
+          animalDie(lead, 'fighting ' + def.name + ' the ' + lc(defSp.name));
+        } else {
+          lead.injured = true; lead.fightCd = 32; lead.happiness = Math.max(5, lead.happiness - 15);
+          if (enc) fleeFrom(lead, enc, def.x, def.z); else { lead.state = 'idle'; lead.st = 2; }
+          msg(def.name + ' the ' + lc(defSp.name) + ' fought off and injured ' + lead.name + ' the ' + lc(leadSp.name) + '!', 'info');
+        }
+        for (i = 1; i < atks.length; i++) {
+          var pm = atks[i];
+          pm.health = Math.max(10, pm.health - rng.range(8, 22));
+          if (pm.health < 70) pm.injured = true;
+          pm.fightCd = 32;
+          if (enc) fleeFrom(pm, enc, def.x, def.z); else { pm.state = 'idle'; pm.st = 2; }
+        }
+        def.health = Math.max(10, def.health - rng.range(8, 24));
+        if (def.health < 65) def.injured = true;
+        def.fightCd = 20;
+        if (enc) fleeFrom(def, enc, lead.x, lead.z); else { def.state = 'idle'; def.st = 2; }
+      }
+    } else {
+      var winners = atkWins ? atks : defs, losers = atkWins ? defs : atks;
+      var winLead = winners[0], loseLead = losers[0];
+      for (i = 0; i < winners.length; i++) {
+        var w = winners[i];
+        w.health = Math.max(8, w.health - rng.range(10, 30));
+        if (w.health < 65) w.injured = true;
+        w.fightCd = rng.range(28, 38);
+        w.state = 'idle'; w.tg = ''; w.st = rng.range(1.5, 3); w.speed = 0;
+      }
+      for (i = 0; i < losers.length; i++) {
+        var l = losers[i];
+        l.health -= rng.range(35, 75);
+        if (l === loseLead && (l.health <= 0 || rng.chance(0.4))) {
+          animalDie(l, 'in a fight with ' + winLead.name + ' the ' + lc(SP[winLead.species].name));
+        } else {
+          l.health = l.health <= 0 ? rng.range(12, 30) : clamp(l.health, 12, 45);
+          l.injured = true; l.fightCd = rng.range(28, 38); l.happiness = Math.max(5, l.happiness - 18);
+          if (enc) fleeFrom(l, enc, winLead.x, winLead.z); else { l.state = 'idle'; l.st = 2; }
+        }
+      }
+      if (RT.aById.has(loseLead.id)) {
+        msg(winLead.name + ' the ' + lc(SP[winLead.species].name) + ' defeated ' + loseLead.name + ' the ' + lc(SP[loseLead.species].name) + ' in a fight!', 'bad');
+      }
+    }
+    bus.emit('fightEnd', { fight: f, atkWins: atkWins, x: f.x, z: f.z });
+  }
+  function stepFights(dt) {
+    if (!S.fights || !S.fights.length) return;
+    for (var k = S.fights.length - 1; k >= 0; k--) {
+      var f = S.fights[k];
+      f.t += dt;
+      var atks = [], defs = [], i, a;
+      for (i = 0; i < f.attackers.length; i++) { a = RT.aById.get(f.attackers[i]); if (a && a.state !== 'escaped') atks.push(a); }
+      for (i = 0; i < f.defenders.length; i++) { a = RT.aById.get(f.defenders[i]); if (a && a.state !== 'escaped') defs.push(a); }
+      if (!atks.length || !defs.length) {
+        var rem = atks.concat(defs);
+        for (i = 0; i < rem.length; i++) { rem[i].fid = 0; rem[i].state = 'idle'; rem[i].st = 1; }
+        S.fights.splice(k, 1);
+        continue;
+      }
+      var all = atks.concat(defs), rad = clamp(f.size * 0.32, 0.25, 1.1);
+      for (i = 0; i < all.length; i++) {
+        var p = all[i], ang = f.t * 9 + i * (TAU / all.length);
+        p.x = f.x + Math.cos(ang) * rad;
+        p.z = f.z + Math.sin(ang) * rad;
+        p.heading = turn(p.heading, Math.atan2(f.x - p.x, f.z - p.z) + PI * 0.35, 1);
+        p.state = 'fight'; p.fid = f.id; p.speed = 0;
+      }
+      if (f.t >= f.dur) {
+        S.fights.splice(k, 1);
+        resolveFight(f, atks, defs);
+      }
+    }
   }
   function huntStep(a, dt, enc, E, sp) {
     var pr = RT.aById.get(a.hid) || (a.hid >= 1000000 && Z.Safari ? Z.Safari.wildById(a.hid) : null);   // safari package: the prey may be a wild visitor
     if (!pr || pr.enc !== a.enc || pr.state === 'escaped') { a.tg = ''; a.state = 'idle'; a.st = 1; a.speed = 0; return; }
     a.hunt = (a.hunt || 0) + dt; a.tx = pr.x; a.tz = pr.z;
     var dx = pr.x - a.x, dz = pr.z - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 1.3 + sp.length * 0.12) { if (pr.wild) Z.Safari.killWild(a, pr); else killPrey(a, pr); return; }
+    if (pr.state === 'fight' && pr.fid) {
+      var f = fightById(pr.fid);
+      var isMate = f && f.attackers.some(function (id) { var m = RT.aById.get(id); return m && m.species === a.species; });
+      if (isMate) {
+        if (d < 2.2 + sp.length * 0.12) {
+          if (f.attackers.indexOf(a.id) < 0 && f.defenders.indexOf(a.id) < 0) f.attackers.push(a.id);
+          a.state = 'fight'; a.fid = f.id; a.tg = ''; a.speed = 0;
+        } else {
+          a.state = 'run'; animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 1.7 * 1.12);
+        }
+        return;
+      }
+      a.tg = ''; a.state = 'idle'; a.st = rng.range(1, 2.5); a.speed = 0; return;
+    }
+    if (d < 1.3 + sp.length * 0.12) {
+      if (pr.wild) Z.Safari.killWild(a, pr);
+      else startFight(a, pr, a.tg === 'fight_rival' ? 'predator' : 'hunt', enc);
+      return;
+    }
     if (a.hunt > 40) { a.tg = ''; a.state = 'idle'; a.st = rng.range(3, 6); a.speed = 0; return; }
     a.state = 'run';
-    animalMove(a, dt, sp.speed * fxOf(a).speed * 1.7 * 1.12);
+    animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 1.7 * 1.12);
   }
   function fleeFrom(a, enc, hx, hz) {
     var best = -1, bd = -1;
@@ -2660,19 +2916,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function decide(a, enc, E, sp) {
+    if (a.state === 'fight') return;
     var t = tileOf(a.x, a.z);
     if (!aok(a, t)) { relocateAnimal(a, enc); t = tileOf(a.x, a.z); }
     if (a.sick) { a.state = 'sick'; a.speed = 0; return; }
-    var target = -1, pry = null;
+    var target = -1, pry = null, rival = null;
     if (isNight() || a.energy < 18) {
       a.tg = 'sleep';
       if (E.shelter.length && (sp.needsShelter || rng.chance(0.6))) target = pickPassable(a, E.shelter);
       if (target < 0 || (tileOf(a.x, a.z) === target)) { a.state = 'sleep'; a.speed = 0; a.tg = ''; return; }
-    } else if (sp.predator && !a.baby && a.hunger > 45 && Z.Safari && (pry = Z.Safari.findPrey(a, enc)) && rng.chance(0.85)) {   // safari package: wild animals that wandered into a connected zone
-      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.stuck = 0; return;
-    } else if (sp.predator && !a.baby && a.hunger > 45 && E.nAn > 1 && E.pred < E.nAn && (pry = findPrey(a, enc)) && rng.chance(0.85)) {
-      a.tg = 'hunt'; a.hid = pry.id; a.hunt = 0; a.state = 'run'; a.tx = pry.x; a.tz = pry.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.stuck = 0; return;
-    } else if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = sp.predator && E.carc.length ? pickPassable(a, E.carc) : E.feed; }
+    } else if (isPredator(sp) && !a.baby && !a.injured && a.health > 35 && (a.fightCd || 0) <= 0) {
+      if (a.hunger > 45 && Z.Safari && (pry = Z.Safari.findPrey(a, enc)) && rng.chance(0.85)) {   // safari package: wild animals that wandered into a connected zone
+        startChase(a, 'hunt', pry); return;
+      } else if (E.pred > 1 && rng.chance(a.hunger > 55 ? 0.32 : 0.18) && (rival = findRivalPredator(a, enc))) {
+        startChase(a, 'fight_rival', rival); rallyPack(a, enc, 'fight_rival', rival); return;
+      } else if (a.hunger > 35 && E.nAn > 1 && E.pred < E.nAn && (pry = findPrey(a, enc)) && rng.chance(a.hunger > 55 ? 0.85 : 0.45)) {
+        startChase(a, 'hunt', pry); rallyPack(a, enc, 'hunt', pry); return;
+      }
+    }
+    if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = isPredator(sp) && E.carc.length ? pickPassable(a, E.carc) : E.feed; }
     else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
       a.tg = 'drink';
       target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp, a) ? pickPassable(a, E.water) : E.feed);
@@ -2687,6 +2949,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function animalStep(a, dt) {
     var sp = SP[a.species];
+    if (a.fightCd > 0) a.fightCd = Math.max(0, a.fightCd - dt);
     if (a.state === 'escaped') { escapedStep(a, dt, sp); return; }
     var enc = RT.eMap[a.enc], E = enc && RT.encx[a.enc];
     if (!enc || !E) return;
@@ -2696,10 +2959,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     a.energy = clamp(a.energy + (sleeping ? 1.2 : -0.12) * dt, 0, 100);
     if (a.hunger >= 95 || a.thirst >= 95) a.health -= (a.thirst >= 95 ? 0.12 : 0.08) * dt;
     else if (a.sick) a.health -= 0.05 * dt;
+    else if (a.injured) a.health -= 0.03 * dt;
     else if (a.health < 100 && a.hunger < 70 && a.thirst < 70) a.health = Math.min(100, a.health + 0.04 * dt * (0.6 + 0.4 * aQ(a) / 100));
     if (enc.poop > enc.area * 0.4 + 3) a.health -= 0.01 * dt;
     if (a.health <= 0) {
-      animalDie(a, a.sick ? 'of illness' : (a.thirst >= 95 ? 'of thirst' : a.hunger >= 95 ? 'of hunger' : 'of neglect'));
+      animalDie(a, a.sick ? 'of illness' : (a.injured ? 'of injuries' : (a.thirst >= 95 ? 'of thirst' : a.hunger >= 95 ? 'of hunger' : 'of neglect')));
       return;
     }
     a.ht = (a.ht || 0) - dt;
@@ -2708,6 +2972,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var suit = enc.suitability[a.species]; if (suit === undefined) suit = 0.5;
       var tgt = 12 + suit * 50 + (100 - a.hunger) * 0.12 + (100 - a.thirst) * 0.12 + a.health * 0.08 + a.energy * 0.06;
       if (a.sick) tgt *= 0.6;
+      if (a.injured) tgt *= 0.72;
       tgt += WX.animalMood;   // weather: storms stress, heat hurts when there is nothing to drink
       if (WX.type === 'heatwave' && !E.water.length && !E.drink.length) tgt -= 5 * WX.intensity;
       if (enc.minFence < aMinFence(a)) tgt -= 6;
@@ -2715,11 +2980,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     a.pt -= dt;
     if (a.pt <= 0 && !a.baby) { a.pt = rng.range(55, 95); enc.poop = Math.min(enc.poop + 1, Math.floor(enc.area * 0.5) + 4); }
-    if (Z.Safari && enc.kind && Z.Safari.hunt(a, dt, enc, E, sp)) return;   // safari package: sea and air predators hunting wild visitors
-    if (Z.Realms && enc.kind && Z.Realms.move(a, dt, enc, E, sp)) return;   // realms package: sea and air AI, bolting from a downed geofence
+    if (a.state !== 'fight' && Z.Safari && enc.kind && Z.Safari.hunt(a, dt, enc, E, sp)) return;   // safari package: sea and air predators hunting wild visitors
+    if (a.state !== 'fight' && Z.Realms && enc.kind && Z.Realms.move(a, dt, enc, E, sp)) return;   // realms package: sea and air AI, bolting from a downed geofence
     var inWater = S.terrain[tileOf(a.x, a.z)] === WATER;
     a.y = inWater ? -0.3 : 0;
-    if (E.pred && !sp.predator && !a.baby) {
+    if (E.pred && !isPredator(sp) && !a.baby && a.state !== 'fight') {
       a.fl = (a.fl || 0) - dt;
       if (a.fl <= 0) {
         a.fl = 0.6;
@@ -2733,6 +2998,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     switch (a.state) {
+      case 'fight':
+        a.speed = 0;
+        if (!a.fid || !fightById(a.fid)) { a.fid = 0; a.state = 'idle'; a.st = 1; }
+        break;
       case 'sleep':
         a.speed = 0;
         if (!isNight() && a.energy >= 60) { a.state = 'idle'; a.st = rng.range(0.5, 3); }
@@ -2746,8 +3015,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (a.st <= 0) decide(a, enc, E, sp);
         break;
       case 'walk': case 'run': case 'swim': {
-        if (a.tg === 'hunt') { huntStep(a, dt, enc, E, sp); break; }
-        var spd = sp.speed * fxOf(a).speed * (a.baby ? 0.8 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
+        if (a.tg === 'hunt' || a.tg === 'fight_rival') { huntStep(a, dt, enc, E, sp); break; }
+        var spd = sp.speed * fxOf(a).speed * (a.baby ? 0.8 : 1) * (a.injured ? 0.65 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
         if (inWater && a.state !== 'swim') spd *= 0.7;
         if (animalMove(a, dt, spd)) {
           var tg = a.tg;
@@ -2805,7 +3074,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (t < 0 && RT.pathTiles.length) t = RT.pathTiles[Math.floor(rng.next() * RT.pathTiles.length)];
     if (t < 0) return;
-    a.home = enc.id; a.enc = 0; a.state = 'escaped'; a.tg = ''; a.esc = 0; a.claim = 0; a.y = 0;
+    stripFromFights(a.id);
+    a.home = enc.id; a.enc = 0; a.state = 'escaped'; a.fid = 0; a.tg = ''; a.esc = 0; a.claim = 0; a.y = 0;
     a.x = cxOf(t) + rng.range(-0.5, 0.5); a.z = czOf(t) + rng.range(-0.5, 0.5); a.tx = a.x; a.tz = a.z; a.speed = 0;
     refreshEncAnimals(); encStats(enc);
     S.stats.escapes++;
@@ -2961,7 +3231,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return false;
   }
   var VET_CLINIC_TILES = 48;
-  function vetNeedsAnimal(a) { return !!(a && a.enc && (a.sick || a.health < 55)); }
+  function vetNeedsAnimal(a) { return !!(a && a.enc && (a.sick || a.injured || a.health < 55)); }
   function vetNearClinic(a) {
     if (!a) return false;
     var r2 = (VET_CLINIC_TILES * TILE) * (VET_CLINIC_TILES * TILE);
@@ -2978,7 +3248,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!vetNeedsAnimal(a) || (a.claim && a.claim !== s.id && RT.sById.has(a.claim))) continue;
       var e = RT.eMap[a.enc]; if (!e || !e.viewTiles.length || !encReachesComp(e, sc0)) continue;
       var d = Math.hypot(a.x - s.x, a.z - s.z);
-      var sc = (a.sick ? 4 : 0) + Math.max(0, 80 - a.health) * 0.05 + (vetNearClinic(a) ? 0.4 : 0) - d * 0.01;
+      var sc = (a.sick ? 4 : 0) + (a.injured ? 3 : 0) + Math.max(0, 80 - a.health) * 0.05 + (vetNearClinic(a) ? 0.4 : 0) - d * 0.01;
       if (!best || sc > bs) { best = a; bs = sc; }
     }
     return best;
@@ -3232,14 +3502,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         break;
       case 'vet':
         a = RT.aById.get(tk.a);
-        if (tk.ph !== 'out' && (!a || (!a.sick && a.health >= 65))) { if (a && a.claim === s.id) a.claim = 0; s.tk = null; break; }
+        if (tk.ph !== 'out' && (!a || (!a.sick && !a.injured && a.health >= 65))) { if (a && a.claim === s.id) a.claim = 0; s.tk = null; break; }
         if (tk.ph === 'go') { if (walkRoute(s, dt)) { tk.ph = 'in'; tk.ex = s.x; tk.ez = s.z; } }
         else if (tk.ph === 'in') { if (walkTo(s, a.x, a.z, dt, 2.2)) { tk.ph = 'work'; tk.t = RT.hasVet ? (vetNearClinic(a) ? 1.8 : 2.5) : 4; } }
         else if (tk.ph === 'work') {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
           if (tk.t <= 0) {
             var clinicBoost = RT.hasVet ? (vetNearClinic(a) ? 100 : 70) : 45;
-            a.sick = false; a.health = Math.min(100, a.health + clinicBoost); a.claim = 0; tk.ph = 'out';
+            a.sick = false; a.injured = false; a.health = Math.min(100, a.health + clinicBoost); a.claim = 0; tk.ph = 'out';
             msg(s.name + ' treated ' + a.name + ' the ' + SP[a.species].name.toLowerCase() + '. It is on the mend.', 'good', false);
           }
         } else if (walkTo(s, tk.ex, tk.ez, dt, 2.2)) { s.tk = null; s.wt = 0.3; }
@@ -3821,6 +4091,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
+    stepFights(dt);
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
     researchStep(dt);
@@ -4917,7 +5188,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var sizeN = resolveSizeN(opts.mapSize);
     Z.setGridSize(sizeN);
     rng.seed(gseed);
-    S = Z.newState(); Z.state = S; RT = newRT(); EV.amber = 1;   // (an amber price event of the previous game must not price this game's first market)
+    S = Z.newState(); S.fights = []; Z.state = S; RT = newRT(); EV.amber = 1;   // (an amber price event of the previous game must not price this game's first market)
     S.gridN = sizeN;
     S.mapSize = (typeof opts.mapSize === 'string' && SIZE_MAP[opts.mapSize]) ? opts.mapSize : sizeIdForN(sizeN);
     var paved = PI_.paved || 1;
@@ -5024,6 +5295,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!S.panic) S.panic = 0;
     if (!S.weather || !S.weather.type) S.weather = { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' };
     if (!S.activeEvents) S.activeEvents = [];
+    if (!Array.isArray(S.fights)) S.fights = [];
     if (!S.difficulty) S.difficulty = 'normal';
     if (S.eventAt === undefined) S.eventAt = -1;
     if (S.research.firstDone === undefined) S.research.firstDone = (S.research.stats.successes + S.research.stats.failures) > 0;   // old saves with a finished extraction skip the guarantee
@@ -5032,12 +5304,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
       if (!isFinite(a.heading)) a.heading = 0;
       if (a.genomeQ === undefined) a.genomeQ = 100; if (!a.traits) a.traits = [];
-      if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
+      if (a.injured === undefined) a.injured = false;
+      if (a.fightCd === undefined) a.fightCd = 0;
+      if (!a.fid || !fightById(a.fid)) { a.fid = 0; if (a.state === 'fight') a.state = 'idle'; }
+      if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick' && a.state !== 'fight') a.state = 'idle';
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
     }
-    for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     initDerived();
     recomputeEnclosures();
+    // drop any fights whose participants no longer exist after loading
+    for (k = S.fights.length - 1; k >= 0; k--) {
+      var lf = S.fights[k];
+      lf.attackers = (lf.attackers || []).filter(function (id) { return RT.aById.has(id); });
+      lf.defenders = (lf.defenders || []).filter(function (id) { return RT.aById.has(id); });
+      if (!lf.attackers.length || !lf.defenders.length) {
+        lf.attackers.concat(lf.defenders).forEach(function (id) { var ra = RT.aById.get(id); if (ra) { ra.fid = 0; if (ra.state === 'fight') ra.state = 'idle'; } });
+        S.fights.splice(k, 1);
+      }
+    }
+    for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package: default fields of old saves, relink riders, derive the track graph
     if (Z.Power) Z.Power.afterLoad();   // power package: default state of old saves, derive the grid
     if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
@@ -5097,14 +5382,23 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return 'Keepers cannot reach this enclosure: no path' + (water ? ', pier or walkway' : '') + ' within 3 tiles. Its animals will not be fed, watered or cleaned for' + ' and will starve. Lay a path' + (water ? ', pier or tunnel' : '') + ' beside it.';
   }
   function compatibleReport(e) {
-    if (e.species.length > 1) for (var k = 0; k < e.species.length; k++) if (SP[e.species[k]].diet === 'carnivore') return 'Predators are sharing with other species!';
-    return null;
+    if (!e || !e.species || e.species.length <= 1) return null;
+    var preds = 0, prey = 0;
+    for (var k = 0; k < e.species.length; k++) {
+      if (isPredator(SP[e.species[k]])) preds++; else prey++;
+    }
+    if (!preds) return null;
+    if (prey && preds > 1) return 'Predators are sharing with prey and rival predators — hunts and territorial fights may occur!';
+    if (prey) return 'Predators are sharing with smaller or non-predator species — they may hunt!';
+    return 'Rival predator species are sharing this enclosure — territorial fights may occur!';
   }
   function animalReport(id) {
     var a = RT.aById.get(id); if (!a) return null;
     var sp = SP[a.species], iss = [];
     if (a.state === 'escaped') iss.push('Escaped! Security or rangers must recapture it');
+    if (a.state === 'fight') iss.push('In a fight!');
     if (a.sick) iss.push('Unwell and needs a vet');
+    if (a.injured) iss.push('Injured and needs a vet');
     if (a.hunger > 70) iss.push('Hungry'); if (a.thirst > 70) iss.push('Thirsty'); if (a.energy < 25) iss.push('Tired');
     if (a.health < 40) iss.push('Poor health');
     var enc = a.enc ? RT.eMap[a.enc] : null;
@@ -5120,7 +5414,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (enc.foodLevel < 0.15) iss.push('Food has run out');
       if (enc.waterLevel < 0.15 && !E.water.length && !E.moatN) iss.push('Water has run out');
     }
-    return { id: a.id, name: a.name, species: a.species, speciesName: sp.name, sex: a.sex, age: a.age, baby: a.baby, state: a.state, enclosure: enc ? enc.name : null,
+    return { id: a.id, name: a.name, species: a.species, speciesName: sp.name, sex: a.sex, age: a.age, baby: a.baby, state: a.state, injured: !!a.injured, enclosure: enc ? enc.name : null,
       needs: { hunger: a.hunger, thirst: a.thirst, energy: a.energy, health: a.health, happiness: a.happiness }, suitability: enc ? (enc.suitability[a.species] || 0) : 0, issues: iss, fact: sp.fact,
       genomeQ: aQ(a), traits: (a.traits || []).slice(), lifespan: aLife(a), appeal: aAppeal(a), danger: aDanger(a), minFence: aMinFence(a), sickMul: aSickMul(a), breedMul: aBreedMul(a),
       quality: aQ(a) >= 95 ? 'Magnificent' : aQ(a) >= 80 ? 'Excellent' : aQ(a) >= 65 ? 'Good' : 'Fragile' };
@@ -5212,7 +5506,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     weatherInfo: function () { return weatherInfo(); }, activeEvents: function () { return S.activeEvents.slice(); }, applyDifficulty: function (id, fresh) { return applyDifficulty(id, fresh); },
     difficultyInfo: function () { return { id: S.difficulty, income: DIFF.income, costs: DIFF.costs, arrivals: DIFF.arrivals, interest: DIFF.interest }; },
     _fireEvent: function (id) { return fireEvent(id); }, _setWeather: function (type, intensity, hours) { setWeather(type, intensity === undefined ? 1 : intensity, hours || 6); }, _wx: function () { return WX; },
-    _rt: function () { return RT; }, _step: function (dt) { step(dt); }
+    _rt: function () { return RT; }, _step: function (dt) { step(dt); },
+    _combat: {
+      isPredator: isPredator, isPackHunter: isPackHunter, animalBulk: animalBulk, combatPower: combatPower,
+      gatherPack: gatherPack, packPower: packPower, findPrey: findPrey, findRivalPredator: findRivalPredator,
+      startFight: startFight, vetNeedsAnimal: vetNeedsAnimal
+    }
   };
   // headless safety: create a game on load if Z.DATA exists so Z.state is never null
   newGame({ seed: 1 });

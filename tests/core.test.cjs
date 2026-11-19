@@ -1492,3 +1492,207 @@ test('Dino supports all 4 map sizes, non-mutating previewMap, cross-size save/lo
   assert.equal(z.state.money, 44444);
 });
 
+test('predator enclosure freedom: placing and moving predators with herbivores or rival predators succeeds with warnings', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1101, map: 'fern_meadow', money: 500000 });
+  setupFlatZone(z, 16, 20, 34, 34);
+  for (let i = 20; i <= 26; i++) assert.equal(z.Sim.placePath(i, 21, 'paved').ok, true);
+  fenceRect(z, 20, 22, 26, 28, 'reinforced');
+  fenceRect(z, 28, 22, 33, 27, 'reinforced');
+
+  for (const id of ['compsognathus', 'velociraptor', 'dilophosaurus', 'dimorphodon', 'rhamphorhynchus']) {
+    const sp = z.DATA.animals.find(a => a.id === id);
+    assert.equal(sp.packHunter, true, `${id} should have packHunter: true`);
+    assert.equal(z.Sim._combat.isPackHunter(sp), true);
+  }
+
+  z.state.research.genomes.velociraptor = 100;
+  z.state.research.genomes.tyrannosaurus = 100;
+  z.state.research.genomes.dryosaurus = 100;
+
+  // Herbivore already in enclosure -> adding predator egg succeeds with warning
+  const herb = z.Sim.spawnAnimal('dryosaurus', 23, 25);
+  const addPredRes = z.Sim.addAnimal('velociraptor', 22, 25);
+  assert.equal(addPredRes.ok, true);
+  assert.equal(addPredRes.warn, 'Predators in this enclosure may hunt smaller animals or fight rival predators.');
+
+  // Moving another predator into the same enclosure succeeds with warning
+  const rex = z.Sim.spawnAnimal('tyrannosaurus', 30, 24);
+  const moveRes = z.Sim.moveAnimal(rex.id, 24, 25);
+  assert.equal(moveRes.ok, true);
+  assert.equal(moveRes.warn, 'Predators in this enclosure may hunt smaller animals or fight rival predators.');
+  assert.equal(rex.enc, herb.enc);
+
+  const rep = z.Sim.enclosureReport(herb.enc);
+  assert.ok(rep.issues.some(iss => /Predators are sharing/i.test(iss)));
+
+  // Enclosure with two rival predators also reports warning
+  const spino = z.Sim.spawnAnimal('spinosaurus', 30, 24);
+  const carno = z.Sim.spawnAnimal('carnotaurus', 31, 24);
+  assert.equal(spino.enc, carno.enc);
+  const predRep = z.Sim.enclosureReport(spino.enc);
+  assert.ok(predRep.issues.some(iss => /Rival predator/i.test(iss)));
+});
+
+test('hunting small/similar prey starts a 3D fight in S.fights and resolves cleanly', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1102, map: 'fern_meadow', money: 300000 });
+  setupFlatZone(z, 18, 22, 28, 32);
+  fenceRect(z, 20, 23, 26, 29, 'reinforced');
+  z.state.time = 0.45; // daytime
+
+  const raptor = z.Sim.spawnAnimal('velociraptor', 23, 25);
+  const dryo = z.Sim.spawnAnimal('dryosaurus', 23, 25);
+  raptor.hunger = 90;
+  raptor.energy = 90;
+  raptor.st = 0;
+
+  let sawFight = false;
+  for (let step = 0; step < 240; step++) {
+    z.Sim._step(0.1);
+    if (z.state.fights.length > 0) {
+      sawFight = true;
+      const f = z.state.fights[0];
+      assert.equal(f.kind, 'hunt');
+      assert.ok(f.attackers.includes(raptor.id));
+      assert.ok(f.defenders.includes(dryo.id));
+      assert.equal(raptor.state, 'fight');
+      assert.equal(dryo.state, 'fight');
+      break;
+    }
+    // keep daytime & predator ready to hunt if RNG missed on first decide
+    z.state.time = 0.45;
+    if (raptor.state !== 'fight' && raptor.tg !== 'hunt') { raptor.st = 0; raptor.hunger = 90; }
+  }
+  assert.equal(sawFight, true, 'hunting prey should start a fight in S.fights');
+
+  // Step until the fight resolves
+  for (let step = 0; step < 100 && z.state.fights.length > 0; step++) {
+    z.Sim._step(0.1);
+  }
+  assert.equal(z.state.fights.length, 0, 'fight should resolve and clear from S.fights');
+  assert.notEqual(raptor.state, 'fight');
+  assert.equal(raptor.fid, 0);
+});
+
+test('pack hunters (velociraptors) rally and gang up together in a fight', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1103, map: 'fern_meadow', money: 300000 });
+  setupFlatZone(z, 18, 22, 28, 32);
+  fenceRect(z, 20, 23, 26, 29, 'reinforced');
+  z.state.time = 0.45;
+
+  const r1 = z.Sim.spawnAnimal('velociraptor', 23, 25);
+  const r2 = z.Sim.spawnAnimal('velociraptor', 23, 25);
+  const r3 = z.Sim.spawnAnimal('velociraptor', 23, 25);
+  const para = z.Sim.spawnAnimal('parasaurolophus', 23, 25);
+
+  const enc = z.state.enclosures.find(e => e.id === r1.enc);
+  const pack = z.Sim._combat.gatherPack(r1, enc);
+  assert.equal(pack.length, 3);
+  assert.ok(z.Sim._combat.packPower(pack) > z.Sim._combat.combatPower(r1));
+
+  r1.tg = 'hunt'; r1.hid = para.id; r1.state = 'run';
+  r2.tg = 'hunt'; r2.hid = para.id; r2.state = 'run';
+  r3.tg = 'hunt'; r3.hid = para.id; r3.state = 'run';
+  const fight = z.Sim._combat.startFight(r1, para, 'hunt', enc);
+  assert.ok(fight);
+  assert.equal(fight.attackers.length, 3, 'all 3 nearby packmates should join attackers');
+  assert.equal(r2.state, 'fight');
+  assert.equal(r3.state, 'fight');
+  assert.equal(z.state.fights.length, 1);
+
+  for (let step = 0; step < 120 && z.state.fights.length > 0; step++) z.Sim._step(0.1);
+  assert.equal(z.state.fights.length, 0);
+});
+
+test('larger prey (triceratops / brachiosaurus) can injure or kill a smaller predator', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1104, map: 'fern_meadow', money: 300000 });
+  setupFlatZone(z, 18, 22, 28, 32);
+  fenceRect(z, 20, 23, 26, 29, 'reinforced');
+
+  let injuredCount = 0;
+  let killedCount = 0;
+  for (let trial = 0; trial < 20; trial++) {
+    const raptor = z.Sim.spawnAnimal('velociraptor', 23, 25);
+    const prey = z.Sim.spawnAnimal(trial % 2 === 0 ? 'triceratops' : 'brachiosaurus', 23, 25);
+    const enc = z.state.enclosures.find(e => e.id === raptor.enc);
+    const f = z.Sim._combat.startFight(raptor, prey, 'hunt', enc);
+    assert.ok(f);
+    for (let step = 0; step < 120 && z.state.fights.length > 0; step++) z.Sim._step(0.1);
+    const alive = z.state.animals.includes(raptor);
+    if (!alive) killedCount++;
+    else if (raptor.injured) injuredCount++;
+    // clean up animals for next trial
+    for (const a of [...z.state.animals]) {
+      if (a.enc === enc.id) z.Sim.sellAnimal(a.id);
+    }
+  }
+  assert.ok(injuredCount + killedCount > 0, 'large prey should injure or kill a smaller lone predator');
+  assert.ok(killedCount > 0 || injuredCount >= 3, `expected repeated injuries/kills, got injured=${injuredCount}, killed=${killedCount}`);
+});
+
+test('predator vs predator fights: larger predator wins more often while smaller still wins sometimes', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1105, map: 'fern_meadow', money: 300000 });
+  setupFlatZone(z, 18, 22, 28, 32);
+  fenceRect(z, 20, 23, 26, 29, 'reinforced');
+
+  let rexWins = 0;
+  let carnoWins = 0;
+  const trials = 60;
+  for (let trial = 0; trial < trials; trial++) {
+    const rex = z.Sim.spawnAnimal('tyrannosaurus', 23, 25);
+    const carno = z.Sim.spawnAnimal('carnotaurus', 23, 25);
+    const enc = z.state.enclosures.find(e => e.id === rex.enc);
+    let endEvent = null;
+    const onFightEnd = ev => { endEvent = ev; };
+    z.bus.on('fightEnd', onFightEnd);
+    const f = z.Sim._combat.startFight(rex, carno, 'predator', enc);
+    assert.ok(f);
+    for (let step = 0; step < 120 && z.state.fights.length > 0; step++) z.Sim._step(0.1);
+    z.bus.off('fightEnd', onFightEnd);
+    assert.ok(endEvent);
+    if (endEvent.atkWins) rexWins++; else carnoWins++;
+    for (const a of [...z.state.animals]) {
+      if (a.enc === enc.id) z.Sim.sellAnimal(a.id);
+    }
+  }
+  assert.ok(rexWins > carnoWins * 2, `larger T-Rex should win significantly more often (${rexWins} vs ${carnoWins})`);
+  assert.ok(carnoWins > 0, `smaller Carnotaurus should still win occasionally (${carnoWins} wins)`);
+});
+
+test('vets detect and heal injured animals (vetNeedsAnimal, animalReport, and treatment)', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1106, map: 'fern_meadow', money: 300000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 18, 22, 34, 39);
+  for (let j = 24; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+  for (let i = 20; i <= 26; i++) assert.equal(z.Sim.placePath(i, 24, 'paved').ok, true);
+  fenceRect(z, 21, 25, 25, 29, 'reinforced');
+
+  const raptor = z.Sim.spawnAnimal('velociraptor', 23, 27);
+  raptor.injured = true;
+  raptor.health = 75;
+  raptor.sick = false;
+
+  assert.equal(z.Sim._combat.vetNeedsAnimal(raptor), true);
+  const repBefore = z.Sim.animalReport(raptor.id);
+  assert.equal(repBefore.injured, true);
+  assert.ok(repBefore.issues.some(x => /Injured and needs a vet/i.test(x)));
+
+  const vh = z.Sim.hireStaff('vet', 27, 38);
+  assert.equal(vh.ok, true);
+  const vet = z.state.staff.find(s => s.id === vh.id);
+
+  for (let t = 0; t < 120 && (raptor.injured || (vet.tk && vet.tk.k === 'vet')); t++) {
+    z.Sim._step(0.5);
+  }
+  assert.equal(raptor.injured, false, 'vet must clear injured flag on treatment');
+  assert.ok(raptor.health > 75, 'vet must restore health when treating injured animal');
+  const repAfter = z.Sim.animalReport(raptor.id);
+  assert.equal(repAfter.injured, false);
+});
+
+

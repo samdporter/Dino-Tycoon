@@ -48,7 +48,7 @@ window.Z.DATA = {
       foliage: ["fern", "horsetail", "rock_pile"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 1, speed: 1.6, size: 0.3,
       lifespan: 600, breedChance: 0.25, star: 0, danger: 0,
-      site: "european", rarity: 1, period: "Late Jurassic", length: 1.0, predator: true,
+      site: "european", rarity: 1, period: "Late Jurassic", length: 1.0, predator: true, packHunter: true,
       fact: "Compsognathus was about the size of a chicken, and its best-known fossils come from the Solnhofen limestone of Bavaria."
     },
     {
@@ -168,7 +168,7 @@ window.Z.DATA = {
       foliage: ["bush", "rock_pile", "boulder"],
       needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.7, size: 0.5,
       lifespan: 900, breedChance: 0.1, star: 0, danger: 2,
-      site: "gobi", rarity: 3, period: "Late Cretaceous", length: 2.0, predator: true,
+      site: "gobi", rarity: 3, period: "Late Cretaceous", length: 2.0, predator: true, packHunter: true,
       fact: "Velociraptor was roughly the size of a turkey, and its arm bones have quill knobs showing that feathers anchored there."
     },
     {
@@ -178,7 +178,7 @@ window.Z.DATA = {
       foliage: ["horsetail", "cycad", "dead_tree"],
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 5, speed: 1.4, size: 1.5,
       lifespan: 1200, breedChance: 0.06, star: 0, danger: 2,
-      site: "morrison", rarity: 2, period: "Early Jurassic", length: 6.5, predator: true,
+      site: "morrison", rarity: 2, period: "Early Jurassic", length: 6.5, predator: true, packHunter: true,
       fact: "Dilophosaurus had two low crests on its head, which were probably used for display rather than for fighting."
     },
     {
@@ -289,7 +289,7 @@ window.Z.DATA = {
       foliage: ["pine", "rock_pile"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 1, speed: 1.8, size: 0.4,
       lifespan: 800, breedChance: 0.15, star: 2, danger: 0,
-      site: "european", rarity: 2, period: "Early Jurassic", length: 1.0, predator: true,
+      site: "european", rarity: 2, period: "Early Jurassic", length: 1.0, predator: true, packHunter: true,
       fact: "Dimorphodon, a small pterosaur (a flying reptile, not a dinosaur), had two different kinds of teeth, which is what its name means."
     },
     {
@@ -299,7 +299,7 @@ window.Z.DATA = {
       foliage: ["reed_clump", "rock_pile"],
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 1, speed: 2.0, size: 0.4,
       lifespan: 800, breedChance: 0.15, star: 2, danger: 0,
-      site: "european", rarity: 2, period: "Late Jurassic", length: 1.0, predator: true,
+      site: "european", rarity: 2, period: "Late Jurassic", length: 1.0, predator: true, packHunter: true,
       fact: "Rhamphorhynchus was a long-tailed pterosaur (not a dinosaur) that snatched fish from the lagoons of Solnhofen, steering with a diamond-shaped vane on its tail."
     },
     {
