@@ -901,10 +901,11 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
   };
   fenceBox(14, 18, 22, 26, 'reinforced');
   fenceBox(25, 18, 33, 26, 'reinforced');
+  fenceBox(14, 28, 22, 35, 'reinforced');
 
   const fantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
   const fantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
-  const fantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin'];
+  const fantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots'];
 
   // At 3 stars: everything in the Fantasy Pack is locked
   z.state.unlocked.star = 3;
@@ -933,12 +934,19 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
   });
   fantasyAnimals.forEach((a, idx) => {
     assert.equal(z.Sim.isUnlocked('animal', a), true, `Animal ${a} unlocked at 4 stars`);
-    // Griffin is a carnivore so place it in the second enclosure; place the rest in the first
-    const ti = a === 'griffin' ? 29 : 16 + idx;
-    const tj = a === 'griffin' ? 22 : 24;
+    // Griffin and Puss in Boots are carnivores so place each in its own enclosure; place the rest in the first
+    let ti = 16 + idx;
+    let tj = 24;
+    if (a === 'griffin') {
+      ti = 29;
+      tj = 22;
+    } else if (a === 'puss_in_boots') {
+      ti = 18;
+      tj = 31;
+    }
     assert.equal(z.Sim.addAnimal(a, ti, tj).ok, true, `addAnimal(${a}) succeeds at 4 stars`);
   });
-  assert.equal(z.state.animals.length, 6);
+  assert.equal(z.state.animals.length, 7);
 
   for (let step = 0; step < 100; step++) z.Sim.tick(0.1);
   for (const a of z.state.animals) {
@@ -1096,7 +1104,7 @@ test('Zoo star progression reserves Star 4 exclusively for fairytale pack items'
   const { z } = zoo();
   const D = z.DATA;
 
-  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin'];
+  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots'];
   const expectedFantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
   const expectedFantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
 
@@ -1237,6 +1245,257 @@ test('Zoo rating progression scales from <0.5 empty to <2 starter, <4 mid-sized,
   assert.ok(new Set(z.state.animals.map(a => a.species)).size >= 12);
   const thrivingRb = z.Sim.ratingBreakdown();
   assert.ok(thrivingRb.stars >= 4, `Thriving 13-species zoo should reach >= 4 stars, got ${thrivingRb.stars}`);
+});
+
+test('Zoo new species star ratings, primate needsCage flags, and habitatGuide exposure', () => {
+  const { z } = zoo();
+  const byId = Object.fromEntries(z.DATA.animals.map(a => [a.id, a]));
+
+  const expectedStars = {
+    camel: 0,
+    kangaroo: 1,
+    monkey: 1,
+    jaguar: 2,
+    anaconda: 2,
+    hyena: 2,
+    chimpanzee: 2,
+    lemur: 2,
+    cheetah: 3,
+    orangutan: 3,
+    komodo_dragon: 3,
+    puss_in_boots: 4
+  };
+  for (const [id, star] of Object.entries(expectedStars)) {
+    assert.ok(byId[id], `Species ${id} should exist in Z.DATA.animals`);
+    assert.equal(byId[id].star, star, `Species ${id} should have star ${star}`);
+  }
+  assert.equal(byId.puss_in_boots.fantasy, true);
+
+  const primates = ['monkey', 'chimpanzee', 'lemur', 'orangutan'];
+  for (const id of primates) {
+    assert.equal(byId[id].needsCage, true, `${id} should require a roofed cage`);
+  }
+
+  const guide = z.Sim.habitatGuide();
+  const guideById = Object.fromEntries(guide.species.map(s => [s.id, s]));
+  for (const id of primates) {
+    assert.equal(guideById[id].needsCage, true, `habitatGuide() should expose needsCage=true for ${id}`);
+  }
+  assert.equal(guideById.camel.needsCage, false, 'habitatGuide() should expose needsCage=false for non-cage animals');
+  assert.equal(guideById.puss_in_boots.needsCage, false, 'habitatGuide() should expose needsCage=false for puss_in_boots');
+});
+
+test('Zoo roofed cage enclosure detection, perimeter downgrade, and primate suitability', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 606, map: 'meadow', money: 500000 });
+  z.state.unlocked.star = 3;
+  const N = z.N;
+
+  for (let j = 10; j <= 34; j++) for (let i = 10; i <= 34; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 5; // rainforest
+  }
+
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  // Identical open-top reinforced vs roofed cage enclosures
+  fenceBox(12, 12, 18, 18, 'reinforced');
+  fenceBox(22, 12, 28, 18, 'cage');
+
+  const openEnc = z.Sim.enclosureAt(15, 15);
+  const cageEnc = z.Sim.enclosureAt(25, 15);
+  assert.ok(openEnc && cageEnc);
+  assert.equal(openEnc.isCage, false);
+  assert.equal(openEnc.enclosureType, 'open');
+  assert.equal(cageEnc.isCage, true);
+  assert.equal(cageEnc.enclosureType, 'cage');
+  assert.equal(z.Sim.enclosureReport(cageEnc.id).isCage, true);
+
+  // Place orangutan in open-top vs cage enclosure and compare issues & suitability
+  assert.equal(z.Sim.addAnimal('orangutan', 15, 15).ok, true);
+  assert.equal(z.Sim.addAnimal('orangutan', 25, 15).ok, true);
+
+  const openReport = z.Sim.enclosureReport(openEnc.id);
+  const cageReport = z.Sim.enclosureReport(cageEnc.id);
+  assert.ok(
+    openReport.species.orangutan.issues.some(iss => iss.includes('Needs a roofed cage')),
+    `Expected cage issue in open-top enclosure, got: ${JSON.stringify(openReport.species.orangutan.issues)}`
+  );
+  assert.equal(
+    cageReport.species.orangutan.issues.some(iss => iss.includes('Needs a roofed cage')),
+    false,
+    'Cage enclosure should not report a roofed cage issue'
+  );
+  assert.ok(
+    cageReport.suitability.orangutan > openReport.suitability.orangutan,
+    `Cage suitability (${cageReport.suitability.orangutan}) should exceed open-top suitability (${openReport.suitability.orangutan})`
+  );
+
+  // Replacing a single perimeter panel of the cage with reinforced removes isCage
+  assert.equal(z.Sim.placeFence({ axis: 'x', i: 25, j: 12 }, 'reinforced').ok, true);
+  const brokenCageEnc = z.Sim.enclosureAt(25, 15);
+  assert.equal(brokenCageEnc.isCage, false);
+  assert.equal(brokenCageEnc.enclosureType, 'open');
+  assert.equal(z.Sim.enclosureReport(brokenCageEnc.id).isCage, false);
+
+  const brokenReport = z.Sim.enclosureReport(brokenCageEnc.id);
+  assert.ok(
+    brokenReport.species.orangutan.issues.some(iss => iss.includes('Needs a roofed cage')),
+    'Breaking cage roof by replacing one panel should restore the cage issue'
+  );
+});
+
+test('Zoo vine_perch scenery and star-tier unlocking for all new species', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 707, map: 'meadow', money: 1000000 });
+  const N = z.N;
+
+  for (let j = 10; j <= 46; j++) for (let i = 10; i <= 46; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  // Shared herbivore/omnivore cage enclosure + 6 individual carnivore enclosures
+  fenceBox(12, 12, 22, 20, 'cage');
+  fenceBox(25, 12, 28, 15, 'reinforced'); // jaguar
+  fenceBox(30, 12, 33, 15, 'reinforced'); // anaconda
+  fenceBox(35, 12, 38, 15, 'reinforced'); // hyena
+  fenceBox(25, 17, 28, 20, 'reinforced'); // cheetah
+  fenceBox(30, 17, 33, 20, 'reinforced'); // komodo_dragon
+  fenceBox(35, 17, 38, 20, 'reinforced'); // puss_in_boots
+
+  // vine_perch can be placed inside an enclosure
+  assert.equal(z.Sim.placeObject('vine_perch', 14, 14, 0).ok, true);
+  assert.ok(z.state.objects.some(o => o.type === 'vine_perch' && o.i === 14 && o.j === 14));
+
+  const placements = [
+    { id: 'camel', star: 0, i: 15, j: 15 },
+    { id: 'kangaroo', star: 1, i: 16, j: 15 },
+    { id: 'monkey', star: 1, i: 17, j: 15 },
+    { id: 'jaguar', star: 2, i: 26, j: 13 },
+    { id: 'anaconda', star: 2, i: 31, j: 13 },
+    { id: 'hyena', star: 2, i: 36, j: 13 },
+    { id: 'chimpanzee', star: 2, i: 18, j: 15 },
+    { id: 'lemur', star: 2, i: 19, j: 15 },
+    { id: 'cheetah', star: 3, i: 26, j: 18 },
+    { id: 'orangutan', star: 3, i: 20, j: 15 },
+    { id: 'komodo_dragon', star: 3, i: 31, j: 18 },
+    { id: 'puss_in_boots', star: 4, i: 36, j: 18 }
+  ];
+
+  for (let star = 0; star <= 4; star++) {
+    z.state.unlocked.star = star;
+    for (const p of placements) {
+      if (p.star > star) {
+        assert.equal(z.Sim.isUnlocked('animal', p.id), false, `${p.id} locked at ${star} stars`);
+        assert.equal(z.Sim.addAnimal(p.id, p.i, p.j).ok, false, `addAnimal(${p.id}) fails at ${star} stars`);
+      } else if (p.star === star) {
+        assert.equal(z.Sim.isUnlocked('animal', p.id), true, `${p.id} unlocked at ${star} stars`);
+        assert.equal(z.Sim.addAnimal(p.id, p.i, p.j).ok, true, `addAnimal(${p.id}) succeeds at ${star} stars`);
+      }
+    }
+  }
+  assert.equal(z.state.animals.length, placements.length);
+});
+
+test('Zoo 8 new starter/early-game animals have exact star ratings and unlock at 0 and 1 stars', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 808, map: 'meadow', money: 500000 });
+  const N = z.N;
+
+  const byId = Object.fromEntries(z.DATA.animals.map(a => [a.id, a]));
+  const star0 = ['tortoise', 'peacock', 'capybara', 'alpaca'];
+  const star1 = ['fennec_fox', 'otter', 'koala', 'arctic_fox'];
+
+  for (const id of star0) {
+    assert.ok(byId[id], `0-star species ${id} should exist in Z.DATA.animals`);
+    assert.equal(byId[id].star, 0, `${id} should have star 0`);
+    assert.ok(typeof byId[id].fact === 'string' && byId[id].fact.length > 0, `${id} should have a non-empty fact`);
+  }
+  for (const id of star1) {
+    assert.ok(byId[id], `1-star species ${id} should exist in Z.DATA.animals`);
+    assert.equal(byId[id].star, 1, `${id} should have star 1`);
+    assert.ok(typeof byId[id].fact === 'string' && byId[id].fact.length > 0, `${id} should have a non-empty fact`);
+  }
+
+  for (let j = 10; j <= 24; j++) for (let i = 10; i <= 32; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  fenceBox(12, 12, 20, 20, 'chainlink'); // non-carnivores
+  fenceBox(24, 12, 28, 16, 'chainlink'); // arctic_fox (carnivore)
+
+  const placements0 = [
+    { id: 'tortoise', i: 14, j: 14 },
+    { id: 'peacock', i: 15, j: 14 },
+    { id: 'capybara', i: 16, j: 14 },
+    { id: 'alpaca', i: 17, j: 14 }
+  ];
+  const placements1 = [
+    { id: 'fennec_fox', i: 14, j: 16 },
+    { id: 'otter', i: 15, j: 16 },
+    { id: 'koala', i: 16, j: 16 },
+    { id: 'arctic_fox', i: 26, j: 14 }
+  ];
+
+  // At 0 stars: 0-star animals unlock and place; 1-star animals stay locked
+  z.state.unlocked.star = 0;
+  for (const p of placements0) {
+    assert.equal(z.Sim.isUnlocked('animal', p.id), true, `${p.id} should be unlocked at 0 stars`);
+    assert.equal(z.Sim.addAnimal(p.id, p.i, p.j).ok, true, `addAnimal(${p.id}) should succeed at 0 stars`);
+  }
+  for (const p of placements1) {
+    assert.equal(z.Sim.isUnlocked('animal', p.id), false, `${p.id} should be locked at 0 stars`);
+    assert.equal(z.Sim.addAnimal(p.id, p.i, p.j).ok, false, `addAnimal(${p.id}) should fail at 0 stars`);
+  }
+
+  // At 1 star: 1-star animals unlock and place cleanly
+  z.state.unlocked.star = 1;
+  for (const p of placements1) {
+    assert.equal(z.Sim.isUnlocked('animal', p.id), true, `${p.id} should be unlocked at 1 star`);
+    assert.equal(z.Sim.addAnimal(p.id, p.i, p.j).ok, true, `addAnimal(${p.id}) should succeed at 1 star`);
+  }
+
+  assert.equal(z.state.animals.length, 8);
+  for (let k = 0; k < 5; k++) z.Sim.tick(0.1);
+  for (const a of z.state.animals) {
+    assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z), `Animal ${a.species} coordinates should remain finite`);
+  }
 });
 
 

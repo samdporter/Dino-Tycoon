@@ -471,6 +471,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       RT.encx[e.id] = E;
       e.minFence = E.minS === 99 ? 1 : E.minS;
       e.see = E.cnt ? E.seeSum / E.cnt : 0.5;
+      e.isCage = !!E.isCage;
+      e.enclosureType = e.isCage ? 'cage' : 'open';
       // view tiles
       var seenV = {}, vt = [];
       for (k = 0; k < E.out.length; k++) {
@@ -535,7 +537,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     enc.badPlants = 0;
     var k, t, d, tiles = enc.tiles;
     for (k = 0; k < E.terr.length; k++) E.terr[k] = 0;
-    var minS = 99, seeSum = 0, cnt = 0, slopeSum = 0;
+    var minS = 99, seeSum = 0, cnt = 0, slopeSum = 0, allCage = true;
     var best = 1e9, bi = -1;
     for (k = 0; k < tiles.length; k++) {
       t = tiles[k]; var i = t % N, j = (t - i) / N;
@@ -569,6 +571,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var nt = (ni < 0 || nj < 0 || ni >= N || nj >= N) ? -1 : ni + nj * N;
         if (nt >= 0 && S.tileEnc[nt] === enc.id) continue;
         var fd = D.fences[f - 1];
+        if (!fd.cage) allCage = false;
         if (fd.strength < minS) minS = fd.strength;
         seeSum += fd.seeThrough ? 1 : (fd.height <= 1.3 ? 0.5 : 0.05); cnt++;
         if (nt >= 0) E.out.push(nt);
@@ -586,7 +589,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if ((ii > 0 && S.terrain[t - 1] === WATER) || (ii < N - 1 && S.terrain[t + 1] === WATER) || (jj > 0 && S.terrain[t - N] === WATER) || (jj < N - 1 && S.terrain[t + N] === WATER)) E.drink.push(t);
       }
     }
-    E.minS = minS; E.seeSum = seeSum; E.cnt = cnt;
+    E.minS = minS; E.seeSum = seeSum; E.cnt = cnt; E.isCage = cnt > 0 && allCage;
     return E;
   }
 
@@ -662,6 +665,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var v = (terrain * 0.22 + space * 0.2 + foliage * 0.12 + water * wW + shelter * sW + rocks * rW + social * 0.1 + clean * 0.06) / wts;
     v = clamp(v, 0, 1);
     if (enc.minFence < sp.minFence) iss.push('Fence is too weak (needs strength ' + sp.minFence + ')');
+    if (sp.needsCage && !enc.isCage) {
+      iss.push('Needs a roofed cage enclosure (use Primate cage fences)');
+      v *= 0.65;
+    }
     return { value: v, terrain: terrain, space: space, foliage: foliage, water: water, shelter: shelter, rocks: rocks, social: social, clean: clean, issues: iss };
   }
 
@@ -2506,6 +2513,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var tgt = 12 + suit * 50 + (100 - a.hunger) * 0.12 + (100 - a.thirst) * 0.12 + a.health * 0.08 + a.energy * 0.06;
       if (a.sick) tgt *= 0.6;
       if (enc.minFence < sp.minFence) tgt -= 6;
+      if (sp.needsCage && !enc.isCage) tgt -= 10;
       tgt += (WX.animalMood || 0);
       a.happiness += (tgt - a.happiness) * 0.05; a.happiness = clamp(a.happiness, 0, 100);
     }
@@ -2679,6 +2687,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (var k = enc.animals.length - 1; k >= 0; k--) {
         var a = RT.aById.get(enc.animals[k]); if (!a || a.baby) continue;
         var sp = SP[a.species], def = sp.minFence - eff;
+        var needCageEscape = sp.needsCage && !enc.isCage;
+        if (needCageEscape) def = Math.max(def, 2);
         if (def <= 0) continue;
         var pd = Math.min(0.9, 0.18 + 0.17 * def) * (1.25 - a.happiness / 150);
         var ph = 1 - Math.pow(1 - pd, 1 / 24);
@@ -3459,6 +3469,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           RT.advice['f' + key] = S.day;
           msg('The ' + lc(plural(sp)) + ' could escape! Their fence is too weak (needs strength ' + br.minFence + ').', 'bad');
         }
+        if (sp.needsCage && !e.isCage && RT.advice['c' + key] !== S.day) {
+          RT.advice['c' + key] = S.day;
+          msg('The ' + lc(plural(sp)) + ' at ' + e.name + ' need a roofed Primate cage enclosure, or they may climb out!', 'bad');
+        }
       }
       if (e.foodLevel < 0.2 && RT.keeperCount === 0 && RT.advice['food' + e.id] !== S.day) { RT.advice['food' + e.id] = S.day; msg('Food is running out at ' + e.name + '. Hire a keeper to refill it.', 'bad'); }
     }
@@ -3834,7 +3848,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         }).join(', '),
         plants: (a.foliage || []).map(function (f) { return SC[f] ? SC[f].name : f; }),
         plantIds: (a.foliage || []).slice(),
-        needs: needs, space: a.space, minFence: a.minFence
+        needs: needs, space: a.space, minFence: a.minFence, needsCage: !!a.needsCage
       });
     });
     return { weights: JSON.parse(JSON.stringify(HW)), plants: plants, additions: additions, species: species };
@@ -3978,7 +3992,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function enclosureReport(encId, extraSpecies) {
     var e = encById(encId); if (!e) return null;
-    var E = RT.encx[e.id], out = { id: e.id, name: e.name, area: e.area, minFence: e.minFence, see: e.see, poop: e.poop, foodLevel: e.foodLevel, waterLevel: e.waterLevel,
+    var E = RT.encx[e.id], out = { id: e.id, name: e.name, area: e.area, minFence: e.minFence, isCage: !!e.isCage, see: e.see, poop: e.poop, foodLevel: e.foodLevel, waterLevel: e.waterLevel,
       species: {}, suitability: {}, issues: [], animals: e.animals.length, viewTiles: e.viewTiles.length,
       relief: E.relief || 0, cliffTiles: E.cliffs || 0, plantsThriving: E.thrive || 0, plantsStruggling: E.struggle || 0, badPlants: E.struggle || 0 };
     var bySp = {}, k; for (k in E.bySp) bySp[k] = E.bySp[k];

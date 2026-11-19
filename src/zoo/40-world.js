@@ -537,11 +537,13 @@ function buildMaterials() {
   MAT.path = new THREE.MeshLambertMaterial({ map: TEX.path, vertexColors: true });
   MAT.solid = new THREE.MeshLambertMaterial({ vertexColors: true });
   MAT.chain = new THREE.MeshLambertMaterial({ map: TEX.chain, vertexColors: true, transparent: true, depthWrite: false });
+  MAT.chainRoof = new THREE.MeshLambertMaterial({ map: TEX.chain, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   MAT.glass = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.22, depthWrite: false });
   MAT.glass.emissive = tcol('#3a5a66'); MAT.glass.emissiveIntensity = 0.5;
   MAT.shadow = new THREE.MeshBasicMaterial({ map: TEX.blob, transparent: true, depthWrite: false, opacity: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   MAT.shadow.color = new THREE.Color(0x000000);
   MAT.chain.polygonOffset = false;
+  MAT.chainRoof.polygonOffset = false;
 }
 
 function init(container) {
@@ -1225,10 +1227,16 @@ function buildSurroundings() {
 
 /* ------------------------------------------------------- paths and fences */
 var PY = 0.045;
-var pathGroup, fenceGroup, pathMeshes = [], fenceMeshes = [], pathDirty, fenceDirty, PCOL = [];
+var pathGroup, fenceGroup, cageRoofGroup, pathMeshes = [], fenceMeshes = [], pathDirty, fenceDirty, PCOL = [];
+function clearCageRoofs() {
+  if (!cageRoofGroup) return;
+  while (cageRoofGroup.children.length) disposeMesh(cageRoofGroup.children[0]);
+}
 function buildPathsFences() {
   if (!pathGroup) { pathGroup = new THREE.Group(); root.add(pathGroup); }
   if (!fenceGroup) { fenceGroup = new THREE.Group(); root.add(fenceGroup); }
+  if (!cageRoofGroup) { cageRoofGroup = new THREE.Group(); root.add(cageRoofGroup); }
+  clearCageRoofs();
   for (var i = 0; i < pathMeshes.length; i++) disposeMesh(pathMeshes[i]);
   for (i = 0; i < fenceMeshes.length; i++) if (fenceMeshes[i]) fenceMeshes[i].forEach(disposeMesh);
   pathMeshes.length = 0; fenceMeshes.length = 0;
@@ -1323,7 +1331,8 @@ function buildPathChunk(ci, cj) {
 /* fences */
 var FC = {
   wood: { post: '#6a4222', rail: '#a06f3d', cap: '#4f3118' }, rail: { post: '#7d5d3b', rail: '#b38d5e' },
-  chain: { post: '#8e969e' }, chainR: { post: '#454c53' }, glass: { post: '#b8c1c8' }, concrete: { wall: '#bcb8ae', cap: '#d3cfc5', plinth: '#9a968c' },
+  chain: { post: '#8e969e' }, chainR: { post: '#454c53' }, cage: { post: '#384048', rail: '#2b3238', bar: '#46505a' },
+  glass: { post: '#b8c1c8' }, concrete: { wall: '#bcb8ae', cap: '#d3cfc5', plinth: '#9a968c' },
   hedge: { a: '#2c6a2b', b: '#3b8a37' }
 };
 var FCL = null;
@@ -1388,6 +1397,17 @@ function fenceEdge(set, axis, i, j, f, contNext) {
     bx(solid, 0, 0, -0.025, T, 0.07, 0.025, c3.post);
     if (heavy) bx(solid, 0, h * 0.5, -0.03, T, h * 0.5 + 0.05, 0.03, c3.post);
     panel(set.chain, 0, T, 0.07, h - 0.06, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T, (h - 0.13));
+  } else if (st === 'cage') {
+    var c7 = C.cage, ch = f.height || 3.0;
+    posts(0.065, ch, c7.post, c7.rail);
+    bx(solid, 0, ch - 0.08, -0.045, T, ch, 0.045, c7.post);
+    bx(solid, 0, 0, -0.04, T, 0.09, 0.04, c7.rail);
+    bx(solid, 0, ch * 0.5 - 0.025, -0.025, T, ch * 0.5 + 0.025, 0.025, c7.rail);
+    for (var bi = 1; bi <= 3; bi++) {
+      var bs = T * bi / 4;
+      bx(solid, bs - 0.02, 0.09, -0.02, bs + 0.02, ch - 0.08, 0.02, c7.bar, true);
+    }
+    panel(set.chain, 0, T, 0.09, ch - 0.08, [0.48, 0.52, 0.56], T, ch - 0.17);
   } else if (st === 'glass') {
     var c4 = C.glass;
     posts(0.04, h, c4.post);
@@ -1463,6 +1483,64 @@ function processChunks() {
   for (k = 0; k < pathDirty.length && n < 14; k++) if (pathDirty[k]) { pathDirty[k] = 0; buildPathChunk(k % NCH, (k / NCH) | 0); n++; }
   n = 0;
   for (k = 0; k < fenceDirty.length && n < 14; k++) if (fenceDirty[k]) { fenceDirty[k] = 0; buildFenceChunk(k % NCH, (k / NCH) | 0); n++; }
+}
+
+function rebuildCageRoofs() {
+  clearCageRoofs();
+  if (!cageRoofGroup) return;
+  var s = Z.state, encs = s && s.enclosures;
+  if (!encs || !encs.length) return;
+  var C = fcl().cage, solidMB = new MB(), meshMB = new MB(), roofH = 3.0, any = false;
+
+  function roofBeam(axis, x0, z0, ya, yb, hw, hd, col) {
+    var cs = mul3(col, 0.86), cb = mul3(col, 0.65);
+    var pA = function (y, t) { return axis === 'x' ? [x0, ya + y, z0 + t] : [x0 + t, ya + y, z0]; };
+    var pB = function (y, t) { return axis === 'x' ? [x0 + T, yb + y, z0 + t] : [x0 + t, yb + y, z0 + T]; };
+    var nt = axis === 'x' ? [0, 0, 1] : [1, 0, 0], ntm = [-nt[0], 0, -nt[2]];
+    var y0 = -hd, y1 = hd * 0.65;
+    var a0 = pA(y0, -hw), b0 = pB(y0, -hw), c0 = pB(y0, hw), d0 = pA(y0, hw);
+    var a1 = pA(y1, -hw), b1 = pB(y1, -hw), c1 = pB(y1, hw), d1 = pA(y1, hw);
+    quadN(solidMB, a1, b1, c1, d1, [0, 1, 0], col);
+    quadN(solidMB, a0, b0, c0, d0, [0, -1, 0], cb);
+    quadN(solidMB, a0, b0, b1, a1, ntm, cs);
+    quadN(solidMB, d0, c0, c1, d1, nt, cs);
+  }
+
+  for (var e = 0; e < encs.length; e++) {
+    var enc = encs[e];
+    if (!enc || !enc.isCage || !enc.tiles || !enc.tiles.length) continue;
+    any = true;
+    var tileSet = {}, k, ti;
+    for (k = 0; k < enc.tiles.length; k++) tileSet[enc.tiles[k]] = 1;
+    for (k = 0; k < enc.tiles.length; k++) {
+      ti = enc.tiles[k];
+      var i = ti % N, j = (ti / N) | 0;
+      var x0 = i * T, x1 = x0 + T, z0 = j * T, z1 = z0 + T;
+      var y00 = groundY(x0, z0) + roofH, y10 = groundY(x1, z0) + roofH;
+      var y11 = groundY(x1, z1) + roofH, y01 = groundY(x0, z1) + roofH;
+      quadN(meshMB, [x0, y00, z0], [x1, y10, z0], [x1, y11, z1], [x0, y01, z1], [0, 1, 0], [0.48, 0.52, 0.56], 0, 0, T, T);
+
+      var edgeN = j === 0 || !tileSet[i + (j - 1) * N];
+      var edgeS = j === N - 1 || !tileSet[i + (j + 1) * N];
+      var edgeW = i === 0 || !tileSet[(i - 1) + j * N];
+      var edgeE = i === N - 1 || !tileSet[(i + 1) + j * N];
+
+      roofBeam('x', x0, z0, y00, y10, edgeN ? 0.055 : 0.028, edgeN ? 0.06 : 0.04, edgeN ? C.post : C.rail);
+      if (edgeS) roofBeam('x', x0, z1, y01, y11, 0.055, 0.06, C.post);
+      roofBeam('z', x0, z0, y00, y01, edgeW ? 0.055 : 0.028, edgeW ? 0.06 : 0.04, edgeW ? C.post : C.rail);
+      if (edgeE) roofBeam('z', x1, z0, y10, y11, 0.055, 0.06, C.post);
+    }
+  }
+  if (!any) return;
+  if (!solidMB.empty()) {
+    var bm = new THREE.Mesh(solidMB.geometry(), MAT.solid);
+    cageRoofGroup.add(bm);
+  }
+  if (!meshMB.empty()) {
+    var rm = new THREE.Mesh(meshMB.geometry(), MAT.chainRoof);
+    rm.renderOrder = 3;
+    cageRoofGroup.add(rm);
+  }
 }
 
 /* -------------------------------------------------- fallback primitives */
@@ -1617,7 +1695,7 @@ function reseatWorld() {
     if (r.group) r.group.position.y = y; else if (r.inst) pools_ = true;
   });
   if (pools_) rebuildPools();
-  rebuildLamps(); G.shDirty = true; G.poopSig = -1; G.litterSig = -1;
+  rebuildLamps(); rebuildCageRoofs(); G.shDirty = true; G.poopSig = -1; G.litterSig = -1;
   if (pv.tiles) { if (pv.spec) setPreview(pv.spec); if (pv.encId) rebuildEncHighlight(); }
 }
 function syncObjects() {
@@ -2746,6 +2824,7 @@ function rebuildForGridSize() {
   }
   terrainRange(0, 0, N - 1, N - 1);
   pathDirty.fill(1); fenceDirty.fill(1);
+  rebuildCageRoofs();
 }
 function resetAll() {
   if (!G.inited) return;
@@ -2755,6 +2834,7 @@ function resetAll() {
   terrDirty = null;
   terrainRange(0, 0, N - 1, N - 1);
   pathDirty.fill(1); fenceDirty.fill(1);
+  rebuildCageRoofs();
   objRecs.forEach(function (r) { removeRec(r); }); objRecs.clear();
   for (var t in pools) { root.remove(pools[t].mesh); } pools = {};
   clearEnts();
@@ -2791,13 +2871,13 @@ function hookBus() {
     if (!e) { fenceDirty.fill(1); return; }
     if (e.axis === 'x') markRect(fenceDirty, e.i - 1, e.j - 1, e.i + 1, e.j, 1); else markRect(fenceDirty, e.i - 1, e.j - 1, e.i, e.j + 1, 1);
   });
-  b.on('fences', function () { fenceDirty.fill(1); });
+  b.on('fences', function () { fenceDirty.fill(1); rebuildCageRoofs(); });
   b.on('objectAdded', function () { objDirty = true; });
   b.on('objectRemoved', function () { objDirty = true; });
   b.on('animalRemoved', function (a) { if (a) removeEnt('animal', a.id); });
   b.on('guestRemoved', function (a) { if (a) removeEnt('guest', a.id); });
   b.on('staffRemoved', function (a) { if (a) removeEnt('staff', a.id); });
-  b.on('enclosures', function () { G.poopSig = -1; if (pv.encId) rebuildEncHighlight(); });
+  b.on('enclosures', function () { G.poopSig = -1; if (pv.encId) rebuildEncHighlight(); rebuildCageRoofs(); });
   b.on('money', function (m) { if (m && typeof m.x === 'number' && typeof m.z === 'number') spawnMoney(m.delta, m.x, m.z); });
   b.on('birth', function (a) { if (a && typeof a.x === 'number') spawnEmote('heart', a.x, a.z, (entityRec('animal', a.id) ? entityRec('animal', a.id).ht : 1.5) + 0.6); });
   b.on('predation', function (e) { var p = e && (e.prey || e.predator); if (p && typeof p.x === 'number') spawnEmote('bite', p.x, p.z, (entityRec('animal', p.id) ? entityRec('animal', p.id).ht : 1.5) + 0.8); });

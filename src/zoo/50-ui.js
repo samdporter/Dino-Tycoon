@@ -445,6 +445,18 @@ window.Z = window.Z || {}; var Z = window.Z;
     else if (s === 'glass') { g.fillStyle = 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); g.strokeStyle = '#6a8ea0'; g.lineWidth = 2; g.strokeRect(8, 16, 48, 38); g.strokeStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
     else if (s === 'concrete') { g.fillStyle = '#a8a39a'; g.fillRect(4, 14, 56, 40); g.strokeStyle = '#7d786f'; g.lineWidth = 1.5; g.strokeRect(4, 14, 56, 40); g.beginPath(); g.moveTo(32, 14); g.lineTo(32, 54); g.moveTo(4, 34); g.lineTo(60, 34); g.stroke(); }
     else if (s === 'hedge') { g.fillStyle = '#2f7a3a'; for (i = 0; i < 5; i++) { g.beginPath(); g.arc(12 + i * 10, 38 - (i % 2) * 3, 12, 0, 7); g.fill(); } g.fillStyle = '#3f9a4a'; for (i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10, 32, 7, 0, 7); g.fill(); } }
+    else if (s === 'cage') {
+      g.strokeStyle = '#323a42'; g.lineWidth = 2.5;
+      g.beginPath(); g.moveTo(6, 12); g.lineTo(14, 6); g.lineTo(50, 6); g.lineTo(58, 12); g.closePath(); g.stroke();
+      g.lineWidth = 1.2; g.strokeStyle = '#5c6670';
+      for (i = 16; i <= 48; i += 8) { g.beginPath(); g.moveTo(i, 6); g.lineTo(i - 3, 12); g.stroke(); }
+      g.fillStyle = '#2d343b';
+      for (i = 6; i <= 54; i += 12) g.fillRect(i, 12, 3, 42);
+      g.fillRect(6, 12, 51, 3); g.fillRect(6, 51, 51, 3);
+      g.strokeStyle = 'rgba(65,75,85,.7)'; g.lineWidth = 1;
+      for (i = 10; i < 56; i += 6) { g.beginPath(); g.moveTo(i, 15); g.lineTo(i, 51); g.stroke(); }
+      for (i = 20; i < 50; i += 8) { g.beginPath(); g.moveTo(8, i); g.lineTo(56, i); g.stroke(); }
+    }
     return c;
   }
   UI.swatch = function (kind, def) { return kind === 'terrain' ? terrainSwatch(def) : kind === 'path' ? pathSwatch(def) : fenceSwatch(def); };
@@ -523,7 +535,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'animals', name: 'Animals', icon: 'paw', items: function () { return D.animals.slice().sort(function (a, b) { return a.star - b.star || a.cost - b.cost; }).map(function (p) { return { kind: 'animal', id: p.id, name: p.name, cost: p.cost, def: p, star: p.star, emoji: p.emoji }; }); } },
       { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe', 'enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones']) },
-      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter']) },
+      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'vine_perch', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter']) },
       { id: 'fac', name: 'Facilities', icon: 'cart', items: function () { return bd(['burger_stand', 'pizza_hut', 'ice_cream', 'drinks_stall', 'coffee_cart', 'toilets', 'gift_shop', 'balloon_stand', 'carousel', 'info_kiosk', 'restaurant', 'education_centre'])().concat(sc(['bench', 'bin'])()); } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },

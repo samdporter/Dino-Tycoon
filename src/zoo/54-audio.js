@@ -78,7 +78,20 @@ window.Z = window.Z || {}; var Z = window.Z;
   function boom() { tone(95, 0.45, 'sine', 0.16, 0, 60); tone(190, 0.3, 'sine', 0.05, 0.02, 120); }
   var CALLS = { lion: function () { growl(110); }, tiger: function () { growl(90); }, brown_bear: function () { growl(75); }, polar_bear: function () { growl(70); }, wolf: howl, crocodile: hiss, elephant: trumpet,
     flamingo: function () { honk(520); }, meerkat: function () { chirp(2400); }, penguin: function () { honk(300); }, ostrich: boom, red_panda: function () { chirp(3100); }, zebra: whinny, giraffe: function () { tone(120, 0.7, 'sine', 0.08, 0, 100); },
-    hippo: function () { grunt(95); honk(130); }, rhino: snort, camel: function () { grunt(150); }, kangaroo: function () { for (var i = 0; i < 2; i++) { tone(150, 0.1, 'sine', 0.14, i * 0.18, 70); } }, gorilla: hoot, panda: function () { tone(520, 0.4, 'triangle', 0.06, 0, 420); tone(480, 0.3, 'triangle', 0.05, 0.4, 380); } };
+    hippo: function () { grunt(95); honk(130); }, rhino: snort, camel: function () { grunt(150); }, kangaroo: function () { for (var i = 0; i < 2; i++) { tone(150, 0.1, 'sine', 0.14, i * 0.18, 70); } }, gorilla: hoot, panda: function () { tone(520, 0.4, 'triangle', 0.06, 0, 420); tone(480, 0.3, 'triangle', 0.05, 0.4, 380); },
+    jaguar: function () { growl(100); }, cheetah: function () { chirp(1600); }, anaconda: hiss, hyena: function () { for (var i = 0; i < 3; i++) tone(420 + i * 110, 0.14, 'triangle', 0.08, i * 0.16, 680 + i * 120); },
+    monkey: function () { for (var i = 0; i < 4; i++) tone(900 + (i % 2) * 350, 0.08, 'sine', 0.07, i * 0.1, 1300); }, chimpanzee: function () { hoot(); for (var i = 0; i < 2; i++) tone(520 + i * 140, 0.15, 'sawtooth', 0.05, 0.7 + i * 0.18, 700); },
+    lemur: function () { for (var i = 0; i < 2; i++) tone(680, 0.14, 'triangle', 0.07, i * 0.22, 460); }, orangutan: function () { grunt(110); tone(210, 0.5, 'sine', 0.08, 0.25, 130); },
+    komodo_dragon: function () { noise(0.8, 0.08, 2200, 'bandpass', 0, 1.4); tone(75, 0.45, 'sawtooth', 0.05, 0.05); },
+    puss_in_boots: function () { tone(520, 0.28, 'triangle', 0.08, 0, 820); tone(760, 0.32, 'sine', 0.07, 0.22, 440); },
+    tortoise: function () { noise(0.32, 0.05, 360, 'lowpass', 0, 1.5); tone(95, 0.25, 'sine', 0.05, 0.04, 65); },
+    peacock: function () { tone(920, 0.28, 'sawtooth', 0.05, 0, 620); tone(820, 0.32, 'sawtooth', 0.05, 0.32, 540); },
+    capybara: function () { chirp(2600); noise(0.08, 0.04, 1800, 'bandpass', 0.16, 3); },
+    alpaca: function () { tone(260, 0.45, 'triangle', 0.06, 0, 290); tone(290, 0.35, 'sine', 0.04, 0.42, 240); },
+    fennec_fox: function () { for (var i = 0; i < 3; i++) tone(1500 + i * 180, 0.08, 'triangle', 0.06, i * 0.12, 2200); },
+    otter: function () { for (var i = 0; i < 3; i++) tone(1100 + (i % 2) * 350, 0.09, 'sine', 0.06, i * 0.11, 1650); },
+    koala: function () { grunt(85); },
+    arctic_fox: function () { for (var i = 0; i < 2; i++) tone(980, 0.11, 'triangle', 0.06, i * 0.18, 620); } };
   A.call = function (sp) { if (!ready() || !limit('call', 900)) return; try { (CALLS[sp] || function () { chirp(1800); })(); } catch (e) { } };
 
   // ambience (called every frame from main with dt)

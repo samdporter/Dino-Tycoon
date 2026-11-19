@@ -24,7 +24,8 @@ window.Z.DATA = {
     { id: "chainlink", name: "Chain-link fence", cost: 45, strength: 3, height: 2.0, seeThrough: true, style: "chain" },
     { id: "glass", name: "Glass panel", cost: 75, strength: 3, height: 2.2, seeThrough: true, style: "glass" },
     { id: "reinforced", name: "Reinforced mesh", cost: 100, strength: 5, height: 2.5, seeThrough: true, style: "chain" },
-    { id: "concrete", name: "Concrete wall", cost: 120, strength: 5, height: 3.0, seeThrough: false, style: "concrete" }
+    { id: "concrete", name: "Concrete wall", cost: 120, strength: 5, height: 3.0, seeThrough: false, style: "concrete" },
+    { id: "cage", name: "Primate cage", cost: 110, strength: 4, height: 3.0, seeThrough: true, style: "cage", cage: true, info: "Tall wire-mesh enclosure with an overhead roof grid that keeps climbing primates safely inside." }
   ],
 
   paths: [
@@ -202,7 +203,7 @@ window.Z.DATA = {
       cost: 1300, "upkeep/day": 33, appeal: 25, space: 4, social: [2, 8], diet: "herbivore",
       foliage: ["tall_grass", "oak", "bush"],
       needsWater: false, needsShelter: false, needsRocks: false, minFence: 3, speed: 1.2, size: 1.2,
-      lifespan: 1200, breedChance: 0.1, star: 0, danger: 1,
+      lifespan: 1200, breedChance: 0.1, star: 1, danger: 1,
       fact: "Female kangaroos can pause a pregnancy, a process called embryonic diapause."
     },
     {
@@ -213,6 +214,159 @@ window.Z.DATA = {
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 4, speed: 0.5, size: 0.5,
       lifespan: 2700, breedChance: 0.06, star: 1, danger: 3,
       fact: "Crocodiles cannot stick out their tongues, because the tongue is attached to the floor of the mouth."
+    },
+    {
+      id: "jaguar", name: "Jaguar", emoji: "🐆", biome: "rainforest",
+      terrainPrefs: { rainforest: 0.5, water: 0.25, forest: 0.15, rock: 0.1 },
+      cost: 6200, "upkeep/day": 155, appeal: 54, space: 7, social: [1, 2], diet: "carnivore",
+      foliage: ["jungle_tree", "fern", "boulder", "log"],
+      needsWater: true, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.5, size: 0.95,
+      lifespan: 960, breedChance: 0.08, star: 2, danger: 3,
+      fact: "Unlike most big cats, jaguars love swimming and possess the strongest bite force relative to body size of any felid."
+    },
+    {
+      id: "cheetah", name: "Cheetah", emoji: "🐆", biome: "savannah",
+      terrainPrefs: { savannah: 0.65, grass: 0.2, dirt: 0.15 },
+      cost: 8500, "upkeep/day": 210, appeal: 58, space: 9, social: [1, 4], diet: "carnivore",
+      foliage: ["acacia", "tall_grass", "boulder", "bush"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, speed: 2.2, size: 0.9,
+      lifespan: 840, breedChance: 0.07, star: 3, danger: 2,
+      fact: "The fastest land animal on Earth can sprint up to 110 km/h in short bursts, using its long tail as a rudder."
+    },
+    {
+      id: "anaconda", name: "Anaconda", emoji: "🐍", biome: "water",
+      terrainPrefs: { water: 0.45, rainforest: 0.35, dirt: 0.2 },
+      cost: 5200, "upkeep/day": 130, appeal: 48, space: 4, social: [1, 3], diet: "carnivore",
+      foliage: ["jungle_tree", "fern", "log", "heat_rock"],
+      needsWater: true, needsShelter: false, needsRocks: true, minFence: 4, speed: 0.6, size: 0.45,
+      lifespan: 1500, breedChance: 0.07, star: 2, danger: 3,
+      fact: "Green anacondas are the heaviest snakes in the world and spend much of their time gliding silently through shallow water."
+    },
+    {
+      id: "hyena", name: "Spotted hyena", emoji: "🦴", biome: "savannah",
+      terrainPrefs: { savannah: 0.55, dirt: 0.25, rock: 0.2 },
+      cost: 4200, "upkeep/day": 105, appeal: 40, space: 6, social: [3, 10], diet: "carnivore",
+      foliage: ["acacia", "boulder", "rock_pile", "tall_grass"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.5, size: 0.85,
+      lifespan: 1080, breedChance: 0.1, star: 2, danger: 2,
+      fact: "Spotted hyenas live in complex, female-led clans and communicate across miles with eerie whoops and giggles."
+    },
+    {
+      id: "monkey", name: "Monkey", emoji: "🐒", biome: "rainforest",
+      terrainPrefs: { rainforest: 0.55, forest: 0.3, grass: 0.15 },
+      cost: 2400, "upkeep/day": 60, appeal: 44, space: 3, social: [4, 14], diet: "omnivore",
+      foliage: ["jungle_tree", "vine_perch", "climbing_frame", "tyre_swing", "bush"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 3, needsCage: true, speed: 1.3, size: 0.45,
+      lifespan: 1200, breedChance: 0.14, star: 1, danger: 1,
+      fact: "Nimble monkeys leap effortlessly between branches and will quickly scale any unroofed fence to explore the zoo."
+    },
+    {
+      id: "chimpanzee", name: "Chimpanzee", emoji: "🐵", biome: "rainforest",
+      terrainPrefs: { rainforest: 0.6, forest: 0.25, dirt: 0.15 },
+      cost: 6800, "upkeep/day": 170, appeal: 54, space: 5, social: [3, 10], diet: "omnivore",
+      foliage: ["jungle_tree", "vine_perch", "climbing_frame", "tyre_swing", "fern"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, needsCage: true, speed: 1.2, size: 0.75,
+      lifespan: 2100, breedChance: 0.06, star: 2, danger: 2,
+      fact: "Chimpanzees craft tools from twigs and leaves, share food with troopmates, and build fresh leafy sleeping nests each night."
+    },
+    {
+      id: "lemur", name: "Ring-tailed lemur", emoji: "🐒", biome: "forest",
+      terrainPrefs: { forest: 0.45, rainforest: 0.35, savannah: 0.2 },
+      cost: 4600, "upkeep/day": 115, appeal: 50, space: 3, social: [4, 15], diet: "herbivore",
+      foliage: ["jungle_tree", "vine_perch", "climbing_frame", "bush", "boulder"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 3, needsCage: true, speed: 1.25, size: 0.4,
+      lifespan: 1080, breedChance: 0.12, star: 2, danger: 0,
+      fact: "Ring-tailed lemurs sunbathe sitting upright with outstretched arms and hold their striped tails high like flags."
+    },
+    {
+      id: "orangutan", name: "Orangutan", emoji: "🦧", biome: "rainforest",
+      terrainPrefs: { rainforest: 0.7, forest: 0.2, dirt: 0.1 },
+      cost: 10000, "upkeep/day": 250, appeal: 60, space: 6, social: [1, 3], diet: "herbivore",
+      foliage: ["jungle_tree", "vine_perch", "climbing_frame", "tyre_swing", "fern"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, needsCage: true, speed: 0.9, size: 0.9,
+      lifespan: 2400, breedChance: 0.04, star: 3, danger: 2,
+      fact: "Orangutans are the largest tree-dwelling mammals on Earth, with arm spans reaching over two metres."
+    },
+    {
+      id: "komodo_dragon", name: "Komodo dragon", emoji: "🦎", biome: "savannah",
+      terrainPrefs: { savannah: 0.4, rock: 0.3, sand: 0.2, dirt: 0.1 },
+      cost: 8800, "upkeep/day": 220, appeal: 56, space: 6, social: [1, 2], diet: "carnivore",
+      foliage: ["heat_rock", "boulder", "rock_pile", "palm", "bush"],
+      needsWater: false, needsShelter: false, needsRocks: true, minFence: 4, speed: 0.85, size: 0.65,
+      lifespan: 1800, breedChance: 0.05, star: 3, danger: 3,
+      fact: "The world's largest living lizard tracks scent molecules on its forked tongue from kilometres away."
+    },
+    {
+      id: "tortoise", name: "Giant tortoise", emoji: "🐢", biome: "grass",
+      terrainPrefs: { grass: 0.45, sand: 0.3, dirt: 0.25 },
+      cost: 600, "upkeep/day": 15, appeal: 26, space: 2, social: [1, 6], diet: "herbivore",
+      foliage: ["tall_grass", "bush", "boulder", "heat_rock"],
+      needsWater: false, needsShelter: false, needsRocks: false, minFence: 1, speed: 0.35, size: 0.45,
+      lifespan: 4500, breedChance: 0.06, star: 0, danger: 0,
+      fact: "Giant tortoises can live well over a century and spend hours basking on warm rocks to regulate their body temperature."
+    },
+    {
+      id: "peacock", name: "Peacock", emoji: "🦚", biome: "grass",
+      terrainPrefs: { grass: 0.5, forest: 0.3, dirt: 0.2 },
+      cost: 750, "upkeep/day": 18, appeal: 36, space: 2, social: [2, 8], diet: "omnivore",
+      foliage: ["oak", "bush", "tall_grass"],
+      needsWater: false, needsShelter: false, needsRocks: false, minFence: 1, speed: 0.9, size: 0.55,
+      lifespan: 1200, breedChance: 0.14, star: 0, danger: 0,
+      fact: "A peacock's iridescent tail fan can span over a metre and is made of more than 150 eyespotted feathers."
+    },
+    {
+      id: "capybara", name: "Capybara", emoji: "🐹", biome: "water",
+      terrainPrefs: { water: 0.45, grass: 0.35, rainforest: 0.2 },
+      cost: 900, "upkeep/day": 22, appeal: 42, space: 3, social: [3, 12], diet: "herbivore",
+      foliage: ["tall_grass", "fern", "bush", "log"],
+      needsWater: true, needsShelter: false, needsRocks: false, minFence: 1, speed: 0.85, size: 0.5,
+      lifespan: 900, breedChance: 0.16, star: 0, danger: 0,
+      fact: "The world's largest rodent is a natural swimmer with slightly webbed feet and eyes set high on its head."
+    },
+    {
+      id: "alpaca", name: "Alpaca", emoji: "🦙", biome: "grass",
+      terrainPrefs: { grass: 0.55, rock: 0.25, dirt: 0.2 },
+      cost: 850, "upkeep/day": 20, appeal: 32, space: 3, social: [3, 10], diet: "herbivore",
+      foliage: ["tall_grass", "bush", "rock_pile"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 1, speed: 1.0, size: 0.95,
+      lifespan: 1500, breedChance: 0.12, star: 0, danger: 0,
+      fact: "Domesticated in the high Andes thousands of years ago, alpacas hum softly to keep in touch with their herd."
+    },
+    {
+      id: "fennec_fox", name: "Fennec fox", emoji: "🦊", biome: "sand",
+      terrainPrefs: { sand: 0.65, savannah: 0.2, rock: 0.15 },
+      cost: 1600, "upkeep/day": 40, appeal: 46, space: 2, social: [2, 8], diet: "omnivore",
+      foliage: ["cactus", "rock_pile", "heat_rock", "bush"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 2, speed: 1.4, size: 0.32,
+      lifespan: 960, breedChance: 0.14, star: 1, danger: 0,
+      fact: "The smallest of all foxes uses its oversized ears to radiate excess desert heat and listen for insects underground."
+    },
+    {
+      id: "otter", name: "Giant otter", emoji: "🦦", biome: "water",
+      terrainPrefs: { water: 0.55, forest: 0.25, rock: 0.2 },
+      cost: 1900, "upkeep/day": 48, appeal: 48, space: 3, social: [2, 8], diet: "piscivore",
+      foliage: ["log", "rock_pile", "fern", "tall_grass"],
+      needsWater: true, needsShelter: true, needsRocks: false, minFence: 2, speed: 1.25, size: 0.45,
+      lifespan: 1080, breedChance: 0.12, star: 1, danger: 0,
+      fact: "South American giant otters hunt in vocal family groups and can grow up to 1.8 metres long from nose to tail."
+    },
+    {
+      id: "koala", name: "Koala", emoji: "🐨", biome: "forest",
+      terrainPrefs: { forest: 0.6, grass: 0.25, savannah: 0.15 },
+      cost: 2200, "upkeep/day": 55, appeal: 52, space: 3, social: [1, 4], diet: "herbivore",
+      foliage: ["oak", "jungle_tree", "climbing_frame", "bush"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 2, speed: 0.55, size: 0.5,
+      lifespan: 1200, breedChance: 0.08, star: 1, danger: 0,
+      fact: "Koalas sleep up to 20 hours a day to conserve energy while digesting tough, fibrous leaves."
+    },
+    {
+      id: "arctic_fox", name: "Arctic fox", emoji: "🦊", biome: "snow",
+      terrainPrefs: { snow: 0.65, rock: 0.25, forest: 0.1 },
+      cost: 2000, "upkeep/day": 50, appeal: 46, space: 3, social: [2, 6], diet: "carnivore",
+      foliage: ["snow_pine", "ice_floe", "boulder"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 3, speed: 1.45, size: 0.45,
+      lifespan: 900, breedChance: 0.12, star: 1, danger: 1,
+      fact: "Arctic foxes change coat colour with the seasons, turning snowy white in winter and earthy brown in summer."
     },
     {
       id: "unicorn", name: "Unicorn", emoji: "🦄", biome: "enchanted",
@@ -267,6 +421,15 @@ window.Z.DATA = {
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.55, size: 1.5,
       lifespan: 1500, breedChance: 0.04, star: 4, danger: 2, fantasy: true,
       fact: "Half lion and half eagle, the noble griffin guards rocky crags and misty moors with fierce majesty."
+    },
+    {
+      id: "puss_in_boots", name: "Puss in Boots", emoji: "👢", biome: "enchanted",
+      terrainPrefs: { enchanted: 0.45, grass: 0.25, forest: 0.2, starlight_sand: 0.1 },
+      cost: 12500, "upkeep/day": 155, appeal: 96, space: 20, social: [1, 4], diet: "carnivore",
+      foliage: ["enchanted_tree", "wizard_shelter", "rainbow_arch", "climbing_frame", "ball"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 3, speed: 1.75, size: 0.75,
+      lifespan: 1600, breedChance: 0.06, star: 4, danger: 1, fantasy: true,
+      fact: "A dashing storybook swordsman in plumed hat and polished boots who charms crowds with dramatic bows and big eyes."
     }
   ],
 
@@ -291,6 +454,7 @@ window.Z.DATA = {
     { id: "wooden_shelter", name: "Wooden shelter", emoji: "🛖", cost: 250, kind: "shelter", biome: "any", aesthetic: 2, inEnclosure: true },
     { id: "heat_rock", name: "Heat rock", emoji: "☀️", cost: 180, kind: "rock", biome: "any", aesthetic: 2, inEnclosure: true },
     { id: "climbing_frame", name: "Climbing frame", emoji: "🪜", cost: 350, kind: "toy", biome: "any", aesthetic: 3, inEnclosure: true },
+    { id: "vine_perch", name: "Climbing vines", emoji: "🪢", cost: 160, kind: "toy", biome: "rainforest", aesthetic: 3, inEnclosure: true },
     { id: "tyre_swing", name: "Tyre swing", emoji: "🛞", cost: 120, kind: "toy", biome: "any", aesthetic: 2, inEnclosure: true },
     { id: "ball", name: "Ball", emoji: "⚽", cost: 30, kind: "toy", biome: "any", aesthetic: 1, inEnclosure: true },
     { id: "bench", name: "Bench", emoji: "🪑", cost: 150, kind: "deco", biome: "any", aesthetic: 2, inEnclosure: false },
