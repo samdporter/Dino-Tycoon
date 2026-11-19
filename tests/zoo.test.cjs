@@ -1032,3 +1032,63 @@ test('Zoo Winged Monkey performs periodic flyover terror raid, startles guests, 
   assert.ok(monkey.enc > 0);
 });
 
+test('Zoo animals mate, progress through pregnancy, and give birth to babies', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 404, map: 'meadow', money: 200000 });
+  const N = z.N;
+
+  for (let j = 17; j <= 25; j++) for (let i = 13; i <= 21; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+  for (let i = 14; i <= 20; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 18 }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 25 }, 'reinforced').ok, true);
+  }
+  for (let j = 18; j <= 24; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 14, j }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 21, j }, 'reinforced').ok, true);
+  }
+  // Paint sand/savannah/dirt and add foliage + shelter for meerkats so suitability >= 0.55
+  for (let j = 18; j <= 24; j++) for (let i = 14; i <= 20; i++) {
+    z.Sim.paintTerrain(i, j, j < 21 ? 'sand' : j < 23 ? 'savannah' : 'dirt', 0);
+  }
+  assert.equal(z.Sim.placeObject('wooden_shelter', 15, 19, 0).ok, true);
+  assert.equal(z.Sim.placeObject('tall_grass', 17, 19, 0).ok, true);
+  assert.equal(z.Sim.placeObject('bush', 18, 19, 0).ok, true);
+
+  const mRes = z.Sim.addAnimal('meerkat', 16, 21, { sex: 'm' });
+  const fRes = z.Sim.addAnimal('meerkat', 18, 22, { sex: 'f' });
+  assert.equal(mRes.ok, true);
+  assert.equal(fRes.ok, true);
+
+  const male = z.state.animals.find(a => a.id === mRes.id);
+  const female = z.state.animals.find(a => a.id === fRes.id);
+  assert.ok(male && female);
+
+  let birthEvents = 0;
+  z.bus.on('birth', (b) => { if (b && b.species === 'meerkat' && b.baby) birthEvents++; });
+
+  // Advance day-by-day (tick clamps dtReal to 0.25, so set time near 1.0 to trigger newDay)
+  z.state.speed = 1;
+  let sawPregnant = false;
+  for (let day = 0; day < 40; day++) {
+    male.happiness = 90; male.hunger = 10; male.thirst = 10; male.sick = false;
+    female.happiness = 90; female.hunger = 10; female.thirst = 10; female.sick = false;
+    z.state.time = 0.999;
+    z.Sim.tick(0.25);
+    if (female.pregnant > 0) sawPregnant = true;
+    if (z.state.stats.births > 0) break;
+  }
+
+  assert.equal(sawPregnant, true, 'female should become pregnant');
+  assert.ok(z.state.stats.births >= 1, 'at least one birth should occur');
+  assert.equal(z.state.stats.babiesBorn, z.state.stats.births);
+  assert.equal(birthEvents, z.state.stats.births);
+  assert.equal(female.pregnant, 0, 'mother should no longer be pregnant after giving birth');
+  const babies = z.state.animals.filter(a => a.baby && a.species === 'meerkat');
+  assert.ok(babies.length >= 1, 'baby meerkat should exist in state.animals');
+  assert.equal(babies[0].enc, female.enc);
+});
+

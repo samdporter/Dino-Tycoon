@@ -3435,13 +3435,38 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function breedingAndBirths() {
-    for (var k = 0; k < S.enclosures.length; k++) {
-      var e = S.enclosures[k];
+    var k, a, sp, e;
+    // pregnancies progress / births
+    var births = [];
+    for (k = 0; k < S.animals.length; k++) {
+      a = S.animals[k];
+      if (a.pregnant > 0) { a.pregnant--; if (a.pregnant <= 0 && a.enc) births.push(a); }
+    }
+    for (k = 0; k < births.length; k++) {
+      a = births[k]; sp = SP[a.species]; e = RT.eMap[a.enc]; if (!e) continue;
+      var n = 0;
+      for (var q = 0; q < e.animals.length; q++) {
+        var anq = RT.aById.get(e.animals[q]);
+        if (anq && anq.species === a.species) n++;
+      }
+      if (e.area / (n + 1) < sp.space * 0.7) { a.pregnant = 1; continue; }
+      var baby = makeAnimal(a.species, e, a.x + rng.range(-0.8, 0.8), a.z + rng.range(-0.8, 0.8), true);
+      var bt = tileOf(baby.x, baby.z);
+      if (bt < 0 || !aok(baby, bt)) { baby.x = a.x; baby.z = a.z; }
+      insertAnimal(baby);
+      S.stats.babiesBorn++; S.stats.births++;
+      msg('A baby ' + sp.name.toLowerCase() + ' has been born at ' + e.name + '! Say hello to ' + baby.name + '.', 'good');
+      bus.emit('birth', baby);
+    }
+    // new pregnancies
+    for (k = 0; k < S.enclosures.length; k++) {
+      e = S.enclosures[k];
       for (var s = 0; s < e.species.length; s++) {
-        var spId = e.species[s], sp = SP[spId], ad = adultAge(sp);
+        var spId = e.species[s], ad = adultAge(SP[spId]);
+        sp = SP[spId];
         var list = [], hasM = false, fem = [];
-        for (var a = 0; a < e.animals.length; a++) {
-          var an2 = RT.aById.get(e.animals[a]);
+        for (var i = 0; i < e.animals.length; i++) {
+          var an2 = RT.aById.get(e.animals[i]);
           if (an2 && an2.species === spId) list.push(an2);
         }
         for (var z = 0; z < list.length; z++) {
