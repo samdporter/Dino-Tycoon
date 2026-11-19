@@ -88,6 +88,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (a.needsRocks) needs.push('Rocks');
       if (a.predator) needs.push('Carcass feeder');
       needs.push(herdText(a));
+      if (a.companion) { var comp = byId(animals)[a.companion]; needs.push('Companion: ' + (comp ? comp.name : a.companion)); }
       var g = gSpecies[a.name];
       if (g && g.plants) plantNames = g.plants;
       if (g && g.needs) needs = g.needs;

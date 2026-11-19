@@ -604,14 +604,14 @@ function resize() {
 }
 
 /* ---------------------------------------------------------------- terrain */
-var S2, TH, TE, tBase, WLT, WLV, tGeo, tPos, tNor, tCol, tUV, tMesh, TC = [], waterIdx = -1, terrDirty = null;
+var S2, TH, TE, tBase, WLT, WLV, tGeo, tPos, tNor, tCol, tUV, tMesh, TC = [], waterIdx = -1, lavaIdx = -1, terrDirty = null;
 var AMP = {
   grass: 0.07, savannah: 0.06, dirt: 0.08, sand: 0.035, snow: 0.025,
   rainforest: 0.08, forest: 0.08, rock: 0.13, water: 0.03,
-  enchanted: 0.07, misty_moor: 0.08, starlight_sand: 0.045
+  enchanted: 0.07, misty_moor: 0.08, starlight_sand: 0.045, lava: 0.09
 };
 var WATER_Y = -0.1, DEPTH_MAX = 0.42;
-var waterMesh = null;
+var waterMesh = null, lavaMesh = null;
 var ESTEP = 0.5, elevTouched = false;
 var ROCK = null;
 function mapB() {
@@ -629,18 +629,21 @@ function elevAt(i, j) {
 function setupTerrainTables() {
   var td = (Z.DATA && Z.DATA.terrain) || D.terrain;
   var ts = (td && td.length) ? td : [{ id: 'grass', colour: '#6fae4a' }];
-  TC = []; waterIdx = -1;
+  TC = []; waterIdx = -1; lavaIdx = -1;
   ts.forEach(function (t, k) {
     var a = AMP[t.id];
     TC.push({ id: t.id, c: lin3(t.colour), amp: a === undefined ? 0.06 : a });
     if (t.id === 'water') waterIdx = k;
+    else if (t.id === 'lava') lavaIdx = k;
   });
   if (waterIdx >= 0) TC[waterIdx].c = lin3('#4f7a72');
+  if (lavaIdx >= 0) TC[lavaIdx].c = lin3('#36140c');
 }
 function buildTerrain() {
   if (tMesh) { root.remove(tMesh); tGeo.dispose(); tMesh = null; tGeo = null; }
   if (waterMesh) { root.remove(waterMesh); waterMesh.geometry.dispose(); waterMesh = null; }
-  WLT = null; WLV = null; waterDirty = true;
+  if (lavaMesh) { root.remove(lavaMesh); lavaMesh.geometry.dispose(); lavaMesh = null; }
+  WLT = null; WLV = null; waterDirty = true; lavaDirty = true;
   setupTerrainTables();
   S2 = 2 * N + 1;
   var nv = S2 * S2;
@@ -676,7 +679,7 @@ function calcVertex(a, b) {
   var i0, i1, j0, j1;
   if (a & 1) { i0 = i1 = (a - 1) >> 1; } else { i0 = (a >> 1) - 1; i1 = a >> 1; }
   if (b & 1) { j0 = j1 = (b - 1) >> 1; } else { j0 = (b >> 1) - 1; j1 = b >> 1; }
-  var r = 0, g = 0, bl = 0, ws = 0, wat = 0, amp = 0, outW = 0, enchW = 0, moorW = 0, starW = 0, mp = mapB();
+  var r = 0, g = 0, bl = 0, ws = 0, wat = 0, amp = 0, outW = 0, enchW = 0, moorW = 0, starW = 0, lavaW = 0, mp = mapB();
   for (var j = j0; j <= j1; j++) for (var i = i0; i <= i1; i++) {
     if (i < 0 || j < 0 || i >= N || j >= N) continue;
     var tid = ter ? ter[i + j * N] : 0, tc = TC[tid] || TC[0];
@@ -686,6 +689,7 @@ function calcVertex(a, b) {
     if (tc.id === 'enchanted') enchW += w;
     else if (tc.id === 'misty_moor') moorW += w;
     else if (tc.id === 'starlight_sand') starW += w;
+    else if (tc.id === 'lava') lavaW += w;
     if (i < mp.i0 || i > mp.i1 || j < mp.j0 || j > mp.j1) outW += w;
   }
   if (ws === 0) { var tc0 = TC[0]; r = tc0.c[0]; g = tc0.c[1]; bl = tc0.c[2]; ws = 1; amp = tc0.amp; }
@@ -727,6 +731,13 @@ function calcVertex(a, b) {
     g = lerp(g, lerp(g * 0.95, 0.78, srose * 0.25), sw);
     bl = lerp(bl, lerp(bl * 1.03, 0.97, srose * 0.28), sw);
     if (st > 0.89) { var sg = (st - 0.89) * 3.5 * sw; r = lerp(r, 0.99, sg); g = lerp(g, 0.89, sg); bl = lerp(bl, 0.62, sg); }
+  }
+  if (lavaW > 0) {
+    var lw = lavaW / ws, lf = fbm(x * 0.28 + 3.7, z * 0.28 + 6.1, 3), lv = Math.abs(fbm(x * 0.48 + 9.2, z * 0.48 + 1.4, 2) - 0.5);
+    var vein = 1 - sstep(0.03, 0.22, lv), hot = sstep(0.58, 0.86, lf) * 0.6 + vein * 0.85;
+    var lr = lerp(0.11, 0.98, clamp(hot, 0, 1)), lg = lerp(0.04, 0.36, clamp(hot, 0, 1)), lb = lerp(0.03, 0.04, clamp(hot, 0, 1));
+    if (hot > 0.75) { var core = (hot - 0.75) * 2.6; lr = lerp(lr, 1.0, core); lg = lerp(lg, 0.76, core); lb = lerp(lb, 0.14, core); }
+    r = lerp(r, lr, lw); g = lerp(g, lg, lw); bl = lerp(bl, lb, lw);
   }
   if (outW > 0) {
     // land the player does not own: duller, darker, wilder
@@ -772,6 +783,7 @@ function terrainRange(i0, j0, i1, j1) {
     at[k].updateRange.offset = off; at[k].updateRange.count = cnt; at[k].needsUpdate = true;
   });
   waterDirty = true;
+  lavaDirty = true;
   var full = i0 <= 0 && j0 <= 0 && i1 >= N - 1 && j1 >= N - 1;
   if (typeof outerSig !== 'undefined') {
     if (full || i0 <= 0 || j0 <= 0 || i1 >= N - 1 || j1 >= N - 1) refreshOuter();
@@ -883,6 +895,84 @@ function rebuildWater() {
   waterMesh = new THREE.Mesh(g, MAT.water);
   waterMesh.renderOrder = 2; waterMesh.frustumCulled = false;
   root.add(waterMesh);
+}
+var lavaDirty = false;
+function rebuildLava() {
+  lavaDirty = false;
+  var ter = Z.state && Z.state.terrain, any = false;
+  if (ter && lavaIdx >= 0) for (var k = 0; k < ter.length; k++) if (ter[k] === lavaIdx) { any = true; break; }
+  if (lavaMesh) { root.remove(lavaMesh); lavaMesh.geometry.dispose(); lavaMesh = null; }
+  if (!any) return;
+  var lv = new Float32Array(S2 * S2);
+  for (var b = 0; b < S2; b++) for (var a = 0; a < S2; a++) {
+    var i0 = (a & 1) ? ((a - 1) >> 1) : ((a >> 1) - 1), i1 = (a & 1) ? i0 : (a >> 1);
+    var j0 = (b & 1) ? ((b - 1) >> 1) : ((b >> 1) - 1), j1 = (b & 1) ? j0 : (b >> 1);
+    var cnt = 0, hits = 0;
+    for (var j = j0; j <= j1; j++) for (var i = i0; i <= i1; i++) {
+      if (i < 0 || j < 0 || i >= N || j >= N) continue;
+      cnt++; if (ter[i + j * N] === lavaIdx) hits++;
+    }
+    lv[a + b * S2] = cnt ? hits / cnt : 0;
+  }
+  var vmap = new Int32Array(S2 * S2).fill(-1), pos = [], wgt = [], idx = [];
+  function gl(a, b) {
+    var q = a + b * S2, m = vmap[q];
+    if (m < 0) { m = pos.length / 3; vmap[q] = m; pos.push(a * T * 0.5, TH[q] + 0.028, b * T * 0.5); wgt.push(lv[q]); }
+    return m;
+  }
+  for (b = 0; b < S2 - 1; b++) for (a = 0; a < S2 - 1; a++) {
+    var q = a + b * S2;
+    if (lv[q] <= 0 && lv[q + 1] <= 0 && lv[q + S2] <= 0 && lv[q + S2 + 1] <= 0) continue;
+    var v0 = gl(a, b), v1 = gl(a + 1, b), v2 = gl(a, b + 1), v3 = gl(a + 1, b + 1);
+    idx.push(v0, v2, v1, v1, v2, v3);
+  }
+  if (!idx.length) return;
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('aLava', new THREE.BufferAttribute(new Float32Array(wgt), 1));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  if (!MAT.lava) {
+    MAT.lava = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: true, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 } }]),
+      vertexShader: [
+        'attribute float aLava; varying float vLava; varying vec3 vW; uniform float uTime;',
+        '#include <fog_pars_vertex>',
+        'void main(){ vLava = aLava; vec4 wp = modelMatrix*vec4(position,1.0);',
+        ' wp.y += (sin(wp.x*1.6+uTime*1.3)+cos(wp.z*1.9-uTime*1.1))*0.015*aLava;',
+        ' vW = wp.xyz; vec4 mvPosition = viewMatrix*wp; gl_Position = projectionMatrix*mvPosition;',
+        ' #include <fog_vertex>',
+        '}'
+      ].join('\n'),
+      fragmentShader: [
+        'uniform float uTime; varying float vLava; varying vec3 vW;',
+        '#include <fog_pars_fragment>',
+        'void main(){',
+        ' vec2 p = vW.xz; float t = uTime * 0.7;',
+        ' float w1 = sin(p.x*1.3 + t + sin(p.y*1.1 - t*0.8)*1.5);',
+        ' float w2 = cos(p.y*1.5 - t*0.9 + cos(p.x*1.4 + t*0.7)*1.4);',
+        ' float w3 = sin((p.x+p.y)*2.4 - t*1.4) * cos((p.x-p.y)*2.1 + t*1.2);',
+        ' float f = 0.5 + 0.25*w1 + 0.17*w2 + 0.14*w3;',
+        ' float cracks = smoothstep(0.32, 0.78, f);',
+        ' float core = smoothstep(0.66, 0.96, f);',
+        ' vec3 crust = vec3(0.11, 0.03, 0.02);',
+        ' vec3 magma = vec3(0.98, 0.26, 0.02);',
+        ' vec3 glow = vec3(1.0, 0.84, 0.20);',
+        ' vec3 col = mix(crust, magma, cracks); col = mix(col, glow, core);',
+        ' float pulse = 0.92 + 0.08 * sin(uTime*3.2 + p.x*0.9 + p.y*0.7);',
+        ' col *= pulse;',
+        ' float alpha = smoothstep(0.05, 0.55, vLava) * (0.78 + 0.20 * cracks);',
+        ' gl_FragColor = vec4(col, alpha);',
+        ' #include <encodings_fragment>',
+        ' #include <fog_fragment>',
+        '}'
+      ].join('\n')
+    });
+  }
+  lavaMesh = new THREE.Mesh(g, MAT.lava);
+  lavaMesh.renderOrder = 2; lavaMesh.frustumCulled = false;
+  root.add(lavaMesh);
 }
 function groundY(x, z) {
   if (!TH) { if (Z.Sim && typeof Z.Sim.heightAt === 'function') return Z.Sim.heightAt(x, z) || 0; return 0; }
@@ -3037,12 +3127,13 @@ function frame(dtReal) {
   var tm = s && typeof s.time === 'number' ? s.time : 0.5;
   if (Math.abs(tm - G.lastTm) > 0.0003 || G.frameNo % 30 === 0 || G.lastTm === undefined || WXV.dirty || SV.blend > 0) { G.lastTm = tm; updateAtmosphere(); }
   updateRain(dtReal);
-  skyMat.uniforms.uTime.value = G.t; if (MAT.water) MAT.water.uniforms.uTime.value = G.t;
+  skyMat.uniforms.uTime.value = G.t; if (MAT.water) MAT.water.uniforms.uTime.value = G.t; if (MAT.lava) MAT.lava.uniforms.uTime.value = G.t;
   skyMesh.position.copy(camera.position);
   for (var c = 0; c < clouds.length; c++) { var cm = clouds[c]; cm.position.x += cm.userData.sp * dtReal; if (cm.position.x > W + 170) cm.position.x = -240; }
   // dirty work
   if (terrDirty) { var r = terrDirty; terrDirty = null; terrainRange(r.i0, r.j0, r.i1, r.j1); }
   if (waterDirty) rebuildWater();
+  if (lavaDirty) rebuildLava();
   processChunks();
   if (objDirty || (s && s.objects && s.objects.length !== objRecs.size)) syncObjects();
   if (G.lockdown) { var lp = 0.5 + 0.5 * Math.sin(G.t * 5), hc2 = hemi.color; hc2.setRGB(1, 0.35 + 0.25 * (1 - lp), 0.3 + 0.2 * (1 - lp)); hemi.intensity = 0.95; scene.fog.color.lerp(new THREE.Color(0.55, 0.15, 0.12), 0.25); }

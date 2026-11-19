@@ -84,6 +84,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     lemur: function () { for (var i = 0; i < 2; i++) tone(680, 0.14, 'triangle', 0.07, i * 0.22, 460); }, orangutan: function () { grunt(110); tone(210, 0.5, 'sine', 0.08, 0.25, 130); },
     komodo_dragon: function () { noise(0.8, 0.08, 2200, 'bandpass', 0, 1.4); tone(75, 0.45, 'sawtooth', 0.05, 0.05); },
     puss_in_boots: function () { tone(520, 0.28, 'triangle', 0.08, 0, 820); tone(760, 0.32, 'sine', 0.07, 0.22, 440); },
+    purple_dragon: function () { growl(62); noise(0.65, 0.08, 1600, 'bandpass', 0.15, 1.2); },
     tortoise: function () { noise(0.32, 0.05, 360, 'lowpass', 0, 1.5); tone(95, 0.25, 'sine', 0.05, 0.04, 65); },
     peacock: function () { tone(920, 0.28, 'sawtooth', 0.05, 0, 620); tone(820, 0.32, 'sawtooth', 0.05, 0.32, 540); },
     capybara: function () { chirp(2600); noise(0.08, 0.04, 1800, 'bandpass', 0.16, 3); },

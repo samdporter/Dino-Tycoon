@@ -903,9 +903,9 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
   fenceBox(25, 18, 33, 26, 'reinforced');
   fenceBox(14, 28, 22, 35, 'reinforced');
 
-  const fantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
-  const fantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
-  const fantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots'];
+  const fantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand', 'lava'];
+  const fantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter', 'castle'];
+  const fantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots', 'purple_dragon'];
 
   // At 3 stars: everything in the Fantasy Pack is locked
   z.state.unlocked.star = 3;
@@ -940,13 +940,13 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
     if (a === 'griffin') {
       ti = 29;
       tj = 22;
-    } else if (a === 'puss_in_boots') {
-      ti = 18;
+    } else if (a === 'puss_in_boots' || a === 'purple_dragon') {
+      ti = a === 'purple_dragon' ? 19 : 18;
       tj = 31;
     }
     assert.equal(z.Sim.addAnimal(a, ti, tj).ok, true, `addAnimal(${a}) succeeds at 4 stars`);
   });
-  assert.equal(z.state.animals.length, 7);
+  assert.equal(z.state.animals.length, 8);
 
   for (let step = 0; step < 100; step++) z.Sim.tick(0.1);
   for (const a of z.state.animals) {
@@ -1104,9 +1104,9 @@ test('Zoo star progression reserves Star 4 exclusively for fairytale pack items'
   const { z } = zoo();
   const D = z.DATA;
 
-  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots'];
-  const expectedFantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
-  const expectedFantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
+  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots', 'purple_dragon'];
+  const expectedFantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand', 'lava'];
+  const expectedFantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter', 'castle'];
 
   const star4Animals = [...D.animals.filter(a => a.star === 4).map(a => a.id)].sort();
   const star4Terrains = [...D.terrain.filter(t => t.star === 4).map(t => t.id)].sort();
@@ -1263,13 +1263,15 @@ test('Zoo new species star ratings, primate needsCage flags, and habitatGuide ex
     cheetah: 3,
     orangutan: 3,
     komodo_dragon: 3,
-    puss_in_boots: 4
+    puss_in_boots: 4,
+    purple_dragon: 4
   };
   for (const [id, star] of Object.entries(expectedStars)) {
     assert.ok(byId[id], `Species ${id} should exist in Z.DATA.animals`);
     assert.equal(byId[id].star, star, `Species ${id} should have star ${star}`);
   }
   assert.equal(byId.puss_in_boots.fantasy, true);
+  assert.equal(byId.purple_dragon.fantasy, true);
 
   const primates = ['monkey', 'chimpanzee', 'lemur', 'orangutan'];
   for (const id of primates) {
@@ -1283,6 +1285,7 @@ test('Zoo new species star ratings, primate needsCage flags, and habitatGuide ex
   }
   assert.equal(guideById.camel.needsCage, false, 'habitatGuide() should expose needsCage=false for non-cage animals');
   assert.equal(guideById.puss_in_boots.needsCage, false, 'habitatGuide() should expose needsCage=false for puss_in_boots');
+  assert.equal(guideById.purple_dragon.needsCage, false, 'habitatGuide() should expose needsCage=false for purple_dragon');
 });
 
 test('Zoo roofed cage enclosure detection, perimeter downgrade, and primate suitability', () => {
@@ -1692,6 +1695,123 @@ test('Zoo predator enclosure freedom, pack hunting, large-prey retaliation, pred
   for (let k = 0; k < 160 && wolf.injured; k++) z.Sim._step(0.5);
   assert.equal(wolf.injured, false, 'Vet should treat and clear injured status');
   assert.ok(wolf.health > 68, 'Vet should heal injured animal health');
+});
+
+test('Zoo enormous purple dragon, lava terrain, castle shelter, and mutual companion happiness with Puss in Boots', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 909, map: 'meadow', money: 2000000 });
+  const D = z.DATA;
+  const N = z.N;
+
+  const byId = Object.fromEntries(D.animals.map(a => [a.id, a]));
+  const dragonDef = byId.purple_dragon;
+  const pussDef = byId.puss_in_boots;
+  const elephantDef = byId.elephant;
+  assert.ok(dragonDef, 'purple_dragon species should exist');
+  assert.equal(dragonDef.fantasy, true);
+  assert.equal(dragonDef.biome, 'enchanted');
+  assert.equal(dragonDef.star, 4);
+  assert.ok(dragonDef.size > elephantDef.size, `purple_dragon size (${dragonDef.size}) should be larger than elephant (${elephantDef.size})`);
+  assert.ok((dragonDef.terrainPrefs.lava || 0) > 0, 'purple_dragon should prefer lava terrain');
+  assert.ok(dragonDef.foliage.includes('castle'), 'purple_dragon foliage should include castle');
+  assert.ok(pussDef.foliage.includes('castle'), 'puss_in_boots foliage should include castle');
+  assert.equal(dragonDef.companion, 'puss_in_boots');
+  assert.equal(pussDef.companion, 'purple_dragon');
+
+  const lavaDef = D.terrain.find(t => t.id === 'lava');
+  const castleDef = D.scenery.find(s => s.id === 'castle');
+  assert.ok(lavaDef && lavaDef.star === 4, 'lava terrain should exist at star 4');
+  assert.ok(castleDef && castleDef.star === 4 && castleDef.kind === 'shelter' && castleDef.inEnclosure === true, 'castle shelter should exist at star 4');
+
+  // Guide exposes companion requirement
+  const guide = z.Sim.habitatGuide();
+  const gDragon = guide.species.find(s => s.id === 'purple_dragon');
+  const gPuss = guide.species.find(s => s.id === 'puss_in_boots');
+  assert.equal(gDragon.companion.id, 'puss_in_boots');
+  assert.equal(gPuss.companion.id, 'purple_dragon');
+  assert.ok(gDragon.needs.some(n => /Puss in Boots/i.test(n)));
+  assert.ok(gPuss.needs.some(n => /Purple dragon/i.test(n)));
+
+  z.state.unlocked.star = 4;
+  z.state.time = 0.45;
+  for (let j = 10; j <= 38; j++) for (let i = 10; i <= 38; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+
+  const buildEnchantedCastleEnc = (i0, j0, i1, j1) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, 'reinforced').ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, 'reinforced').ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, 'reinforced').ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, 'reinforced').ok, true);
+    }
+    const mid = Math.floor((j0 + j1) / 2);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.paintTerrain(i, j, j <= mid ? 'lava' : 'enchanted', 0).ok, true);
+    }
+    assert.equal(z.Sim.placeObject('castle', i0 + 1, j0 + 1, 0).ok, true);
+    assert.equal(z.Sim.placeObject('castle', i0 + 2, j0 + 1, 0).ok, true);
+    assert.equal(z.Sim.placeObject('crystal_cluster', i0 + 3, j0 + 1, 0).ok, true);
+    assert.equal(z.Sim.placeObject('standing_stones', i0 + 4, j0 + 1, 0).ok, true);
+    assert.equal(z.Sim.placeObject('enchanted_tree', i0 + 1, j1 - 1, 0).ok, true);
+    assert.equal(z.Sim.placeObject('enchanted_tree', i0 + 2, j1 - 1, 0).ok, true);
+    return z.Sim.enclosureAt(i0 + 3, j0 + 3);
+  };
+
+  // Enclosure 1: Purple dragon alone -> unhappy & low suitability
+  const encSoloDragon = buildEnchantedCastleEnc(12, 12, 19, 19);
+  const dSoloRes = z.Sim.addAnimal('purple_dragon', 15, 16);
+  assert.equal(dSoloRes.ok, true);
+  const soloDragon = z.state.animals.find(a => a.id === dSoloRes.id);
+  const soloDragonRep = z.Sim.enclosureReport(encSoloDragon.id);
+  assert.ok(soloDragonRep.suitability.purple_dragon <= 0.15, `Solo dragon suitability should be capped low (got ${soloDragonRep.suitability.purple_dragon})`);
+  assert.ok(soloDragonRep.species.purple_dragon.issues.some(iss => /Needs Puss in Boots in the same enclosure/i.test(iss)));
+
+  // Enclosure 2: Puss in Boots alone -> unhappy & low suitability
+  const encSoloPuss = buildEnchantedCastleEnc(22, 12, 29, 19);
+  const pSoloRes = z.Sim.addAnimal('puss_in_boots', 25, 16);
+  assert.equal(pSoloRes.ok, true);
+  const soloPuss = z.state.animals.find(a => a.id === pSoloRes.id);
+  const soloPussRep = z.Sim.enclosureReport(encSoloPuss.id);
+  assert.ok(soloPussRep.suitability.puss_in_boots <= 0.15, `Solo Puss suitability should be capped low (got ${soloPussRep.suitability.puss_in_boots})`);
+  assert.ok(soloPussRep.species.puss_in_boots.issues.some(iss => /Needs Purple dragon in the same enclosure/i.test(iss)));
+
+  for (let k = 0; k < 120; k++) {
+    soloDragon.hunger = 10; soloDragon.thirst = 10; soloDragon.energy = 90;
+    soloPuss.hunger = 10; soloPuss.thirst = 10; soloPuss.energy = 90;
+    z.Sim._step(0.5);
+  }
+  assert.ok(soloDragon.happiness <= 25, `Solo purple dragon should become unhappy (got ${soloDragon.happiness})`);
+  assert.ok(soloPuss.happiness <= 25, `Solo Puss in Boots should become unhappy (got ${soloPuss.happiness})`);
+
+  // Move Puss in Boots into the dragon's lava+enchanted+castle enclosure -> no warning, peaceful, both happy!
+  const moveRes = z.Sim.moveAnimal(soloPuss.id, 16, 16);
+  assert.equal(moveRes.ok, true);
+  assert.equal(moveRes.warn, undefined, 'Moving Puss in Boots with Purple dragon should not emit predator warning');
+
+  const sharedRep = z.Sim.enclosureReport(encSoloDragon.id);
+  assert.ok(sharedRep.suitability.purple_dragon >= 0.85, `Shared dragon suitability should be high (got ${sharedRep.suitability.purple_dragon})`);
+  assert.ok(sharedRep.suitability.puss_in_boots >= 0.85, `Shared Puss suitability should be high (got ${sharedRep.suitability.puss_in_boots})`);
+  assert.equal(sharedRep.issues.some(iss => /Predator|Rival|Needs Puss|Needs Purple dragon/i.test(iss)), false, `Shared enclosure should have no companion/predator issues, got: ${JSON.stringify(sharedRep.issues)}`);
+
+  for (let k = 0; k < 160; k++) {
+    soloDragon.hunger = 10; soloDragon.thirst = 10; soloDragon.energy = 90;
+    soloPuss.hunger = 10; soloPuss.thirst = 10; soloPuss.energy = 90;
+    z.Sim._step(0.5);
+  }
+  assert.equal(z.state.fights.length, 0, 'Dragon and Puss in Boots must never fight each other');
+  assert.equal(z.state.animals.length, 2, 'Both companions should remain alive together');
+  assert.ok(soloDragon.happiness >= 80, `Purple dragon with Puss in Boots should be happy (got ${soloDragon.happiness})`);
+  assert.ok(soloPuss.happiness >= 80, `Puss in Boots with Purple dragon should be happy (got ${soloPuss.happiness})`);
+
+  // Adding a non-companion predator (lion) still triggers rival predator warning
+  const lionWarn = z.Sim.addAnimal('lion', 17, 16);
+  assert.equal(lionWarn.ok, true);
+  assert.match(lionWarn.warn, /Predators in this enclosure/);
 });
 
 

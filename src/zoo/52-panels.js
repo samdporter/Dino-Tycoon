@@ -316,12 +316,19 @@ window.Z = window.Z || {}; var Z = window.Z;
     var fl = h('div.chips'); sp.foliage.forEach(function (s) { var sd = UI.byId(D.scenery, s); fl.appendChild(h('span.chip', { text: sd ? sd.name : s })); }); row('Plants', fl);
     row('Space', h('span', { text: sp.space + ' tiles each (' + (sp.space * 4) + ' m²)' }));
     row('Company', h('span', { text: sp.social[0] === sp.social[1] ? 'Lives alone' : 'In groups of ' + sp.social[0] + (sp.social[1] > 20 ? '+' : ' to ' + sp.social[1]) }));
+    if (sp.companion) {
+      var compSp = UI.sp(sp.companion);
+      row('Companion', h('span', { style: 'font-weight:700;color:var(--moss3)', text: 'Must live with ' + (compSp ? compSp.name : sp.companion) }));
+    }
     var fn = D.fences.slice().sort(function (a, b) { return a.cost - b.cost; }).filter(function (x) { return x.strength >= sp.minFence; })[0];
     row('Fence', h('span', { text: 'Strength ' + sp.minFence + '+ (' + fn.name.toLowerCase() + (sp.minFence > 1 ? ' or stronger' : '') + ')' }));
     if (sp.needsCage) row('Enclosure', h('span', { text: 'Roofed cage (Primate cage)' }));
     row('Extras', h('div.chips', sp.needsWater ? h('span.chip', { text: 'Pond or pool' }) : null, sp.needsShelter ? h('span.chip', { text: 'Shelter' }) : null, sp.needsRocks ? h('span.chip', { text: 'Rocks' }) : null, (!sp.needsWater && !sp.needsShelter && !sp.needsRocks) ? h('span.chip', { text: 'Nothing special' }) : null));
     row('Appeal', h('div', { style: 'display:flex;align-items:center;gap:8px' }, bar(sp.appeal / 60), h('b', { text: sp.appeal })));
-    if (sp.diet === 'carnivore') row('Warning', h('span', { style: 'color:var(--bad);font-weight:700', text: 'Predator. Keep it apart from other species.' }));
+    if (sp.diet === 'carnivore') {
+      var compSpW = sp.companion ? UI.sp(sp.companion) : null;
+      row('Warning', h('span', { style: 'color:var(--bad);font-weight:700', text: compSpW ? ('Predator. Only shares peacefully with ' + compSpW.name + '.') : 'Predator. Keep it apart from other species.' }));
+    }
     else if (sp.danger >= 2) row('Warning', h('span', { style: 'color:#b06a10;font-weight:700', text: 'Dangerous. Use strong fences.' }));
     box.appendChild(needs);
     box.appendChild(h('div.sect', { text: 'Where shall it live?' }));

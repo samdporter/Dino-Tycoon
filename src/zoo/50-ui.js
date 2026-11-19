@@ -425,6 +425,14 @@ window.Z = window.Z || {}; var Z = window.Z;
     var seed = def.id.length * 7 + def.cost;
     for (var i = 0; i < 60; i++) { seed = (seed * 9301 + 49297) % 233280; var x = seed / 233280 * 64; seed = (seed * 9301 + 49297) % 233280; var y = seed / 233280 * 64; g.fillStyle = (i & 1) ? 'rgba(255,255,255,.16)' : 'rgba(0,0,0,.12)'; g.fillRect(x, y, 3, 3); }
     if (def.id === 'water') { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 2; for (i = 0; i < 3; i++) { g.beginPath(); g.moveTo(6, 18 + i * 18); g.quadraticCurveTo(20, 10 + i * 18, 32, 18 + i * 18); g.quadraticCurveTo(44, 26 + i * 18, 58, 18 + i * 18); g.stroke(); } }
+    if (def.id === 'lava') {
+      g.fillStyle = '#24100b'; g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = '#ff5a14'; g.lineWidth = 4; g.lineCap = 'round';
+      g.beginPath(); g.moveTo(4, 14); g.quadraticCurveTo(22, 26, 36, 12); g.quadraticCurveTo(50, 2, 62, 16); g.stroke();
+      g.beginPath(); g.moveTo(2, 42); g.quadraticCurveTo(20, 30, 34, 44); g.quadraticCurveTo(48, 56, 62, 40); g.stroke();
+      g.strokeStyle = '#ffd040'; g.lineWidth = 1.8;
+      g.beginPath(); g.moveTo(8, 16); g.quadraticCurveTo(22, 26, 36, 12); g.moveTo(6, 41); g.quadraticCurveTo(20, 31, 34, 44); g.stroke();
+    }
     return c;
   }
   function pathSwatch(def) {
@@ -535,7 +543,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'animals', name: 'Animals', icon: 'paw', items: function () { return D.animals.slice().sort(function (a, b) { return a.star - b.star || a.cost - b.cost; }).map(function (p) { return { kind: 'animal', id: p.id, name: p.name, cost: p.cost, def: p, star: p.star, emoji: p.emoji }; }); } },
       { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe', 'enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones']) },
-      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'vine_perch', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter']) },
+      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'vine_perch', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter', 'castle']) },
       { id: 'fac', name: 'Facilities', icon: 'cart', items: function () { return bd(['burger_stand', 'pizza_hut', 'ice_cream', 'drinks_stall', 'coffee_cart', 'toilets', 'gift_shop', 'balloon_stand', 'carousel', 'info_kiosk', 'restaurant', 'education_centre'])().concat(sc(['bench', 'bin'])()); } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },

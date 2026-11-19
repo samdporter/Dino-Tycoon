@@ -659,6 +659,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (n >= mn && n <= mx) social = 1;
     else if (n < mn) { social = 0.4 + 0.6 * (n / mn); iss.push('Needs more of its own kind (at least ' + mn + ')'); }
     else { social = Math.max(0.3, 1 - 0.2 * (n - mx)); iss.push('Too many of this species (max ' + mx + ')'); }
+    var companion = 1;
+    if (sp.companion) {
+      var compSp = SP[sp.companion];
+      if (!hasRequiredCompanion(E, sp)) {
+        companion = 0;
+        iss.push('Needs ' + (compSp ? compSp.name : sp.companion) + ' in the same enclosure');
+      }
+    }
     var clean = clamp(1 - enc.poop / (area / 3 + 3), 0, 1);
     if (clean < 0.6) iss.push('Enclosure is dirty');
     var wts = 0.22 + 0.2 + 0.12 + wW + sW + rW + 0.1 + 0.06;
@@ -669,7 +677,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       iss.push('Needs a roofed cage enclosure (use Primate cage fences)');
       v *= 0.65;
     }
-    return { value: v, terrain: terrain, space: space, foliage: foliage, water: water, shelter: shelter, rocks: rocks, social: social, clean: clean, issues: iss };
+    if (!companion) v = Math.min(v * 0.2, 0.15);
+    return { value: v, terrain: terrain, space: space, foliage: foliage, water: water, shelter: shelter, rocks: rocks, social: social, companion: companion, clean: clean, issues: iss };
   }
 
   function encStats(enc) {
@@ -1222,6 +1231,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var i = 1; i < pack.length; i++) tot += 0.65 * combatPower(pack[i]);
     return tot;
   }
+  function isCompanionPair(aId, bId) {
+    var a = SP[aId], b = SP[bId];
+    return !!(a && b && (a.companion === bId || b.companion === aId));
+  }
+  function hasRequiredCompanion(E, sp) {
+    if (!sp || !sp.companion) return true;
+    return !!(E && E.bySp && E.bySp[sp.companion] > 0);
+  }
   function compatible(enc, spId) {
     return null;
   }
@@ -1229,6 +1246,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var sp = SP[spId], isP = isPredator(sp);
     for (var k = 0; k < enc.species.length; k++) {
       var o = enc.species[k]; if (o === spId) continue;
+      if (isCompanionPair(spId, o)) continue;
       if (isP || isPredator(SP[o])) return 'Predators in this enclosure may hunt smaller animals or fight rival predators.';
     }
     return null;
@@ -2370,7 +2388,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var p = RT.aById.get(enc.animals[k]);
       if (!p || p === a || p.state === 'escaped' || p.state === 'fight' || p.flyover) continue;
       var ps = SP[p.species];
-      if (!ps || isPredator(ps)) continue;
+      if (!ps || isPredator(ps) || isCompanionPair(a.species, p.species)) continue;
       var ratio = combatPower(p) / pPow, tier;
       if (ratio <= 1.15) {
         tier = 0;
@@ -2394,7 +2412,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var p = RT.aById.get(enc.animals[k]);
       if (!p || p === a || p.baby || p.state === 'escaped' || p.state === 'fight' || p.sick) continue;
       var ps = SP[p.species];
-      if (!ps || !isPredator(ps)) continue;
+      if (!ps || !isPredator(ps) || isCompanionPair(a.species, p.species)) continue;
       if (p.species === a.species && !(a.happiness < 45 && rng.chance(0.15))) continue;
       var ratio = combatPower(p) / pPow;
       if (ratio > 1.25 && !rng.chance(clamp(0.45 / ratio, 0.08, 0.4))) continue;
@@ -2655,7 +2673,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var hasOtherPred = false;
         for (var pk = 0; pk < enc.animals.length; pk++) {
           var pa = RT.aById.get(enc.animals[pk]);
-          if (pa && pa !== a && !pa.baby && isPredator(SP[pa.species])) { hasOtherPred = true; break; }
+          if (pa && pa !== a && !pa.baby && isPredator(SP[pa.species]) && !isCompanionPair(a.species, pa.species)) { hasOtherPred = true; break; }
         }
         if (hasOtherPred && rng.chance(a.hunger > 55 ? 0.32 : 0.18) && (rival = findRivalPredator(a, enc))) {
           a.tg = 'fight_rival'; a.hid = rival.id; a.hunt = 0; a.state = 'run'; a.tx = rival.x; a.tz = rival.z; a.stuck = 0;
@@ -2823,6 +2841,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (enc.minFence < sp.minFence) tgt -= 6;
       if (sp.needsCage && !enc.isCage) tgt -= 10;
       tgt += (WX.animalMood || 0);
+      if (!hasRequiredCompanion(E, sp)) tgt = Math.min(tgt * 0.3, 18);
       a.happiness += (tgt - a.happiness) * 0.05; a.happiness = clamp(a.happiness, 0, 100);
     }
     a.pt -= dt;
@@ -2916,7 +2935,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         break;
       case 'play':
         a.speed = 0; a.st -= dt;
-        if (a.st <= 0) { a.happiness = Math.min(100, a.happiness + 15); a.state = 'idle'; a.st = rng.range(1, 3); }
+        if (a.st <= 0) { if (hasRequiredCompanion(E, sp)) a.happiness = Math.min(100, a.happiness + 15); a.state = 'idle'; a.st = rng.range(1, 3); }
         break;
     }
   }
@@ -2974,7 +2993,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var ep = RT.escaped[ek];
         if (ep === a || ep.state !== 'escaped') continue;
         var eps = SP[ep.species];
-        if (eps && eps.diet !== 'carnivore' && !eps.predator) {
+        if (eps && eps.diet !== 'carnivore' && !eps.predator && !isCompanionPair(a.species, ep.species)) {
           var edx = ep.x - a.x, edz = ep.z - a.z, ed = edx * edx + edz * edz;
           if (ed < 100) {
             a.tx = ep.x; a.tz = ep.z; spdE = sp.speed * 1.35;
@@ -4154,6 +4173,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (a.needsRocks) needs.push('Rocks (1 per 24 tiles; rugged ground helps)');
       if (a.diet === 'carnivore' || a.predator) needs.push('Meat/Carcass feeder');
       if (a.social) needs.push('Herd of ' + a.social[0] + '-' + a.social[1]);
+      if (a.companion && SP[a.companion]) needs.push('Companion: ' + SP[a.companion].name);
       needs.push('Enrichment toys (1 per 40 tiles)');
       species.push({
         id: a.id, name: a.name, emoji: a.emoji, predator: !!(a.predator || a.diet === 'carnivore'),
@@ -4163,7 +4183,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         }).join(', '),
         plants: (a.foliage || []).map(function (f) { return SC[f] ? SC[f].name : f; }),
         plantIds: (a.foliage || []).slice(),
-        needs: needs, space: a.space, minFence: a.minFence, needsCage: !!a.needsCage
+        needs: needs, space: a.space, minFence: a.minFence, needsCage: !!a.needsCage,
+        companion: a.companion ? { id: a.companion, name: (SP[a.companion] && SP[a.companion].name) || a.companion } : null
       });
     });
     return { weights: JSON.parse(JSON.stringify(HW)), plants: plants, additions: additions, species: species };
@@ -4349,7 +4370,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (e.species.length > 1) {
       var hasPred = false, hasPrey = false, predCount = 0;
       for (var k = 0; k < e.species.length; k++) {
-        if (isPredator(SP[e.species[k]])) { hasPred = true; predCount++; }
+        var spId = e.species[k];
+        if (isPredator(SP[spId])) {
+          hasPred = true;
+          var paired = false;
+          for (var j = 0; j < k; j++) if (isCompanionPair(spId, e.species[j])) { paired = true; break; }
+          if (!paired) predCount++;
+        }
         else hasPrey = true;
       }
       if (hasPred && hasPrey) return 'Predators are sharing with prey species and may hunt them!';

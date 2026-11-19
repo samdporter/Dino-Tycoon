@@ -247,6 +247,18 @@ function quadParts(spec, sex) {
       P.trunk.push(gg.build());
     }
   }
+  if (spec.bodyGlow) {
+    P.bodyGlow = spec.bodyGlow.map(function (it) {
+      var bg = B(); it.build(bg, sex);
+      return { geo: bg.build(0, -cy, 0), col: it.col, em: it.em };
+    });
+  }
+  if (spec.headGlow) {
+    P.headGlow = spec.headGlow.map(function (it) {
+      var hg = B(); it.build(hg, sex);
+      return { geo: hg.build(), col: it.col, em: it.em };
+    });
+  }
   partsCache[key] = P; return P;
 }
 
@@ -263,11 +275,13 @@ function createQuad(spec, opts) {
   root.add(rig); rig.add(torso); rig.scale.setScalar(sc);
   torso.position.set(0, spec.cy, 0);
   var bodyM = mesh(P.body); torso.add(bodyM);
+  if (P.bodyGlow) for (var bg = 0; bg < P.bodyGlow.length; bg++) torso.add(mesh(P.bodyGlow[bg].geo, mat(P.bodyGlow[bg].col, { emissive: P.bodyGlow[bg].em })));
   var nk = spec.neck, neckP = grp('neck'); neckP.rotation.order = 'YXZ';
   torso.add(neckP); neckP.position.set(nk.x || 0, nk.y - spec.cy, nk.z);
   if (P.neck) neckP.add(mesh(P.neck));
   var headP = grp('head'); headP.rotation.order = 'YXZ'; neckP.add(headP); headP.position.set(0, 0, nk.len);
   var headM = mesh(P.head); headP.add(headM);
+  if (P.headGlow) for (var hg = 0; hg < P.headGlow.length; hg++) headP.add(mesh(P.headGlow[hg].geo, mat(P.headGlow[hg].col, { emissive: P.headGlow[hg].em })));
   var hs = baby ? (spec.babyHead || 1.45) : 1; headP.scale.setScalar(hs);
   var earM = null, earL = null, earR = null, trunk = null;
   if (P.ears) { earM = mesh(P.ears); headP.add(earM); earM.position.set(spec.earAt[0], spec.earAt[1], spec.earAt[2]); }
@@ -1032,6 +1046,126 @@ function earBall(g, x, y, z, r, col, inner) {
       return g.build();
     },
     fold: { roll: 0.08, hp: 0.8, hy: 0.7 }
+  };
+})();
+
+// ---- PURPLE DRAGON
+(function () {
+  var PR = 0x6b28aa, PR_DK = 0x451478, PR_LT = 0x924dd6, BELLY = 0xc97cf5, HORN = 0x241432, FANG = 0xf6eed8, WING = 0x561a86, WING_LT = 0x8232ba, SPINE = 0x2c0e4a;
+  var bc = function (x, y, z, nx, ny) {
+    if (ny < -0.42) return fract(z * 3.5) < 0.25 ? shade(BELLY, 0.85) : BELLY;
+    var h = hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4));
+    return h > 0.65 ? PR_DK : (h < 0.25 ? PR_LT : PR);
+  };
+  QUADS.purple_dragon = {
+    id: 'purple_dragon', cy: 2.25, hl: 2.1, hh: 0.9, height: 5.8, size: 4.2, walkA: 0.34, runA: 0.52, bend: 0.55, babyScale: 0.42, babyHead: 1.38, hopH: 1.1,
+    body: function (g) {
+      g.torso({ z0: -2.0, z1: 1.8, n: 22, seg: 14, rxA: 0.80, rxB: 1.08, ryA: 0.76, ryB: 1.12, ycA: 2.02, ycB: 2.34 }, bc);
+      // broad chest keel & muscular shoulder plates
+      g.sph(0.98, 0.92, 0.86, 0, 2.28, 1.15, bc, { s: [10, 7] });
+      g.sph(0.68, 0.54, 0.85, 0, 1.56, 0.65, BELLY, { s: [8, 6] });
+      // dorsal ridge spines running down the back
+      for (var i = 0; i < 7; i++) {
+        var sz = 1.45 - i * 0.52, sy = 3.38 - Math.abs(sz) * 0.14, sh = 0.72 - i * 0.035;
+        g.cone(0.16, sh, 0, sy + sh * 0.35, sz, i % 2 ? SPINE : PR_DK, { seg: 5, rot: [-0.46, 0, 0] });
+      }
+    },
+    bodyGlow: [
+      {
+        col: 0xff9a28, em: 0xc44200,
+        build: function (g) {
+          // glowing molten belly & chest ember scales
+          for (var i = 0; i < 6; i++) {
+            var vz = 1.35 - i * 0.46, vy = 1.32 - Math.abs(vz - 0.3) * 0.06, vw = 0.44 - Math.abs(i - 2) * 0.04;
+            g.sph(vw, 0.09, 0.16, 0, vy, vz, 0xffaa30, { s: [7, 4] });
+          }
+        }
+      }
+    ],
+    neck: {
+      y: 2.65, z: 1.42, len: 1.72, up: 0.88, r0: 0.50, r1: 0.33, hs: 5, col: bc,
+      extra: function (g) {
+        for (var i = 0; i < 4; i++) {
+          var nz = 0.28 + i * 0.38;
+          g.sph(0.24 - i * 0.025, 0.14, 0.2, 0, -0.26 + i * 0.02, nz, BELLY, { s: [6, 4] });
+          g.cone(0.11, 0.48 - i * 0.04, 0, 0.36 - i * 0.02, nz, SPINE, { seg: 5, rot: [-0.55, 0, 0] });
+        }
+      }
+    },
+    hpitch: 0.72, eatY: 0.35,
+    head: function (g) {
+      // armored skull, brow ridges, snout, jaw & fangs
+      g.sph(0.40, 0.34, 0.48, 0, 0.04, 0.20, bc, { s: [9, 7] });
+      g.box(0.76, 0.11, 0.32, 0, 0.24, 0.28, PR_DK, { rot: [0.14, 0, 0] });
+      g.sph(0.26, 0.20, 0.52, 0, -0.02, 0.68, bc, { s: [8, 6] });
+      g.sph(0.21, 0.12, 0.44, 0, -0.20, 0.62, PR_LT, { s: [8, 5] });
+      // flared nasal crest & snout horn
+      g.cone(0.08, 0.26, 0, 0.18, 0.96, HORN, { seg: 5, rot: [0.35, 0, 0] });
+      // upper & lower fangs
+      for (var s = -1; s <= 1; s += 2) {
+        g.cone(0.042, 0.16, s * 0.15, -0.16, 0.94, FANG, { seg: 5, rot: [PI - 0.1, 0, 0] });
+        g.cone(0.036, 0.14, s * 0.13, -0.15, 0.72, FANG, { seg: 5, rot: [PI - 0.08, 0, 0] });
+        // huge sweeping curved horns
+        g.limb(s * 0.22, 0.24, 0.04, s * 0.42, 0.68, -0.45, 0.13, 0.085, HORN, { seg: 6 });
+        g.limb(s * 0.42, 0.68, -0.45, s * 0.52, 0.98, -1.12, 0.085, 0.015, shade(HORN, 1.3), { seg: 6 });
+        // cheek frill spikes
+        g.cone(0.075, 0.38, s * 0.36, 0.02, -0.08, PR_DK, { seg: 5, rot: [-0.95, 0, s * -0.55] });
+        g.cone(0.065, 0.32, s * 0.34, -0.12, -0.04, PR_DK, { seg: 5, rot: [-0.85, 0, s * -0.65] });
+      }
+      // chin spike
+      g.cone(0.07, 0.24, 0, -0.30, 0.68, HORN, { seg: 5, rot: [PI - 0.35, 0, 0] });
+    },
+    headGlow: [
+      {
+        col: 0xffe24a, em: 0xff7800,
+        build: function (g) {
+          // fierce glowing golden-amber eyes & inner nostril glow
+          g.sph(0.065, 0.055, 0.055, 0.26, 0.12, 0.42, 0xffe24a, { s: [6, 4] });
+          g.sph(0.065, 0.055, 0.055, -0.26, 0.12, 0.42, 0xffe24a, { s: [6, 4] });
+          g.sph(0.04, 0.032, 0.032, 0.12, 0.06, 1.12, 0xff7a18, { s: [5, 4] });
+          g.sph(0.04, 0.032, 0.032, -0.12, 0.06, 1.12, 0xff7a18, { s: [5, 4] });
+        }
+      }
+    ],
+    legs: {
+      fx: 0.72, fy: 1.45, fz: 1.05, hy: 1.45, hz: -1.15, hx: 0.76, fLen: 1.45, hLen: 1.45,
+      fr: [0.30, 0.22, 0.18], hr: [0.34, 0.24, 0.18], shoulder: [0.36, 0.42, 0.40], haunch: [0.42, 0.50, 0.48],
+      col: function (y, ny, front) { return y < -1.0 ? PR_DK : PR; },
+      foot: { type: 'paw', col: 0x1a1024, h: 0.16, pawCol: PR_DK, claws: true }
+    },
+    tail: {
+      y: 2.04, z: -1.92, n: 5, len: 4.5, r0: 0.44, r1: 0.06, seg: 7,
+      col: function (i, x, y, z, nx, ny) { return ny < -0.35 ? BELLY : (i % 2 ? PR_DK : PR); },
+      up: -0.22, curl: 0.10,
+      each: function (g, i, sl, r0) {
+        g.cone(r0 * 0.45, 0.36 - i * 0.04, 0, r0 * 0.85, -sl * 0.5, SPINE, { seg: 5, rot: [-0.4, 0, 0] });
+      },
+      tip: function (g, sl) {
+        // dramatic barbed spade tip
+        g.sph(0.28, 0.06, 0.36, 0, 0, -sl * 1.08, PR_DK, { s: [6, 4] });
+        g.cone(0.12, 0.46, 0, 0, -sl * 1.32, HORN, { seg: 5, rot: [-PI / 2, 0, 0] });
+      }
+    },
+    wingAt: [0.76, 2.95, 0.72],
+    wings: function (r) {
+      var g = B(), s = r ? -1 : 1;
+      // heavy purple wing arm & wrist claw spur
+      g.limb(0, 0, 0, s * 1.25, 0.85, -0.15, 0.18, 0.12, PR, { seg: 6 });
+      g.limb(s * 1.25, 0.85, -0.15, s * 2.55, 1.10, -0.32, 0.12, 0.06, PR_DK, { seg: 6 });
+      g.cone(0.06, 0.32, s * 2.55, 1.24, -0.22, HORN, { seg: 5, rot: [0.3, 0, s * -0.4] });
+      // radiating finger struts
+      g.limb(s * 2.55, 1.10, -0.32, s * 3.95, 0.62, -0.62, 0.06, 0.02, PR_DK, { seg: 5 });
+      g.limb(s * 2.55, 1.10, -0.32, s * 3.55, -0.18, -1.12, 0.055, 0.018, PR_DK, { seg: 5 });
+      g.limb(s * 2.55, 1.10, -0.32, s * 2.65, -0.75, -1.32, 0.05, 0.018, PR_DK, { seg: 5 });
+      g.limb(s * 1.25, 0.85, -0.15, s * 1.45, -0.82, -1.22, 0.06, 0.02, PR_DK, { seg: 5 });
+      // rich purple-plum wing membranes (double-sided thin ellipsoids so visible from above and below)
+      var wCol = function (x, y, z) { return fract(abs(x) * 1.5 + z * 1.2) < 0.22 ? WING_LT : WING; };
+      g.sph(0.95, 0.032, 0.82, s * 0.82, 0.18, -0.64, wCol, { s: [8, 4], rot: [0.35, s * 0.18, s * 0.25] });
+      g.sph(1.05, 0.030, 0.92, s * 2.05, 0.22, -0.82, wCol, { s: [8, 4], rot: [0.28, s * 0.22, s * -0.06] });
+      g.sph(0.88, 0.026, 0.72, s * 3.12, 0.24, -0.78, wCol, { s: [7, 4], rot: [0.22, s * 0.28, s * -0.26] });
+      return g.build();
+    },
+    fold: { fa: -0.95, fb: 1.9, ha: -0.95, hb: 1.9, splay: 0.25, hp: 0.55, hy: 0.75, lieY: 0.95 }
   };
 })();
 
@@ -3945,6 +4079,77 @@ SC.wizard_shelter = { build: function (g) {
     var st = stars[k];
     g.sph(0.085, 0.085, 0.085, st[0], st[1], st[2], 0xf8d448, { s: [4, 3] });
   }
+} };
+
+SC.castle = { custom: function (grp0) {
+  var g = B();
+  var ST = function (x, y, z) {
+    var h = hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4));
+    var c = shade(0x888494, 0.85 + h * 0.26);
+    return (y < 0.45 && h > 0.45) ? mixHex(c, 0x4f6848, 0.35) : c;
+  };
+  var ST_DK = 0x625e6e, RF = 0x861c46, RF_LT = 0xa22858, GD = 0xf0c43c, GATE = 0x16121d;
+  // stone courtyard plinth
+  g.box(3.5, 0.22, 3.5, 0, 0.11, 0, ST_DK);
+  // outer curtain walls (N, S-flanks, E, W)
+  g.box(2.7, 1.5, 0.34, 0, 0.96, -1.25, ST);
+  g.box(0.34, 1.5, 2.7, -1.25, 0.96, 0, ST);
+  g.box(0.34, 1.5, 2.7, 1.25, 0.96, 0, ST);
+  g.box(0.85, 1.5, 0.36, -0.88, 0.96, 1.25, ST);
+  g.box(0.85, 1.5, 0.36, 0.88, 0.96, 1.25, ST);
+  // gatehouse lintel & stone arch over front portal
+  g.box(1.15, 0.56, 0.48, 0, 1.52, 1.28, ST);
+  g.box(0.86, 1.05, 0.44, 0, 0.72, 1.22, GATE);
+  g.sph(0.43, 0.36, 0.26, 0, 1.18, 1.22, GATE, { s: [8, 5] });
+  g.box(0.16, 1.15, 0.22, -0.48, 0.76, 1.38, 0x9c98a6);
+  g.box(0.16, 1.15, 0.22, 0.48, 0.76, 1.38, 0x9c98a6);
+  // raised iron portcullis grate bars
+  for (var p = -2; p <= 2; p++) g.box(0.035, 0.34, 0.04, p * 0.14, 1.14, 1.40, 0x3b3e48);
+  g.box(0.76, 0.04, 0.05, 0, 1.04, 1.40, 0x3b3e48);
+  // crenellations / battlements along curtain walls
+  for (var c = -1; c <= 1; c++) {
+    g.box(0.24, 0.22, 0.38, c * 0.45, 1.82, -1.25, ST);
+    g.box(0.38, 0.22, 0.24, -1.25, 1.82, c * 0.45, ST);
+    g.box(0.38, 0.22, 0.24, 1.25, 1.82, c * 0.45, ST);
+  }
+  for (var g2 = -1; g2 <= 1; g2 += 2) {
+    g.box(0.24, 0.22, 0.48, g2 * 0.34, 1.91, 1.28, ST);
+    g.box(0.24, 0.22, 0.38, g2 * 0.85, 1.82, 1.25, ST);
+  }
+  // central grand royal keep + pitched roof + spire
+  g.box(1.45, 2.55, 1.45, 0, 1.48, -0.08, ST);
+  g.box(1.56, 0.16, 1.56, 0, 2.74, -0.08, ST_DK);
+  g.cone(1.08, 1.25, 0, 3.44, -0.08, RF, { seg: 4, rot: [0, PI / 4, 0] });
+  g.sph(0.11, 0.11, 0.11, 0, 4.10, -0.08, GD, { s: [6, 4] });
+  // four corner turrets with conical crimson-plum roofs & pennants
+  var corners = [[-1.28, -1.28], [1.28, -1.28], [-1.28, 1.28], [1.28, 1.28]];
+  for (var i = 0; i < corners.length; i++) {
+    var cx = corners[i][0], cz = corners[i][1];
+    g.cyl(0.42, 0.46, 2.38, cx, 1.40, cz, ST, { seg: 10 });
+    g.cyl(0.49, 0.44, 0.22, cx, 2.66, cz, ST_DK, { seg: 10 });
+    g.cone(0.56, 1.05, cx, 3.30, cz, i % 2 ? RF : RF_LT, { seg: 10 });
+    g.cyl(0.54, 0.56, 0.06, cx, 2.78, cz, GD, { seg: 10 });
+    g.sph(0.075, 0.075, 0.075, cx, 3.86, cz, GD, { s: [5, 4] });
+    // tiny royal pennant flag on each turret
+    g.limb(cx, 3.86, cz, cx, 4.28, cz, 0.018, 0.014, GD, { seg: 4 });
+    g.box(0.28, 0.14, 0.03, cx + 0.15, 4.18, cz, 0xe83862);
+  }
+  grp0.add(mesh(g.build()));
+  // glowing warm amber castle windows & gate sconces
+  var gw = B();
+  var wins = [
+    [-1.28, 1.95, 1.72, 0.16, 0.30, 0.08], [1.28, 1.95, 1.72, 0.16, 0.30, 0.08],
+    [-1.28, 1.95, -1.72, 0.16, 0.30, 0.08], [1.28, 1.95, -1.72, 0.16, 0.30, 0.08],
+    [-1.72, 1.95, 1.28, 0.08, 0.30, 0.16], [1.72, 1.95, 1.28, 0.08, 0.30, 0.16],
+    [0, 2.28, 0.66, 0.22, 0.42, 0.08], [0, 2.28, -0.82, 0.22, 0.42, 0.08],
+    [-0.58, 1.15, 1.44, 0.09, 0.14, 0.09], [0.58, 1.15, 1.44, 0.09, 0.14, 0.09]
+  ];
+  for (i = 0; i < wins.length; i++) {
+    var w = wins[i];
+    gw.box(w[3], w[4], w[5], w[0], w[1], w[2], 0xffd258);
+  }
+  grp0.add(mesh(gw.build(), mat(0xffd258, { emissive: 0xe07810 })));
+  return grp0;
 } };
 
 var INSTANCED = { oak: 1, pine: 1, acacia: 1, palm: 1, bamboo: 1, baobab: 1, cactus: 1, snow_pine: 1, jungle_tree: 1, bush: 1, fern: 1, tall_grass: 1, boulder: 1, rock_pile: 1, ice_floe: 1, log: 1, heat_rock: 1, enchanted_tree: 1, standing_stones: 1, rainbow_arch: 1, wizard_shelter: 1 };

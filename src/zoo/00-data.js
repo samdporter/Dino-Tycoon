@@ -14,7 +14,8 @@ window.Z.DATA = {
     { id: "water", name: "Water", colour: "#3a86b8", cost: 30 },
     { id: "enchanted", name: "Enchanted glade", colour: "#78d6a8", cost: 35, star: 4 },
     { id: "misty_moor", name: "Misty moor", colour: "#566b78", cost: 30, star: 4 },
-    { id: "starlight_sand", name: "Starlight sand", colour: "#d6b8f0", cost: 35, star: 4 }
+    { id: "starlight_sand", name: "Starlight sand", colour: "#d6b8f0", cost: 35, star: 4 },
+    { id: "lava", name: "Volcanic lava", colour: "#f04e18", cost: 40, star: 4 }
   ],
 
   fences: [
@@ -424,12 +425,21 @@ window.Z.DATA = {
     },
     {
       id: "puss_in_boots", name: "Puss in Boots", emoji: "👢", biome: "enchanted",
-      terrainPrefs: { enchanted: 0.45, grass: 0.25, forest: 0.2, starlight_sand: 0.1 },
+      terrainPrefs: { enchanted: 0.45, lava: 0.3, grass: 0.15, forest: 0.1 },
       cost: 12500, "upkeep/day": 155, appeal: 96, space: 20, social: [1, 4], diet: "carnivore",
-      foliage: ["enchanted_tree", "wizard_shelter", "rainbow_arch", "climbing_frame", "ball"],
+      foliage: ["castle", "enchanted_tree", "wizard_shelter", "rainbow_arch", "climbing_frame", "ball"],
       needsWater: false, needsShelter: true, needsRocks: false, minFence: 3, speed: 1.75, size: 0.75,
-      lifespan: 1600, breedChance: 0.06, star: 4, danger: 1, fantasy: true,
-      fact: "A dashing storybook swordsman in plumed hat and polished boots who charms crowds with dramatic bows and big eyes."
+      lifespan: 1600, breedChance: 0.06, star: 4, danger: 1, fantasy: true, companion: "purple_dragon",
+      fact: "A dashing storybook swordsman in plumed hat and polished boots who charms crowds with dramatic bows and refuses to leave his purple dragon companion."
+    },
+    {
+      id: "purple_dragon", name: "Purple dragon", emoji: "🐉", biome: "enchanted",
+      terrainPrefs: { lava: 0.5, enchanted: 0.35, rock: 0.15 },
+      cost: 16000, "upkeep/day": 200, appeal: 110, space: 36, social: [1, 3], diet: "carnivore",
+      foliage: ["castle", "standing_stones", "crystal_cluster", "heat_rock"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 5, speed: 1.4, size: 4.2,
+      lifespan: 3000, breedChance: 0.04, star: 4, danger: 3, fantasy: true, companion: "puss_in_boots",
+      fact: "An enormous, amethyst-scaled fairytale dragon who towers over every exhibit and will only be happy when sharing her castle with Puss in Boots."
     }
   ],
 
@@ -470,7 +480,9 @@ window.Z.DATA = {
     { id: "crystal_cluster", name: "Crystal cluster", emoji: "💎", cost: 280, kind: "rock", biome: "starlight_sand", aesthetic: 7, inEnclosure: true, star: 4 },
     { id: "standing_stones", name: "Standing stones", emoji: "🪨", cost: 320, kind: "rock", biome: "misty_moor", aesthetic: 7, inEnclosure: true, star: 4 },
     { id: "rainbow_arch", name: "Rainbow arch", emoji: "🌈", cost: 450, kind: "toy", biome: "enchanted", aesthetic: 8, inEnclosure: true, star: 4 },
-    { id: "wizard_shelter", name: "Wizard's tower", emoji: "🏰", cost: 650, kind: "shelter", biome: "enchanted", aesthetic: 6, inEnclosure: true, star: 4 }
+    { id: "wizard_shelter", name: "Wizard's tower", emoji: "🏰", cost: 650, kind: "shelter", biome: "enchanted", aesthetic: 6, inEnclosure: true, star: 4 },
+    { id: "castle", name: "Castle", emoji: "🏰", cost: 950, kind: "shelter", biome: "enchanted", aesthetic: 8, inEnclosure: true, star: 4,
+      info: "A grand stone fairytale fortress with corner turrets, battlements and glowing windows — a prized shelter for dragons and storybook companions." }
   ],
 
   maps: [
