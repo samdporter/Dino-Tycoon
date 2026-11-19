@@ -1092,3 +1092,151 @@ test('Zoo animals mate, progress through pregnancy, and give birth to babies', (
   assert.equal(babies[0].enc, female.enc);
 });
 
+test('Zoo star progression reserves Star 4 exclusively for fairytale pack items', () => {
+  const { z } = zoo();
+  const D = z.DATA;
+
+  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin'];
+  const expectedFantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
+  const expectedFantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
+
+  const star4Animals = [...D.animals.filter(a => a.star === 4).map(a => a.id)].sort();
+  const star4Terrains = [...D.terrain.filter(t => t.star === 4).map(t => t.id)].sort();
+  const star4Scenery = [...D.scenery.filter(s => s.star === 4).map(s => s.id)].sort();
+  const star4Buildings = [...D.buildings.filter(b => b.star === 4).map(b => b.id)];
+
+  assert.deepEqual(star4Animals, [...expectedFantasyAnimals].sort());
+  assert.ok(D.animals.filter(a => a.star === 4).every(a => a.fantasy === true));
+  assert.equal(D.animals.some(a => !a.fantasy && a.star >= 4), false);
+  assert.deepEqual(star4Terrains, [...expectedFantasyTerrains].sort());
+  assert.deepEqual(star4Scenery, [...expectedFantasyScenery].sort());
+  assert.deepEqual(star4Buildings, []);
+
+  const byId = Object.fromEntries(D.animals.map(a => [a.id, a]));
+  assert.equal(byId.elephant.star, 3);
+  assert.equal(byId.tiger.star, 3);
+  assert.equal(byId.panda.star, 3);
+  assert.equal(byId.gorilla.star, 2);
+  assert.equal(byId.polar_bear.star, 2);
+  assert.equal(byId.brown_bear.star, 1);
+  assert.equal(byId.crocodile.star, 1);
+});
+
+test('Zoo rating progression scales from <0.5 empty to <2 starter, <4 mid-sized, and >=4 thriving', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 505, map: 'meadow', money: 2000000 });
+  const N = z.N;
+
+  // 1. Empty new zoo
+  const emptyRb = z.Sim.ratingBreakdown();
+  assert.ok(emptyRb.stars < 0.5, `Empty zoo should be < 0.5 stars, got ${emptyRb.stars}`);
+  for (const k of ['animals', 'welfare', 'guests', 'facilities', 'cleanliness', 'scenery']) {
+    assert.ok(Number.isFinite(emptyRb[k]) && emptyRb[k] >= 0 && emptyRb[k] <= 1, `${k} should be finite in [0, 1]`);
+  }
+
+  // Flatten build area
+  for (let j = 8; j <= 46; j++) for (let i = 8; i <= 46; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  // Path avenue
+  for (let i = 10; i <= 40; i++) {
+    assert.equal(z.Sim.placePath(i, 20, 'paved').ok, true);
+  }
+
+  // 2. Small starter zoo: 2 species + basic food/drink/toilet
+  fenceBox(10, 12, 16, 18, 'reinforced');
+  assert.equal(z.Sim.addAnimal('meerkat', 12, 14).ok, true);
+  assert.equal(z.Sim.addAnimal('ostrich', 14, 15).ok, true);
+  assert.equal(z.Sim.placeObject('burger_stand', 10, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('drinks_stall', 12, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('toilets', 14, 21, 0).ok, true);
+
+  const starterRb = z.Sim.ratingBreakdown();
+  assert.ok(starterRb.stars < 2, `Starter zoo should stay < 2 stars, got ${starterRb.stars}`);
+
+  // 3. Mid-sized zoo: 6 species, ~15 animals, good welfare/guests/facilities -> still < 4 stars
+  z.state.unlocked.star = 3;
+  const midSpecies = ['meerkat', 'ostrich', 'kangaroo', 'camel', 'red_panda', 'penguin'];
+  // Add 4 more species into separate enclosures (already have meerkat & ostrich)
+  const addEnclosureWithSpecies = (i0, j0, i1, j1, spId, count) => {
+    fenceBox(i0, j0, i1, j1, 'reinforced');
+    for (let c = 0; c < count; c++) {
+      assert.equal(z.Sim.addAnimal(spId, i0 + 1 + (c % 3), j0 + 1 + Math.floor(c / 3)).ok, true);
+    }
+  };
+  addEnclosureWithSpecies(18, 12, 24, 18, 'kangaroo', 3);
+  addEnclosureWithSpecies(26, 12, 32, 18, 'camel', 3);
+  addEnclosureWithSpecies(34, 12, 40, 18, 'red_panda', 3);
+  addEnclosureWithSpecies(10, 23, 16, 29, 'penguin', 3);
+  // Bring total animals to 15 across the 6 species
+  assert.equal(z.Sim.addAnimal('meerkat', 13, 15).ok, true);
+
+  // Add full starter facilities + benches/bins/fun + good guest state
+  assert.equal(z.Sim.placeObject('bench', 18, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('bench', 20, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('bin', 22, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('bin', 24, 21, 0).ok, true);
+  assert.equal(z.Sim.placeObject('balloon_stand', 16, 21, 0).ok, true);
+
+  for (const a of z.state.animals) a.happiness = 92;
+  z.state.guests = Array.from({ length: 26 }, (_, idx) => ({ id: idx + 1, happiness: 90 }));
+  z.state.guestHappiness = 90;
+  z.state.stats.guestsTotal = 90;
+  z.state.stats.peakGuests = 26;
+  z.Sim._rt().ghEMA = 90;
+
+  assert.equal(z.state.animals.length, 15);
+  assert.equal(new Set(z.state.animals.map(a => a.species)).size, 6);
+  const midRb = z.Sim.ratingBreakdown();
+  assert.ok(midRb.stars < 4, `Mid-sized 6-species zoo should stay < 4 stars, got ${midRb.stars}`);
+
+  // 4. Thriving, well-rounded zoo: 12+ regular species, 32+ happy animals, full facilities, clean, rich scenery -> >= 4 stars
+  const extraSpecies = [
+    ['elephant', 3, 18, 23, 24, 29],
+    ['panda', 3, 26, 23, 32, 29],
+    ['tiger', 2, 34, 23, 40, 29],
+    ['gorilla', 3, 10, 32, 16, 38],
+    ['lion', 3, 18, 32, 24, 38],
+    ['polar_bear', 2, 26, 32, 32, 38],
+    ['hippo', 2, 34, 32, 40, 38]
+  ];
+  for (const [spId, cnt, i0, j0, i1, j1] of extraSpecies) {
+    addEnclosureWithSpecies(i0, j0, i1, j1, spId, cnt);
+  }
+  for (const a of z.state.animals) a.happiness = 95;
+  for (const e of z.state.enclosures) e.poop = 0;
+
+  // Add rich scenery (fountain has aesthetic 6; 45 fountains = 270 >= 260)
+  for (let idx = 0; idx < 45; idx++) {
+    const si = 10 + (idx % 30);
+    const sj = 40 + Math.floor(idx / 30);
+    assert.equal(z.Sim.placeObject('fountain', si, sj, 0).ok, true);
+  }
+
+  z.state.guests = Array.from({ length: 30 }, (_, idx) => ({ id: idx + 1, happiness: 93 }));
+  z.state.guestHappiness = 93;
+  z.state.stats.guestsTotal = 120;
+  z.state.stats.peakGuests = 30;
+  z.Sim._rt().ghEMA = 93;
+
+  assert.ok(z.state.animals.length >= 32);
+  assert.ok(new Set(z.state.animals.map(a => a.species)).size >= 12);
+  const thrivingRb = z.Sim.ratingBreakdown();
+  assert.ok(thrivingRb.stars >= 4, `Thriving 13-species zoo should reach >= 4 stars, got ${thrivingRb.stars}`);
+});
+
+

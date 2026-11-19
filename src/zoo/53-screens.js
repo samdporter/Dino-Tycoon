@@ -61,7 +61,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var openBtn = h('button.btn.sm', { on: { click: function () { Z.Sim.setOpen(!Z.state.open); UI.snd('click'); upd(); } } });
     top.appendChild(h('div.btnrow', openBtn));
     var parts = h('div.box'), tips = { animals: 'More species and more appealing animals.', welfare: 'Happy, healthy animals: read the enclosure reports.', guests: 'Keep guests fed, watered, amused and not charged too much.', facilities: 'Food, drinks, toilets, benches and bins to match the crowds.', cleanliness: 'Cleaners sweep paths; keepers clean enclosures.', scenery: 'Trees, flowers, fountains and statues.' };
-    var names = { animals: 'Animal collection (35%)', welfare: 'Animal welfare (17%)', guests: 'Guest happiness (18%)', facilities: 'Facilities (12%)', cleanliness: 'Cleanliness (10%)', scenery: 'Scenery (8%)' };
+    var names = { animals: 'Animal collection (38%)', welfare: 'Animal welfare (16%)', guests: 'Guest happiness (16%)', facilities: 'Facilities (12%)', cleanliness: 'Cleanliness (10%)', scenery: 'Scenery (8%)' };
     parts.appendChild(h('h4', { text: 'How your rating is made' })); var rows = {};
     Object.keys(names).forEach(function (k) { var bb = bar(0), tip = h('div', { style: 'font-size:11.5px;color:var(--ink3);display:none' }), v = h('b.num'); var r = h('div', { style: 'display:flex;flex-direction:column;gap:3px' }, h('div.kv', h('span', { text: names[k] }), v), bb, tip); rows[k] = { bb: bb, v: v, tip: tip }; parts.appendChild(r); });
     var next = h('div.box'), stats = h('div.box');

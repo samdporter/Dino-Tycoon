@@ -3028,20 +3028,53 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   // ---- rating & goals ----
   function computeRating() {
-    var stars = 0, clean = 0, animalWelfare = 0, facilities = 0, scenery = 0;
-    var dc = 0; for (var k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
-    clean = clamp(1 - dc / Math.max(1, RT.pathTiles.length * 0.25), 0, 1);
-    var hsum = 0, nAn = S.animals.length;
-    for (k = 0; k < nAn; k++) hsum += S.animals[k].happiness;
-    animalWelfare = nAn ? clamp(hsum / nAn / 100, 0, 1) : 0.5;
-    var bt = RT.byType, hasF = bt.food.length > 0, hasD = bt.drink.length > 0, hasT = bt.toilet.length > 0;
-    facilities = (hasF ? 0.35 : 0) + (hasD ? 0.35 : 0) + (hasT ? 0.3 : 0);
-    var aes = 0; for (k = 0; k < S.objects.length; k++) if (S.objects[k].kind === 'scenery') aes += (SC[S.objects[k].type] || {}).aesthetic || 0;
-    scenery = clamp(aes / 80, 0, 1);
-    var spc = clamp(RT.speciesCount / 6, 0, 1);
-    stars = clean * 1.0 + animalWelfare * 1.5 + facilities * 1.0 + scenery * 0.8 + spc * 0.7;
-    stars = clamp(stars, 0, 5);
-    return { stars: stars, cleanliness: clean, welfare: animalWelfare, facilities: facilities, scenery: scenery, diversity: spc };
+    var n = S.animals.length, spSeen = {}, nSp = 0, hsum = 0, A = 0, k;
+    for (k = 0; k < n; k++) {
+      var a = S.animals[k];
+      if (!spSeen[a.species]) { spSeen[a.species] = 1; nSp++; }
+      hsum += a.happiness;
+      A += (SP[a.species] ? SP[a.species].appeal : 0) * (a.baby ? 1.35 : 1) * (a.happiness > 40 ? 1 : 0.4);
+    }
+    var animalsC = n ? 0.55 * Math.min(1, nSp / 14) + 0.45 * Math.min(1, A / 1400) : 0;
+    var animalWelfare = n ? clamp((hsum / n - 45) / 48, 0, 1) : 0;
+
+    var guestScale = Math.min(1, Math.max(S.guests.length / 25, (S.stats.guestsTotal || 0) / 80));
+    var gNow = S.guests.length > 5 ? (S.guestHappiness || 65) : RT.ghEMA;
+    var guests = clamp(((gNow * 0.5 + RT.ghEMA * 0.5) - 45) / 47, 0, 1) * guestScale;
+
+    var ref = Math.max(30, S.stats.peakGuests || 0), bt = RT.byType;
+    var facilities = (
+      Math.min(1, bt.food.length / Math.ceil(ref / 35)) +
+      Math.min(1, bt.drink.length / Math.ceil(ref / 45)) +
+      Math.min(1, bt.toilet.length / Math.ceil(ref / 35)) +
+      Math.min(1, bt.bench.length / Math.ceil(ref / 25)) +
+      Math.min(1, bt.bin.length / Math.ceil(ref / 20)) +
+      Math.min(1, bt.fun.length / Math.max(1, Math.ceil(ref / 50)))
+    ) / 6;
+
+    var dc = 0;
+    for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
+    var cleanP = 1 - Math.min(1, dc / Math.max(6, RT.pathTiles.length * 0.2));
+    var nEncA = 0, ce = 0;
+    for (k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (e.animals.length > 0) {
+        nEncA++;
+        ce += clamp(1 - e.poop / (e.area / 3 + 3), 0, 1);
+      }
+    }
+    var clean = nEncA ? 0.5 * cleanP + 0.5 * (ce / nEncA) : (S.guests.length > 0 ? cleanP : 0);
+
+    var aes = 0;
+    for (k = 0; k < S.objects.length; k++) if (S.objects[k].kind === 'scenery') aes += (SC[S.objects[k].type] || {}).aesthetic || 0;
+    var scenery = n ? clamp(aes / 260, 0, 1) : 0;
+
+    var raw = 0.38 * animalsC + 0.16 * animalWelfare + 0.16 * guests + 0.12 * facilities + 0.10 * clean + 0.08 * scenery;
+    var baseStars = 5 * Math.pow(clamp(raw, 0, 1), 1.15);
+    var spCap = n === 0 ? 0.5 : (0.55 + Math.min(4.45, nSp * 0.26 + Math.min(n, 35) * 0.02));
+    var stars = clamp(Math.min(baseStars, spCap) - 0.6 * (S.panic || 0), 0, 5);
+
+    return { stars: stars, animals: animalsC, welfare: animalWelfare, guests: guests, facilities: facilities, cleanliness: clean, scenery: scenery, diversity: clamp(nSp / 14, 0, 1), panic: S.panic || 0, rating: S.rating };
   }
   function ratingBreakdown() { return computeRating(); }
   function isUnlocked(type, id) {

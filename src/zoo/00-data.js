@@ -85,7 +85,7 @@ window.Z.DATA = {
       cost: 12000, "upkeep/day": 300, appeal: 58, space: 12, social: [3, 10], diet: "herbivore",
       foliage: ["baobab", "acacia", "palm", "tall_grass"],
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 5, speed: 1.2, size: 3.2,
-      lifespan: 3600, breedChance: 0.04, star: 4, danger: 3,
+      lifespan: 3600, breedChance: 0.04, star: 3, danger: 3,
       fact: "An elephant's trunk contains around 40,000 separate muscles."
     },
     {
@@ -112,7 +112,7 @@ window.Z.DATA = {
       cost: 9500, "upkeep/day": 240, appeal: 55, space: 8, social: [1, 1], diet: "carnivore",
       foliage: ["jungle_tree", "fern", "bush", "boulder"],
       needsWater: true, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.5, size: 1.0,
-      lifespan: 960, breedChance: 0.06, star: 4, danger: 3,
+      lifespan: 960, breedChance: 0.06, star: 3, danger: 3,
       fact: "Each tiger's stripe pattern is unique, and their skin is striped too."
     },
     {
@@ -121,7 +121,7 @@ window.Z.DATA = {
       cost: 11000, "upkeep/day": 275, appeal: 60, space: 5, social: [1, 2], diet: "herbivore",
       foliage: ["bamboo", "fern"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 0.7, size: 0.7,
-      lifespan: 1200, breedChance: 0.03, star: 4, danger: 1,
+      lifespan: 1200, breedChance: 0.03, star: 3, danger: 1,
       fact: "Giant pandas can spend 10 to 16 hours a day eating bamboo."
     },
     {
@@ -130,7 +130,7 @@ window.Z.DATA = {
       cost: 8000, "upkeep/day": 200, appeal: 52, space: 6, social: [2, 6], diet: "herbivore",
       foliage: ["jungle_tree", "fern", "bush"],
       needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.0, size: 0.9,
-      lifespan: 2100, breedChance: 0.03, star: 3, danger: 2,
+      lifespan: 2100, breedChance: 0.03, star: 2, danger: 2,
       fact: "Gorillas share roughly 98 per cent of their DNA with humans."
     },
     {
@@ -157,7 +157,7 @@ window.Z.DATA = {
       cost: 4400, "upkeep/day": 110, appeal: 38, space: 8, social: [1, 2], diet: "omnivore",
       foliage: ["pine", "fern", "bush"],
       needsWater: true, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.2, size: 1.2,
-      lifespan: 1500, breedChance: 0.06, star: 2, danger: 3,
+      lifespan: 1500, breedChance: 0.06, star: 1, danger: 3,
       fact: "Brown bears can reach around 56 km/h (35 mph) over short distances."
     },
     {
@@ -166,7 +166,7 @@ window.Z.DATA = {
       cost: 6500, "upkeep/day": 170, appeal: 50, space: 8, social: [1, 1], diet: "carnivore",
       foliage: ["ice_floe", "boulder"],
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 4, speed: 1.3, size: 1.4,
-      lifespan: 1500, breedChance: 0.05, star: 3, danger: 3,
+      lifespan: 1500, breedChance: 0.05, star: 2, danger: 3,
       fact: "Polar bears have black skin beneath their white-looking fur, which helps them absorb heat."
     },
     {
@@ -211,7 +211,7 @@ window.Z.DATA = {
       cost: 4800, "upkeep/day": 120, appeal: 30, space: 4, social: [1, 4], diet: "carnivore",
       foliage: ["palm", "fern", "rock_pile", "bush"],
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 4, speed: 0.5, size: 0.5,
-      lifespan: 2700, breedChance: 0.06, star: 2, danger: 3,
+      lifespan: 2700, breedChance: 0.06, star: 1, danger: 3,
       fact: "Crocodiles cannot stick out their tongues, because the tongue is attached to the floor of the mouth."
     },
     {
