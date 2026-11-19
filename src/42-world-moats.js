@@ -5,6 +5,7 @@
 (function () {
   'use strict';
   var N = Z.N, T = Z.TILE, NN = N * N, D = Z.DATA, MD = D.moats;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; NN = n * n; runOf = new Int16Array(NN).fill(-1); runs = []; });
   var MW = Z.MoatsWorld = {};
   var DW = MD.depths.map(function (d) { return d.world; });
   var dcount = 0, bdirty = true, odirty = true, overlayOn = false;

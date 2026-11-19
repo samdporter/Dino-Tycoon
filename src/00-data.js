@@ -447,6 +447,13 @@ window.Z.DATA = {
     { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false }
   ],
 
+  mapSizes: [
+    { id: "small", name: "Small", n: 40, blurb: "40×40 — cozy, tight layout" },
+    { id: "medium", name: "Medium", n: 56, blurb: "56×56 — classic balanced park" },
+    { id: "large", name: "Large", n: 72, blurb: "72×72 — sprawling grounds" },
+    { id: "huge", name: "Huge", n: 88, blurb: "88×88 — massive mega-park" }
+  ],
+
   // Starting maps. bounds = playable tiles (inclusive); everything outside is "Outside your land".
   // gen = procedural parameters read by genMap() in 20f: hills {amp (levels), scale (tiles)}, ridge {j, wave, h, ramps[]}, canyon {j, wave, w, depth},
   // island {cx,cy,rx,ry, harm[[k,amp,phase]], bays[[angle,width,depth]], capes[[x,y,r]], islets[[x,y,r]], lagoon{x,y,r,ang}, river/river2{to: angle}} = the island outline (see notes/island.md; bounds here are only a fallback, genMap computes the real owned bounds),

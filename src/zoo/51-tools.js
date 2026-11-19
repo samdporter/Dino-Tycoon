@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA, N = Z.N, T = Z.TILE;
+  Z.bus.on('gridsize', function (n) { N = n; });
   var Tools = UI.Tools = {}, el, world;
   var ptrs = {}, nptr = 0, g = null, drag = null, hover = null, lastPlan = null, moved = false;
   var POINT = { scenery: 1, building: 1, animal: 1, staff: 1, animalmove: 1 };
@@ -237,8 +238,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       var idx = q.i + q.j * N; if (S.terrain[idx] === ti) return false;
       if (water && (S.path[idx] || S.tileObj[idx])) { return false; } return true;
     });
-    var cost = chg.length * D.terrain[ti].cost, afford = cost <= S.money;
-    return { spec: { type: 'tiles', tiles: chg.length ? chg : list, ok: chg.length > 0 && afford }, ok: chg.length > 0 && afford, cost: cost, n: chg.length, msg: !chg.length ? (water ? 'Nothing to change (paths and objects block water)' : 'Already that terrain') : (!afford ? 'Not enough money' : ''),
+    var tdef = D.terrain[ti], locked = (tdef.star || 0) > (S.unlocked ? S.unlocked.star : 0);
+    var cost = chg.length * tdef.cost, afford = cost <= S.money;
+    return { spec: { type: 'tiles', tiles: chg.length ? chg : list, ok: !locked && chg.length > 0 && afford }, ok: !locked && chg.length > 0 && afford, cost: cost, n: chg.length, msg: locked ? 'Unlocks at ' + tdef.star + ' stars' : !chg.length ? (water ? 'Nothing to change (paths and objects block water)' : 'Already that terrain') : (!afford ? 'Not enough money' : ''),
       label: chg.length > 1 ? chg.length + ' tiles' : '', run: function () {
         var seen = {}, n = 0, c = 0, cs = [];
         centers.forEach(function (q) { var key = q.i + ',' + q.j; if (!seen[key]) { seen[key] = 1; cs.push(q); } });

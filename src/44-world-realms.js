@@ -9,6 +9,11 @@
   var SEA_Y = -0.1, PY = 0.045, PIER_Y = 0.42, TRENCH_Y = -3.1, ARCH = 0.95, WALLH = 1.0, TUN_H = WALLH + ARCH;   // QA visual: tunnels are tall enough to stand in (guests are about 1.4 high)
   var scene = null, root = null, dirty = true, zoneSig = '', overlayOn = false, rangeObj = 0, t0 = 0;
   var tunLow = new Float32Array(NN), floorOf = new Float32Array(NN), tankId = new Int32Array(NN), walkOf = new Uint8Array(NN), trenchOf = new Uint8Array(NN), anyTank = false, anyTrench = false, anyWalk = false;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) {
+    N = n; NN = n * n;
+    tunLow = new Float32Array(NN); floorOf = new Float32Array(NN); tankId = new Int32Array(NN); walkOf = new Uint8Array(NN); trenchOf = new Uint8Array(NN);
+    dirty = true;
+  });
   var pathWalk = [];   // path id -> walk code
   function S() { return Z.state; }
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }

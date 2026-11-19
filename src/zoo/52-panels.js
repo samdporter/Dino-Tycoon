@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA, N = Z.N;
+  Z.bus.on('gridsize', function (n) { N = n; });
   var Panel = UI.Panel = {}, el, cur = null, sheetEl = null;
 
   Panel.init = function () {
@@ -261,7 +262,7 @@ window.Z = window.Z || {}; var Z = window.Z;
               rows.push(['Enclosures in zone', stCovN]);
             }
             rows.push(['Running cost', fmt(r.upkeep) + ' / day']);
-          } else { rows.push(['Beauty', '★'.repeat(def.aesthetic) + '☆'.repeat(5 - def.aesthetic)]); if (q.type === 'bin') rows.push(['Bin', Math.round((q.fill || 0) * 100) + '% full']); }
+          } else { rows.push(['Beauty', '★'.repeat(def.aesthetic) + '☆'.repeat(Math.max(0, 5 - def.aesthetic))]); if (q.type === 'bin') rows.push(['Bin', Math.round((q.fill || 0) * 100) + '% full']); }
           rows.forEach(function (r2) { stats.appendChild(h('div.kv', h('span', { text: r2[0] }), h('b', { text: String(r2[1]) }))); });
           if (isB && (def.info || r.info)) stats.appendChild(h('div.fact', { text: def.info || r.info }));
           if (!isB) {

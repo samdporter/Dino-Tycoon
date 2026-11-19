@@ -11,7 +11,10 @@ window.Z.DATA = {
     { id: "rainforest", name: "Rainforest floor", colour: "#2f7a3e", cost: 18 },
     { id: "forest", name: "Woodland", colour: "#3e6b35", cost: 15 },
     { id: "rock", name: "Rock", colour: "#8a8580", cost: 20 },
-    { id: "water", name: "Water", colour: "#3a86b8", cost: 30 }
+    { id: "water", name: "Water", colour: "#3a86b8", cost: 30 },
+    { id: "enchanted", name: "Enchanted glade", colour: "#78d6a8", cost: 35, star: 4 },
+    { id: "misty_moor", name: "Misty moor", colour: "#566b78", cost: 30, star: 4 },
+    { id: "starlight_sand", name: "Starlight sand", colour: "#d6b8f0", cost: 35, star: 4 }
   ],
 
   fences: [
@@ -210,6 +213,60 @@ window.Z.DATA = {
       needsWater: true, needsShelter: false, needsRocks: false, minFence: 4, speed: 0.5, size: 0.5,
       lifespan: 2700, breedChance: 0.06, star: 2, danger: 3,
       fact: "Crocodiles cannot stick out their tongues, because the tongue is attached to the floor of the mouth."
+    },
+    {
+      id: "unicorn", name: "Unicorn", emoji: "🦄", biome: "enchanted",
+      terrainPrefs: { enchanted: 0.5, grass: 0.25, starlight_sand: 0.15, water: 0.1 },
+      cost: 12000, "upkeep/day": 150, appeal: 95, space: 26, social: [1, 4], diet: "herbivore",
+      foliage: ["enchanted_tree", "glowing_mushroom", "rainbow_arch", "crystal_cluster"],
+      needsWater: true, needsShelter: true, needsRocks: false, minFence: 3, speed: 1.7, size: 1.4,
+      lifespan: 1800, breedChance: 0.05, star: 4, danger: 0, fantasy: true,
+      fact: "A mythical white steed with a spiralling golden horn; unicorns thrive in shimmering enchanted glades."
+    },
+    {
+      id: "winged_monkey", name: "Winged monkey", emoji: "🦇", biome: "misty_moor",
+      terrainPrefs: { misty_moor: 0.45, rock: 0.25, enchanted: 0.2, forest: 0.1 },
+      cost: 9500, "upkeep/day": 130, appeal: 86, space: 18, social: [2, 6], diet: "omnivore",
+      foliage: ["enchanted_tree", "standing_stones", "crystal_cluster", "wizard_shelter"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 3, speed: 1.8, size: 0.9,
+      lifespan: 1100, breedChance: 0.08, star: 4, danger: 1, canFlyOver: true, fantasy: true,
+      fact: "Straight out of Oz, these bat-winged monkeys love dramatic swoops over fences to startle guests before flapping smugly back home."
+    },
+    {
+      id: "sasquatch", name: "Sasquatch", emoji: "🦶", biome: "forest",
+      terrainPrefs: { forest: 0.45, misty_moor: 0.35, rock: 0.2 },
+      cost: 11000, "upkeep/day": 140, appeal: 90, space: 30, social: [1, 2], diet: "omnivore",
+      foliage: ["pine", "glowing_mushroom", "standing_stones", "boulder"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.3, size: 1.8,
+      lifespan: 1600, breedChance: 0.04, star: 4, danger: 1, fantasy: true,
+      fact: "A towering, elusive woodland cryptid that prefers misty pines, ancient stones and plenty of privacy."
+    },
+    {
+      id: "nessie", name: "Loch Ness monster", emoji: "🦕", biome: "water",
+      terrainPrefs: { water: 0.7, misty_moor: 0.2, rock: 0.1 },
+      cost: 14000, "upkeep/day": 175, appeal: 98, space: 34, social: [1, 2], diet: "piscivore",
+      foliage: ["standing_stones", "boulder", "tall_grass", "glowing_mushroom"],
+      needsWater: true, needsShelter: false, needsRocks: true, minFence: 3, speed: 1.25, size: 2.0,
+      lifespan: 2000, breedChance: 0.03, star: 4, danger: 0, fantasy: true,
+      fact: "Scotland's legendary lake serpent glides gracefully through deep lochs, delighting guests whenever its arched humps surface."
+    },
+    {
+      id: "phoenix", name: "Phoenix", emoji: "🔥", biome: "starlight_sand",
+      terrainPrefs: { starlight_sand: 0.45, rock: 0.3, enchanted: 0.25 },
+      cost: 13500, "upkeep/day": 165, appeal: 97, space: 22, social: [1, 2], diet: "herbivore",
+      foliage: ["crystal_cluster", "rainbow_arch", "heat_rock", "enchanted_tree"],
+      needsWater: false, needsShelter: false, needsRocks: true, minFence: 3, speed: 1.6, size: 1.15,
+      lifespan: 2400, breedChance: 0.05, star: 4, danger: 0, fantasy: true,
+      fact: "A radiant firebird of legend whose golden plumage glows brightest among crystal spires and starlight dunes."
+    },
+    {
+      id: "griffin", name: "Griffin", emoji: "🦅", biome: "misty_moor",
+      terrainPrefs: { misty_moor: 0.4, rock: 0.35, enchanted: 0.25 },
+      cost: 12500, "upkeep/day": 160, appeal: 94, space: 28, social: [1, 3], diet: "carnivore",
+      foliage: ["standing_stones", "boulder", "crystal_cluster", "wizard_shelter"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.55, size: 1.5,
+      lifespan: 1500, breedChance: 0.04, star: 4, danger: 2, fantasy: true,
+      fact: "Half lion and half eagle, the noble griffin guards rocky crags and misty moors with fierce majesty."
     }
   ],
 
@@ -243,7 +300,13 @@ window.Z.DATA = {
     { id: "bin", name: "Litter bin", emoji: "🗑️", cost: 40, kind: "deco", biome: "any", aesthetic: 0, inEnclosure: false },
     { id: "statue", name: "Statue", emoji: "🗿", cost: 500, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false },
     { id: "picnic_table", name: "Picnic table", emoji: "🧺", cost: 110, kind: "deco", biome: "grass", aesthetic: 2, inEnclosure: false },
-    { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false }
+    { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false },
+    { id: "enchanted_tree", name: "Enchanted tree", emoji: "🌸", cost: 260, kind: "tree", biome: "enchanted", aesthetic: 7, inEnclosure: true, star: 4 },
+    { id: "glowing_mushroom", name: "Glowing mushrooms", emoji: "🍄", cost: 140, kind: "bush", biome: "enchanted", aesthetic: 5, inEnclosure: true, star: 4 },
+    { id: "crystal_cluster", name: "Crystal cluster", emoji: "💎", cost: 280, kind: "rock", biome: "starlight_sand", aesthetic: 7, inEnclosure: true, star: 4 },
+    { id: "standing_stones", name: "Standing stones", emoji: "🪨", cost: 320, kind: "rock", biome: "misty_moor", aesthetic: 7, inEnclosure: true, star: 4 },
+    { id: "rainbow_arch", name: "Rainbow arch", emoji: "🌈", cost: 450, kind: "toy", biome: "enchanted", aesthetic: 8, inEnclosure: true, star: 4 },
+    { id: "wizard_shelter", name: "Wizard's tower", emoji: "🏰", cost: 650, kind: "shelter", biome: "enchanted", aesthetic: 6, inEnclosure: true, star: 4 }
   ],
 
   maps: [
@@ -343,6 +406,13 @@ window.Z.DATA = {
         scatter: [["snow_pine", 26, ["snow", "forest", "rock"]], ["pine", 8, ["forest"]], ["ice_floe", 6, ["water"]], ["boulder", 8, ["snow", "rock"]], ["rock_pile", 6, ["snow", "rock"]], ["fern", 4, ["forest"]], ["bush", 4, ["forest"]]]
       }
     }
+  ],
+
+  mapSizes: [
+    { id: "small", name: "Small", n: 40, blurb: "40×40 — cozy, tight layout" },
+    { id: "medium", name: "Medium", n: 56, blurb: "56×56 — classic balanced zoo" },
+    { id: "large", name: "Large", n: 72, blurb: "72×72 — sprawling grounds" },
+    { id: "huge", name: "Huge", n: 88, blurb: "88×88 — massive mega-zoo" }
   ],
 
   buildings: [
@@ -530,6 +600,11 @@ window.Z.DATA = {
       "Ta-ra, see you next time.",
       "Off to find the car.",
       "Lovely day, goodbye!"
+    ],
+    flyingMonkey: [
+      "Watch out — winged monkeys overhead!",
+      "A flying monkey swooped right past my hat!",
+      "Eek! Flying monkeys from the exhibit!"
     ]
   },
 

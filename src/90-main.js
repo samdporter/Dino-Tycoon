@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var Main = Z.Main = { playing: false }, UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var SAVE_KEY = 'amberacres.save.v2', SET_KEY = 'amberacres.settings.v1';
   var settings = { sound: true, quality: 'auto' }, titleEl, last = 0, saveT = 0, orbit = 0.4, saveFailed = false;
   var ema = 0.016, slowT = 0, prCap = 2, budget = 240, QUAL = { low: [1, 140], med: [1.5, 320], high: [2, 600] };
@@ -129,15 +130,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.snd('unlock');
   }
   function startCam() {
-    var c = Z.World.cam, m = Z.state && Z.state.map, T = Z.TILE || 2;
-    var i0 = m ? m.i0 : 0, j0 = m ? m.j0 : 0, i1 = m ? m.i1 : N - 1, j1 = m ? m.j1 : N - 1, w = i1 - i0 + 1, hh = j1 - j0 + 1, big = Math.max(w, hh, 24) / 56;
+    var c = Z.World.cam, m = Z.state && Z.state.map, T = Z.TILE || 2, curN = Z.N || N;
+    var i0 = m ? m.i0 : 0, j0 = m ? m.j0 : 0, i1 = m ? m.i1 : curN - 1, j1 = m ? m.j1 : curN - 1, w = i1 - i0 + 1, hh = j1 - j0 + 1, big = Math.max(w, hh, 24) / 56;
     c.target.x = (i0 + w / 2) * T; c.target.z = (j0 + hh * 0.6) * T;
-    c.dist = Math.min(150, (UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
+    var maxD = Math.max(150, curN * T * 1.1);
+    c.dist = Math.min(maxD, (UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
   }
   Main.internals = { enterGame: function () { enterGame(); }, startCam: function () { startCam(); }, closeSetup: function () { closeSetup(); }, sget: sget, SAVE_KEY: SAVE_KEY };   // used by the Masterclass (73-examples-ui.js)
   Main.newGame = function (o) {
     o = o || {}; var maps = Z.DATA.maps, args = { seed: o.seed || ((Math.random() * 0x7ffffff) | 0) + 1, difficulty: o.difficulty || 'normal' };
     if (o.map || (maps && maps.length)) args.map = o.map || maps[0].id;
+    if (o.mapSize) args.mapSize = o.mapSize;
     Z.Sim.newGame(args); Z.state.speed = 1; startCam(); enterGame();
     if (Z.World.snapCamera) Z.World.snapCamera();
     if (UI.Panel) UI.Panel.closeSheet(); UI.closeModal(); closeSetup();
@@ -148,20 +151,28 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- new-game setup sheet
   var setupEl = null, setupSel = null;
   var FALLBACK_MAPS = [{ id: 'default', name: 'Starter meadow', size: 'Medium', blurb: 'A friendly plot to learn on.', bounds: { i0: 0, j0: 0, i1: N - 1, j1: N - 1 } }];
+  var FALLBACK_SIZES = [
+    { id: 'small', name: 'Small', n: 40, blurb: '40×40 — cozy, tight layout' },
+    { id: 'medium', name: 'Medium', n: 56, blurb: '56×56 — classic balanced park' },
+    { id: 'large', name: 'Large', n: 72, blurb: '72×72 — sprawling grounds' },
+    { id: 'huge', name: 'Huge', n: 88, blurb: '88×88 — massive mega-park' }
+  ];
   var FALLBACK_DIFFS = [{ id: 'easy', name: 'Relaxed', blurb: 'Generous funds and patient guests.', money: 45000 }, { id: 'normal', name: 'Normal', blurb: 'The intended experience.', money: 30000 }, { id: 'hard', name: 'Challenging', blurb: 'Tight budget, picky guests.', money: 20000 }];
   function closeSetup() { if (setupEl) { setupEl.remove(); setupEl = null; } }
   Main.closeSetup = closeSetup;
-  function drawMapThumb(cv, m, seed) {
-    var W = cv.width, g = cv.getContext('2d'), b = m.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, px = W / N, p = null, i, j;
-    try { if (Z.Sim.previewMap) p = Z.Sim.previewMap(m.id, seed); } catch (e) { p = null; }
-    if (p && p.bounds) b = p.bounds;
+  function drawMapThumb(cv, m, seed, mapSize) {
+    var W = cv.width, g = cv.getContext('2d'), p = null, i, j;
+    try { if (Z.Sim.previewMap) p = Z.Sim.previewMap(m.id, seed, mapSize); } catch (e) { p = null; }
+    var curN = (p && p.N) || (Z.Sim.resolveSizeN ? Z.Sim.resolveSizeN(mapSize) : Z.N);
+    var b = (p && p.bounds) || (Z.Sim.mapBounds ? Z.Sim.mapBounds(m.id, mapSize) : m.bounds) || { i0: 0, j0: 0, i1: curN - 1, j1: curN - 1 };
+    var px = W / curN, s = curN / 56;
     g.fillStyle = '#5b6e4e'; g.fillRect(0, 0, W, W);
     if (p && p.terrain) {
       var cols = Z.DATA.terrain.map(function (t) { return t.colour || '#6fae4a'; });
-      for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
-        var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (N + 1)] || 0) : 0;
-        var isSea = !!(p.sea && p.sea[i + j * N]);
-        g.fillStyle = isSea ? (e < -1 ? '#2d78a6' : '#58a9c4') : (cols[p.terrain[i + j * N]] || '#6fae4a'); g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
+      for (j = 0; j < curN; j++) for (i = 0; i < curN; i++) {
+        var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (curN + 1)] || 0) : 0;
+        var isSea = !!(p.sea && p.sea[i + j * curN]);
+        g.fillStyle = isSea ? (e < -1 ? '#2d78a6' : '#58a9c4') : (cols[p.terrain[i + j * curN]] || '#6fae4a'); g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
         if (e) { g.fillStyle = e > 0 ? 'rgba(255,255,255,' + Math.min(0.5, e * 0.07) + ')' : 'rgba(10,30,60,' + Math.min(0.5, -e * 0.09) + ')'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
         if (!inb && !isSea) { g.fillStyle = 'rgba(20,28,16,.62)'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
       }
@@ -174,43 +185,60 @@ window.Z = window.Z || {}; var Z = window.Z;
       g.save(); g.beginPath(); g.rect(bx, by, bw, bh); g.clip();
       (gen.paint || []).forEach(function (pt) { for (k = 0; k < 5; k++) blob(cl(pt.t, '#8b6a45'), bw * 0.1); });
       if (gen.hills && gen.hills.amp) for (k = 0; k < 3 + gen.hills.amp; k++) blob('rgba(255,255,255,' + Math.min(0.28, 0.08 + gen.hills.amp * 0.04) + ')', bw * 0.12);
-      if (gen.mesas) for (k = 0; k < gen.mesas.n; k++) blob('rgba(120,95,70,.8)', bw * 0.06);
-      if (gen.lakes) for (k = 0; k < gen.lakes.n; k++) blob('#4aa3c8', gen.lakes.r ? (gen.lakes.r[0] + gen.lakes.r[1]) / 2 * px * 0.8 : bw * 0.07);
-      var line = function (j, w, col) { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); for (var x = 0; x <= 8; x++) { var yy = by + (j - b.j0) * px + Math.sin(x * 1.3 + (seed || 0)) * 2; if (x) g.lineTo(bx + bw * x / 8, yy); else g.moveTo(bx, yy); } g.stroke(); };
+      if (gen.mesas) for (k = 0; k < Math.round(gen.mesas.n * s); k++) blob('rgba(120,95,70,.8)', bw * 0.06);
+      if (gen.lakes) for (k = 0; k < Math.round(gen.lakes.n * s); k++) blob('#4aa3c8', gen.lakes.r ? (gen.lakes.r[0] + gen.lakes.r[1]) / 2 * px * 0.8 : bw * 0.07);
+      var line = function (j, w, col) { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); for (var x = 0; x <= 8; x++) { var yy = by + (j * s - b.j0) * px + Math.sin(x * 1.3 + (seed || 0)) * 2; if (x) g.lineTo(bx + bw * x / 8, yy); else g.moveTo(bx, yy); } g.stroke(); };
       if (gen.ridge) line(gen.ridge.j, 3, '#6d5f52');
       if (gen.canyon) line(gen.canyon.j, Math.max(3, gen.canyon.w * px * 0.8), '#4a3a2c');
       g.restore();
     }
     g.strokeStyle = '#ffe08a'; g.lineWidth = 1.5; g.strokeRect(b.i0 * px + 0.75, b.j0 * px + 0.75, (b.i1 - b.i0 + 1) * px - 1.5, (b.j1 - b.j0 + 1) * px - 1.5);
-    g.fillStyle = '#c4553a'; g.fillRect(27 * px, (N - 2) * px, 2 * px + 1, 2 * px);
+    g.fillStyle = '#c4553a'; g.fillRect((Math.floor(curN / 2) - 1) * px, (curN - 2) * px, 2 * px + 1, 2 * px);
+    return b;
   }
   Main.openSetup = function () {
     closeSetup();
-    var maps = (Z.DATA.maps && Z.DATA.maps.length) ? Z.DATA.maps : FALLBACK_MAPS, diffs = (Z.DATA.difficulties && Z.DATA.difficulties.length) ? Z.DATA.difficulties : FALLBACK_DIFFS;
-    var sel = setupSel = setupSel || {}; sel.map = maps.filter(function (m) { return m.id === sel.map; }).length ? sel.map : maps[0].id;
+    var maps = (Z.DATA.maps && Z.DATA.maps.length) ? Z.DATA.maps : FALLBACK_MAPS;
+    var sizes = (Z.DATA.mapSizes && Z.DATA.mapSizes.length) ? Z.DATA.mapSizes : FALLBACK_SIZES;
+    var diffs = (Z.DATA.difficulties && Z.DATA.difficulties.length) ? Z.DATA.difficulties : FALLBACK_DIFFS;
+    var sel = setupSel = setupSel || {};
+    sel.map = maps.filter(function (m) { return m.id === sel.map; }).length ? sel.map : maps[0].id;
+    sel.size = sizes.filter(function (s) { return s.id === sel.size; }).length ? sel.size : 'medium';
     sel.diff = diffs.filter(function (d) { return d.id === sel.diff; }).length ? sel.diff : (diffs.filter(function (d) { return d.id === 'normal'; })[0] || diffs[0]).id;
     sel.seed = sel.seed || ((Math.random() * 99999) | 0) + 1;
-    var root = setupEl = h('div#setup'), box = h('div.sbox'), mapRow = h('div.smaps'), dRow = h('div.sdiffs'), seedTxt = h('span.sseed');
-    var thumbs = {};
+    var root = setupEl = h('div#setup'), box = h('div.sbox'), mapRow = h('div.smaps'), sizeRow = h('div.ssizes'), dRow = h('div.sdiffs'), seedTxt = h('span.sseed');
+    var thumbs = {}, badges = {};
     function mark() {
       Array.prototype.forEach.call(mapRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.map); });
+      Array.prototype.forEach.call(sizeRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.size); });
       Array.prototype.forEach.call(dRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.diff); });
       seedTxt.textContent = 'Terrain seed ' + sel.seed;
     }
-    function draw() { maps.forEach(function (m) { drawMapThumb(thumbs[m.id], m, sel.seed); }); }
+    function draw() {
+      maps.forEach(function (m) {
+        var b = drawMapThumb(thumbs[m.id], m, sel.seed, sel.size);
+        if (badges[m.id] && b) badges[m.id].textContent = (b.i1 - b.i0 + 1) + '×' + (b.j1 - b.j0 + 1);
+      });
+    }
     maps.forEach(function (m) {
-      var cv = h('canvas', { width: 112, height: 112 }); thumbs[m.id] = cv;
+      var cv = h('canvas', { width: 112, height: 112 }), bd = h('span.badge', { text: m.size || '' });
+      thumbs[m.id] = cv; badges[m.id] = bd;
       mapRow.appendChild(h('button.smap', { 'data-id': m.id, on: { click: function () { UI.snd('click'); sel.map = m.id; mark(); } } }, h('div.sth', cv),
-        h('div.snm', h('b', { text: m.name }), h('span.badge', { text: m.size || '' })), h('div.sbl', { text: m.blurb || '' })));
+        h('div.snm', h('b', { text: m.name }), bd), h('div.sbl', { text: m.blurb || '' })));
+    });
+    sizes.forEach(function (sz) {
+      sizeRow.appendChild(h('button.ssize', { 'data-id': sz.id, on: { click: function () { UI.snd('click'); sel.size = sz.id; mark(); draw(); } } },
+        h('b', { text: sz.name }), h('span.sm', { text: sz.n + '×' + sz.n }), h('small', { text: sz.blurb || '' })));
     });
     diffs.forEach(function (d) {
       dRow.appendChild(h('button.sdiff', { 'data-id': d.id, on: { click: function () { UI.snd('click'); sel.diff = d.id; mark(); } } }, h('b', { text: d.name }), h('span.sm', { text: UI.fmt(d.money || 0) }), h('small', { text: d.blurb || '' })));
     });
     box.appendChild(h('h2', { text: 'Choose your land' })); box.appendChild(mapRow);
     box.appendChild(h('div.srow', seedTxt, h('button.btn.sm.alt', { html: ic('rot') + 'Reroll terrain', on: { click: function () { UI.snd('click'); sel.seed = ((Math.random() * 99999) | 0) + 1; mark(); draw(); } } })));
+    box.appendChild(h('h2', { text: 'Map size' })); box.appendChild(sizeRow);
     box.appendChild(h('h2', { text: 'Starting funds' })); box.appendChild(dRow);
     box.appendChild(h('div.sact', h('button.btn.alt', { text: 'Back', on: { click: function () { UI.snd('click'); closeSetup(); } } }),
-      h('button.btn.gold', { html: ic('play') + 'Start park', on: { click: function () { UI.snd('click'); var s0 = { map: sel.map, difficulty: sel.diff, seed: sel.seed }; sel.seed = 0; Main.newGame(s0); } } })));
+      h('button.btn.gold', { html: ic('play') + 'Start park', on: { click: function () { UI.snd('click'); var s0 = { map: sel.map, mapSize: sel.size, difficulty: sel.diff, seed: sel.seed }; sel.seed = 0; Main.newGame(s0); } } })));
     root.appendChild(box); document.body.appendChild(root); mark(); draw();
   };
   Main.continueGame = function () {

@@ -13,6 +13,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var C = Z.realmCtx; if (!C) return;
   var N = Z.N, NN = N * N, TILE = Z.TILE, D = Z.DATA, RD = D.realms, bus = Z.bus, rng = Z.rng, clamp = C.clamp, fail = C.fail, okr = C.okr, PI = Math.PI;
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; FERRY.x = n * TILE / 2 + 30; FERRY.z = n * TILE + 8; });
   var R = Z.Realms = {};
   if (Z.Sim) Z.Sim.realms = R;
   var SEA_Y = -0.1, ES = Z.ELEV_STEP || 0.5, HOUR = C.DAY_SECONDS / 24;
@@ -906,7 +907,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ============================================================ escapes
   var HOW = { tank: 'smashed out of', pen: 'broken through the net of', dome: 'torn through the mesh of', virtual: 'crossed the geofence of' };
-  var FERRY = { x: 56 + 30, z: 112 + 8 };
+  var FERRY = { x: Z.N * TILE / 2 + 30, z: Z.N * TILE + 8 };
   function outsideTile(enc, a, wantSea) {
     var t0 = tileOf(a.x, a.z), i0 = t0 % N, j0 = (t0 - i0) / N, s = S(), best = -1, bd = 1e9;
     for (var r = 1; r <= 7 && best < 0; r++) for (var j = j0 - r; j <= j0 + r; j++) for (var i = i0 - r; i <= i0 + r; i++) {

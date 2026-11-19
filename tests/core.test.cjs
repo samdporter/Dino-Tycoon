@@ -1414,3 +1414,81 @@ test('dino vets interrupt patrols via radio, heal low-health & sick animals fast
   assert.ok(encRep.issues.some(x => /Vets cannot reach/i.test(x)));
   assert.ok(anRep.issues.some(x => /Vets cannot reach/i.test(x)));
 });
+
+test('Dino supports all 4 map sizes, non-mutating previewMap, cross-size save/load, and corrupt-size rejection', () => {
+  const z = game();
+  const expectedSizes = { small: 40, medium: 56, large: 72, huge: 88 };
+  assert.deepEqual(
+    Array.from(z.DATA.mapSizes, s => [s.id, s.n]),
+    Object.entries(expectedSizes)
+  );
+
+  for (const [sizeId, n] of Object.entries(expectedSizes)) {
+    z.Sim.newGame({ seed: 42, map: 'fern_meadow', mapSize: sizeId, difficulty: 'easy' });
+    assert.equal(z.N, n);
+    assert.equal(z.state.gridN, n);
+    assert.equal(z.state.mapSize, sizeId);
+    assert.equal(z.state.terrain.length, n * n);
+    assert.equal(z.state.path.length, n * n);
+    assert.equal(z.state.fenceX.length, n * (n + 1));
+    assert.equal(z.state.fenceZ.length, (n + 1) * n);
+    assert.equal(z.state.elev.length, (n + 1) * (n + 1));
+
+    const gateI0 = Math.floor(n / 2) - 1;
+    assert.ok(z.state.path[gateI0 + (n - 1) * n] > 0, `Gate left tile at N=${n}`);
+    assert.ok(z.state.path[(gateI0 + 1) + (n - 1) * n] > 0, `Gate right tile at N=${n}`);
+    assert.ok(z.state.path[gateI0 + (n - 6) * n] > 0, `Main avenue left tile at N=${n}`);
+    assert.ok(z.state.path[(gateI0 + 1) + (n - 6) * n] > 0, `Main avenue right tile at N=${n}`);
+    assert.equal(z.state.path[(gateI0 - 1) + (n - 6) * n], 0, `Main avenue centered left bound at N=${n}`);
+    assert.equal(z.state.path[(gateI0 + 2) + (n - 6) * n], 0, `Main avenue centered right bound at N=${n}`);
+  }
+
+  // previewMap('huge') while 'small' is active returns N=88 without mutating Z.N
+  z.Sim.newGame({ seed: 101, map: 'fern_meadow', mapSize: 'small' });
+  assert.equal(z.N, 40);
+  const preview = z.Sim.previewMap('fern_meadow', 777, 'huge');
+  assert.ok(preview);
+  assert.equal(preview.N, 88);
+  assert.equal(preview.terrain.length, 88 * 88);
+  assert.equal(preview.elev.length, 89 * 89);
+  assert.equal(z.N, 40);
+  assert.equal(z.state.gridN, 40);
+  assert.equal(z.state.terrain.length, 40 * 40);
+
+  // Saving huge (88), starting small (40), then loading huge restores Z.N === 88 and state cleanly
+  z.Sim.newGame({ seed: 555, map: 'fern_meadow', mapSize: 'huge', money: 123456 });
+  assert.equal(z.Sim.placePath(43, 70, 'paved').ok, true);
+  const hugeMoneyAfterPath = z.state.money;
+  const hugeSaved = z.Sim.save();
+
+  z.Sim.newGame({ seed: 123, map: 'fern_meadow', mapSize: 'small', money: 5000 });
+  assert.equal(z.N, 40);
+  assert.equal(z.Sim.load(hugeSaved), true);
+  assert.equal(z.N, 88);
+  assert.equal(z.state.gridN, 88);
+  assert.equal(z.state.mapSize, 'huge');
+  assert.equal(z.state.terrain.length, 88 * 88);
+  assert.equal(z.state.elev.length, 89 * 89);
+  assert.ok(z.state.path[43 + 70 * 88] > 0);
+  assert.equal(z.state.money, hugeMoneyAfterPath);
+
+  // Corrupt/mismatched array sizes fail and preserve active park's Z.N and state
+  z.Sim.newGame({ seed: 99, map: 'fern_meadow', mapSize: 'small', money: 44444 });
+  const smallBefore = z.state;
+  const smallRaw = z.Sim.save();
+
+  const mismatchedGrid = JSON.parse(smallRaw);
+  mismatchedGrid.s.gridN = 88;
+  assert.equal(z.Sim.load(JSON.stringify(mismatchedGrid)), false);
+  assert.equal(z.N, 40);
+  assert.equal(z.state, smallBefore);
+  assert.equal(z.state.money, 44444);
+
+  const truncatedTerrain = JSON.parse(smallRaw);
+  truncatedTerrain.s.terrain = { __t: 'u8', n: 10, d: 'AAAAAAAAAA==' };
+  assert.equal(z.Sim.load(JSON.stringify(truncatedTerrain)), false);
+  assert.equal(z.N, 40);
+  assert.equal(z.state, smallBefore);
+  assert.equal(z.state.money, 44444);
+});
+

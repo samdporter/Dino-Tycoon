@@ -14,6 +14,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   var C = Z.monoCtx; if (!C) return;
   var N = Z.N, NN = N * N, EW = N + 1, TILE = Z.TILE, D = Z.DATA, MD = D.monorail, bus = Z.bus, rng = Z.rng, clamp = C.clamp, fail = C.fail, okr = C.okr, INF = C.INF;
   var DT4 = [-N, 1, N, -1], PI = Math.PI, TAU = PI * 2;
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; EW = n + 1; DT4[0] = -n; DT4[2] = n; });
   var M = Z.Monorail = {};
   if (Z.Sim) Z.Sim.monorail = M;
   function S() { return C.S(); }

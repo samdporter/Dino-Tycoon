@@ -8,7 +8,27 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   var INF = 65535;
   var PI = Math.PI, TAU = Math.PI * 2;
   var DT4 = [-N, 1, N, -1];
-  var GATE_I0 = 27, GATE_J = N - 1;
+  var GATE_I0 = Math.floor(N / 2) - 1, GATE_J = N - 1;
+  var SIZE_MAP = { small: 40, medium: 56, large: 72, huge: 88 };
+  function resolveSizeN(mapSize) {
+    if (typeof mapSize === 'number' && isFinite(mapSize) && mapSize >= 32 && mapSize <= 128) return Math.round(mapSize);
+    if (typeof mapSize === 'string') {
+      var k = mapSize.toLowerCase();
+      if (SIZE_MAP[k]) return SIZE_MAP[k];
+    }
+    return 56;
+  }
+  function sizeIdOfN(n) {
+    for (var k in SIZE_MAP) if (SIZE_MAP[k] === n) return k;
+    return 'medium';
+  }
+  function syncGridVars(n) {
+    N = n; NN = N * N; EW = N + 1;
+    DT4 = [-N, 1, N, -1];
+    GATE_I0 = Math.floor(N / 2) - 1;
+    GATE_J = N - 1;
+  }
+  bus.on('gridsize', syncGridVars);
 
   // Live weather/difficulty modifiers.
   var WX = {
@@ -131,7 +151,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (d > mx) mx = d; if (d < mn) mn = d; if (e > mx) mx = e; if (e < mn) mn = e;
     return mx - mn;
   }
-  function tileSlope(i, j) { return Z.inb(i, j) && S.elev ? slopeOfT(i + j * N, S.elev) : 0; }
+  function tileSlope(i, j) { return (i >= 0 && j >= 0 && i < N && j < N) && S.elev ? slopeOfT(i + j * N, S.elev) : 0; }
   function isCliff(i, j) { return tileSlope(i, j) >= 3; }
   function cliffT(t) { return S.elev ? slopeOfT(t, S.elev) >= 3 : false; }
   function cornerElev(i, j) { return S && S.elev && i >= 0 && j >= 0 && i <= N && j <= N ? S.elev[j * (N + 1) + i] : 0; }
@@ -143,7 +163,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var h = E[c] * (1 - fu) * (1 - fv) + E[c + 1] * fu * (1 - fv) + E[c + EW] * (1 - fu) * fv + E[c + EW + 1] * fu * fv;
     return h * Z.ELEV_STEP;
   }
-  function entranceTile(i, j) { return i >= 22 && i <= 33 && j >= 39; }
+  function entranceTile(i, j) { return i >= Math.floor(N / 2) - 6 && i <= Math.floor(N / 2) + 5 && j >= Math.max(Math.floor(N * 0.68), N - 17); }
   function footprintFlat(fp, maxSlope) {
     if (!S.elev) return true;
     var mn = 99, mx = -99;
@@ -462,6 +482,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // re-home animals
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k], at = tileOf(a.x, a.z), ne = S.tileEnc[at];
+      if (a.flyover) {
+        var ht = tileOf(a.flyover.hx, a.flyover.hz), hne = S.tileEnc[ht];
+        if (hne) a.enc = hne;
+        else if (!RT.eMap[a.enc]) { a.flyover = null; a.flyAlt = 0; a.enc = 0; }
+        continue;
+      }
       if (a.state === 'escaped' || !a.enc) {
         if (ne) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; a.wx = 0; a.wz = 0; a.aroute = null; }
       } else if (ne !== a.enc) {
@@ -569,7 +595,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k];
       if (a.state === 'escaped') { a.enc = 0; continue; }
-      var t = tileOf(a.x, a.z), eid = S.tileEnc[t];
+      var t = tileOf(a.x, a.z), eid = (a.flyover && a.enc && RT.eMap[a.enc]) ? a.enc : S.tileEnc[t];
       a.enc = eid;
       if (eid && RT.eMap[eid]) {
         var enc = RT.eMap[eid];
@@ -713,6 +739,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function paintTerrain(i, j, terrainId, radius, opts) {
     opts = opts || {}; var dry = dryOf(arguments);
     var ti = TI[terrainId]; if (ti === undefined) return fail('Unknown terrain');
+    var tdef = D.terrain[ti];
+    if ((tdef.star || 0) > S.unlocked.star) return fail('Unlocks at ' + tdef.star + ' stars');
     radius = +radius || 0;
     var cost = 0, n = 0, i0 = 999, j0 = 999, i1 = -1, j1 = -1, di, dj, list = [];
     var r2 = radius <= 0 ? 0 : radius * radius + 1, outside = 0;
@@ -913,7 +941,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (typeof rot !== 'number') rot = 0; rot = ((rot % 4) + 4) % 4;
     var dk = defOf(type); if (!dk) return fail('Unknown item');
     var def = dk.def, fp = footprint(def, i, j, rot);
-    if (def.star > S.unlocked.star) return fail('Needs a ' + def.star + '-star zoo');
+    if ((def.star || 0) > S.unlocked.star) return fail('Unlocks at ' + def.star + ' stars');
     var a, b, inEnc = false, warn = null;
     for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
       var x = fp.i0 + a, y = fp.j0 + b;
@@ -1178,7 +1206,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       age: baby ? 0 : adultAge(sp), baby: !!baby, enc: enc ? enc.id : 0, state: 'idle',
       x: x, z: z, y: 0, heading: rng.range(-PI, PI), speed: 0,
       hunger: rng.range(10, 40), thirst: rng.range(10, 40), energy: rng.range(60, 95), health: 100, happiness: 75,
-      stuck: 0, st: rng.range(1, 3), tx: x, tz: z, tg: '', sick: false, pregnant: 0, esc: 0, pt: rng.range(30, 90)
+      stuck: 0, st: rng.range(1, 3), tx: x, tz: z, tg: '', sick: false, pregnant: 0, esc: 0, pt: rng.range(30, 90),
+      flyCooldown: sp && sp.canFlyOver ? rng.range(40, 90) : 0, flyover: null, flyAlt: 0
     };
   }
   function insertAnimal(a) {
@@ -1232,7 +1261,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (badComp) return fail(badComp);
     if (dry) return okr(0);
     a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z;
-    a.state = 'idle'; a.st = 1; a.tg = ''; a.esc = 0;
+    a.state = 'idle'; a.st = 1; a.tg = ''; a.esc = 0; a.flyover = null; a.flyAlt = 0;
     refreshEncAnimals();
     for (var k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     msg(a.name + ' was moved to ' + enc.name + '.', 'info');
@@ -2341,11 +2370,123 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     a.stuck = 0;
   }
 
+  var FLYING_MONKEY_THOUGHTS = [
+    'Watch out — winged monkeys overhead!',
+    'A flying monkey swooped right past my hat!',
+    'Eek! Flying monkeys from the exhibit!'
+  ];
+  function pickFlyoverTarget(a) {
+    var maxR2 = (28 * TILE) * (28 * TILE), k, cands = [];
+    for (k = 0; k < S.guests.length; k++) {
+      var g = S.guests[k];
+      if (g.shel || g.gt === 'out') continue;
+      var gt = tileOf(g.x, g.z);
+      if (!S.path[gt] || S.tileEnc[gt] === a.enc) continue;
+      var dx = g.x - a.x, dz = g.z - a.z;
+      if (dx * dx + dz * dz <= maxR2) cands.push({ x: g.x, z: g.z });
+    }
+    if (cands.length) return rng.pick(cands);
+    for (k = 0; k < RT.pathTiles.length; k++) {
+      var pt = RT.pathTiles[k];
+      if (S.tileEnc[pt] === a.enc) continue;
+      var px = cxOf(pt), pz = czOf(pt), dx2 = px - a.x, dz2 = pz - a.z;
+      if (dx2 * dx2 + dz2 * dz2 <= maxR2) cands.push({ x: px, z: pz });
+    }
+    if (cands.length) return rng.pick(cands);
+    var ai = Math.floor(a.x / TILE), aj = Math.floor(a.z / TILE);
+    for (var tr = 0; tr < 16; tr++) {
+      var ang = rng.range(0, TAU), dist = rng.range(4, 12);
+      var ni = clamp(Math.round(ai + Math.cos(ang) * dist), 1, N - 2);
+      var nj = clamp(Math.round(aj + Math.sin(ang) * dist), 1, N - 2);
+      var nt = ni + nj * N;
+      if (S.tileEnc[nt] !== a.enc) return { x: cxOf(nt), z: czOf(nt) };
+    }
+    return null;
+  }
+  function launchFlyover(a) {
+    var tgt = pickFlyoverTarget(a);
+    if (!tgt) { a.flyCooldown = 6; return false; }
+    a.flyover = { phase: 'out', t: 0, dur: 12 + rng.next() * 6, hx: a.x, hz: a.z, tx: tgt.x, tz: tgt.z, alt: 0, scared: {} };
+    a.flyAlt = 0;
+    a.wx = 0; a.wz = 0; a.aroute = null; a.tg = '';
+    bus.emit('flyover', a);
+    msg('🦇 ' + a.name + ' the Winged Monkey flew over its fence for a cheeky terror raid!', 'info', false);
+    return true;
+  }
+  function startleGuestsNear(a, fo) {
+    var r2 = (7 * TILE) * (7 * TILE), k;
+    for (k = 0; k < S.guests.length; k++) {
+      var g = S.guests[k];
+      if (g.shel || g.gt === 'out') continue;
+      var dx = g.x - a.x, dz = g.z - a.z;
+      if (dx * dx + dz * dz > r2) continue;
+      if (!fo.scared[g.id]) {
+        fo.scared[g.id] = 1;
+        g.mood = Math.max(-40, (g.mood || 0) - 0.08);
+        g.thought = rng.pick(FLYING_MONKEY_THOUGHTS);
+        g.thoughtT = 4.5;
+        g.tcool = 7;
+      }
+      if (g.state !== 'leave' && g.state !== 'flee' && g.state !== 'use' && g.state !== 'queue') {
+        releaseGuest(g);
+        g.state = 'flee'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1;
+        g.fx = a.x; g.fz = a.z; g.fleeT = rng.range(2.2, 3.8);
+      } else if (g.state === 'flee' && g.gt !== 'bunker') {
+        g.fx = a.x; g.fz = a.z;
+      }
+    }
+  }
+  function stepFlyover(a, dt, sp) {
+    var fo = a.flyover; if (!fo) { a.flyAlt = 0; return; }
+    var outDur = fo.dur * 0.28, swoopDur = fo.dur * 0.44, retDur = fo.dur * 0.28;
+    a.y = 0;
+    if (fo.phase === 'out') {
+      fo.t += dt;
+      var u = clamp(fo.t / outDur, 0, 1), s = u * u * (3 - 2 * u);
+      a.x = fo.hx + (fo.tx - fo.hx) * s;
+      a.z = fo.hz + (fo.tz - fo.hz) * s;
+      a.heading = Math.atan2(fo.tx - fo.hx, fo.tz - fo.hz);
+      fo.alt = Math.sin(u * PI * 0.5) * 3.4 + Math.sin(u * PI) * 1.6;
+      a.state = 'run'; a.speed = sp.speed * 1.5;
+      if (u >= 1) { fo.phase = 'swoop'; fo.t = 0; }
+    } else if (fo.phase === 'swoop') {
+      fo.t += dt;
+      var u2 = clamp(fo.t / swoopDur, 0, 1), ang = u2 * TAU * 1.5;
+      var px = a.x, pz = a.z;
+      a.x = clamp(fo.tx + Math.cos(ang) * 3.2, 1, N * TILE - 1);
+      a.z = clamp(fo.tz + Math.sin(ang) * 3.2, 1, N * TILE - 1);
+      a.heading = Math.atan2(a.x - px, a.z - pz);
+      fo.alt = 3.0 + Math.sin(u2 * TAU * 2) * 0.75;
+      a.state = 'run'; a.speed = sp.speed * 1.6;
+      startleGuestsNear(a, fo);
+      if (u2 >= 1) { fo.phase = 'return'; fo.t = 0; fo.sx = a.x; fo.sz = a.z; fo.salt = fo.alt; }
+    } else {
+      fo.t += dt;
+      var u3 = clamp(fo.t / retDur, 0, 1), s3 = u3 * u3 * (3 - 2 * u3);
+      var sx = fo.sx !== undefined ? fo.sx : fo.tx, sz = fo.sz !== undefined ? fo.sz : fo.tz;
+      var salt = fo.salt !== undefined ? fo.salt : 3.0;
+      a.x = sx + (fo.hx - sx) * s3;
+      a.z = sz + (fo.hz - sz) * s3;
+      a.heading = Math.atan2(fo.hx - sx, fo.hz - sz);
+      fo.alt = salt * (1 - s3);
+      a.state = 'run'; a.speed = sp.speed * 1.5;
+      if (u3 >= 1) {
+        a.x = fo.hx; a.z = fo.hz; a.tx = fo.hx; a.tz = fo.hz;
+        a.flyover = null; a.flyAlt = 0;
+        var hap01 = clamp((a.happiness || 0) / 100, 0, 1);
+        a.flyCooldown = 55 + hap01 * 95 + rng.next() * 40;
+        a.state = 'idle'; a.st = rng.range(1.5, 3); a.speed = 0;
+        return;
+      }
+    }
+    a.flyAlt = a.flyover ? a.flyover.alt : 0;
+  }
+
   function animalStep(a, dt) {
     var sp = SP[a.species];
-    if (a.state === 'escaped') { escapedStep(a, dt, sp); return; }
+    if (a.state === 'escaped') { a.flyAlt = 0; escapedStep(a, dt, sp); return; }
     var enc = RT.eMap[a.enc], E = enc && RT.encx[a.enc];
-    if (!enc || !E) return;
+    if (!enc || !E) { a.flyAlt = a.flyover ? a.flyover.alt : 0; return; }
     var sleeping = a.state === 'sleep';
     a.hunger = Math.min(100, a.hunger + (sleeping ? 0.08 : 0.22) * dt);
     a.thirst = Math.min(100, a.thirst + (sleeping ? 0.12 : 0.3) * dt);
@@ -2370,6 +2511,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     a.pt -= dt;
     if (a.pt <= 0 && !a.baby) { a.pt = rng.range(55, 95); enc.poop = Math.min(enc.poop + 1, Math.floor(enc.area * 0.5) + 4); }
+    if (sp.canFlyOver && a.enc > 0) {
+      if (a.flyover) {
+        stepFlyover(a, dt, sp);
+        return;
+      }
+      if (a.flyCooldown === undefined) a.flyCooldown = rng.range(40, 90);
+      a.flyCooldown -= dt;
+      if (a.flyCooldown <= 0 && !a.baby && !a.sick && a.state !== 'sleep') {
+        if (launchFlyover(a)) { stepFlyover(a, 0, sp); return; }
+      }
+    }
+    a.flyAlt = a.flyover ? a.flyover.alt : 0;
     var inWater = S.terrain[tileOf(a.x, a.z)] === WATER;
     a.y = inWater ? -0.3 : 0;
 
@@ -2892,14 +3045,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function ratingBreakdown() { return computeRating(); }
   function isUnlocked(type, id) {
-    var def = type === 'animal' ? SP[id] : type === 'building' ? BD[id] : null;
-    return def ? def.star <= S.unlocked.star : true;
+    var def = type === 'animal' ? SP[id]
+      : type === 'building' ? BD[id]
+      : type === 'scenery' ? SC[id]
+      : type === 'terrain' ? (TI[id] !== undefined ? D.terrain[TI[id]] : null)
+      : null;
+    return def ? (def.star || 0) <= S.unlocked.star : true;
   }
   function checkUnlocks() {
     var st = Math.floor(S.rating);
     if (st > S.unlocked.star) {
       S.unlocked.star = st;
-      msg('Congratulations! You have reached a ' + st + '-star zoo rating! New species and facilities are unlocked.', 'good');
+      if (st === 4) msg('✨ 4 Stars! Mythical Fantasy creatures, enchanted terrain & magical exhibit items unlocked!', 'good');
+      else msg('Congratulations! You have reached a ' + st + '-star zoo rating! New species and facilities are unlocked.', 'good');
       bus.emit('unlock', st);
     }
   }
@@ -3434,12 +3592,38 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return ms[0] || { id: 'meadow', name: 'Grassland Sanctuary', bounds: { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, gen: { base: 'grass' } };
   }
   function ramp(i, rs, wid) { var f = 0; if (rs) for (var k = 0; k < rs.length; k++) f = Math.max(f, 1 - Math.abs(i - rs[k]) / wid); return f < 0 ? 0 : f; }
-  function genMap(md, seed) {
-    var g = md.gen || {}, b = md.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, sd = (seed | 0) % 100003, ci, cj, k, i, j, t;
+  function scaleBounds(b, gn) {
+    if (!b) return { i0: 0, j0: 0, i1: gn - 1, j1: gn - 1 };
+    if (gn === 56) return { i0: b.i0, j0: b.j0, i1: b.i1, j1: b.j1 };
+    var s = gn / 56;
+    return {
+      i0: b.i0 === 0 ? 0 : Math.max(0, Math.round(b.i0 * s)),
+      j0: b.j0 === 0 ? 0 : Math.max(0, Math.round(b.j0 * s)),
+      i1: b.i1 === 55 ? gn - 1 : Math.min(gn - 1, Math.round((b.i1 + 1) * s) - 1),
+      j1: b.j1 === 55 ? gn - 1 : Math.min(gn - 1, Math.round((b.j1 + 1) * s) - 1)
+    };
+  }
+  function scaleGen(g, gn) {
+    if (!g || gn === 56) return g || {};
+    var s = gn / 56, out = {};
+    for (var k in g) out[k] = g[k];
+    if (g.hills) out.hills = { amp: g.hills.amp, scale: g.hills.scale * s };
+    if (g.lakes) out.lakes = { n: g.lakes.n, r: [Math.max(1.5, g.lakes.r[0] * s), Math.max(2.5, g.lakes.r[1] * s)], depth: g.lakes.depth };
+    if (g.mesas) out.mesas = { n: g.mesas.n, r: g.mesas.r * s, h: g.mesas.h };
+    if (g.ridge) out.ridge = { j: g.ridge.j * s, wave: g.ridge.wave * s, h: g.ridge.h, ramps: g.ridge.ramps ? g.ridge.ramps.map(function (x) { return x * s; }) : undefined };
+    if (g.canyon) out.canyon = { j: g.canyon.j * s, wave: g.canyon.wave * s, w: Math.max(1.5, g.canyon.w * s), depth: g.canyon.depth, ramps: g.canyon.ramps ? g.canyon.ramps.map(function (x) { return x * s; }) : undefined };
+    if (g.paint) out.paint = g.paint.map(function (p) { var np = {}; for (var pk in p) np[pk] = p[pk]; if (np.s !== undefined) np.s = np.s * s; return np; });
+    if (g.scatter) out.scatter = g.scatter.map(function (sc) { return [sc[0], Math.max(1, Math.round(sc[1] * s * s)), sc[2], sc[3]]; });
+    return out;
+  }
+  function genMap(md, seed, gn, scaledB) {
+    var gridN = gn || N, s = gridN / 56;
+    var g = scaleGen(md.gen, gridN), b = scaledB || scaleBounds(md.bounds, gridN), sd = (seed | 0) % 100003, ci, cj, k, i, j, t;
     var baseT = TI[g.base || 'grass']; if (baseT === undefined) baseT = 0;
     var lakes = [], mesas = [], tries;
+    var entI0 = Math.floor(gridN / 2) - 6, entI1 = Math.floor(gridN / 2) + 6, entJ0 = Math.max(Math.floor(gridN * 0.68), gridN - 17);
     var near = function (x, y, r) {
-      var dx = Math.max(22 - x, 0, x - 34), dy = Math.max(39 - y, 0);
+      var dx = Math.max(entI0 - x, 0, x - entI1), dy = Math.max(entJ0 - y, 0);
       return Math.sqrt(dx * dx + dy * dy) > r;
     };
     if (g.lakes) for (k = 0, tries = 0; k < g.lakes.n && tries < 200; tries++) {
@@ -3453,16 +3637,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (var q2 = 0; q2 < mesas.length && mok; q2++) { var mdx = mesas[q2].x - mx, mdy = mesas[q2].y - my; if (Math.sqrt(mdx * mdx + mdy * mdy) < mesas[q2].r + mr + 3) mok = false; }
       if (mok) { mesas.push({ x: mx, y: my, r: mr, a: rng.range(-PI, PI) }); k++; }
     }
-    var phase = rng.range(0, 6.28), HF = new Float32Array((N + 1) * (N + 1));
-    for (cj = 0; cj <= N; cj++) for (ci = 0; ci <= N; ci++) {
+    var phase = rng.range(0, 6.28), HF = new Float32Array((gridN + 1) * (gridN + 1));
+    for (cj = 0; cj <= gridN; cj++) for (ci = 0; ci <= gridN; ci++) {
       var h = 0;
       if (g.hills && g.hills.amp) h += g.hills.amp * (fbm(ci / g.hills.scale, cj / g.hills.scale, sd + 11) - 0.5) * 2.2;
       if (g.ridge) {
-        var rl = g.ridge.j + g.ridge.wave * Math.sin(ci * 0.13 + phase) + 1.5 * Math.sin(ci * 0.37 + phase * 2), rw = 1.1 + 6 * ramp(ci, g.ridge.ramps, 4);
+        var rl = g.ridge.j + g.ridge.wave * Math.sin(ci * 0.13 / s + phase) + 1.5 * s * Math.sin(ci * 0.37 / s + phase * 2), rw = 1.1 + 6 * ramp(ci, g.ridge.ramps, 4 * s);
         h += g.ridge.h * sstep((rl - cj + rw / 2) / rw);
       }
       if (g.canyon) {
-        var cl = g.canyon.j + g.canyon.wave * Math.sin(ci * 0.15 + phase) + 2 * Math.sin(ci * 0.41 + phase * 3), rp = ramp(ci, g.canyon.ramps, 3.5), cw = g.canyon.w * (1 - 0.5 * rp), dd = cw - Math.abs(cj - cl);
+        var cl = g.canyon.j + g.canyon.wave * Math.sin(ci * 0.15 / s + phase) + 2 * s * Math.sin(ci * 0.41 / s + phase * 3), rp = ramp(ci, g.canyon.ramps, 3.5 * s), cw = g.canyon.w * (1 - 0.5 * rp), dd = cw - Math.abs(cj - cl);
         h -= g.canyon.depth * (1 - 0.7 * rp) * sstep((dd + 0.6) / 1.2);
       }
       for (k = 0; k < mesas.length; k++) {
@@ -3474,15 +3658,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var l = lakes[k], ld = Math.sqrt((ci - l.x) * (ci - l.x) + (cj - l.y) * (cj - l.y)) / l.r;
         if (ld < 1.2) h -= g.lakes.depth * 1.6 * (1 - sstep(ld / 1.2));
       }
-      var pdx = Math.max(22 - ci, 0, ci - 34), pdy = Math.max(39 - cj, 0), pf = sstep(Math.sqrt(pdx * pdx + pdy * pdy) / 5);
-      var ef = sstep(Math.min(ci, cj, N - ci, N - cj) / 4);
-      HF[ci + cj * (N + 1)] = h * pf * ef;
+      var pdx = Math.max(entI0 - ci, 0, ci - entI1), pdy = Math.max(entJ0 - cj, 0), pf = sstep(Math.sqrt(pdx * pdx + pdy * pdy) / 5);
+      var ef = sstep(Math.min(ci, cj, gridN - ci, gridN - cj) / 4);
+      HF[ci + cj * (gridN + 1)] = h * pf * ef;
     }
     for (k = 0; k < HF.length; k++) S.elev[k] = clamp(Math.round(HF[k]), -4, 12);
     // terrain
     var paint = g.paint || [], pr;
-    for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
-      t = i + j * N; var c0 = i + j * (N + 1), hv = (HF[c0] + HF[c0 + 1] + HF[c0 + N + 1] + HF[c0 + N + 2]) / 4, ter = baseT;
+    for (j = 0; j < gridN; j++) for (i = 0; i < gridN; i++) {
+      t = i + j * gridN; var c0 = i + j * (gridN + 1), hv = (HF[c0] + HF[c0 + 1] + HF[c0 + gridN + 1] + HF[c0 + gridN + 2]) / 4, ter = baseT;
       for (k = 0; k < paint.length; k++) {
         pr = paint[k];
         if (pr.n !== undefined && fbm(i / pr.s, j / pr.s, sd + 31 + k * 5) < pr.n) continue;
@@ -3494,22 +3678,22 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var lk = lakes[k], dl = Math.sqrt((i + 0.5 - lk.x) * (i + 0.5 - lk.x) + (j + 0.5 - lk.y) * (j + 0.5 - lk.y)) / lk.r;
         if (dl < 0.72) ter = WATER; else if (dl < 0.98 && ter !== WATER) ter = TI.dirt;
       }
-      if (i >= 21 && i <= 34 && j >= 38) ter = TI.grass;
+      if (i >= entI0 - 1 && i <= entI1 && j >= entJ0 - 1) ter = TI.grass;
       S.terrain[t] = ter;
     }
     // starting plants and rocks
-    var total = 0, sc = g.scatter || [];
-    for (k = 0; k < sc.length && total < 120; k++) {
+    var total = 0, maxTotal = Math.round(120 * s * s), sc = g.scatter || [];
+    for (k = 0; k < sc.length && total < maxTotal; k++) {
       var scat = sc[k], want = scat[1], got = 0, allowed = scat[2] || [], opt = scat[3] || {};
-      for (tries = 0; tries < want * 30 && got < want && total < 120; tries++) {
-        i = rng.int(b.i0, b.i1); j = rng.int(b.j0, b.j1); t = i + j * N;
-        if (i >= 21 && i <= 34 && j >= 38) continue;
+      for (tries = 0; tries < want * 30 && got < want && total < maxTotal; tries++) {
+        i = rng.int(b.i0, b.i1); j = rng.int(b.j0, b.j1); t = i + j * gridN;
+        if (i >= entI0 - 1 && i <= entI1 && j >= entJ0 - 1) continue;
         if (S.tileObj[t] || S.path[t] || tileSlope(i, j) > 2) continue;
         var tn = D.terrain[S.terrain[t]] ? D.terrain[S.terrain[t]].id : '';
         if (allowed.length && allowed.indexOf(tn) < 0) continue;
         if (opt.nearWater) {
           var nw = false;
-          for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) if (Z.inb(i + di, j + dj) && S.terrain[(i + di) + (j + dj) * N] === WATER) nw = true;
+          for (var dj = -1; dj <= 1; dj++) for (var di = -1; di <= 1; di++) if (i + di >= 0 && j + dj >= 0 && i + di < gridN && j + dj < gridN && S.terrain[(i + di) + (j + dj) * gridN] === WATER) nw = true;
           if (!nw) continue;
         }
         if (rawPlace(scat[0], i, j, rng.int(0, 3))) { got++; total++; }
@@ -3518,13 +3702,29 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function applyMap(mapId, seed) {
-    var md = mapDef(mapId), bb = md.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 };
+    var md = mapDef(mapId), bb = scaleBounds(md.bounds, N);
     S.map = { id: md.id, name: md.name, i0: bb.i0, j0: bb.j0, i1: bb.i1, j1: bb.j1 };
-    genMap(md, seed !== undefined ? seed : rng.getSeed());
+    genMap(md, seed !== undefined ? seed : rng.getSeed(), N, bb);
     rebuildNav(); rebuildObjects(); recomputeEnclosures();
     bus.emit('terrain', { i0: 0, j0: 0, i1: N - 1, j1: N - 1 });
     bus.emit('elev', { i0: 0, j0: 0, i1: N - 1, j1: N - 1 });
     bus.emit('elev:change', { i0: 0, j0: 0, i1: N - 1, j1: N - 1 });
+  }
+  function previewMap(mapId, seed, mapSize) {
+    var sizeN = resolveSizeN(mapSize);
+    var sS = S, sR = RT, sZ = Z.state, rs = rng.getSeed(), prevN = N, out = null;
+    try {
+      syncGridVars(sizeN);
+      S = Z.newState(undefined, sizeN); RT = newRT(); Z.state = S;
+      rng.seed(seed || 1);
+      var md = mapDef(mapId), bb = scaleBounds(md.bounds, sizeN);
+      S.map = { id: md.id, name: md.name, i0: bb.i0, j0: bb.j0, i1: bb.i1, j1: bb.j1 };
+      genMap(md, seed || 1, sizeN, bb);
+      out = { terrain: S.terrain, elev: S.elev, bounds: bb, N: sizeN };
+    } catch (e) { out = null; }
+    syncGridVars(prevN);
+    S = sS; RT = sR; Z.state = sZ; rng.seed(rs);
+    return out;
   }
 
   // ---- habitat guide ----
@@ -3590,22 +3790,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     } else if (seedOrOpts && typeof seedOrOpts === 'object') {
       opts = Object.assign({}, seedOrOpts, maybeOpts);
     }
+    var sizeId = (opts.mapSize && typeof opts.mapSize === 'string') ? opts.mapSize.toLowerCase() : 'medium';
+    var sizeN = resolveSizeN(opts.mapSize !== undefined ? opts.mapSize : 'medium');
+    if (sizeN !== Z.N || N !== sizeN) Z.setGridSize(sizeN);
     rng.seed(opts.seed || (Date.now() & 0x7fffffff));
-    S = Z.newState(); Z.state = S; RT = newRT();
+    S = Z.newState(undefined, sizeN); Z.state = S; RT = newRT();
+    S.gridN = sizeN;
+    S.mapSize = SIZE_MAP[sizeId] ? sizeId : sizeIdOfN(sizeN);
     var paved = PI_.paved || 1;
     applyDifficulty(opts.difficulty, true);
     if (opts.money) S.money = opts.money;
-    var md = mapDef(opts.map), bb = md.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 };
+    var md = mapDef(opts.map), bb = scaleBounds(md.bounds, N);
     S.map = { id: md.id, name: md.name, i0: bb.i0, j0: bb.j0, i1: bb.i1, j1: bb.j1 };
-    var i, j;
-    for (j = N - 4; j < N; j++) for (i = 25; i <= 30; i++) S.path[i + j * N] = paved;
-    for (j = N - 16; j < N - 4; j++) { S.path[27 + j * N] = paved; S.path[28 + j * N] = paved; }
+    var i, j, walkJ0 = N - Math.round(16 * Math.min(1, N / 56));
+    for (j = N - 4; j < N; j++) for (i = GATE_I0 - 2; i <= GATE_I0 + 3; i++) S.path[i + j * N] = paved;
+    for (j = walkJ0; j < N - 4; j++) { S.path[GATE_I0 + j * N] = paved; S.path[(GATE_I0 + 1) + j * N] = paved; }
     S.speed = 1;
-    genMap(md, rng.getSeed());
+    genMap(md, rng.getSeed(), N, bb);
     rebuildNav();
     initDerived();
+    var di0 = GATE_I0 - 27, dj0 = N - 56;
     [['oak', 23, 49], ['oak', 32, 48], ['oak', 24, 41], ['pine', 33, 42], ['oak', 22, 45], ['pine', 31, 39], ['bush', 25, 49], ['bush', 30, 49], ['bush', 25, 44], ['bush', 30, 45],
-      ['flower_bed', 24, 52], ['flower_bed', 31, 52], ['lamp', 26, 51], ['lamp', 29, 51]].forEach(function (p) { rawPlace(p[0], p[1], p[2], 0); });
+      ['flower_bed', 24, 52], ['flower_bed', 31, 52], ['lamp', 26, 51], ['lamp', 29, 51]].forEach(function (p) {
+        var px = p[1] + di0, py = p[2] + dj0;
+        if (inMap(px, py) && !S.path[px + py * N]) rawPlace(p[0], px, py, 0);
+      });
     rebuildObjects();
     recomputeEnclosures();
     ensureInit();
@@ -3622,28 +3831,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     });
   }
   var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array };
-  var ARR_LEN = { terrain: NN, path: NN, fenceX: N * (N + 1), fenceZ: (N + 1) * N, tileObj: NN, tileEnc: NN, dirt: NN };
+  function expectedArrLen(f, gn) {
+    if (f === 'fenceX') return gn * (gn + 1);
+    if (f === 'fenceZ') return (gn + 1) * gn;
+    return gn * gn;
+  }
   function load(str) {
-    var obj, ns;
+    var obj, ns, prevN = N;
     try {
       obj = JSON.parse(str);
       if (!obj || (obj.v !== 1 && obj.v !== 2) || !obj.s) return false;
       ns = obj.s;
+      var gn = resolveSizeN(ns.gridN !== undefined ? ns.gridN : (ns.mapSize || 56));
+      if (ns.gridN !== undefined) {
+        var rawGn = Math.round(+ns.gridN);
+        if (!isFinite(rawGn) || rawGn < 32 || rawGn > 128) return false;
+        gn = rawGn;
+      }
       for (var f in ARR_FIELDS) {
         var v = ns[f];
         if (v && v.__t) v = Z.unpackArray(v);
-        if (!v || v.length !== ARR_LEN[f]) return false;
+        if (!v || v.length !== expectedArrLen(f, gn)) return false;
         ns[f] = v;
       }
-      var tpl = Z.newState();
       var ev = ns.elev;
       if (ev && ev.__t) ev = Z.unpackArray(ev);
       if (ev !== undefined && ev !== null) {
-        if (ev.length !== (N + 1) * (N + 1)) return false;
+        if (ev.length !== (gn + 1) * (gn + 1)) return false;
         ns.elev = ev;
       } else {
-        ns.elev = tpl.elev || new Int8Array((N + 1) * (N + 1));
+        ns.elev = new Int8Array((gn + 1) * (gn + 1));
       }
+      if (Z.N !== gn || N !== gn) Z.setGridSize(gn);
+      var tpl = Z.newState(undefined, gn);
+      ns.gridN = gn;
+      if (!ns.mapSize) ns.mapSize = sizeIdOfN(gn);
       if (!ns.map || typeof ns.map.i0 !== 'number') ns.map = tpl.map;
       if (!ns.weather || !ns.weather.type) ns.weather = tpl.weather || { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' };
       if (!ns.activeEvents) ns.activeEvents = [];
@@ -3656,31 +3878,40 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (ns.stats.injuries === undefined) ns.stats.injuries = 0;
       if (ns.stats.compensation === undefined) ns.stats.compensation = 0;
       ns.unlocked = Object.assign({ star: 0 }, ns.unlocked);
-    } catch (e) { return false; }
-    S = ns; Z.state = S; RT = newRT();
-    rng.seed(obj.rng || 1); RT.ghEMA = obj.ghEMA || 65; RT.nextGroup = obj.nextGroup || 1;
-    applyDifficulty(S.difficulty);
-    recomputeWX();
-    var k;
-    for (k = 0; k < S.guests.length; k++) {
-      var g = S.guests[k];
-      g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.nt = rng.next();
-      if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
-      if (g.gt === 'out') g.gt = 'exit';
+    } catch (e) {
+      if (Z.N !== prevN) Z.setGridSize(prevN);
+      return false;
     }
-    for (k = 0; k < S.animals.length; k++) {
-      var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
-      if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
-      if (!isFinite(a.heading)) a.heading = 0;
-      if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
-      a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
+    try {
+      S = ns; Z.state = S; RT = newRT();
+      rng.seed(obj.rng || 1); RT.ghEMA = obj.ghEMA || 65; RT.nextGroup = obj.nextGroup || 1;
+      applyDifficulty(S.difficulty);
+      recomputeWX();
+      var k;
+      for (k = 0; k < S.guests.length; k++) {
+        var g = S.guests[k];
+        g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.nt = rng.next();
+        if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
+        if (g.gt === 'out') g.gt = 'exit';
+      }
+      for (k = 0; k < S.animals.length; k++) {
+        var a = S.animals[k]; a.held = 0; a.claim = 0; a.stuck = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
+        if (!isFinite(a.x)) a.x = N * TILE / 2; if (!isFinite(a.z)) a.z = N * TILE / 2;
+        if (!isFinite(a.heading)) a.heading = 0;
+        if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick') a.state = 'idle';
+        a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
+        a.flyAlt = a.flyover ? (a.flyover.alt || 0) : 0;
+      }
+      for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
+      initDerived();
+      recomputeEnclosures();
+      secondly();
+      bus.emit('reset');
+      return true;
+    } catch (e2) {
+      if (Z.N !== prevN) Z.setGridSize(prevN);
+      return false;
     }
-    for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
-    initDerived();
-    recomputeEnclosures();
-    secondly();
-    bus.emit('reset');
-    return true;
   }
 
   // ====================== QUERIES ======================
@@ -3782,7 +4013,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   Z.Sim = {
     newGame: newGame, tick: tick, save: save, load: load,
-    terraform: terraform, heightAt: heightAt, tileSlope: tileSlope, isCliff: isCliff, inMap: inMap, cornerElev: cornerElev, mapBounds: mapBounds, maps: function () { return D.maps; }, applyMap: applyMap,
+    terraform: terraform, heightAt: heightAt, tileSlope: tileSlope, isCliff: isCliff, inMap: inMap, cornerElev: cornerElev, mapBounds: mapBounds, maps: function () { return D.maps; }, applyMap: applyMap, previewMap: previewMap, resolveSizeN: resolveSizeN,
     habitatGuide: habitatGuide, plantOk: plantOk,
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke,

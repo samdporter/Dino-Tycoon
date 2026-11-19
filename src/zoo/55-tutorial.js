@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N;
+  Z.bus.on('gridsize', function (n) { N = n; });
   var Tut = UI.Tutorial = {}, userMin = null, effMin = false, el, on = false, step = 0, hlEls = [], base = {}, doneAll = false;
 
   function S() { return Z.state; }

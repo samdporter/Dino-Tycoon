@@ -6,6 +6,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var Sim = Z.Sim, D = Z.DATA, N = Z.N, T = Z.TILE || 2;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var Dr = Z.Director = {};
 
   function S() { return Z.state; }

@@ -7,6 +7,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var T = Z.TILE, N = Z.N, INK = 0x14222c, OV = Z.OvPat = {};
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   function rect(gb, x0, z0, x1, z1, y) { gb.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], INK); }
   function bar(gb, ax, az, bx, bz, w, y) {       // thick line a-b
     var dx = bx - ax, dz = bz - az, l = Math.sqrt(dx * dx + dz * dz) || 1, nx = -dz / l * w / 2, nz = dx / l * w / 2;

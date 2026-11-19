@@ -297,7 +297,15 @@ window.Z = window.Z || {}; var Z = window.Z;
       lastStar = us;
       var names = [];
       D.animals.forEach(function (a) { if (a.star === us) names.push(a.name); }); D.buildings.forEach(function (a) { if (a.star === us) names.push(a.name); });
-      UI.banner({ title: us + '-star zoo!', text: names.length ? 'Unlocked: ' + names.join(', ') : 'Your zoo is growing nicely.', kind: 'good', stars: us });
+      D.terrain.forEach(function (a) { if (a.star === us) names.push(a.name); }); D.scenery.forEach(function (a) { if (a.star === us) names.push(a.name); });
+      if (us === 4) {
+        var fMsg = '✨ 4 Stars! Mythical Fantasy creatures, enchanted terrain & magical exhibit items unlocked!';
+        UI.banner({ title: '4-star zoo!', text: fMsg, kind: 'good', stars: us });
+        UI.toast(fMsg, 'good');
+      } else {
+        UI.banner({ title: us + '-star zoo!', text: names.length ? 'Unlocked: ' + names.join(', ') : 'Your zoo is growing nicely.', kind: 'good', stars: us });
+      }
+      UI.refreshCards();
       UI.confetti(); UI.snd('fanfare');
     } else lastStar = us;
     // goal chip
@@ -507,15 +515,15 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   var CATS;
   function defCats() {
-    function sc(ids, kind) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: 0 }; }); }; }
-    function bd(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star }; }); }; }
+    function sc(ids, kind) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0 }; }); }; }
+    function bd(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0 }; }); }; }
     CATS = [
       { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests only walk on paths.' },
-      { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }).concat(sculptItems()); } },
+      { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: p.star || 0 }; }).concat(sculptItems()); } },
       { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'animals', name: 'Animals', icon: 'paw', items: function () { return D.animals.slice().sort(function (a, b) { return a.star - b.star || a.cost - b.cost; }).map(function (p) { return { kind: 'animal', id: p.id, name: p.name, cost: p.cost, def: p, star: p.star, emoji: p.emoji }; }); } },
-      { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe']) },
-      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'climbing_frame', 'tyre_swing', 'ball']) },
+      { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe', 'enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones']) },
+      { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter']) },
       { id: 'fac', name: 'Facilities', icon: 'cart', items: function () { return bd(['burger_stand', 'pizza_hut', 'ice_cream', 'drinks_stall', 'coffee_cart', 'toilets', 'gift_shop', 'balloon_stand', 'carousel', 'info_kiosk', 'restaurant', 'education_centre'])().concat(sc(['bench', 'bin'])()); } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
@@ -626,6 +634,10 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (!a) return; var sp = UI.sp(a.species);
       UI.banner({ title: 'Escape!', text: (a.name || 'An animal') + ' the ' + (sp ? sp.name.toLowerCase() : 'animal') + ' has got out!', kind: 'alert', jump: function () { UI.jumpTo('animal', a.id); } });
       UI.snd('alarm');
+    });
+    b.on('flyover', function (a) {
+      if (!a) return;
+      UI.toast('🦇 ' + (a.name || 'A winged monkey') + ' the Winged Monkey flew over the fence to terrorise guests!', 'warn');
     });
     b.on('birth', function (a) {
       if (!a) return; var sp = UI.sp(a.species);

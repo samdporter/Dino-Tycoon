@@ -60,7 +60,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function buildNodes() {
     var s = S(), list = [], k;
     var cb = PD.cable;
-    list.push({ id: 0, kind: 'cable', name: cb.name, ci: cb.ci, cj: cb.cj, r: cb.radius, o: null });
+    list.push({ id: 0, kind: 'cable', name: cb.name, ci: Math.floor(N / 2) - 0.5, cj: N - 0.5, r: cb.radius, o: null });
     for (k = 0; k < s.objects.length; k++) {
       var o = s.objects[k]; if (o.kind !== 'building') continue;
       var def = C.BD()[o.type]; if (!def || !def.powerNode) continue;
@@ -93,6 +93,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     return true;
   }
   X.deadCov = new Uint8Array(NN);
+  if (bus && bus.on) bus.on('gridsize', function (n) {
+    N = n; NN = n * n;
+    X.nodeOf = new Int8Array(NN).fill(-1); X.deadCov = new Uint8Array(NN); X.nodeSig = '';
+  });
   function nodeIdx(t) { return t >= 0 && t < NN ? X.nodeOf[t] : -1; }
 
   function buildEntries() {
@@ -570,7 +574,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   // structured report for the Power screen
   P.report = function () {
     var ps = ensure(), t = now(), s = S(), k, e, g, rep = { status: P.status(), prio: ps.prio.slice(), cover: JSON.parse(JSON.stringify(ps.cover)), classes: PD.classes, sources: [], consumers: {}, nodes: P.nodes(), history: ps.hist.slice(), stats: JSON.parse(JSON.stringify(ps.stats)), mechanics: mechanics(), wind: r1(ps.wind), sun: r1(X.sun), feather: X.feather, fuelDue: Math.round(ps.fuelDue), fuelCut: ps.fuelCut, forecast: '' };
-    var cb = PD.cable; rep.sources.push({ id: 0, kind: 'cable', name: cb.name, emoji: '🔌', kw: cb.kw, out: X.cable, state: cutActive() && ps.cut.scope !== '' ? 'cut' : 'run', why: cutActive() ? 'Cut: ' + ps.cut.cause + ', back in ' + Math.max(1, Math.ceil(hoursOf(ps.cut.eta - t))) + ' h' : '', i: 27, j: 54 });
+    var cb = PD.cable; rep.sources.push({ id: 0, kind: 'cable', name: cb.name, emoji: '🔌', kw: cb.kw, out: X.cable, state: cutActive() && ps.cut.scope !== '' ? 'cut' : 'run', why: cutActive() ? 'Cut: ' + ps.cut.cause + ', back in ' + Math.max(1, Math.ceil(hoursOf(ps.cut.eta - t))) + ' h' : '', i: Math.floor(N / 2) - 1, j: N - 2 });
     for (k = 0; k < X.gens.length; k++) { g = X.gens[k]; rep.sources.push({ id: g.id, kind: g.kind, name: g.name, emoji: g.emoji, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, i: Math.round(g.i), j: Math.round(g.j) }); }
     if (X.batts) rep.sources.push({ id: -1, kind: 'battery', name: 'Batteries ×' + X.batts, emoji: '🔋', kw: PD.batteryRate * X.batts, out: r1(X.discharge || 0), state: X.discharge > 0.5 ? 'run' : X.charging ? 'charging' : 'idle', why: Math.round(ps.stored) + ' of ' + X.cap + ' kWh' });
     PD.classes.forEach(function (c) { rep.consumers[c.id] = []; });

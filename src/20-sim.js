@@ -8,7 +8,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   var INF = 65535;
   var PI = Math.PI, TAU = Math.PI * 2;
   var DT4 = [-N, 1, N, -1];
-  var GATE_I0 = 27, GATE_J = N - 1;
+  var GATE_I0 = Math.floor(N / 2) - 1, GATE_J = N - 1;
+  function syncGridVars(n) {
+    N = n; NN = n * n; EW = n + 1;
+    DT4[0] = -n; DT4[1] = 1; DT4[2] = n; DT4[3] = -1;
+    GATE_I0 = Math.floor(n / 2) - 1; GATE_J = n - 1;
+    if (Z.moatCtx) Z.moatCtx.N = n;
+    if (Z.realmCtx) Z.realmCtx.N = n;
+    if (Z.powerCtx) Z.powerCtx.N = n;
+    if (Z.monoCtx) Z.monoCtx.N = n;
+  }
+  if (bus && bus.on) bus.on('gridsize', syncGridVars);
   // Live weather/difficulty modifiers. Shared weather contract (see docs/ARCHITECTURE.md): written by the day/weather code (20d), read everywhere.
   var WX = { type: 'clear', arrivals: 1, thirst: 1, hunger: 1, energy: 1, guestSpeed: 1, fun: 0, spend: 1, shelter: false, animalMood: 0, sick: 1, escape: 1, dirt: 1 };
   // Difficulty modifiers. SHARED CONTRACT: written by applyDifficulty() (20d), read everywhere.
@@ -122,7 +132,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return h * Z.ELEV_STEP;
   }
   // the starting plaza (gate, paths, lab, hatchery) is always flat
-  function entranceTile(i, j) { return i >= 22 && i <= 33 && j >= 39; }
+  function plazaBounds(n) {
+    n = n || N;
+    var mid = Math.floor(n / 2), j0 = Math.max(Math.floor(n * 0.68), n - 17);
+    return { i0: mid - 6, i1: mid + 5, j0: j0 };
+  }
+  function entranceTile(i, j) { var p = plazaBounds(N); return i >= p.i0 && i <= p.i1 && j >= p.j0; }
   function footprintFlat(fp, maxSlope) {
     var mn = 99, mx = -99;
     for (var b = 0; b <= fp.h; b++) for (var a = 0; a <= fp.w; a++) {
@@ -4625,10 +4640,44 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (t = 0; t < NN; t++) out[t] = sea[t] ? -ds[t] : dl[t];
     return out;
   }
-  var TONGUE_I0 = 17, TONGUE_I1 = 38;
+  var SIZE_MAP = { small: 40, medium: 56, large: 72, huge: 88 };
+  function resolveSizeN(mapSize) {
+    if (typeof mapSize === 'number' && isFinite(mapSize)) {
+      var rn = Math.round(mapSize);
+      return (rn >= 32 && rn <= 128) ? rn : 56;
+    }
+    if (typeof mapSize === 'string' && SIZE_MAP[mapSize]) return SIZE_MAP[mapSize];
+    return 56;
+  }
+  function sizeIdForN(n) { return n === 40 ? 'small' : n === 72 ? 'large' : n === 88 ? 'huge' : 'medium'; }
+  function scaleMapDef(md, n) {
+    var ob = (md && md.bounds) || { i0: 0, j0: 0, i1: n - 1, j1: n - 1 }, og = (md && md.gen) || {};
+    if (n === 56) return { bounds: ob, gen: og };
+    var s = n / 56, mid = n / 2;
+    var ow = ob.i1 - ob.i0 + 1, nw = Math.max(12, Math.round(ow * s));
+    var i0 = clamp(Math.round(mid - nw / 2), 0, n - 1), i1 = clamp(i0 + nw - 1, i0, n - 1);
+    var j0 = clamp(Math.round(ob.j0 * s), 0, n - 1), j1 = n - 1;
+    var nb = { i0: i0, j0: j0, i1: i1, j1: j1 };
+    var ng = Object.assign({}, og);
+    if (og.ridge) ng.ridge = Object.assign({}, og.ridge, { j: og.ridge.j * s, ramps: og.ridge.ramps ? og.ridge.ramps.map(function (r) { return r * s; }) : undefined });
+    if (og.canyon) ng.canyon = Object.assign({}, og.canyon, { j: og.canyon.j * s, ramps: og.canyon.ramps ? og.canyon.ramps.map(function (r) { return r * s; }) : undefined });
+    if (og.island) {
+      var I = og.island, nI = Object.assign({}, I, { cx: I.cx * s, cy: I.cy * s, rx: I.rx * s, ry: I.ry * s });
+      if (I.tongueJ !== undefined) nI.tongueJ = I.tongueJ * s;
+      if (I.capes) nI.capes = I.capes.map(function (c) { return [c[0] * s, c[1] * s, c[2] * s]; });
+      if (I.islets) nI.islets = I.islets.map(function (c) { return [c[0] * s, c[1] * s, c[2] * s]; });
+      if (I.lagoon) nI.lagoon = { x: I.lagoon.x * s, y: I.lagoon.y * s, r: I.lagoon.r * s, ang: I.lagoon.ang };
+      ng.island = nI;
+    }
+    if (og.lakes) ng.lakes = Object.assign({}, og.lakes, { n: og.lakes.n ? Math.max(1, Math.round(og.lakes.n * s)) : 0 });
+    if (og.mesas) ng.mesas = Object.assign({}, og.mesas, { n: og.mesas.n ? Math.max(1, Math.round(og.mesas.n * s)) : 0 });
+    if (og.scatter) ng.scatter = og.scatter.map(function (sc) { var c = sc.slice(); c[1] = Math.max(1, Math.round(sc[1] * s)); return c; });
+    return { bounds: nb, gen: ng };
+  }
   // land mask of an island description (see D.maps[].gen.island)
   function isleMask(I, sd) {
     var land = new Uint8Array(NN), i, j, k, x, y, H = I.harm || [], B = I.bays || [], wob = I.wob === undefined ? 0.22 : I.wob;
+    var pb = plazaBounds(N), mid = Math.floor(N / 2);
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
       x = i + 0.5; y = j + 0.5;
       var u = (x - I.cx) / I.rx, v = (y - I.cy) / I.ry, r = Math.sqrt(u * u + v * v), a = Math.atan2(v, u), R = 1 + (fbm(x / 8, y / 8, sd + 3) - 0.5) * wob;
@@ -4644,18 +4693,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     (I.capes || []).forEach(function (c) { disc(c[0], c[1], c[2], 1); });
     // the gate peninsula: always land from the plaza down to the south edge, wider than the plaza so beaches flank it
-    var tj = I.tongueJ || 36;
+    var tj = I.tongueJ !== undefined ? Math.round(I.tongueJ) : (pb.j0 - 3);
+    var tL0 = mid - 10, tR0 = mid + 9, lagLim = 40 * Math.max(1, N / 56);
     for (j = tj; j < N; j++) {
-      var tl = 18 - Math.round((fbm(j / 5, 3.3, sd + 51) - 0.3) * 6), tr = 37 + Math.round((fbm(j / 5, 8.8, sd + 52) - 0.3) * 6);
-      for (i = Math.min(18, tl); i <= Math.max(37, tr); i++) land[i + j * N] = 1;
+      var tl = tL0 - Math.round((fbm(j / 5, 3.3, sd + 51) - 0.3) * 6), tr = tR0 + Math.round((fbm(j / 5, 8.8, sd + 52) - 0.3) * 6);
+      for (i = Math.min(tL0, tl); i <= Math.max(tR0, tr); i++) if (i >= 0 && i < N) land[i + j * N] = 1;
     }
     if (I.lagoon) {
       var L = I.lagoon; disc(L.x, L.y, L.r, 0);
-      for (var s = 0; s < 40; s += 0.7) { var px = L.x + Math.cos(L.ang) * s, py = L.y + Math.sin(L.ang) * s; if (px < 0 || py < 0 || px > N || py > N) break; disc(px, py, 1.5, 0); }
+      for (var s = 0; s < lagLim; s += 0.7) { var px = L.x + Math.cos(L.ang) * s, py = L.y + Math.sin(L.ang) * s; if (px < 0 || py < 0 || px > N || py > N) break; disc(px, py, 1.5, 0); }
     }
     (I.islets || []).forEach(function (c) { disc(c[0], c[1], c[2], 1); });
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
-      var tg = j >= tj && i >= 14 && i <= 41;
+      var tg = j >= tj && i >= mid - 14 && i <= mid + 13;
       if (!tg && (i < 2 || j < 2 || i > N - 3 || j > N - 3)) land[i + j * N] = 0;
     }
     // sea pockets that do not reach the edge become land
@@ -4676,22 +4726,28 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (s > -8) return -2;
     return -3;
   }
-  // Z.Sim.previewMap(mapId, seed) -> {terrain, elev, sea, bounds} for the new-game sheet (own state, never touches the live game)
-  function previewMap(id, seed) {
-    var sS = S, sR = RT, sZ = Z.state, rs = rng.getSeed(), out = null;
+  // Z.Sim.previewMap(mapId, seed, mapSize) -> {terrain, elev, sea, bounds, N} for the new-game sheet (own state, never touches the live game)
+  function previewMap(id, seed, mapSize) {
+    var sS = S, sR = RT, sZ = Z.state, rs = rng.getSeed(), prevN = N, sizeN = resolveSizeN(mapSize), out = null;
     try {
+      if (sizeN !== prevN) { Z.N = sizeN; syncGridVars(sizeN); }
       S = Z.newState(); RT = newRT(); Z.state = S;
-      var md = mapDef(id); S.map = { id: md.id, i0: md.bounds.i0, j0: md.bounds.j0, i1: md.bounds.i1, j1: md.bounds.j1 };
+      var md = mapDef(id), sm = scaleMapDef(md, sizeN);
+      S.map = { id: md.id, i0: sm.bounds.i0, j0: sm.bounds.j0, i1: sm.bounds.i1, j1: sm.bounds.j1 };
       var r = genMap(md, seed || 1, true);
-      out = { terrain: S.terrain, elev: S.elev, sea: seaOf(S.terrain, S.elev), bounds: r && r.bounds || md.bounds };
+      out = { terrain: S.terrain, elev: S.elev, sea: seaOf(S.terrain, S.elev), bounds: r && r.bounds || sm.bounds, N: sizeN };
     } catch (e) { out = null; }
-    S = sS; RT = sR; Z.state = sZ; rng.seed(rs);
+    finally {
+      if (Z.N !== prevN) { Z.N = prevN; syncGridVars(prevN); }
+      S = sS; RT = sR; Z.state = sZ; rng.seed(rs);
+    }
     return out;
   }
 
   // fills S.terrain / S.elev for the whole grid (outside the bounds too, so the surroundings look natural) and scatters starting plants and rocks inside the bounds
   function genMap(md, seed, previewOnly) {
-    var g = md.gen || {}, b = md.bounds, sd = (seed | 0) % 100003, ci, cj, k, i, j, t;
+    var sm = scaleMapDef(md, N), g = sm.gen || {}, b = sm.bounds, sd = (seed | 0) % 100003, ci, cj, k, i, j, t;
+    var pb = plazaBounds(N), scale = N / 56;
     rng.seed((seed | 0) * 2654435761 + 12345);   // map generation depends on the seed only (so previewMap matches the real thing)
     var baseT = TI[g.base || 'grass']; if (baseT === undefined) baseT = 0;
     var lakes = [], mesas = [], tries, I = g.island || null, land = null, dl = null, ds = null, sdT = null, ELEVB = N + 1;
@@ -4707,13 +4763,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       b = { i0: Math.max(0, bi0 - 1), j0: Math.max(0, bj0 - 1), i1: Math.min(N - 1, bi1 + 1), j1: N - 1 };
     }
     var inland = function (x, y) { return !I ? 99 : (Z.inb(x | 0, y | 0) ? sdT[(x | 0) + (y | 0) * N] : -1); };
-    var near = function (x, y, r) { // keep features off the entrance plaza (tiles 22..33, 39..55)
-      var dx = Math.max(22 - x, 0, x - 34), dy = Math.max(39 - y, 0);
+    var near = function (x, y, r) { // keep features off the entrance plaza
+      var dx = Math.max(pb.i0 - x, 0, x - (pb.i1 + 1)), dy = Math.max(pb.j0 - y, 0);
       return Math.sqrt(dx * dx + dy * dy) > r;
     };
     if (g.lakes) for (k = 0, tries = 0; k < g.lakes.n && tries < 300; tries++) {
       var lr = rng.range(g.lakes.r[0], g.lakes.r[1]), lx = rng.range(b.i0 + lr + 1, b.i1 - lr), ly = rng.range(b.j0 + lr + 1, b.j1 - lr), ok = near(lx, ly, lr + 4);
-      if (I && ok) ok = inland(lx, ly) > lr + 4.5 && ly < 50 && !(lx + lr > 23 && lx - lr < 33 && ly + lr > 22);   // keep the central corridor from the gate free of lakes
+      if (I && ok) ok = inland(lx, ly) > lr + 4.5 && ly < N - 6 && !(lx + lr > pb.i0 + 1 && lx - lr < pb.i1 && ly + lr > Math.round(22 * scale));   // keep the central corridor from the gate free of lakes
       for (var q = 0; q < lakes.length && ok; q++) { var ddx = lakes[q].x - lx, ddy = lakes[q].y - ly; if (Math.sqrt(ddx * ddx + ddy * ddy) < lakes[q].r + lr + 3) ok = false; }
       if (ok) { lakes.push({ x: lx, y: ly, r: lr }); k++; }
     }
@@ -4729,10 +4785,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var fresh = new Uint8Array(NN), riverPts = [];
     function stampRiver(rd, src, wide) {
       if (!I || !rd) return;
-      var x = src.x, y = src.y, dirA = Math.atan2(Math.sin(rd.to) * I.ry, Math.cos(rd.to) * I.rx) , hx = Math.cos(dirA), hy = Math.sin(dirA), ph = rng.range(0, 6.28), pts = [], steps = 0;
+      var x = src.x, y = src.y, dirA = Math.atan2(Math.sin(rd.to) * I.ry, Math.cos(rd.to) * I.rx), hx = Math.cos(dirA), hy = Math.sin(dirA), ph = rng.range(0, 6.28), pts = [], steps = 0, maxSteps = Math.round(90 * Math.max(1, scale));
       var tgx = I.cx + Math.cos(rd.to) * I.rx * 1.3, tgy = I.cy + Math.sin(rd.to) * I.ry * 1.3, ax = tgx - x, ay = tgy - y, al = Math.sqrt(ax * ax + ay * ay) || 1;
       hx = ax / al; hy = ay / al;
-      while (steps++ < 90) {
+      while (steps++ < maxSteps) {
         var wob = Math.sin(steps * 0.33 + ph) * 0.55 + Math.sin(steps * 0.11 + ph * 2) * 0.5;
         x += hx + (-hy) * wob * 0.55; y += hy + hx * wob * 0.55;
         if (x < 2 || y < 2 || x > N - 2 || y > N - 2) break;
@@ -4741,7 +4797,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (sdT[tt] <= 0) break;
         for (var jj = Math.floor(y - rw - 1); jj <= Math.ceil(y + rw + 1); jj++) for (var ii = Math.floor(x - rw - 1); ii <= Math.ceil(x + rw + 1); ii++) {
           if (ii < 0 || jj < 0 || ii >= N || jj >= N || !land[ii + jj * N]) continue;
-          if (ii >= 20 && ii <= 35 && jj >= 36) continue;   // never across the entrance plaza
+          if (ii >= pb.i0 - 2 && ii <= pb.i1 + 2 && jj >= pb.j0 - 3) continue;   // never across the entrance plaza
           var rx2 = ii + 0.5 - x, ry2 = jj + 0.5 - y; if (rx2 * rx2 + ry2 * ry2 < rw * rw) fresh[ii + jj * N] = 1;
         }
       }
@@ -4750,7 +4806,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var srcOf = function (n, rd) {
       if (lakes[n]) return { x: lakes[n].x, y: lakes[n].y };
       var a = rd.to + PI + 0.5 * (n ? -1 : 1);
-      return { x: clamp(I.cx + Math.cos(a) * I.rx * 0.45, 4, N - 5), y: clamp(I.cy + Math.sin(a) * I.ry * 0.45, 4, 44) };
+      return { x: clamp(I.cx + Math.cos(a) * I.rx * 0.45, 4, N - 5), y: clamp(I.cy + Math.sin(a) * I.ry * 0.45, 4, N - 12) };
     };
     if (I && I.river) stampRiver(I.river, srcOf(0, I.river), false);
     if (I && I.river2) stampRiver(I.river2, srcOf(1, I.river2), true);
@@ -4776,7 +4832,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (ld < 1.2) h -= g.lakes.depth * 1.6 * (1 - sstep(ld / 1.2));
       }
       // keep the plaza and the outer rim of the grid flat
-      var pdx = Math.max(22 - ci, 0, ci - 34), pdy = Math.max(39 - cj, 0), pf = sstep(Math.sqrt(pdx * pdx + pdy * pdy) / 5);
+      var pdx = Math.max(pb.i0 - ci, 0, ci - (pb.i1 + 1)), pdy = Math.max(pb.j0 - cj, 0), pf = sstep(Math.sqrt(pdx * pdx + pdy * pdy) / 5);
       var ef = I ? 1 : sstep(Math.min(ci, cj, N - ci, N - cj) / 4);
       HF[ci + cj * (N + 1)] = h * pf * ef;
     }
@@ -4793,7 +4849,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         S.elev[ci + cj * ELEVB] = clamp(Math.round(e), -4, 12);
       }
       // the entrance plaza and its approach are flat at the inland level
-      for (cj = 38; cj <= N; cj++) for (ci = 21; ci <= 35; ci++) S.elev[ci + cj * ELEVB] = 2;
+      for (cj = pb.j0 - 1; cj <= N; cj++) for (ci = pb.i0 - 1; ci <= pb.i1 + 2; ci++) S.elev[ci + cj * ELEVB] = 2;
     } else for (k = 0; k < HF.length; k++) S.elev[k] = clamp(Math.round(HF[k]), -4, 12);
     // terrain
     var paint = g.paint || [], pr;
@@ -4816,7 +4872,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         else if (fresh[t]) ter = WATER;
         else if (dl[t] <= bw && !(ter === WATER)) ter = TI.sand;
       }
-      if (i >= 21 && i <= 34 && j >= 38) ter = TI.grass;   // the plaza is always meadow
+      if (i >= pb.i0 - 1 && i <= pb.i1 + 1 && j >= pb.j0 - 1) ter = TI.grass;   // the plaza is always meadow
       S.terrain[t] = ter;
     }
     if (I) {
@@ -4835,12 +4891,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (previewOnly) return { bounds: b };
     // starting plants and rocks (inside the bounds, never on the plaza)
-    var total = 0, sc = g.scatter || [], sea0 = I ? seaOf(S.terrain, S.elev) : null;
-    for (k = 0; k < sc.length && total < 120; k++) {
+    var total = 0, maxTotal = Math.round(120 * Math.max(1, scale)), sc = g.scatter || [], sea0 = I ? seaOf(S.terrain, S.elev) : null;
+    for (k = 0; k < sc.length && total < maxTotal; k++) {
       var sp = sc[k], want = sp[1], got = 0, allowed = sp[2] || [], opt = sp[3] || {};
-      for (tries = 0; tries < want * 30 && got < want && total < 120; tries++) {
+      for (tries = 0; tries < want * 30 && got < want && total < maxTotal; tries++) {
         i = rng.int(b.i0, b.i1); j = rng.int(b.j0, b.j1); t = i + j * N;
-        if (i >= 21 && i <= 34 && j >= 38) continue;
+        if (i >= pb.i0 - 1 && i <= pb.i1 + 1 && j >= pb.j0 - 1) continue;
         if (S.tileObj[t] || S.path[t] || tileSlope(i, j) > 2) continue;
         if (sea0 && sea0[t] && sp[0] !== 'ice_floe') continue;
         var tn = D.terrain[S.terrain[t]].id; if (allowed.length && allowed.indexOf(tn) < 0) continue;
@@ -4858,29 +4914,33 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function newGame(opts) {
     opts = opts || {};
     var gseed = opts.seed || (Date.now() & 0x7fffffff);
+    var sizeN = resolveSizeN(opts.mapSize);
+    Z.setGridSize(sizeN);
     rng.seed(gseed);
     S = Z.newState(); Z.state = S; RT = newRT(); EV.amber = 1;   // (an amber price event of the previous game must not price this game's first market)
+    S.gridN = sizeN;
+    S.mapSize = (typeof opts.mapSize === 'string' && SIZE_MAP[opts.mapSize]) ? opts.mapSize : sizeIdForN(sizeN);
     var paved = PI_.paved || 1;
     applyDifficulty(opts.difficulty, true);
     if (opts.money) S.money = opts.money;
-    var md = mapDef(opts.map), bb = md.bounds;
+    var md = mapDef(opts.map), bb = scaleMapDef(md, sizeN).bounds;
     S.map = { id: md.id, i0: bb.i0, j0: bb.j0, i1: bb.i1, j1: bb.j1 };
     S.rating = 0.9;
     if (Z.DNA) Z.DNA.beforeReset();   // forget the previous game's hybrid species before the genome table is built
     S.research = newResearch();
-    var i, j;
-    for (j = N - 4; j < N; j++) for (i = 25; i <= 30; i++) S.path[i + j * N] = paved;
-    for (j = N - 16; j < N - 4; j++) { S.path[27 + j * N] = paved; S.path[28 + j * N] = paved; }
+    var i, j, ox = GATE_I0 - 27, oz = N - 56;
+    for (j = N - 4; j < N; j++) for (i = GATE_I0 - 2; i <= GATE_I0 + 3; i++) S.path[i + j * N] = paved;
+    for (j = N - 16; j < N - 4; j++) { S.path[GATE_I0 + j * N] = paved; S.path[(GATE_I0 + 1) + j * N] = paved; }
     S.speed = 1;
     var gm = genMap(md, gseed);
     if (gm && gm.island) { S.map = { id: md.id, i0: gm.bounds.i0, j0: gm.bounds.j0, i1: gm.bounds.i1, j1: gm.bounds.j1, island: 1, lakes: gm.lakes, rivers: gm.rivers }; }
     rebuildNav();
     initDerived();
     [['ginkgo', 22, 47], ['pine', 32, 48], ['ginkgo', 23, 39], ['pine', 33, 41], ['tree_fern', 22, 50], ['pine', 31, 39], ['bush', 25, 49], ['bush', 30, 49], ['fern', 24, 47], ['fern', 31, 46],
-      ['flower_bed', 24, 52], ['flower_bed', 31, 52], ['lamp', 26, 51], ['lamp', 29, 51]].forEach(function (p) { rawPlace(p[0], p[1], p[2], 0); });
+      ['flower_bed', 24, 52], ['flower_bed', 31, 52], ['lamp', 26, 51], ['lamp', 29, 51]].forEach(function (p) { rawPlace(p[0], p[1] + ox, p[2] + oz, 0); });
     // the founding laboratory and hatchery, both facing the main path
-    rawPlace('research_lab', 24, 42, 1);
-    rawPlace('hatchery', 29, 43, 3);
+    rawPlace('research_lab', 24 + ox, 42 + oz, 1);
+    rawPlace('hatchery', 29 + ox, 43 + oz, 3);
     rebuildObjects(); refreshFacilities();
     var R = S.research;
     R.genomes.dryosaurus = 60; R.genomes.compsognathus = 40;
@@ -4909,30 +4969,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     });
   }
   var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array };
-  var ARR_LEN = { terrain: NN, path: NN, fenceX: N * (N + 1), fenceZ: (N + 1) * N, tileObj: NN, tileEnc: NN, dirt: NN, ditch: NN, rail: NN };
+  function arrLenFor(n) {
+    var nn = n * n;
+    return { terrain: nn, path: nn, fenceX: n * (n + 1), fenceZ: (n + 1) * n, tileObj: nn, tileEnc: nn, dirt: nn, ditch: nn, rail: nn };
+  }
   var ARR_OPTIONAL = { ditch: 1, rail: 1 };   // moats package: old saves have no ditch layer (defaults to none)
   function load(str) {
-    var obj, ns;
+    var obj, ns, prevN = N, gridN = 56;
     try {
       obj = JSON.parse(str);
       if (!obj || obj.v !== VERSION || !obj.s) return false;
       ns = obj.s;
       if (!ns.research || !ns.research.genomes || !ns.research.stats) return false;
+      gridN = (typeof ns.gridN === 'number' && isFinite(ns.gridN) && ns.gridN >= 32 && ns.gridN <= 128) ? Math.round(ns.gridN) : 56;
+      var expLen = arrLenFor(gridN);
       for (var f in ARR_FIELDS) {
         var v = ns[f];
         if (v && v.__t) v = Z.unpackArray(v);
-        if (!v && ARR_OPTIONAL[f]) v = new ARR_FIELDS[f](ARR_LEN[f]);
-        if (!v || v.length !== ARR_LEN[f]) return false;
+        if (!v && ARR_OPTIONAL[f]) v = new ARR_FIELDS[f](expLen[f]);
+        if (!v || v.length !== expLen[f]) return false;
         ns[f] = v;
       }
+      Z.setGridSize(gridN);
       var tpl = Z.newState();
       var ev = ns.elev; if (ev && ev.__t) ev = Z.unpackArray(ev);
-      ns.elev = ev && ev.length === (N + 1) * (N + 1) ? ev : tpl.elev;   // old saves: flat land, full-size map
+      ns.elev = ev && ev.length === (gridN + 1) * (gridN + 1) ? ev : tpl.elev;   // old saves: flat land, full-size map
       if (!ns.map || typeof ns.map.i0 !== 'number') ns.map = tpl.map;
       for (var key in tpl) if (ns[key] === undefined) ns[key] = tpl[key];
+      ns.gridN = gridN;
+      if (!ns.mapSize) ns.mapSize = sizeIdForN(gridN);
       ns.stats = Object.assign(tpl.stats, ns.stats);
       ns.unlocked = Object.assign({ star: 0 }, ns.unlocked);
-    } catch (e) { return false; }
+    } catch (e) {
+      if (N !== prevN) Z.setGridSize(prevN);
+      return false;
+    }
     S = ns; Z.state = S; RT = newRT();
     if (S.loan > 0 && (!Array.isArray(S.loans) || !S.loans.length)) {
       var ldDef = difficultyDef(S.difficulty) || { interest: 0.01 };
@@ -5135,6 +5206,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex, opts.q === undefined ? Math.max(50, genomeOf(speciesId)) : opts.q, S.research.traits[speciesId]); insertAnimal(a); return a; },
     objectReport: objectReport, guestReport: guestReport, footprint: footprintOf, suitabilityFor: suitabilityFor, setOpen: setOpen, isOpenNow: function () { return openNow(); },
     isSea: function (i, j) { return Z.inb(i, j) && !!seaMask()[i + j * N]; }, waterKind: waterKind, seaMask: seaMask, shoreDist: shoreDist, previewMap: previewMap,
+    resolveSizeN: resolveSizeN, mapBounds: function (mapId, mapSize) { return scaleMapDef(mapDef(mapId), resolveSizeN(mapSize)).bounds; },
     isFresh: function (i, j) { return waterKind(i, j) === 'fresh'; }, isIsland: function () { return !!(S.map && S.map.island); },
     arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS,
     weatherInfo: function () { return weatherInfo(); }, activeEvents: function () { return S.activeEvents.slice(); }, applyDifficulty: function (id, fresh) { return applyDifficulty(id, fresh); },

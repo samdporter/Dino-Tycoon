@@ -449,19 +449,21 @@ body.lockdown #ui::after{content:"";position:fixed;inset:0;pointer-events:none;b
 #setup .sbox{width:100%;max-width:640px;background:var(--paper);color:var(--ink);border:3px solid var(--ink);border-radius:20px;padding:12px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;-webkit-overflow-scrolling:touch;text-align:left}
 #setup h2{font:700 18px var(--serif);margin:2px 0 0}
 #setup .smaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-#setup .smap,#setup .sdiff{background:var(--paper2);border:2px solid rgba(58,42,26,.35);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:3px;text-align:left;color:var(--ink);min-height:44px}
-#setup .smap.sel,#setup .sdiff.sel{background:#fff6d2;border-color:var(--sun);box-shadow:0 0 0 3px var(--sun)}
+#setup .smap,#setup .sdiff,#setup .ssize{background:var(--paper2);border:2px solid rgba(58,42,26,.35);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:3px;text-align:left;color:var(--ink);min-height:44px}
+#setup .smap.sel,#setup .sdiff.sel,#setup .ssize.sel{background:#fff6d2;border-color:var(--sun);box-shadow:0 0 0 3px var(--sun)}
 #setup .sth{aspect-ratio:1;border-radius:8px;overflow:hidden;background:#5b6e4e}
 #setup .sth canvas{width:100%;height:100%;display:block;image-rendering:pixelated}
 #setup .snm{display:flex;align-items:center;justify-content:space-between;gap:4px;font:700 13px var(--sans)}
 #setup .badge{font:800 9.5px var(--sans);background:var(--moss);color:var(--paper);border-radius:7px;padding:1px 6px;text-transform:uppercase;letter-spacing:.5px}
 #setup .sbl{font:500 11.5px/1.25 var(--sans);color:var(--ink2)}
+#setup .ssizes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+#setup .ssize b{font:700 14px var(--serif)}#setup .ssize .sm{font:800 13px var(--sans);color:var(--moss3)}#setup .ssize small{font:500 11px/1.25 var(--sans);color:var(--ink2)}
 #setup .sdiffs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 #setup .sdiff b{font:700 14px var(--serif)}#setup .sdiff .sm{font:800 13px var(--sans);color:var(--moss3)}#setup .sdiff small{font:500 11px/1.25 var(--sans);color:var(--ink2)}
 #setup .srow{display:flex;align-items:center;justify-content:space-between;gap:8px;font:600 12.5px var(--sans);color:var(--ink2)}
 #setup .sact{display:flex;gap:10px;margin-top:2px;position:sticky;bottom:-12px;background:var(--paper);padding:8px 0 4px}
 #setup .sact .btn{flex:1;min-height:50px;font-size:16px}
-@media (max-width:430px){#setup .smaps{grid-template-columns:1fr 1fr}#setup .sdiff small{display:none}#setup .sdiff{align-items:center;text-align:center}}
+@media (max-width:430px){#setup .smaps,#setup .ssizes{grid-template-columns:1fr 1fr}#setup .sdiff small,#setup .ssize small{display:none}#setup .sdiff,#setup .ssize{align-items:center;text-align:center}}
 
 /* ===== street view (WORLD-VIEW) ===== */
 #svbar,#svhint,#svfwd,#svflash{display:none}

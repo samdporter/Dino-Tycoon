@@ -6,6 +6,7 @@
 (function () {
   'use strict';
   var N = Z.N, T = Z.TILE, NN = N * N, D = Z.DATA, MD = D.monorail, PI = Math.PI, TAU = PI * 2;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; NN = n * n; });
   var MW = Z.MonoWorld = { rideId: 0, followId: 0, overlayOn: false };
   var K = Z.Models && Z.Models.kit;
   function S() { return Z.state; }

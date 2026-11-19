@@ -9,6 +9,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var C = Z.powerCtx; if (!C) return;
   var N = Z.N, D = Z.DATA, ND = D.news, bus = Z.bus, clamp = C.clamp;
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; });
   var NW = Z.News = {};
   if (Z.Sim) Z.Sim.news = NW;
   var PARK = 'Amber Acres', TS = 0.15;   // thrill-seeker share of arrivals

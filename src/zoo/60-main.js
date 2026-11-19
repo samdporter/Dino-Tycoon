@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var Main = Z.Main = { playing: false }, UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N;
+  Z.bus.on('gridsize', function (n) { N = n; });
   var SAVE_KEY = 'wildacres.save.v1', SET_KEY = 'wildacres.settings.v1';
   var mem = {}, settings = { sound: true, quality: 'auto' }, titleEl, last = 0, saveT = 0, orbit = 0.4, saveFailed = false;
   var ema = 0.016, slowT = 0, prCap = 2, budget = 240, QUAL = { low: [1, 140], med: [1.5, 320], high: [2, 600] };
@@ -154,13 +155,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     UI.snd('unlock');
   }
   function startCam() {
-    var c = Z.World.cam, m = Z.state && Z.state.map, T = Z.TILE || 2;
-    var i0 = m ? m.i0 : 0, j0 = m ? m.j0 : 0, i1 = m ? m.i1 : N - 1, j1 = m ? m.j1 : N - 1, w = i1 - i0 + 1, hh = j1 - j0 + 1, big = Math.max(w, hh, 24) / 56;
+    var c = Z.World.cam, m = Z.state && Z.state.map, T = Z.TILE || 2, gn = (Z.state && Z.state.gridN) || Z.N || N;
+    var i0 = m ? m.i0 : 0, j0 = m ? m.j0 : 0, i1 = m ? m.i1 : gn - 1, j1 = m ? m.j1 : gn - 1, w = i1 - i0 + 1, hh = j1 - j0 + 1, big = Math.max(w, hh, 24) / 56;
     if (c.target) { c.target.x = (i0 + w / 2) * T; c.target.z = (j0 + hh * 0.6) * T; }
-    c.dist = Math.min(150, (UI.narrow && UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
+    c.dist = Math.min(180, (UI.narrow && UI.narrow() ? 76 : 70) * Math.max(0.6, big)); c.yaw = 0.15; c.pitch = 0.9;
   }
   Main.newGame = function (o) {
-    o = o || {}; var maps = Z.DATA.maps, args = { seed: o.seed || ((Math.random() * 0x7ffffff) | 0) + 1, difficulty: o.difficulty || 'normal' };
+    o = o || {}; var maps = Z.DATA.maps, args = { seed: o.seed || ((Math.random() * 0x7ffffff) | 0) + 1, difficulty: o.difficulty || 'normal', mapSize: o.mapSize || 'medium' };
     if (o.map || (maps && maps.length)) args.map = o.map || maps[0].id;
     Z.Sim.newGame(args); Z.state.speed = 1; startCam(); enterGame();
     if (Z.World.snapCamera) Z.World.snapCamera();
@@ -172,19 +173,26 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- new-game setup sheet
   var setupEl = null, setupSel = null;
   var FALLBACK_MAPS = [{ id: 'default', name: 'Starter meadow', size: 'Medium', blurb: 'A friendly plot to learn on.', bounds: { i0: 0, j0: 0, i1: N - 1, j1: N - 1 } }];
+  var FALLBACK_SIZES = [
+    { id: 'small', name: 'Small', n: 40, blurb: '40×40 — cozy, tight layout' },
+    { id: 'medium', name: 'Medium', n: 56, blurb: '56×56 — classic balanced zoo' },
+    { id: 'large', name: 'Large', n: 72, blurb: '72×72 — sprawling grounds' },
+    { id: 'huge', name: 'Huge', n: 88, blurb: '88×88 — massive mega-zoo' }
+  ];
   var FALLBACK_DIFFS = [{ id: 'easy', name: 'Relaxed', blurb: 'Generous funds and patient guests.', money: 45000 }, { id: 'normal', name: 'Normal', blurb: 'The intended experience.', money: 30000 }, { id: 'hard', name: 'Challenging', blurb: 'Tight budget, picky guests.', money: 20000 }];
   function closeSetup() { if (setupEl) { setupEl.remove(); setupEl = null; } }
   Main.closeSetup = closeSetup;
-  function drawMapThumb(cv, m, seed) {
-    var W = cv.width, g = cv.getContext('2d'), b = m.bounds || { i0: 0, j0: 0, i1: N - 1, j1: N - 1 }, px = W / N, p = null, i, j;
-    try { if (Z.Sim.previewMap) p = Z.Sim.previewMap(m.id, seed); } catch (e) { p = null; }
-    if (p && p.bounds) b = p.bounds;
+  function drawMapThumb(cv, m, seed, sizeId) {
+    var W = cv.width, g = cv.getContext('2d'), p = null, i, j;
+    try { if (Z.Sim.previewMap) p = Z.Sim.previewMap(m.id, seed, sizeId); } catch (e) { p = null; }
+    var gN = (p && p.N) || Z.N || N;
+    var b = (p && p.bounds) || m.bounds || { i0: 0, j0: 0, i1: gN - 1, j1: gN - 1 }, px = W / gN;
     g.fillStyle = '#5b6e4e'; g.fillRect(0, 0, W, W);
     if (p && p.terrain) {
       var cols = Z.DATA.terrain.map(function (t) { return t.colour || '#6fae4a'; });
-      for (j = 0; j < N; j++) for (i = 0; i < N; i++) {
-        var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (N + 1)] || 0) : 0;
-        g.fillStyle = cols[p.terrain[i + j * N]] || '#6fae4a'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
+      for (j = 0; j < gN; j++) for (i = 0; i < gN; i++) {
+        var inb = i >= b.i0 && i <= b.i1 && j >= b.j0 && j <= b.j1, e = p.elev ? (p.elev[i + j * (gN + 1)] || 0) : 0;
+        g.fillStyle = cols[p.terrain[i + j * gN]] || '#6fae4a'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6);
         if (e) { g.fillStyle = e > 0 ? 'rgba(255,255,255,' + Math.min(0.5, e * 0.07) + ')' : 'rgba(10,30,60,' + Math.min(0.5, -e * 0.09) + ')'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
         if (!inb) { g.fillStyle = 'rgba(20,28,16,.62)'; g.fillRect(i * px, j * px, px + 0.6, px + 0.6); }
       }
@@ -205,35 +213,54 @@ window.Z = window.Z || {}; var Z = window.Z;
       g.restore();
     }
     g.strokeStyle = '#ffe08a'; g.lineWidth = 1.5; g.strokeRect(b.i0 * px + 0.75, b.j0 * px + 0.75, (b.i1 - b.i0 + 1) * px - 1.5, (b.j1 - b.j0 + 1) * px - 1.5);
-    g.fillStyle = '#c4553a'; g.fillRect(27 * px, (N - 2) * px, 2 * px + 1, 2 * px);
+    var gateI0 = Math.floor(gN / 2) - 1;
+    g.fillStyle = '#c4553a'; g.fillRect(gateI0 * px, (gN - 2) * px, 2 * px + 1, 2 * px);
+    return p;
   }
   Main.openSetup = function () {
     closeSetup();
-    var maps = (Z.DATA.maps && Z.DATA.maps.length) ? Z.DATA.maps : FALLBACK_MAPS, diffs = (Z.DATA.difficulties && Z.DATA.difficulties.length) ? Z.DATA.difficulties : FALLBACK_DIFFS;
+    var maps = (Z.DATA.maps && Z.DATA.maps.length) ? Z.DATA.maps : FALLBACK_MAPS, sizes = (Z.DATA.mapSizes && Z.DATA.mapSizes.length) ? Z.DATA.mapSizes : FALLBACK_SIZES, diffs = (Z.DATA.difficulties && Z.DATA.difficulties.length) ? Z.DATA.difficulties : FALLBACK_DIFFS;
     var sel = setupSel = setupSel || {}; sel.map = maps.filter(function (m) { return m.id === sel.map; }).length ? sel.map : maps[0].id;
+    sel.size = sizes.filter(function (s) { return s.id === sel.size; }).length ? sel.size : 'medium';
     sel.diff = diffs.filter(function (d) { return d.id === sel.diff; }).length ? sel.diff : (diffs.filter(function (d) { return d.id === 'normal'; })[0] || diffs[0]).id;
     sel.seed = sel.seed || ((Math.random() * 99999) | 0) + 1;
-    var root = setupEl = h('div#setup'), box = h('div.sbox'), mapRow = h('div.smaps'), dRow = h('div.sdiffs'), seedTxt = h('span.sseed');
-    var thumbs = {};
+    var root = setupEl = h('div#setup'), box = h('div.sbox'), mapRow = h('div.smaps'), sizeRow = h('div.ssizes'), dRow = h('div.sdiffs'), seedTxt = h('span.sseed');
+    var thumbs = {}, badges = {};
     function mark() {
       Array.prototype.forEach.call(mapRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.map); });
+      Array.prototype.forEach.call(sizeRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.size); });
       Array.prototype.forEach.call(dRow.children, function (c) { c.classList.toggle('sel', c.getAttribute('data-id') === sel.diff); });
       seedTxt.textContent = 'Terrain seed ' + sel.seed;
     }
-    function draw() { maps.forEach(function (m) { drawMapThumb(thumbs[m.id], m, sel.seed); }); }
+    function draw() {
+      maps.forEach(function (m) {
+        var p = drawMapThumb(thumbs[m.id], m, sel.seed, sel.size);
+        if (badges[m.id]) {
+          badges[m.id].textContent = (p && p.bounds)
+            ? (p.bounds.i1 - p.bounds.i0 + 1) + '×' + (p.bounds.j1 - p.bounds.j0 + 1)
+            : (m.size || '');
+        }
+      });
+    }
     maps.forEach(function (m) {
-      var cv = h('canvas', { width: 112, height: 112 }); thumbs[m.id] = cv;
+      var cv = h('canvas', { width: 112, height: 112 }), bd = h('span.badge', { text: m.size || '' });
+      thumbs[m.id] = cv; badges[m.id] = bd;
       mapRow.appendChild(h('button.smap', { 'data-id': m.id, on: { click: function () { UI.snd('click'); sel.map = m.id; mark(); } } }, h('div.sth', cv),
-        h('div.snm', h('b', { text: m.name }), h('span.badge', { text: m.size || '' })), h('div.sbl', { text: m.blurb || '' })));
+        h('div.snm', h('b', { text: m.name }), bd), h('div.sbl', { text: m.blurb || '' })));
+    });
+    sizes.forEach(function (sz) {
+      sizeRow.appendChild(h('button.ssize', { 'data-id': sz.id, on: { click: function () { UI.snd('click'); sel.size = sz.id; mark(); draw(); } } },
+        h('b', { text: sz.name }), h('span.sm', { text: sz.n + '×' + sz.n }), h('small', { text: sz.blurb || '' })));
     });
     diffs.forEach(function (d) {
       dRow.appendChild(h('button.sdiff', { 'data-id': d.id, on: { click: function () { UI.snd('click'); sel.diff = d.id; mark(); } } }, h('b', { text: d.name }), h('span.sm', { text: UI.fmt(d.money || 0) }), h('small', { text: d.blurb || '' })));
     });
     box.appendChild(h('h2', { text: 'Choose your land' })); box.appendChild(mapRow);
     box.appendChild(h('div.srow', seedTxt, h('button.btn.sm.alt', { html: ic('rot') + 'Reroll terrain', on: { click: function () { UI.snd('click'); sel.seed = ((Math.random() * 99999) | 0) + 1; mark(); draw(); } } })));
+    box.appendChild(h('h2', { text: 'Map size' })); box.appendChild(sizeRow);
     box.appendChild(h('h2', { text: 'Starting funds' })); box.appendChild(dRow);
     box.appendChild(h('div.sact', h('button.btn.alt', { text: 'Back', on: { click: function () { UI.snd('click'); closeSetup(); } } }),
-      h('button.btn.gold', { html: ic('play') + 'Start park', on: { click: function () { UI.snd('click'); var s0 = { map: sel.map, difficulty: sel.diff, seed: sel.seed }; sel.seed = 0; Main.newGame(s0); } } })));
+      h('button.btn.gold', { html: ic('play') + 'Start park', on: { click: function () { UI.snd('click'); var s0 = { map: sel.map, difficulty: sel.diff, seed: sel.seed, mapSize: sel.size }; sel.seed = 0; Main.newGame(s0); } } })));
     root.appendChild(box); document.body.appendChild(root); mark(); draw();
   };
   Main.continueGame = function () {

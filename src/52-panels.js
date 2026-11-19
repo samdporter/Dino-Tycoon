@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA, N = Z.N;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var Panel = UI.Panel = {}, el, cur = null, sheetEl = null;
 
   Panel.init = function () {

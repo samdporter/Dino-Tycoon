@@ -40,25 +40,36 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   };
   Z.rng = rng;
 
-  Z.idx = function (i, j) { return i + j * N; };
-  Z.inb = function (i, j) { return i >= 0 && j >= 0 && i < N && j < N; };
-  Z.w2t = function (x) { return Math.floor(x / TILE); };
-  Z.fenceXIdx = function (i, j) { return i + j * N; };
-  Z.fenceZIdx = function (i, j) { return i + j * (N + 1); };
+  Z.idx = function (i, j) { return i + j * Z.N; };
+  Z.inb = function (i, j) { return i >= 0 && j >= 0 && i < Z.N && j < Z.N; };
+  Z.w2t = function (x) { return Math.floor(x / Z.TILE); };
+  Z.fenceXIdx = function (i, j) { return i + j * Z.N; };
+  Z.fenceZIdx = function (i, j) { return i + j * (Z.N + 1); };
   Z.ELEV_STEP = 0.5;
-  Z.eidx = function (i, j) { return j * (N + 1) + i; };
+  Z.eidx = function (i, j) { return j * (Z.N + 1) + i; };
+  Z.setGridSize = function (n) {
+    var v = Math.round(Number(n));
+    if (!isFinite(v) || v < 32 || v > 128) v = 56;
+    N = v; Z.N = v;
+    Z.bus.emit('gridsize', v);
+    return v;
+  };
 
-  Z.newState = function (seed) {
+  Z.newState = function (seed, gridN) {
     if (seed !== undefined) rng.seed(seed);
+    var gn = Math.round(Number(gridN));
+    if (!isFinite(gn) || gn < 32 || gn > 128) gn = Z.N || N;
     return {
       version: 1,
+      gridN: gn,
+      mapSize: gn === 40 ? 'small' : gn === 72 ? 'large' : gn === 88 ? 'huge' : 'medium',
       money: 25000, loan: 0, day: 1, time: 0.3, speed: 1, ticketPrice: 8,
       rating: 1, reputation: 50, marketing: { active: false, daysLeft: 0 }, open: true,
-      elev: new Int8Array((N + 1) * (N + 1)),
-      map: { id: 'meadow', name: 'Grassland Sanctuary', i0: 0, j0: 0, i1: N - 1, j1: N - 1 },
-      terrain: new Uint8Array(N * N), path: new Uint8Array(N * N),
-      fenceX: new Uint8Array(N * (N + 1)), fenceZ: new Uint8Array((N + 1) * N),
-      tileObj: new Int32Array(N * N), tileEnc: new Int16Array(N * N), dirt: new Uint8Array(N * N),
+      elev: new Int8Array((gn + 1) * (gn + 1)),
+      map: { id: 'meadow', name: 'Grassland Sanctuary', i0: 0, j0: 0, i1: gn - 1, j1: gn - 1 },
+      terrain: new Uint8Array(gn * gn), path: new Uint8Array(gn * gn),
+      fenceX: new Uint8Array(gn * (gn + 1)), fenceZ: new Uint8Array((gn + 1) * gn),
+      tileObj: new Int32Array(gn * gn), tileEnc: new Int16Array(gn * gn), dirt: new Uint8Array(gn * gn),
       objects: [], enclosures: [], animals: [], guests: [], staff: [],
       finance: { today: Z.emptyFinance(), history: [] },
       goals: {},

@@ -4,6 +4,7 @@
 (function () {
   'use strict';
   var N = Z.N, T = Z.TILE, NN = N * N, D = Z.DATA, PI = Math.PI, TAU = PI * 2, SEA_Y = -0.1;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; NN = n * n; });
   var SW = Z.SafariWorld = { rideId: 0, followId: 0, overlayOn: false };
   var SM = Z.Models && Z.Models.safari;
   var scene = null, VM = {}, GM = {}, PM = {}, builtVer = -1, routeGrp = null, ovMesh = null, ghostMesh = null, ghostSig = '', ovDirty = true, t0 = 0;

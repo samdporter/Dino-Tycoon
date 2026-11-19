@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA, N = Z.N, T = Z.TILE;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var Tools = UI.Tools = {}, el, world;
   var ptrs = {}, nptr = 0, g = null, drag = null, hover = null, lastPlan = null, moved = false;
   var POINT = { scenery: 1, building: 1, animal: 1, staff: 1, animalmove: 1 };

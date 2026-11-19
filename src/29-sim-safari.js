@@ -10,6 +10,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var C = Z.monoCtx, X0 = Z.safariCtx; if (!C || !X0) return;
   var N = Z.N, NN = N * N, TILE = Z.TILE, D = Z.DATA, SD = D.safari, bus = Z.bus, rng = Z.rng, clamp = C.clamp, fail = C.fail, okr = C.okr, INF = C.INF;
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; });
   var PI = Math.PI, TAU = PI * 2, SEA_Y = -0.1;
   var A = Z.Safari = {};
   if (Z.Sim) Z.Sim.safari = A;
@@ -298,7 +299,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   // walking distance field from the causeway gate over open ground (loose animals follow it downhill)
   function computeField() {
     var s = S(), f = new Int16Array(NN).fill(INF > 30000 ? 9999 : 9999), q = [], t, h = 0;
-    var g0 = (N - 1) * N + 27;
+    var g0 = (N - 1) * N + (Math.floor(N / 2) - 1);
     [g0, g0 + 1].forEach(function (x) { f[x] = 0; q.push(x); });
     var rt = RT();
     while (h < q.length) {
@@ -1071,7 +1072,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (e.state === 'searching' && now() >= e.until) {
         var ok = rng.chance(0.82 + 0.05 * rangersN());
         if (ok) {
-          var a = e.animal; a.er = null; a.sfOut = 0; a.hunger = 40; a.thirst = 40; a.state = 'escaped'; a.enc = 0; a.held = 0; a.x = (27.5) * TILE; a.z = (N - 2) * TILE; a.tx = a.x; a.tz = a.z; a.home = e.home; a.speed = 0; a.esc = 0;
+          var a = e.animal; a.er = null; a.sfOut = 0; a.hunger = 40; a.thirst = 40; a.state = 'escaped'; a.enc = 0; a.held = 0; a.x = (Math.floor(N / 2) - 0.5) * TILE; a.z = (N - 2) * TILE; a.tx = a.x; a.tz = a.z; a.home = e.home; a.speed = 0; a.esc = 0;
           X0.addBack(a); X0.recapture(a, 'The expedition'); o.stats.returned++;
           if (N_) N_.post({ kind: 'mainland_recovered', severity: 3, data: { species: e.species, name: e.name }, force: true });
           if (N_) N_.addEffect('arrivals', 1.06, 3, 'Heroic recapture', true);

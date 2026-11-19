@@ -16,6 +16,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var C = Z.moatCtx; if (!C) return;
   var N = Z.N, NN = N * N, D = Z.DATA, MD = D.moats, bus = Z.bus, rng = Z.rng, clamp = C.clamp, fail = C.fail, okr = C.okr;
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; });
   var M = Z.Moats = {};
   if (Z.Sim) Z.Sim.moats = M;
   var DN = ['', 'shallow', 'medium', 'deep'], DNC = ['', 'Shallow', 'Medium', 'Deep'];

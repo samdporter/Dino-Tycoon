@@ -800,3 +800,235 @@ test('Zoo UI shows 48t station badges, preview zones, inspect stats, and radio d
   assert.match(z.UI.el.mbody.textContent, /radio on call/);
   z.UI.closeModal();
 });
+
+test('Zoo supports all 4 map sizes, non-mutating previewMap, cross-size save/load, and corrupt-size rejection', () => {
+  const { z } = zoo();
+  const expectedSizes = { small: 40, medium: 56, large: 72, huge: 88 };
+  assert.deepEqual(
+    Array.from(z.DATA.mapSizes, s => [s.id, s.n]),
+    Object.entries(expectedSizes)
+  );
+
+  for (const [sizeId, n] of Object.entries(expectedSizes)) {
+    z.Sim.newGame({ seed: 42, map: 'meadow', mapSize: sizeId, difficulty: 'easy' });
+    assert.equal(z.N, n);
+    assert.equal(z.state.gridN, n);
+    assert.equal(z.state.mapSize, sizeId);
+    assert.equal(z.state.terrain.length, n * n);
+    assert.equal(z.state.path.length, n * n);
+    assert.equal(z.state.fenceX.length, n * (n + 1));
+    assert.equal(z.state.fenceZ.length, (n + 1) * n);
+    assert.equal(z.state.elev.length, (n + 1) * (n + 1));
+
+    const gateI0 = Math.floor(n / 2) - 1;
+    assert.ok(z.state.path[gateI0 + (n - 1) * n] > 0, `Gate left tile at N=${n}`);
+    assert.ok(z.state.path[(gateI0 + 1) + (n - 1) * n] > 0, `Gate right tile at N=${n}`);
+    assert.ok(z.state.path[gateI0 + (n - 6) * n] > 0, `Main avenue left tile at N=${n}`);
+    assert.ok(z.state.path[(gateI0 + 1) + (n - 6) * n] > 0, `Main avenue right tile at N=${n}`);
+    assert.equal(z.state.path[(gateI0 - 1) + (n - 6) * n], 0, `Main avenue centered left bound at N=${n}`);
+    assert.equal(z.state.path[(gateI0 + 2) + (n - 6) * n], 0, `Main avenue centered right bound at N=${n}`);
+  }
+
+  // previewMap('huge') while 'small' is active returns N=88 without mutating Z.N
+  z.Sim.newGame({ seed: 101, map: 'meadow', mapSize: 'small' });
+  assert.equal(z.N, 40);
+  const preview = z.Sim.previewMap('meadow', 777, 'huge');
+  assert.ok(preview);
+  assert.equal(preview.N, 88);
+  assert.equal(preview.terrain.length, 88 * 88);
+  assert.equal(preview.elev.length, 89 * 89);
+  assert.equal(z.N, 40);
+  assert.equal(z.state.gridN, 40);
+  assert.equal(z.state.terrain.length, 40 * 40);
+
+  // Saving huge (88), starting small (40), then loading huge restores Z.N === 88 and state cleanly
+  z.Sim.newGame({ seed: 555, map: 'meadow', mapSize: 'huge', money: 123456 });
+  assert.equal(z.Sim.placePath(43, 70, 'paved').ok, true);
+  const hugeMoneyAfterPath = z.state.money;
+  const hugeSaved = z.Sim.save();
+
+  z.Sim.newGame({ seed: 123, map: 'meadow', mapSize: 'small', money: 5000 });
+  assert.equal(z.N, 40);
+  assert.equal(z.Sim.load(hugeSaved), true);
+  assert.equal(z.N, 88);
+  assert.equal(z.state.gridN, 88);
+  assert.equal(z.state.mapSize, 'huge');
+  assert.equal(z.state.terrain.length, 88 * 88);
+  assert.equal(z.state.elev.length, 89 * 89);
+  assert.ok(z.state.path[43 + 70 * 88] > 0);
+  assert.equal(z.state.money, hugeMoneyAfterPath);
+
+  // Corrupt/mismatched array sizes fail and preserve active zoo's Z.N and state
+  z.Sim.newGame({ seed: 99, map: 'meadow', mapSize: 'small', money: 44444 });
+  const smallBefore = z.state;
+  const smallRaw = z.Sim.save();
+
+  const mismatchedGrid = JSON.parse(smallRaw);
+  mismatchedGrid.s.gridN = 88;
+  assert.equal(z.Sim.load(JSON.stringify(mismatchedGrid)), false);
+  assert.equal(z.N, 40);
+  assert.equal(z.state, smallBefore);
+  assert.equal(z.state.money, 44444);
+
+  const truncatedTerrain = JSON.parse(smallRaw);
+  truncatedTerrain.s.terrain = { __t: 'u8', n: 10, d: 'AAAAAAAAAA==' };
+  assert.equal(z.Sim.load(JSON.stringify(truncatedTerrain)), false);
+  assert.equal(z.N, 40);
+  assert.equal(z.state, smallBefore);
+  assert.equal(z.state.money, 44444);
+});
+
+test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 202, map: 'meadow', money: 500000 });
+  const N = z.N;
+
+  // Flatten and clear a zone for enclosures and exhibit tests
+  for (let j = 16; j <= 36; j++) for (let i = 12; i <= 38; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+  fenceBox(14, 18, 22, 26, 'reinforced');
+  fenceBox(25, 18, 33, 26, 'reinforced');
+
+  const fantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand'];
+  const fantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter'];
+  const fantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin'];
+
+  // At 3 stars: everything in the Fantasy Pack is locked
+  z.state.unlocked.star = 3;
+  for (const t of fantasyTerrains) {
+    assert.equal(z.Sim.isUnlocked('terrain', t), false, `Terrain ${t} locked at 3 stars`);
+    assert.equal(z.Sim.paintTerrain(16, 20, t, 0).ok, false, `paintTerrain(${t}) fails at 3 stars`);
+  }
+  for (const s of fantasyScenery) {
+    assert.equal(z.Sim.isUnlocked('scenery', s), false, `Scenery ${s} locked at 3 stars`);
+    assert.equal(z.Sim.placeObject(s, 17, 20, 0).ok, false, `placeObject(${s}) fails at 3 stars`);
+  }
+  for (const a of fantasyAnimals) {
+    assert.equal(z.Sim.isUnlocked('animal', a), false, `Animal ${a} locked at 3 stars`);
+    assert.equal(z.Sim.addAnimal(a, 18, 22).ok, false, `addAnimal(${a}) fails at 3 stars`);
+  }
+
+  // At 4 stars: all terrains, exhibit items, and fantasy creatures unlock and simulate cleanly
+  z.state.unlocked.star = 4;
+  fantasyTerrains.forEach((t, idx) => {
+    assert.equal(z.Sim.isUnlocked('terrain', t), true, `Terrain ${t} unlocked at 4 stars`);
+    assert.equal(z.Sim.paintTerrain(15 + idx, 20, t, 0).ok, true, `paintTerrain(${t}) succeeds at 4 stars`);
+  });
+  fantasyScenery.forEach((s, idx) => {
+    assert.equal(z.Sim.isUnlocked('scenery', s), true, `Scenery ${s} unlocked at 4 stars`);
+    assert.equal(z.Sim.placeObject(s, 15 + idx, 22, 0).ok, true, `placeObject(${s}) succeeds at 4 stars`);
+  });
+  fantasyAnimals.forEach((a, idx) => {
+    assert.equal(z.Sim.isUnlocked('animal', a), true, `Animal ${a} unlocked at 4 stars`);
+    // Griffin is a carnivore so place it in the second enclosure; place the rest in the first
+    const ti = a === 'griffin' ? 29 : 16 + idx;
+    const tj = a === 'griffin' ? 22 : 24;
+    assert.equal(z.Sim.addAnimal(a, ti, tj).ok, true, `addAnimal(${a}) succeeds at 4 stars`);
+  });
+  assert.equal(z.state.animals.length, 6);
+
+  for (let step = 0; step < 100; step++) z.Sim.tick(0.1);
+  for (const a of z.state.animals) {
+    assert.ok(Number.isFinite(a.x) && Number.isFinite(a.z), `Animal ${a.species} coordinates remain finite`);
+  }
+
+  // Dino Tycoon must not include any Zoo-only Fantasy Pack items
+  const dinoDataSrc = fs.readFileSync(path.join(__dirname, '../src/00-data.js'), 'utf8');
+  for (const id of [...fantasyTerrains, ...fantasyScenery, ...fantasyAnimals]) {
+    assert.equal(dinoDataSrc.includes(id), false, `Dino src/00-data.js must not include Zoo-only '${id}'`);
+  }
+});
+
+test('Zoo Winged Monkey performs periodic flyover terror raid, startles guests, and returns without lockdown', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 303, map: 'meadow', money: 300000 });
+  z.state.unlocked.star = 4;
+  z.state.time = 0.35;
+  z.state.speed = 1;
+  const N = z.N;
+
+  for (let j = 36; j <= 51; j++) for (let i = 24; i <= 36; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+    z.state.terrain[i + j * N] = 0;
+  }
+  for (let j = 36; j <= 51; j++) {
+    assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(28, j, 'paved').ok, true);
+  }
+  for (let i = 29; i <= 34; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 41 }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 47 }, 'reinforced').ok, true);
+  }
+  for (let j = 41; j <= 46; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 29, j }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 35, j }, 'reinforced').ok, true);
+  }
+
+  const addRes = z.Sim.addAnimal('winged_monkey', 31, 43);
+  assert.equal(addRes.ok, true);
+  const monkey = z.state.animals.find(a => a.id === addRes.id);
+  assert.ok(monkey && monkey.enc > 0);
+
+  // Let guests enter and walk onto the avenue next to the enclosure
+  for (let k = 0; k < 250 && z.state.guests.length < 4; k++) z.Sim.tick(0.1);
+  for (let k = 0; k < 100; k++) z.Sim.tick(0.1);
+  assert.ok(z.state.guests.length >= 2, 'Expected guests near the enclosure path');
+
+  let flyoverEvents = 0;
+  z.bus.on('flyover', (a) => { if (a && a.id === monkey.id) flyoverEvents++; });
+
+  monkey.state = 'idle';
+  monkey.baby = false;
+  monkey.sick = false;
+  monkey.flyCooldown = 0.05;
+
+  let maxFlyAlt = 0;
+  let sawAirborne = false;
+  let sawStartledGuest = false;
+  let returnedHome = false;
+
+  for (let step = 0; step < 400; step++) {
+    z.Sim.tick(0.1);
+    assert.notEqual(monkey.state, 'escaped', 'Flyover must not mark winged monkey as escaped');
+    assert.ok(!z.state.panic, 'Flyover must not trigger park-wide panic');
+    assert.equal(z.Sim.isLockdown(), false, 'Flyover must not trigger park lockdown');
+
+    if (monkey.flyover) {
+      if (monkey.flyAlt > maxFlyAlt) maxFlyAlt = monkey.flyAlt;
+      if (monkey.flyAlt > 0) sawAirborne = true;
+    }
+    for (const g of z.state.guests) {
+      if (g.state === 'flee' && g.thought && /flying monkey|winged monkey/i.test(g.thought)) {
+        sawStartledGuest = true;
+      }
+    }
+    if (sawAirborne && monkey.flyover === null && monkey.flyAlt === 0) {
+      returnedHome = true;
+      break;
+    }
+  }
+
+  assert.equal(flyoverEvents, 1, 'flyover bus event should fire once');
+  assert.equal(sawAirborne, true, 'winged monkey should climb into airborne flight');
+  assert.ok(maxFlyAlt > 0, `expected positive flyAlt during flyover, got ${maxFlyAlt}`);
+  assert.equal(sawStartledGuest, true, 'nearby guest should flee with a flying-monkey thought');
+  assert.equal(returnedHome, true, 'winged monkey should complete flyover and return home');
+  assert.equal(monkey.flyover, null);
+  assert.equal(monkey.flyAlt, 0);
+  assert.ok(monkey.enc > 0);
+});
+

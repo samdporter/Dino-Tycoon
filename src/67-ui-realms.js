@@ -7,6 +7,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI = Z.UI || {}, D = Z.DATA, h = UI.h, fmt = UI.fmt, ic = UI.ic, N = Z.N;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var RL = UI.Realms = {}, RD = D.realms, T = UI.Tools;
   function R() { return Z.Realms; }
   function find(a, id) { for (var k = 0; k < a.length; k++) if (a[k].id === id) return a[k]; return null; }

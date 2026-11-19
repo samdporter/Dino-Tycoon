@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N, T = Z.TILE;
+  if (Z.bus && Z.bus.on) Z.bus.on('gridsize', function (n) { N = n; });
   var SV = UI.SV = { active: false }, el = {}, keys = {}, ptr = {}, np = 0, pinch = 0, multi = false, fwdHeld = false, lastBearing = -999, hintT = 0, world = null, wasHidden = false;
   var CARD = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 
@@ -90,7 +91,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var v = el.sel.value, S = Z.state; el.sel.blur();
     if (!v) return;
     var spot = null;
-    if (v === 'gate') spot = { x: 56, z: 106, lx: 56, lz: 60 };
+    if (v === 'gate') spot = { x: Z.N, z: Z.N * 2 - 6, lx: Z.N, lz: Z.N * 2 - 52 };
     else if (v.indexOf('enc:') === 0) {
       var id = +v.slice(4), enc = null; (S.enclosures || []).forEach(function (e) { if (e.id === id || String(e.id) === v.slice(4)) enc = e; });
       if (enc) { var ec = encCenter(enc); spot = viewSpot(enc) || { x: ec.x, z: ec.z + 2, lx: ec.x, lz: ec.z }; }

@@ -76,7 +76,7 @@
         gSign = new THREE.BoxGeometry(0.7, 0.5, 0.05); gStick = new THREE.CylinderGeometry(0.025, 0.025, 1.2, 4);
       }
       while (prot.length > want) protGroup.remove(prot.pop());
-      var cb = D.power.cable, cx = cb.ci * T, cz = cb.cj * T;
+      var curN = Z.N || 56, cx = (Math.floor(curN / 2) - 0.5) * T, cz = (curN - 0.5) * T;
       while (prot.length < want) {
         var k = prot.length, p = mkProt(k), a = (k - 3.5) * 0.55;
         p.position.set(cx + Math.sin(a) * 4.5 + 3, 0, cz - 5 - Math.cos(a) * 1.2 + (k & 1) * 0.8);

@@ -7,7 +7,7 @@ window.Z = window.Z || {};
    Z.World - three.js scene, camera, picking, overlays.  See CONTRACT.md.
    ====================================================================== */
 
-var N = 56, T = 2, W = 112, D = {}, CH = 8, NCH = 7;
+var N = Z.N || 56, T = Z.TILE || 2, W = N * T, D = {}, CH = 8, NCH = Math.ceil(N / CH), builtN = 0;
 var SRGB = false; // linear output: matches how Z.Models colours were authored (plain hex colours)
 var PI = Math.PI, TAU = PI * 2;
 
@@ -367,7 +367,7 @@ var _wc = new THREE.Color();
 function applyWeather(dayK, sunE) {
   var c = WXV.cur, u = skyMat.uniforms, f = WXV.flash;
   var cl = clamp(c.cloud + c.rain * 0.2, 0, 1), fg = c.fog, ht = c.heat, st = c.storm, rn = c.rain;
-  var svk = typeof SV !== 'undefined' && SV ? SV.blend : 0, near = lerp(150, 70, svk), far = lerp(430, 300, svk);
+  var svk = typeof SV !== 'undefined' && SV ? SV.blend : 0, near = lerp(Math.max(150, W * 1.3), 70, svk), far = lerp(Math.max(430, W * 3.5), 300, svk);
   scene.fog.near = near; scene.fog.far = far;
   if (cl + fg + ht + f + rn < 0.002) { tintMat(MAT.terrain, 1); tintMat(MAT.outer, 1); tintMat(MAT.path, 1); setCloudTint(0); if (rainMesh) rainMesh.visible = false; return; }
   var z = u.uZen.value, hr = u.uHor.value, sc = u.uSunCol.value, lum;
@@ -547,7 +547,7 @@ function buildMaterials() {
 function init(container) {
   if (G.inited) return;
   D = Z.DATA || {};
-  N = Z.N || 56; T = Z.TILE || 2; W = N * T; NCH = Math.ceil(N / CH);
+  N = Z.N || 56; T = Z.TILE || 2; W = N * T; NCH = Math.ceil(N / CH); builtN = N;
   G.container = container || document.body;
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.outputEncoding = SRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
@@ -629,13 +629,15 @@ function setupTerrainTables() {
   if (waterIdx >= 0) TC[waterIdx].c = lin3('#4f7a72');
 }
 function buildTerrain() {
+  if (tMesh) { root.remove(tMesh); if (tGeo) tGeo.dispose(); tMesh = null; tGeo = null; }
   setupTerrainTables();
   S2 = 2 * N + 1;
   var nv = S2 * S2;
   TH = new Float32Array(nv); TE = new Float32Array(nv); tBase = new Float32Array(nv * 3);
   ESTEP = Z.ELEV_STEP || 0.5; ROCK = lin3('#8f8674');
   tPos = new Float32Array(nv * 3); tNor = new Float32Array(nv * 3); tCol = new Float32Array(nv * 3); tUV = new Float32Array(nv * 2);
-  var idx = new Uint16Array((S2 - 1) * (S2 - 1) * 6), p = 0;
+  var idxLen = (S2 - 1) * (S2 - 1) * 6;
+  var idx = nv > 65535 ? new Uint32Array(idxLen) : new Uint16Array(idxLen), p = 0;
   for (var b = 0; b < S2 - 1; b++) for (var a = 0; a < S2 - 1; a++) {
     var v = a + b * S2;
     idx[p++] = v; idx[p++] = v + S2; idx[p++] = v + 1;
@@ -1131,7 +1133,7 @@ function rebuildWall() {
   if (mapB().island) { rebuildBuoys(); setGateY(); return; }
   var wb = new MB(), stone = lin3('#b3a38b'), stoneD = lin3('#8e8068'), cap = lin3('#cdbfa5'), mp = mapB();
   var X0 = mp.i0 * T, X1 = (mp.i1 + 1) * T, Z0 = mp.j0 * T, Z1 = (mp.j1 + 1) * T, cx = W / 2, PW = 1.0;
-  var gx0 = 27 * T, gx1 = 29 * T;
+  var gateI0 = Math.floor(N / 2) - 1, gx0 = gateI0 * T, gx1 = (gateI0 + 2) * T;
   function wallSeg(x0, z0, x1, z1, side) {
     var len = Math.max(x1 - x0, z1 - z0), segs = Math.max(1, Math.round(len / 2));
     for (var k = 0; k < segs; k++) {
@@ -2563,13 +2565,13 @@ function buildCameraSystem() {
 }
 function clampCam() {
   var chase = !!followK;
-  cam.target.x = fin(cam.target.x, fin(view.x, 56));
-  cam.target.z = fin(cam.target.z, fin(view.z, 78));
+  cam.target.x = fin(cam.target.x, fin(view.x, W / 2));
+  cam.target.z = fin(cam.target.z, fin(view.z, W * 0.7));
   cam.dist = fin(cam.dist, fin(view.dist, 62));
   cam.yaw = fin(cam.yaw, fin(view.yaw, 0.3));
   cam.pitch = fin(cam.pitch, fin(view.pitch, 0.88));
   cam.pitch = clamp(cam.pitch, chase ? 0.1 : (G.pitchMin !== undefined ? G.pitchMin : PITCH_MIN), PITCH_MAX);
-  cam.dist = clamp(cam.dist, chase ? 3.2 : DIST_MIN, DIST_MAX);
+  cam.dist = clamp(cam.dist, chase ? 3.2 : DIST_MIN, Math.max(150, W * 1.4));
   cam.target.x = clamp(cam.target.x, 0, W); cam.target.z = clamp(cam.target.z, 0, W);
 }
 function pan(dx, dy) {
@@ -2820,8 +2822,41 @@ function pickEntity(cx, cy) {
 }
 
 /* ------------------------------------------------------------ events/reset */
+function disposeGroup(grp) {
+  if (!grp) return;
+  grp.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+  root.remove(grp);
+}
+function rebuildGridForSize(targetN) {
+  N = targetN; T = Z.TILE || 2; W = N * T; NCH = Math.ceil(N / CH); builtN = targetN;
+  if (tMesh) { root.remove(tMesh); if (tGeo) tGeo.dispose(); tMesh = null; tGeo = null; }
+  WLT = null; WLV = null; WLS = null; SEAM = null; SEAPREV = null; outerSig = null;
+  if (outerMesh) { root.remove(outerMesh); outerMesh.geometry.dispose(); outerMesh = null; }
+  if (oceanMesh) { root.remove(oceanMesh); oceanMesh.geometry.dispose(); oceanMesh = null; }
+  if (waterMesh) { root.remove(waterMesh); waterMesh.geometry.dispose(); waterMesh = null; }
+  if (wallMesh) { root.remove(wallMesh); wallMesh.geometry.dispose(); wallMesh = null; }
+  horizonObjs.forEach(function (m) { root.remove(m); if (m.geometry) m.geometry.dispose(); }); horizonObjs.length = 0;
+  forestObjs.forEach(function (m) { root.remove(m); if (m.dispose) m.dispose(); }); forestObjs.length = 0;
+  wildObjs.forEach(function (m) { root.remove(m); if (m.dispose) m.dispose(); }); wildObjs.length = 0;
+  disposeGroup(gateGrp); gateGrp = null;
+  disposeGroup(causeGrp); causeGrp = null; ferryGrp = null;
+  if (G.signMat) { G.signMat.dispose(); G.signMat = null; }
+  if (TEX.sign) { TEX.sign.dispose(); TEX.sign = null; }
+  clouds.forEach(function (cm) { root.remove(cm); if (cm.geometry) cm.geometry.dispose(); if (cm.material) cm.material.dispose(); }); clouds.length = 0;
+  pathMeshes.forEach(disposeMesh); pathMeshes.length = 0;
+  fenceMeshes.forEach(disposeMesh); fenceMeshes.length = 0;
+  if (pathGroup) { root.remove(pathGroup); pathGroup = null; }
+  if (fenceGroup) { root.remove(fenceGroup); fenceGroup = null; }
+  buildTerrain();
+  buildSurroundings();
+  buildPathsFences();
+  if (!SV.on) { SV.x = N; SV.z = N * 2 - 6; }
+  clampCam();
+}
 function resetAll() {
   if (!G.inited) return;
+  var targetN = Z.N || 56;
+  if (builtN !== targetN || N !== targetN) rebuildGridForSize(targetN);
   terrDirty = null;
   terrainRange(0, 0, N - 1, N - 1);
   pathDirty.fill(1); fenceDirty.fill(1);
@@ -2839,6 +2874,7 @@ function resetAll() {
 }
 function hookBus() {
   var b = Z.bus; if (!b || !b.on) return;
+  b.on('gridsize', function (n) { N = n; T = Z.TILE || 2; W = N * T; NCH = Math.ceil(N / CH); });
   b.on('reset', resetAll);
   b.on('moats', function () { waterDirty = true; });
   b.on('terrain', function (r) {
@@ -2890,7 +2926,7 @@ function frame(dtReal) {
   skyMat.uniforms.uTime.value = G.t; if (MAT.water) MAT.water.uniforms.uTime.value = G.t;
   skyMesh.position.copy(camera.position);
   if (ferryGrp) { ferryGrp.position.y = Math.sin(G.t * 1.1) * 0.06; ferryGrp.rotation.z = Math.sin(G.t * 0.9) * 0.012; }
-  for (var c = 0; c < clouds.length; c++) { var cm = clouds[c]; cm.position.x += cm.userData.sp * dtReal; if (cm.position.x > 280) cm.position.x = -240; }
+  for (var c = 0; c < clouds.length; c++) { var cm = clouds[c]; cm.position.x += cm.userData.sp * dtReal; if (cm.position.x > W + 170) cm.position.x = -240; }
   // dirty work
   if (terrDirty) { var r = terrDirty; terrDirty = null; terrainRange(r.i0, r.j0, r.i1, r.j1); }
   if (waterDirty) rebuildWater();
