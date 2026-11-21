@@ -292,11 +292,11 @@ SPEC.dolphin = (function () {
 })();
 
 // ================================================================ PLESIOSAUR / PLIOSAUR (long-neck or big-head body with four flippers)
-function chainGeos(S, c, key) {   // n tapering segments along +z, each with a sleek tapered overlap collar at its start
+function chainGeos(S, c, key) {   // tapering segments along +z; each overlaps back into its parent and forward into the next so bends never step
   var out = [], i, n = c.n, sl = c.len / n, fy = c.fy || 0.85;
   for (i = 0; i < n; i++) {
-    var k0 = i / n, k1 = (i + 1) / n, r0 = lerp(c.r1, c.r2, k0), r1 = lerp(c.r1, c.r2, k1), ov = r0 * 0.42, g = B();
-    g.loft([[-ov, r0 * 0.86, r0 * fy * 0.86, 0], [0, r0 * 0.99, r0 * fy * 0.99, 0], [sl, r1, r1 * fy, 0]], { rings: 3, seg: c.seg || 8, cap0: true, cap1: i === n - 1 }, S.col);
+    var k0 = i / n, k1 = (i + 1) / n, r0 = lerp(c.r1, c.r2, k0), r1 = lerp(c.r1, c.r2, k1), rm = lerp(r0, r1, 0.5), ov = r0 * 0.5, g = B(), b = i === 0 ? (c.base || 1) : 1;
+    g.loft([[-ov, r0 * 0.8 * b, r0 * fy * 0.8 * b, 0], [0, r0 * b, r0 * fy * b, 0], [sl * 0.45, rm * (1 + (b - 1) * 0.3), rm * fy * (1 + (b - 1) * 0.3), 0], [sl, r1, r1 * fy, 0], [sl + ov * 0.7, r1 * 0.9, r1 * fy * 0.9, 0]], { rings: 5, seg: c.seg || 8, cap0: true, cap1: i === n - 1 }, c.col || S.col);
     if (c.extra) c.extra(g, i, sl);
     out.push(g.build());
   }
@@ -457,14 +457,14 @@ function ik2(L1, L2, tx, ty, bend) {
 }
 var IK0 = 0, IK1 = 0;
 function limbGeos(c, S) {   // c: {L:[l1,l2], r:[a,b,c], foot:fn(g,L2), musc?, thigh? (feathered-thigh fraction)}
-  var g = B(), col = c.col || S.legc || 0x5b5040, r = c.r.map(function (v) { return v * (S.legK || 1.35); }), L = c.L, K;
-  if (c.musc) K = [[0, r[0] * 1.2, r[0] * 1.35, 0], [L[0] * 0.28, r[0] * 1.12, r[0] * 1.3, 0.008], [L[0] * 0.62, r[1] * 1.3, r[1] * 1.3, 0], [L[0] * 0.9, r[1] * 1.0, r[1] * 1.0, 0], [L[0], r[1] * 0.92, r[1] * 0.92, 0]];
-  else if (c.thigh) K = [[0, r[0] * 1.5, r[0] * 1.7, 0], [L[0] * c.thigh * 0.6, r[0] * 1.5, r[0] * 1.65, 0], [L[0] * c.thigh, r[1] * 1.25, r[1] * 1.25, 0], [L[0], r[1] * 0.95, r[1] * 0.95, 0]];
-  else K = [[0, r[0] * 1.1, r[0] * 1.15, 0], [L[0] * 0.3, r[0] * 0.92, r[0] * 0.95, 0], [L[0] * 0.8, r[1] * 0.95, r[1] * 0.95, 0], [L[0], r[1] * 0.9, r[1] * 0.9, 0]];
-  g.loft(K, { down: true, rings: 6, seg: 8, cap0: true, cap1: true }, col);
-  g.sph(r[1] * 1.08, r[1] * 1.08, r[1] * 1.08, 0, -L[0], 0, col, { s: [6, 4] });
+  var g = B(), col = c.col || S.legc || 0x5b5040, r = c.r.map(function (v) { return v * (S.legK || 1.35); }), L = c.L, K, d = r[1];
+  if (c.musc) K = [[-r[0] * 1.1, r[0] * 0.45, r[0] * 0.5, 0], [-r[0] * 0.5, r[0] * 1.1, r[0] * 1.25, 0], [L[0] * 0.1, r[0] * 1.3, r[0] * 1.45, 0.005], [L[0] * 0.4, r[0] * 1.02, r[0] * 1.15, 0.01], [L[0] * 0.78, d * 1.12, d * 1.12, 0], [L[0], d * 0.95, d * 0.95, 0]];
+  else if (c.thigh) K = [[-r[0], r[0] * 0.8, r[0] * 0.9, 0], [0, r[0] * 1.5, r[0] * 1.7, 0], [L[0] * c.thigh * 0.6, r[0] * 1.5, r[0] * 1.65, 0], [L[0] * c.thigh, d * 1.25, d * 1.25, 0], [L[0], d * 0.95, d * 0.95, 0]];
+  else K = [[-r[0] * 0.8, r[0] * 0.5, r[0] * 0.55, 0], [0, r[0] * 1.1, r[0] * 1.15, 0], [L[0] * 0.3, r[0] * 0.92, r[0] * 0.95, 0], [L[0] * 0.8, d * 0.95, d * 0.95, 0], [L[0], d * 0.9, d * 0.9, 0]];
+  K.push([L[0] + d * 0.7, d * 0.6, d * 0.6, 0], [L[0] + d * 0.95, d * 0.2, d * 0.2, 0]);
+  g.loft(K, { down: true, rings: 9, seg: 8, cap0: true, cap1: true }, col);
   var up = g.build(); g = B();
-  g.loft([[0, r[1] * 0.92, r[1] * 0.96, 0], [L[1] * 0.16, r[1] * 0.8, r[1] * 0.86, 0], [L[1] * 0.68, r[2] * 1.0, r[2] * 1.05, 0], [L[1] * 0.92, r[2] * 1.22, r[2] * 1.22, 0], [L[1], r[2] * 0.95, r[2] * 0.95, 0]], { down: true, rings: 6, seg: 8, cap0: true, cap1: true }, col);
+  g.loft([[-d * 0.9, d * 0.35, d * 0.4, 0], [-d * 0.45, d * 0.85, d * 0.9, 0], [0, d * 0.98, d * 1.02, 0], [L[1] * 0.18, d * 0.8, d * 0.88, 0], [L[1] * 0.68, r[2] * 1.0, r[2] * 1.05, 0], [L[1] * 0.9, r[2] * 1.1, r[2] * 1.1, 0], [L[1], r[2] * 0.95, r[2] * 0.95, 0]], { down: true, rings: 8, seg: 8, cap0: true, cap1: true }, col);
   if (c.foot) c.foot(g, L[1], col);
   return { up: up, lo: g.build() };
 }
@@ -577,6 +577,7 @@ function ptWing(P) {
   var a = P.a, fa = P.fa, g = B(), o = B(), f = B(), bone = P.bone || 0x4a3d30, Tx = P.tx * a, Tz = P.tz, sz = P.sz || 0.05;
   var memCol = function (x, y, z, nx, ny, nz, u) {
     var base = ny >= 0 ? P.top : P.bot;
+    base = mixHex(base, shade(base, 1.22), clamp((u - 0.5) / 0.5, 0, 1) * 0.7);
     return (P.alt && u > 0.65) ? mixHex(base, shade(base, P.alt), (u - 0.65) / 0.35) : base;
   };
   // inner wing
@@ -585,7 +586,7 @@ function ptWing(P) {
     [[a * 0.5, 0.015, lerp(sz, fa, 0.5)], [a * 0.48, 0.005, lerp((sz + P.rz) * 0.5, lerp(fa, Tz, 0.5), 0.5)], [Tx * 0.48, 0, lerp(P.rz, Tz, 0.5)]],
     [[a, 0, fa], [lerp(a, Tx, 0.5), 0, lerp(fa, Tz, 0.5)], [Tx, 0, Tz]]
   ], max(0.008, P.r[0] * 0.85), memCol, { camber: a * 0.04, scallop: 0.16, uSteps: 3, vSteps: 3 });
-  g.tube([[0, 0, sz], [a * 0.46, 0.014, lerp(sz, fa, 0.46) + 0.02 * a], [a, 0, fa]], [P.r[0] * 1.15, P.r[1] * 1.05], bone, { seg: 6, steps: 2, cap0: true, cap1: true });
+  g.tube([[0, 0, sz], [a * 0.14, 0.008, lerp(sz, fa, 0.14)], [a * 0.46, 0.014, lerp(sz, fa, 0.46) + 0.02 * a], [a, 0, fa]], [P.r[0] * 2.3, P.r[0] * 2.0, P.r[1] * 1.35, P.r[1] * 1.05], bone, { seg: 6, steps: 2, cap0: true, cap1: true });
   // outer wing
   var T2 = [Tx - a, 0, Tz - fa], tip = [P.bx, 0, -P.bz];
   var midL = [P.bx * 0.5, 0.016, -P.bz * 0.45], midT = [lerp(T2[0], tip[0], 0.48), 0, lerp(T2[2], tip[2], 0.48) - P.bz * 0.08];
@@ -595,7 +596,7 @@ function ptWing(P) {
     [midL, [lerp(midL[0], midT[0], 0.5), 0.005, lerp(midL[2], midT[2], 0.5)], midT],
     [tip, tipT]
   ], max(0.006, P.r[1] * 0.85), memCol, { camber: P.bx * 0.03, scallop: 0.18, uSteps: 3, vSteps: 3 });
-  o.tube([[0, 0, 0], midL, tip], [P.r[1] * 1.1, P.r[1] * 0.72, max(0.003, P.r[2] * 0.65)], bone, { seg: 6, steps: 2, cap0: true, cap1: true });
+  o.tube([[0, 0, 0], midL, tip], [P.r[1] * 1.45, P.r[1] * 0.85, max(0.003, P.r[2] * 0.5)], bone, { seg: 6, steps: 2, cap0: true, cap1: true });
   if (P.claw) {
     for (var c = -1; c <= 1; c++) o.cone(P.r[1] * 0.38, P.r[1] * 2.4, c * P.r[1] * 0.55 - P.r[1] * 0.4, P.r[1] * 0.5, P.r[1] * 1.2, 0x2a221a, { seg: 4, rot: [PI * 0.42, 0, c * 0.22] });
   }
@@ -628,7 +629,7 @@ SPEC.pteranodon = (function () {
   S.col = skin({ back: 0x6a5b49, belly: 0xc2b697, mid: 0x8c7a5e, bAt: -0.1, bW: 0.6, mott: 0.06 });
   S.legc = 0x6a5b49;
   S.body = { keys: [[-0.42, 0.03, 0.03, 0.0], [-0.3, 0.1, 0.1, 0.0], [-0.05, 0.15, 0.15, 0.01], [0.25, 0.16, 0.16, 0.02], [0.45, 0.09, 0.1, 0.04]], rings: 8, seg: 9, extra: function (g) { fuzz(g, 0.14, 0.17, -0.3, 0.42, 9, 0xb9a47c); } };
-  S.neck = { n: 2, len: 0.6, r1: 0.09, r2: 0.065, at: [0.08, 0.42], fy: 0.95, G: [0.95, 0.05], F: [0.2, 0.08], E: [-0.5, -1.0], S: [0.5, 1.0], call: 0.25 };
+  S.neck = { n: 2, len: 0.6, r1: 0.09, r2: 0.065, base: 1.3, at: [0.08, 0.42], fy: 0.95, G: [0.95, 0.05], F: [0.2, 0.08], E: [-0.5, -1.0], S: [0.5, 1.0], call: 0.25 };
   S.head = { G: -0.3, F: -0.08, E: -1.2, S: -0.6, jaw: { y: -0.04, z: 0.08, build: function (g) {
     g.loft([[0, 0.05, 0.03, -0.01], [0.35, 0.04, 0.025, -0.015], [1.05, 0.014, 0.011, -0.025], [1.25, 0.006, 0.006, -0.03]], { rings: 4, seg: 6, cap0: true, cap1: true }, 0xcf9a5a);
   } }, build: function (g) {
@@ -640,8 +641,8 @@ SPEC.pteranodon = (function () {
   } };
   S.tail = { n: 1, len: 0.2, r1: 0.05, r2: 0.012, at: [0.0, -0.4], G: -0.4, F: 0.0 };
   S.wing = { at: [0.13, 0.08, 0.26], a: 1.15, fa: -0.12, build: function () { return ptWing({ a: 1.15, fa: -0.12, bx: 1.75, bz: 0.75, sz: 0.05, rz: -0.5, tx: 0.88, tz: -0.66, top: 0x7e6a52, bot: 0xb59c76, alt: 0.86, r: [0.036, 0.024, 0.012], E: [0.12, 0.34, -0.42], F: [0.1, 0.06, -1.2], R: [-0.05, -0.02, -0.55], claw: true }); } };
-  S.legs = { hind: { x: 0.11, y: -0.07, z: -0.2, L: [0.3, 0.32], r: [0.04, 0.026, 0.016], fx: 0.0, foot: footTalon(0.03, 0.016, 0.07) },
-    fore: { x: 0.13, y: -0.07, z: 0.28, L: [0.4, 0.4], r: [0.034, 0.022, 0.016], fx: 0.1, foot: footTalon(0.03, 0.016, 0.06) } };
+  S.legs = { hind: { x: 0.11, y: -0.07, z: -0.2, L: [0.3, 0.32], r: [0.04, 0.026, 0.016], fx: 0.0, musc: true, foot: footTalon(0.03, 0.016, 0.07) },
+    fore: { x: 0.13, y: -0.07, z: 0.28, L: [0.4, 0.4], r: [0.034, 0.022, 0.016], fx: 0.1, musc: true, foot: footTalon(0.03, 0.016, 0.06) } };
   return S;
 })();
 
@@ -651,7 +652,7 @@ SPEC.quetzalcoatlus = (function () {
   S.col = skin({ back: 0x7c6454, belly: 0xd6c6a6, mid: 0xa08468, bAt: -0.1, bW: 0.6, mott: 0.07 });
   S.legc = 0x7c6454;
   S.body = { keys: [[-0.8, 0.06, 0.06, 0.0], [-0.55, 0.22, 0.22, 0.0], [-0.1, 0.32, 0.32, 0.02], [0.45, 0.32, 0.32, 0.03], [0.9, 0.16, 0.18, 0.07]], rings: 9, seg: 10, extra: function (g) { fuzz(g, 0.3, 0.33, -0.45, 0.85, 11, 0xc7a888); } };
-  S.neck = { n: 4, len: 2.8, r1: 0.17, r2: 0.09, at: [0.15, 0.85], fy: 0.95, G: [1.15, 1.3, 1.35, 1.25], F: [0.35, 0.25, 0.15, 0.12], E: [0.4, -0.2, -0.7, -1.0], S: [0.6, 0.9, 1.1, 1.2], call: 0.12 };
+  S.neck = { n: 4, len: 2.8, r1: 0.17, r2: 0.09, base: 1.25, at: [0.15, 0.85], fy: 0.95, G: [1.15, 1.3, 1.35, 1.25], F: [0.35, 0.25, 0.15, 0.12], E: [0.4, -0.2, -0.7, -1.0], S: [0.6, 0.9, 1.1, 1.2], call: 0.12 };
   S.head = { G: -0.1, F: -0.1, E: -1.0, S: -0.4, jaw: { y: -0.07, z: 0.1, build: function (g) {
     g.loft([[0, 0.07, 0.04, -0.02], [0.4, 0.06, 0.035, -0.025], [1.4, 0.022, 0.015, -0.03], [1.8, 0.008, 0.008, -0.03]], { rings: 5, seg: 6, cap0: true, cap1: true }, 0xd9c9a0);
   } }, build: function (g) {
@@ -663,8 +664,8 @@ SPEC.quetzalcoatlus = (function () {
   } };
   S.tail = { n: 1, len: 0.25, r1: 0.07, r2: 0.02, at: [0.0, -0.8], G: -0.4, F: 0.0 };
   S.wing = { at: [0.3, 0.2, 0.5], a: 2.0, fa: -0.2, build: function () { return ptWing({ a: 2.0, fa: -0.2, bx: 2.9, bz: 1.1, sz: 0.1, rz: -0.9, tx: 0.88, tz: -1.15, top: 0x8c6a56, bot: 0xc7a687, alt: 0.88, r: [0.07, 0.045, 0.02], E: [0.2, 0.55, -0.8], F: [0.15, 0.12, -2.2], R: [-0.1, -0.1, -1.0], claw: true }); } };
-  S.legs = { hind: { x: 0.22, y: -0.15, z: -0.35, L: [0.95, 1.0], r: [0.1, 0.065, 0.04], fx: 0.0, foot: footTalon(0.07, 0.03, 0.14) },
-    fore: { x: 0.28, y: -0.12, z: 0.6, L: [1.1, 1.15], r: [0.08, 0.055, 0.035], fx: 0.15, foot: footTalon(0.06, 0.03, 0.12) } };
+  S.legs = { hind: { x: 0.22, y: -0.15, z: -0.35, L: [0.95, 1.0], r: [0.1, 0.065, 0.04], fx: 0.0, musc: true, foot: footTalon(0.07, 0.03, 0.14) },
+    fore: { x: 0.28, y: -0.12, z: 0.6, L: [1.1, 1.15], r: [0.08, 0.055, 0.035], fx: 0.15, musc: true, foot: footTalon(0.06, 0.03, 0.12) } };
   return S;
 })();
 
@@ -684,8 +685,8 @@ SPEC.dimorphodon = (function () {
   } };
   S.tail = { n: 4, len: 0.6, r1: 0.04, r2: 0.008, at: [0.0, -0.2], G: -0.1, F: 0.0, amp: 0.7 };
   S.wing = { at: [0.05, 0.05, 0.1], a: 0.26, fa: -0.04, build: function () { return ptWing({ a: 0.26, fa: -0.04, bx: 0.4, bz: 0.14, sz: 0.03, rz: -0.14, tx: 0.88, tz: -0.2, top: 0x6a5446, bot: 0xa4896a, alt: 0.88, r: [0.014, 0.01, 0.005], E: [0.04, 0.12, -0.12], F: [0.03, 0.03, -0.38], R: [-0.02, -0.01, -0.16], claw: true }); } };
-  S.legs = { hind: { x: 0.045, y: -0.04, z: -0.08, L: [0.1, 0.11], r: [0.016, 0.011, 0.007], fx: 0.0, foot: footTalon(0.015, 0.008, 0.03) },
-    fore: { x: 0.055, y: -0.04, z: 0.1, L: [0.11, 0.11], r: [0.014, 0.01, 0.007], fx: 0.05, foot: footTalon(0.012, 0.008, 0.025) } };
+  S.legs = { hind: { x: 0.045, y: -0.04, z: -0.08, L: [0.1, 0.11], r: [0.016, 0.011, 0.007], fx: 0.0, musc: true, foot: footTalon(0.015, 0.008, 0.03) },
+    fore: { x: 0.055, y: -0.04, z: 0.1, L: [0.11, 0.11], r: [0.014, 0.01, 0.007], fx: 0.05, musc: true, foot: footTalon(0.012, 0.008, 0.025) } };
   return S;
 })();
 
@@ -710,8 +711,8 @@ SPEC.rhamphorhynchus = (function () {
     return g.build();
   } };
   S.wing = { at: [0.045, 0.05, 0.09], a: 0.34, fa: -0.05, build: function () { return ptWing({ a: 0.34, fa: -0.05, bx: 0.52, bz: 0.2, sz: 0.03, rz: -0.14, tx: 0.88, tz: -0.2, top: 0x6c5b44, bot: 0xad946f, alt: 0.88, r: [0.012, 0.009, 0.005], E: [0.04, 0.12, -0.14], F: [0.03, 0.03, -0.46], R: [-0.02, -0.01, -0.16], claw: true }); } };
-  S.legs = { hind: { x: 0.04, y: -0.04, z: -0.07, L: [0.09, 0.1], r: [0.014, 0.01, 0.006], fx: 0.0, foot: footTalon(0.013, 0.007, 0.028) },
-    fore: { x: 0.05, y: -0.04, z: 0.1, L: [0.1, 0.1], r: [0.012, 0.009, 0.006], fx: 0.05, foot: footTalon(0.011, 0.007, 0.024) } };
+  S.legs = { hind: { x: 0.04, y: -0.04, z: -0.07, L: [0.09, 0.1], r: [0.014, 0.01, 0.006], fx: 0.0, musc: true, foot: footTalon(0.013, 0.007, 0.028) },
+    fore: { x: 0.05, y: -0.04, z: 0.1, L: [0.1, 0.1], r: [0.012, 0.009, 0.006], fx: 0.05, musc: true, foot: footTalon(0.011, 0.007, 0.024) } };
   return S;
 })();
 
@@ -854,11 +855,9 @@ SPEC.deer = (function () {
   var S = { id: 'deer', kind: 'flyer', hz: 0, hipH: 1.17, pitchG: 0.0, pitchF: 0, flyY: 1, bob: 0.025, bobA: 0, bankK: 0, eatDrop: 0.25, eatPitch: 0.3, stride: 1.1, lift: 0.14, bs: 0.45, runAt: 2.6, neckBob: 0.05, legK: 1.0, glide: [9, 9], flap: [9, 9] };
   S.col = skin({ back: 0x8c5b3c, belly: 0xcfb593, mid: 0xa5774f, bAt: -0.15, bW: 0.7, mott: 0.05 });
   S.legc = 0x7a5237;
-  S.body = { keys: [[-0.7, 0.05, 0.07, 0.04], [-0.62, 0.13, 0.15, 0.03], [-0.45, 0.19, 0.23, 0.03], [-0.2, 0.2, 0.24, 0.0], [0.1, 0.19, 0.22, -0.01], [0.35, 0.2, 0.25, 0.0], [0.55, 0.16, 0.21, 0.03], [0.67, 0.09, 0.12, 0.06]], rings: 12, seg: 12, extra: function (g) {
-    g.sph(0.09, 0.1, 0.06, 0, 0.03, -0.68, 0xe4d3b0, { s: [6, 4] });
-    muscle(g, S, 0.13, -0.02, -0.42, 0.075, 0.16, 0.16, 0.2); muscle(g, S, 0.13, -0.02, 0.38, 0.06, 0.14, 0.12, -0.15);
-  } };
-  S.neck = { n: 2, len: 0.62, r1: 0.12, r2: 0.085, at: [0.12, 0.62], fy: 1, extra: neckBase(S, 0.12), G: [1.0, 0.8], F: [1.0, 0.8], E: [-0.5, -1.1], S: [0.6, 0.2], call: 0.1 };
+  S.body = { keys: [[-0.7, 0.04, 0.06, 0.04], [-0.64, 0.12, 0.14, 0.04], [-0.52, 0.18, 0.21, 0.03], [-0.38, 0.2, 0.24, 0.01], [-0.15, 0.18, 0.21, 0.0], [0.05, 0.18, 0.2, -0.02], [0.22, 0.2, 0.25, 0.0], [0.38, 0.215, 0.28, 0.01], [0.53, 0.17, 0.23, 0.03], [0.63, 0.1, 0.14, 0.06], [0.68, 0.04, 0.06, 0.07]], rings: 14, seg: 12 };
+  var deerBase = S.col; S.col = function (zc, ca, sa, x, y, z) { var c = deerBase(zc, ca, sa, x, y, z); return zc < -0.5 && ca < 0.7 ? mixHex(c, 0xeadfc6, clamp((-0.5 - zc) / 0.12, 0, 1) * 0.9) : c; };
+  S.neck = { n: 2, len: 0.62, r1: 0.12, r2: 0.085, at: [0.12, 0.62], fy: 1, base: 1.4, G: [1.0, 0.8], F: [1.0, 0.8], E: [-0.5, -1.1], S: [0.6, 0.2], call: 0.1 };
   S.head = { G: -0.35, F: -0.35, E: -1.0, S: 0.0, build: function (g) {
     g.loft([[0, 0.065, 0.085, 0.01], [0.1, 0.078, 0.09, 0.0], [0.2, 0.058, 0.066, -0.012], [0.3, 0.042, 0.05, -0.024], [0.38, 0.038, 0.042, -0.03]], { rings: 7, seg: 10, cap0: true, cap1: true }, muzzleCol(S, 0.3, 0x2a211c));
     g.sph(0.04, 0.032, 0.028, 0, -0.024, 0.385, 0x1e1a18, { s: [6, 4] });
@@ -876,14 +875,11 @@ SPEC.deer = (function () {
       tn([[s * 0.15, 0.46, -0.05], [s * 0.18, 0.55, -0.01], [s * 0.17, 0.62, 0.04]], [0.008, 0.005, 0.002]);
     }
   } };
-  S.tail = { n: 1, len: 0.12, r1: 0.04, r2: 0.025, at: [0.04, -0.66], G: 0.5, F: 0.5 };
+  S.tail = { n: 1, len: 0.15, r1: 0.05, r2: 0.025, fy: 0.4, at: [0.04, -0.66], G: 0.5, F: 0.5, col: function (zc, ca) { return ca < -0.1 ? 0xf2e9d8 : 0x7a5236; } };
   S.legs = { hind: { x: 0.12, y: -0.18, z: -0.45, L: [0.5, 0.52], r: [0.08, 0.05, 0.032], fx: 0.0, bend: 1, musc: true, foot: hoof(0.03, 0.035) },
     fore: { x: 0.12, y: -0.16, z: 0.42, L: [0.48, 0.5], r: [0.07, 0.045, 0.03], fx: 0.04, musc: true, foot: hoof(0.028, 0.032) } };
   return S;
 })();
-function flankCol(S, zc) { return function (x, y, z, nx, ny) { return S.col(zc, clamp(ny * 0.5 + 0.35, -0.1, 0.9), nx, x, y, z); }; }
-function muscle(g, S, x, y, z, rx, ry, rz, tilt) { g.sph(rx, ry, rz, x, y, z, flankCol(S, z), { rot: [tilt || 0, 0, 0], s: [7, 5] }); g.sph(rx, ry, rz, -x, y, z, flankCol(S, z), { rot: [tilt || 0, 0, 0], s: [7, 5] }); }
-function neckBase(S, r) { return function (g, i) { if (i === 0) g.sph(r * 1.3, r * 1.25, r * 1.5, 0, -r * 0.2, r * 0.1, flankCol(S, 0.3), { s: [7, 5] }); }; }
 function eyeDark(g, x, y, z, r) { for (var s = -1; s <= 1; s += 2) g.sph(r, r, r * 0.9, s * x, y, z, 0x15110e, { s: [5, 4] }); }
 
 SPEC.boar = (function () {
@@ -892,9 +888,8 @@ SPEC.boar = (function () {
   S.legc = 0x3d342b;
   S.body = { keys: [[-0.54, 0.06, 0.08, 0.0], [-0.46, 0.17, 0.2, 0.0], [-0.3, 0.24, 0.28, 0.0], [0.0, 0.27, 0.31, 0.02], [0.3, 0.28, 0.34, 0.04], [0.46, 0.26, 0.32, 0.05], [0.56, 0.17, 0.21, 0.03]], rings: 12, seg: 12, ridge: 0.1, extra: function (g) {
     for (var k = 0; k < 12; k++) { var z = 0.5 - k * 0.075, y = 0.37 - abs(z - 0.28) * 0.12 - (z < -0.1 ? 0.04 : 0); g.cone(0.016, 0.075, 0, y + 0.01, z, 0x1f1914, { seg: 4, rot: [-0.55, 0, 0] }); }
-    muscle(g, S, 0.17, -0.04, -0.34, 0.085, 0.17, 0.16, 0.15); muscle(g, S, 0.17, -0.02, 0.3, 0.075, 0.16, 0.14, -0.1);
   } };
-  S.neck = { n: 1, len: 0.2, r1: 0.2, r2: 0.17, at: [0.06, 0.5], fy: 1, extra: neckBase(S, 0.2), G: [0.25], F: [0.25], E: [-0.5], S: [-0.2], call: 0.1 };
+  S.neck = { n: 1, len: 0.2, r1: 0.2, r2: 0.17, at: [0.06, 0.5], fy: 1, base: 1.25, G: [0.25], F: [0.25], E: [-0.5], S: [-0.2], call: 0.1 };
   S.head = { G: -0.55, F: -0.55, E: -1.3, S: -0.3, build: function (g) {
     g.loft([[0, 0.13, 0.15, 0.0], [0.18, 0.13, 0.14, -0.01], [0.3, 0.095, 0.105, -0.02], [0.4, 0.07, 0.08, -0.03], [0.5, 0.055, 0.06, -0.035]], { rings: 7, seg: 10, cap0: true, cap1: true }, muzzleCol(S, 0.4, 0x7a5a50));
     lipLine(g, 0.06, -0.06, 0.5, 0.1, -0.06, 0.2, 0.005, 0x1e1612);
@@ -919,9 +914,8 @@ SPEC.goat = (function () {
   S.col = skin({ back: 0xece6d6, belly: 0xfaf6ec, mid: 0xf2ecde, bAt: -0.2, bW: 0.7, mott: 0.04 });
   S.legc = 0xe3dccb;
   S.body = { keys: [[-0.42, 0.05, 0.07, 0.01], [-0.36, 0.11, 0.14, 0.0], [-0.2, 0.16, 0.2, 0.01], [0.05, 0.18, 0.23, 0.02], [0.3, 0.18, 0.22, 0.04], [0.4, 0.13, 0.17, 0.05], [0.46, 0.06, 0.09, 0.05]], rings: 11, seg: 12, extra: function (g) {
-    muscle(g, S, 0.1, -0.02, -0.26, 0.055, 0.12, 0.11, 0.15); muscle(g, S, 0.1, -0.02, 0.26, 0.05, 0.11, 0.09, -0.1);
   } };
-  S.neck = { n: 1, len: 0.3, r1: 0.1, r2: 0.08, at: [0.12, 0.38], fy: 1, extra: neckBase(S, 0.1), G: [0.65], F: [0.65], E: [-0.6], S: [0.3], call: 0.1 };
+  S.neck = { n: 1, len: 0.3, r1: 0.1, r2: 0.08, at: [0.12, 0.38], fy: 1, base: 1.35, G: [0.65], F: [0.65], E: [-0.6], S: [0.3], call: 0.1 };
   S.head = { G: -0.2, F: -0.2, E: -1.2, S: 0.0, build: function (g) {
     g.loft([[0, 0.055, 0.07, 0.01], [0.1, 0.062, 0.072, 0.0], [0.17, 0.045, 0.054, -0.01], [0.23, 0.036, 0.042, -0.018], [0.27, 0.032, 0.036, -0.02]], { rings: 6, seg: 10, cap0: true, cap1: true }, muzzleCol(S, 0.22, 0x4a3c36));
     g.sph(0.03, 0.026, 0.02, 0, -0.02, 0.275, 0x2a2622, { s: [6, 4] });
