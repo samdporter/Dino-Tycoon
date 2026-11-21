@@ -1,6 +1,7 @@
 // Wild Acres Zoo — Custom Rollercoaster 3D World Renderer (Zoo Tycoon only)
-// Renders themed coaster stations, 3D twin-rail splines (with vertical loops & corkscrews),
-// trestle/steel supports, animated coaster trains, water splashes, and first-person Ride Along.
+// Renders themed coaster stations with launch/return arrows, continuous stitched twin-rail 3D splines
+// (with smooth Bezier corners, hills, vertical loops & corkscrews), visible animated Chain Lift Hills
+// (chain trough, moving chain links, sprocket wheels & catwalk), trestle/steel supports, trains & Ride Along.
 (function () {
   'use strict';
   var Z = window.Z, D = Z && Z.DATA;
@@ -9,17 +10,19 @@
   var CD = D.coaster;
   var TYPES = CD.types;
   var TILE = Z.TILE || 2;
-  var ELEV_UNIT = Z.ELEV_UNIT || 0.75;
 
-  var grp = null;       // root THREE.Group attached to World.root()
-  var trackGrp = null;  // rebuilt when coaster graph ver changes
-  var trainGrp = null;  // holds train car groups
-  var fxGrp = null;     // splash droplets
-  var ovGrp = null;     // overlay tiles
+  var grp = null;
+  var trackGrp = null;
+  var chainGrp = null;  // animated moving chain links on Chain Lift Hills
+  var trainGrp = null;
+  var fxGrp = null;
+  var ovGrp = null;
   var builtVer = -1;
-  var trainMeshes = {}; // trainId -> { group, cars: [Group], type, count, beacon }
-  var splashes = [];    // { mesh, vx, vy, vz, life }
-  var rideTrainId = 0;  // first-person ride-along train id
+  var trainMeshes = {};
+  var chainSegs = [];   // [{ x0,y0,z0, dx,dy,dz, ux,uy,uz, rx,ry,rz, len }]
+  var chainMeshes = []; // pool of moving chain link meshes
+  var splashes = [];
+  var rideTrainId = 0;
   var followTrainId = 0;
   var overlayOn = false;
 
@@ -35,12 +38,14 @@
     var mBase = new THREE.MeshLambertMaterial({ color: col.station });
     var mRoof = new THREE.MeshLambertMaterial({ color: col.roof });
     var mAcc = new THREE.MeshLambertMaterial({ color: col.accent });
-    var mRail = new THREE.MeshLambertMaterial({ color: col.rail });
+    var mRail = new THREE.MeshLambertMaterial({ color: 0xd8dfe8 });
+    var mTie = new THREE.MeshLambertMaterial({ color: col.tie });
     var mDark = new THREE.MeshLambertMaterial({ color: 0x2a2e33 });
+    var mLaunch = new THREE.MeshBasicMaterial({ color: 0x38e56b });
+    var mReturn = new THREE.MeshBasicMaterial({ color: 0xffb838 });
     var deckY = CD.stationDeck;
 
-    // 4x2 footprint = 8m (x: -4..4) by 4m (z: -2..2). Front entrance faces +z, track runs along z = -0.9 (row 0)
-    // Raised timber/stone foundation platform
+    // 4x2 footprint = 8m (x: -4..4) by 4m (z: -2..2). Front entrance faces +z, track runs along z = -1.0 (back row)
     var base = new THREE.Mesh(new THREE.BoxGeometry(7.6, deckY, 3.6), mBase);
     base.position.set(0, deckY * 0.5, 0);
     base.castShadow = true; base.receiveShadow = true;
@@ -56,7 +61,6 @@
     awning.rotation.x = 0.18;
     g.add(awning);
 
-    // Entrance stairs up to boarding deck
     for (var s = 0; s < 4; s++) {
       var st = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.28, 0.42), mBase);
       st.position.set(1.6, 0.14 + s * (deckY / 4), 1.65 - s * 0.32);
@@ -77,17 +81,31 @@
     roof.castShadow = true;
     g.add(roof);
 
-    // Roof ridge trim / signage bar
     var ridge = new THREE.Mesh(new THREE.BoxGeometry(7.9, 0.22, 0.3), mAcc);
     ridge.position.set(0, deckY + 2.85, -0.8);
     g.add(ridge);
 
-    // Track rails running through station along z = -1.0 (center of back row)
-    var railGeo = new THREE.BoxGeometry(8.0, 0.14, 0.12);
-    var r1 = new THREE.Mesh(railGeo, mRail); r1.position.set(0, deckY + 0.08, -1.42); g.add(r1);
-    var r2 = new THREE.Mesh(railGeo, mRail); r2.position.set(0, deckY + 0.08, -0.58); g.add(r2);
+    // Prominent twin rails + cross-ties running through station along z = -1.0 (gauge = 0.52)
+    var railGeo = new THREE.BoxGeometry(8.1, 0.14, 0.13);
+    var r1 = new THREE.Mesh(railGeo, mRail); r1.position.set(0, deckY + 0.12, -1.52); g.add(r1);
+    var r2 = new THREE.Mesh(railGeo, mRail); r2.position.set(0, deckY + 0.12, -0.48); g.add(r2);
+    var tieGeo = new THREE.BoxGeometry(0.16, 0.07, 1.32);
+    for (var tx = -3.6; tx <= 3.65; tx += 0.6) {
+      var tie = new THREE.Mesh(tieGeo, mTie);
+      tie.position.set(tx, deckY + 0.04, -1.0);
+      g.add(tie);
+    }
 
-    // Mythical hyper coaster gets glowing corner crystals
+    // Directional Launch (+x, green) and Return (-x, amber) chevron arrows at station track ends
+    var arrowGeo = new THREE.ConeGeometry(0.42, 0.75, 4);
+    arrowGeo.rotateZ(-Math.PI * 0.5);
+    var launchArr = new THREE.Mesh(arrowGeo, mLaunch);
+    launchArr.position.set(4.15, deckY + 0.28, -1.0);
+    g.add(launchArr);
+    var returnArr = new THREE.Mesh(arrowGeo, mReturn);
+    returnArr.position.set(-4.15, deckY + 0.28, -1.0);
+    g.add(returnArr);
+
     if (typeId === 'hyper') {
       var mGlow = new THREE.MeshBasicMaterial({ color: col.accent });
       var cGeo = new THREE.OctahedronGeometry(0.32, 0);
@@ -114,11 +132,10 @@
     };
   }
 
-  // ---- 2. Geometry builder helper for merged rail/support meshes ----
+  // ---- 2. BufferGeometry Builder with Continuous Stitched Extrusion ----
   function makeBufBuilder() {
     var pos = [], nrm = [], col = [];
     function pushQuad(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, r, g, b) {
-      // Normal = (B-A) x (C-A)
       var ux = bx - ax, uy = by - ay, uz = bz - az;
       var vx = cx - ax, vy = cy - ay, vz = cz - az;
       var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
@@ -138,13 +155,31 @@
       }
       var p000 = pt(-1, -1, -1), p100 = pt(1, -1, -1), p110 = pt(1, 1, -1), p010 = pt(-1, 1, -1);
       var p001 = pt(-1, -1, 1), p101 = pt(1, -1, 1), p111 = pt(1, 1, 1), p011 = pt(-1, 1, 1);
-      // Top (+y), Bottom (-y), Right (+x), Left (-x), Front (+z), Back (-z)
       pushQuad(p011[0], p011[1], p011[2], p111[0], p111[1], p111[2], p110[0], p110[1], p110[2], p010[0], p010[1], p010[2], cr, cg, cb);
       pushQuad(p000[0], p000[1], p000[2], p100[0], p100[1], p100[2], p101[0], p101[1], p101[2], p001[0], p001[1], p001[2], cr * 0.7, cg * 0.7, cb * 0.7);
       pushQuad(p101[0], p101[1], p101[2], p100[0], p100[1], p100[2], p110[0], p110[1], p110[2], p111[0], p111[1], p111[2], cr * 0.88, cg * 0.88, cb * 0.88);
       pushQuad(p000[0], p000[1], p000[2], p001[0], p001[1], p001[2], p011[0], p011[1], p011[2], p010[0], p010[1], p010[2], cr * 0.88, cg * 0.88, cb * 0.88);
       pushQuad(p001[0], p001[1], p001[2], p101[0], p101[1], p101[2], p111[0], p111[1], p111[2], p011[0], p011[1], p011[2], cr * 0.92, cg * 0.92, cb * 0.92);
       pushQuad(p100[0], p100[1], p100[2], p000[0], p000[1], p000[2], p010[0], p010[1], p010[2], p110[0], p110[1], p110[2], cr * 0.82, cg * 0.82, cb * 0.82);
+    }
+    // Extrude a continuous rectangular beam between frame0 (p0, r0, u0) and frame1 (p1, r1, u1) with local offset (offR, offU) and half-size (hw, hh)
+    function addBeamSeg(p0x, p0y, p0z, r0x, r0y, r0z, u0x, u0y, u0z, p1x, p1y, p1z, r1x, r1y, r1z, u1x, u1y, u1z, offR, offU, hw, hh, hex) {
+      var cr = ((hex >> 16) & 255) / 255, cg = ((hex >> 8) & 255) / 255, cb = (hex & 255) / 255;
+      function c0(sr, su) {
+        var rr = offR + sr * hw, uu = offU + su * hh;
+        return [p0x + r0x * rr + u0x * uu, p0y + r0y * rr + u0y * uu, p0z + r0z * rr + u0z * uu];
+      }
+      function c1(sr, su) {
+        var rr = offR + sr * hw, uu = offU + su * hh;
+        return [p1x + r1x * rr + u1x * uu, p1y + r1y * rr + u1y * uu, p1z + r1z * rr + u1z * uu];
+      }
+      var a00 = c0(-1, -1), a10 = c0(1, -1), a11 = c0(1, 1), a01 = c0(-1, 1);
+      var b00 = c1(-1, -1), b10 = c1(1, -1), b11 = c1(1, 1), b01 = c1(-1, 1);
+      // Top, Bottom, Outer-Right, Inner-Left
+      pushQuad(a01[0], a01[1], a01[2], a11[0], a11[1], a11[2], b11[0], b11[1], b11[2], b01[0], b01[1], b01[2], cr, cg, cb);
+      pushQuad(a10[0], a10[1], a10[2], a00[0], a00[1], a00[2], b00[0], b00[1], b00[2], b10[0], b10[1], b10[2], cr * 0.68, cg * 0.68, cb * 0.68);
+      pushQuad(a11[0], a11[1], a11[2], a10[0], a10[1], a10[2], b10[0], b10[1], b10[2], b11[0], b11[1], b11[2], cr * 0.86, cg * 0.86, cb * 0.86);
+      pushQuad(a00[0], a00[1], a00[2], a01[0], a01[1], a01[2], b01[0], b01[1], b01[2], b00[0], b00[1], b00[2], cr * 0.86, cg * 0.86, cb * 0.86);
     }
     function build() {
       if (!pos.length) return null;
@@ -157,7 +192,7 @@
       mesh.castShadow = true; mesh.receiveShadow = true;
       return mesh;
     }
-    return { addBox: addBox, build: build };
+    return { addBox: addBox, addBeamSeg: addBeamSeg, build: build };
   }
 
   function clearGroup(g) {
@@ -172,6 +207,10 @@
   function rebuildTrack() {
     if (!trackGrp || !Z.Coaster) return;
     clearGroup(trackGrp);
+    if (chainGrp) clearGroup(chainGrp);
+    chainSegs.length = 0;
+    chainMeshes.length = 0;
+
     var X = Z.Coaster.state();
     builtVer = X.ver;
     var s = Z.state;
@@ -185,7 +224,24 @@
       var L = lines[k], td = L.typeDef, col = td.colors;
       var n = L.nS;
       var segs = L.loop ? n : Math.max(0, n - 1);
-      var gauge = td.id === 'flume' ? 0.56 : 0.42;
+      var gauge = td.id === 'flume' ? 0.58 : 0.52;
+
+      // High-contrast top rail colors so twin rails stand out unmistakably from cross-ties & spine!
+      var topRailHex = td.id === 'wooden' ? 0xdde3ec
+        : td.id === 'mine' ? 0xcfd6e0
+        : td.id === 'steel' ? 0xf23a3a
+        : td.id === 'hyper' ? 0x56f0d0
+        : col.rail;
+
+      // Precompute right vectors R[i] = T[i] x U[i] at every sample for seamless stitched extrusion
+      var rxA = new Float32Array(n), ryA = new Float32Array(n), rzA = new Float32Array(n);
+      for (i = 0; i < n; i++) {
+        var rvx = L.ty[i] * L.uz[i] - L.tz[i] * L.uy[i];
+        var rvy = L.tz[i] * L.ux[i] - L.tx[i] * L.uz[i];
+        var rvz = L.tx[i] * L.uy[i] - L.ty[i] * L.ux[i];
+        var rvl = Math.sqrt(rvx * rvx + rvy * rvy + rvz * rvz) || 1;
+        rxA[i] = rvx / rvl; ryA[i] = rvy / rvl; rzA[i] = rvz / rvl;
+      }
 
       for (i = 0; i < segs; i++) {
         var j = (i + 1) % n;
@@ -196,70 +252,116 @@
         var segLen = Math.sqrt(fx * fx + fy * fy + fz * fz);
         if (segLen < 1e-4) continue;
         fx /= segLen; fy /= segLen; fz /= segLen;
-        var ux = L.ux[i], uy = L.uy[i], uz = L.uz[i];
-        // Right = F x U
-        var rx = fy * uz - fz * uy, ry = fz * ux - fx * uz, rz = fx * uy - fy * ux;
-        var rl = Math.sqrt(rx * rx + ry * ry + rz * rz) || 1;
-        rx /= rl; ry /= rl; rz /= rl;
+
+        var r0x = rxA[i], r0y = ryA[i], r0z = rzA[i];
+        var u0x = L.ux[i], u0y = L.uy[i], u0z = L.uz[i];
+        var r1x = rxA[j], r1y = ryA[j], r1z = rzA[j];
+        var u1x = L.ux[j], u1y = L.uy[j], u1z = L.uz[j];
 
         var sp = L.sSpec[i];
-        var halfL = segLen * 0.54;
+        var spPrev = i > 0 ? L.sSpec[i - 1] : 0;
+        var spNext = L.sSpec[j];
+        var halfL = segLen * 0.52;
 
         if (td.id === 'flume') {
-          // U-shaped water chute
-          gb.addBox(mx, my - 0.14, mz, 0.64, 0.08, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, col.tie);
-          gb.addBox(mx - rx * 0.58, my + 0.12, mz - rz * 0.58, 0.08, 0.24, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, col.rail);
-          gb.addBox(mx + rx * 0.58, my + 0.12, mz + rz * 0.58, 0.08, 0.24, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, col.rail);
-          gb.addBox(mx, my + 0.02, mz, 0.5, 0.05, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, sp === 3 ? 0x9ef4ff : 0x45b8e8);
+          // Stitched U-shaped water chute trough + flowing water
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, -0.14, 0.62, 0.06, col.tie);
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, -gauge, 0.10, 0.08, 0.22, col.rail);
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, gauge, 0.10, 0.08, 0.22, col.rail);
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.01, 0.50, 0.04, sp === 3 ? 0xa6f6ff : 0x45b8e8);
         } else {
-          // Twin rails + spine
-          var railCol = sp === 2 ? 0x38e8ff : (sp === 4 || sp === 5 ? col.rail : col.rail);
-          gb.addBox(mx - rx * gauge, my + 0.06, mz - rz * gauge, 0.07, 0.08, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, railCol);
-          gb.addBox(mx + rx * gauge, my + 0.06, mz + rz * gauge, 0.07, 0.08, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, railCol);
-          // Central spine beam
-          gb.addBox(mx, my - 0.1, mz, 0.14, 0.1, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, col.tie);
-          // Cross-ties every sample
-          if ((i % 2) === 0) {
-            gb.addBox(mx, my - 0.01, mz, gauge + 0.14, 0.04, 0.09, rx, ry, rz, ux, uy, uz, fx, fy, fz, col.tie);
+          // Continuous stitched TWIN RAILS (left at -gauge, right at +gauge, elevated at +U * 0.11)
+          var rHex = sp === 2 ? 0x38f2ff : topRailHex;
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, -gauge, 0.11, 0.075, 0.075, rHex);
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, gauge, 0.11, 0.075, 0.075, rHex);
+
+          if (td.id === 'wooden' || td.id === 'mine') {
+            // Wooden / Mine coaster under-rail timber ledges under each rail (leaving the center open so twin rails + sleepers are super clear!)
+            gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, -gauge, -0.04, 0.11, 0.08, col.rail);
+            gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, gauge, -0.04, 0.11, 0.08, col.rail);
+          } else {
+            // Steel / Hyper deep recessed backbone tube well below the sleepers (-U * 0.24)
+            gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, -0.22, 0.11, 0.10, col.tie);
+          }
+
+          // Dense cross-ties / sleepers spanning between and slightly beyond the two rails
+          var tieStep = (td.id === 'wooden' || td.id === 'mine') ? 1 : 2;
+          if ((i % tieStep) === 0) {
+            gb.addBox(
+              mx + u0x * 0.01, my + u0y * 0.01, mz + u0z * 0.01,
+              gauge + 0.15, 0.045, 0.085,
+              r0x, r0y, r0z, u0x, u0y, u0z, fx, fy, fz, col.tie
+            );
           }
         }
-        // Special piece visual accents
-        if (sp === 1 && (i % 2) === 0) {
-          // Chain lift golden bar down center
-          gb.addBox(mx, my + 0.05, mz, 0.06, 0.05, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, 0xf0b840);
+
+        // ---- Special Track Elements ----
+        if (sp === 1) {
+          // CHAIN LIFT HILL:
+          // 1) Raised dark-steel chain guide trough down the exact center between the twin rails (+U * 0.09)
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.08, 0.11, 0.055, 0x262b33);
+          // 2) Inner bright metallic chain trackbed + static teeth base
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.125, 0.065, 0.03, 0x9aa4b2);
+          // 3) Side catwalk planks & safety handrail posts along the right side of the lift hill (+R * (gauge + 0.34))
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, gauge + 0.32, 0.0, 0.18, 0.035, 0x7b5836);
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, gauge + 0.48, 0.48, 0.03, 0.03, 0xd8a838);
+          if ((i % 3) === 0) {
+            gb.addBox(
+              mx + r0x * (gauge + 0.48) + u0x * 0.24,
+              my + r0y * (gauge + 0.48) + u0y * 0.24,
+              mz + r0z * (gauge + 0.48) + u0z * 0.24,
+              0.03, 0.24, 0.03, r0x, r0y, r0z, u0x, u0y, u0z, fx, fy, fz, 0x454d59
+            );
+          }
+          // 4) Toothed sprocket wheel housing at the start and end of every chain lift section
+          if (spPrev !== 1 || spNext !== 1) {
+            gb.addBox(
+              mx + u0x * 0.08, my + u0y * 0.08, mz + u0z * 0.08,
+              0.16, 0.22, 0.22, r0x, r0y, r0z, u0x, u0y, u0z, fx, fy, fz, 0xd49b2a
+            );
+          }
+          // Record segment for animated moving chain links!
+          chainSegs.push({
+            x: mx + u0x * 0.155, y: my + u0y * 0.155, z: mz + u0z * 0.155,
+            fx: fx, fy: fy, fz: fz, ux: u0x, uy: u0y, uz: u0z, rx: r0x, ry: r0y, rz: r0z,
+            len: segLen
+          });
         } else if (sp === 2) {
-          // Glowing boost strips
-          gb.addBox(mx, my + 0.04, mz, 0.22, 0.04, halfL * 0.85, rx, ry, rz, ux, uy, uz, fx, fy, fz, 0x30f2ff);
+          // Launch Boost glowing LSM fins down the center
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.11, 0.14, 0.05, 0x2cf2ff);
         } else if (sp === 3 && td.id !== 'flume') {
-          // Water splash trough
-          gb.addBox(mx, my + 0.02, mz, 0.65, 0.06, halfL, rx, ry, rz, ux, uy, uz, fx, fy, fz, 0x52c8f5);
+          // Water Splash basin side walls & water sheet outside the rails
+          gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.02, gauge + 0.28, 0.05, 0x4cc8f5);
         }
       }
 
-      // Support pylons
+      // ---- 3. Support Pylons (properly rotated to track local Right vector!) ----
       for (i = 0; i < L.pylons.length; i++) {
         var py = L.pylons[i];
         var ht = py.yTop - py.yBot;
         if (ht <= 0.15) continue;
         var midY = (py.yTop + py.yBot) * 0.5;
+        var prx = py.rx || 1, prz = py.rz || 0;
+        var pfx = -prz, pfz = prx;
         if (td.id === 'wooden' || td.id === 'mine') {
-          // Wooden A-frame trestle legs + cross-bracing
-          gb.addBox(py.x - 0.42, midY, py.z, 0.11, ht * 0.5, 0.11, 1, 0, 0, 0, 1, 0, 0, 0, 1, col.support);
-          gb.addBox(py.x + 0.42, midY, py.z, 0.11, ht * 0.5, 0.11, 1, 0, 0, 0, 1, 0, 0, 0, 1, col.support);
-          for (var yb = py.yBot + 1.2; yb < py.yTop - 0.3; yb += 1.6) {
-            gb.addBox(py.x, yb, py.z, 0.48, 0.07, 0.08, 1, 0, 0, 0, 1, 0, 0, 0, 1, col.tie);
+          // Wooden trestle A-frame bents straddling both rails + horizontal ledgers
+          var legOff = gauge;
+          gb.addBox(py.x - prx * legOff, midY, py.z - prz * legOff, 0.11, ht * 0.5, 0.11, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
+          gb.addBox(py.x + prx * legOff, midY, py.z + prz * legOff, 0.11, ht * 0.5, 0.11, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
+          for (var yb = py.yBot + 1.2; yb < py.yTop - 0.2; yb += 1.5) {
+            gb.addBox(py.x, yb, py.z, legOff + 0.12, 0.07, 0.08, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.tie);
           }
         } else {
-          // Steel / Hyper / Flume single column + footing cap
-          gb.addBox(py.x, midY, py.z, 0.18, ht * 0.5, 0.18, 1, 0, 0, 0, 1, 0, 0, 0, 1, col.support);
+          // Steel / Hyper / Flume column + top crossbar supporting the twin rails
+          gb.addBox(py.x, midY - 0.1, py.z, 0.17, Math.max(0.1, ht * 0.5 - 0.1), 0.17, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
+          gb.addBox(py.x, py.yTop - 0.08, py.z, gauge + 0.06, 0.08, 0.14, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
           gb.addBox(py.x, py.yBot + 0.16, py.z, 0.34, 0.16, 0.34, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x5c626a);
         }
       }
     }
 
-    // Also render any orphan/unconnected track tiles so players see partial tracks as they build!
+    // Single isolated 1-tile track stubs (not yet connected to a 2+ tile chain): render proper twin rails + ties too!
     var N = Z.N || 56, rail = s.coasterRail, elev = s.coasterElev;
-    var DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0], BIT = [1, 2, 4, 8];
     for (var t = 0; t < rail.length; t++) {
       if (!rail[t]) continue;
       if (X.lineAt && X.lineAt[t] >= 0) continue;
@@ -267,18 +369,48 @@
       var cx = (ti + 0.5) * TILE, cz = (tj + 0.5) * TILE;
       var gy = Z.World && Z.World.groundY ? Z.World.groundY(cx, cz) : 0;
       var y = gy + CD.clearance + (elev[t] || 0) * CD.elevStep;
-      // Draw short stub arms for each connected bit
-      gb.addBox(cx, y - 0.05, cz, 0.38, 0.08, 0.38, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x8b6b4a);
-      gb.addBox(cx, (y + gy) * 0.5, cz, 0.13, Math.max(0.2, (y - gy) * 0.5), 0.13, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x7b5c3e);
-      for (var d = 0; d < 4; d++) {
-        if (rail[t] & BIT[d]) {
-          gb.addBox(cx + DX[d] * 0.5, y, cz + DZ[d] * 0.5, d % 2 ? 0.5 : 0.34, 0.08, d % 2 ? 0.34 : 0.5, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0xa87c4f);
-        }
+      var ew = !!(rail[t] & 10); // East/West vs North/South
+      var srx = ew ? 0 : 1, srz = ew ? 1 : 0;
+      var sfx = ew ? 1 : 0, sfz = ew ? 0 : 1;
+      gb.addBox(cx - srx * 0.52, y + 0.11, cz - srz * 0.52, 0.075, 0.075, 0.9, srx, 0, srz, 0, 1, 0, sfx, 0, sfz, 0xdde3ec);
+      gb.addBox(cx + srx * 0.52, y + 0.11, cz + srz * 0.52, 0.075, 0.075, 0.9, srx, 0, srz, 0, 1, 0, sfx, 0, sfz, 0xdde3ec);
+      for (var so = -0.6; so <= 0.61; so += 0.6) {
+        gb.addBox(cx + sfx * so, y + 0.01, cz + sfz * so, 0.65, 0.045, 0.085, srx, 0, srz, 0, 1, 0, sfx, 0, sfz, 0x6d421e);
       }
     }
 
     var mesh = gb.build();
     if (mesh) trackGrp.add(mesh);
+
+    // Build animated chain link meshes for all Chain Lift segments
+    if (chainGrp && chainSegs.length) {
+      var linkGeo = new THREE.BoxGeometry(0.11, 0.07, 0.18);
+      var linkMat = new THREE.MeshLambertMaterial({ color: 0xf5b82e });
+      for (i = 0; i < chainSegs.length; i++) {
+        var cs = chainSegs[i];
+        var lm = new THREE.Mesh(linkGeo, linkMat);
+        _vF.set(cs.fx, cs.fy, cs.fz).normalize();
+        _vU.set(cs.ux, cs.uy, cs.uz).normalize();
+        _vR.set(cs.rx, cs.ry, cs.rz).normalize();
+        _mat4.makeBasis(_vR, _vU, _vF);
+        lm.quaternion.setFromRotationMatrix(_mat4);
+        lm.position.set(cs.x, cs.y, cs.z);
+        chainGrp.add(lm);
+        chainMeshes.push({ mesh: lm, seg: cs });
+      }
+    }
+  }
+
+  function updateChains(dtGame) {
+    if (!chainMeshes.length) return;
+    var t = (Z.World && Z.World._G ? Z.World._G.t : 0) * 3.5;
+    for (var k = 0; k < chainMeshes.length; k++) {
+      var cm = chainMeshes[k], cs = cm.seg;
+      // Scroll each link smoothly forward along its segment's tangent vector
+      var phase = ((t + k * 0.35) % 1) - 0.5;
+      var d = phase * cs.len;
+      cm.mesh.position.set(cs.x + cs.fx * d, cs.y + cs.fy * d, cs.z + cs.fz * d);
+    }
   }
 
   // ---- 3. 3D Coaster Train Models & Updates ----
@@ -291,7 +423,6 @@
     var mDark = new THREE.MeshLambertMaterial({ color: 0x25282e });
 
     if (typeId === 'flume') {
-      // Carved log boat
       var log = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.42, 1.85, 8), mBody);
       log.rotation.x = Math.PI * 0.5;
       log.position.y = 0.32;
@@ -301,29 +432,26 @@
       inner.position.y = 0.44;
       g.add(inner);
     } else {
-      // Coaster chassis + side walls + lap bar
-      var body = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.48, 1.75), mBody);
-      body.position.y = 0.32;
+      var body = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.48, 1.75), mBody);
+      body.position.y = 0.34;
       body.castShadow = true;
       g.add(body);
-      var trim = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 1.82), mAcc);
-      trim.position.y = 0.48;
+      var trim = new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.14, 1.82), mAcc);
+      trim.position.y = 0.50;
       g.add(trim);
-      var seats = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.26, 1.25), mDark);
-      seats.position.y = 0.48;
+      var seats = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.26, 1.25), mDark);
+      seats.position.y = 0.50;
       g.add(seats);
       if (isLead) {
-        // Aerodynamic nose + headlight
-        var nose = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.36, 0.45), mAcc);
-        nose.position.set(0, 0.3, 1.0);
+        var nose = new THREE.Mesh(new THREE.BoxGeometry(0.90, 0.36, 0.45), mAcc);
+        nose.position.set(0, 0.32, 1.0);
         g.add(nose);
         if (typeId === 'hyper') {
-          // Dragon crest on lead hyper car!
           var mGlow = new THREE.MeshBasicMaterial({ color: col.accent });
           var hornL = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 5), mGlow);
-          hornL.position.set(-0.28, 0.72, 0.85); hornL.rotation.x = -0.35; g.add(hornL);
+          hornL.position.set(-0.28, 0.74, 0.85); hornL.rotation.x = -0.35; g.add(hornL);
           var hornR = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 5), mGlow);
-          hornR.position.set(0.28, 0.72, 0.85); hornR.rotation.x = -0.35; g.add(hornR);
+          hornR.position.set(0.28, 0.74, 0.85); hornR.rotation.x = -0.35; g.add(hornR);
         }
       }
     }
@@ -347,7 +475,6 @@
           tg.add(cm);
           cars.push(cm);
         }
-        // Breakdown warning beacon on lead car
         var bMat = new THREE.MeshBasicMaterial({ color: 0xff3b2f });
         var beacon = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), bMat);
         beacon.position.set(0, 1.15, 0);
@@ -375,10 +502,10 @@
       var T = trains[k], rec = trainMeshes[T.id];
       if (!rec) continue;
       var info = Z.Coaster.trainInfo(T.id);
-      var ready = !!(info && info.line && info.line.ready);
-      rec.group.visible = ready;
-      if (!ready) continue;
-      rec.beacon.visible = (info.state === 'broken') && blink;
+      var hasLoop = !!(info && info.line && info.line.loop && !info.line.branch);
+      rec.group.visible = hasLoop;
+      if (!hasLoop) continue;
+      rec.beacon.visible = (info.state === 'broken' || info.state === 'stalled') && blink;
       for (var c = 0; c < rec.cars.length; c++) {
         var p = Z.Coaster.carPose(T, c, pose);
         if (!p) continue;
@@ -426,7 +553,8 @@
     }
   }
 
-  // ---- 5. Overlay ----
+  // ---- 5. Overlay (with height gradient & station socket markers!) ----
+  var ELEV_COLS = [0x56d97e, 0xa8e052, 0xf2d03b, 0xff9e3b, 0xff623b, 0xe8386d, 0xb838f5, 0x7a38ff, 0x38d8ff];
   function rebuildOverlay() {
     if (!ovGrp) return;
     clearGroup(ovGrp);
@@ -438,8 +566,26 @@
       var ti = t % N, tj = (t - ti) / N;
       var cx = (ti + 0.5) * TILE, cz = (tj + 0.5) * TILE;
       var gy = (Z.World && Z.World.groundY ? Z.World.groundY(cx, cz) : 0) + 0.09;
-      var hCol = spec[t] >= 4 ? 0xd84dff : spec[t] === 2 ? 0x30f2ff : spec[t] === 3 ? 0x45b8e8 : (elev[t] > 0 ? 0xffb84d : 0x56d97e);
+      var elv = Math.min(8, Math.max(0, elev[t] || 0));
+      var hCol = spec[t] >= 4 ? 0xd84dff : spec[t] === 2 ? 0x30f2ff : spec[t] === 3 ? 0x45b8e8 : spec[t] === 1 ? 0xf5b82e : ELEV_COLS[elv];
       gb.addBox(cx, gy, cz, 0.85, 0.03, 0.85, 1, 0, 0, 0, 1, 0, 0, 0, 1, hCol);
+    }
+    // Also highlight station Launch (green) and Return (amber) exit tiles so players know where to drag from/to!
+    if (Z.Coaster) {
+      var X = Z.Coaster.state(), DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];
+      for (var k = 0; k < X.stations.length; k++) {
+        var st = X.stations[k];
+        var efI = (st.endF % N) + DX[st.fd], efJ = Math.floor(st.endF / N) + DZ[st.fd];
+        var ebI = (st.endB % N) + DX[st.bd], ebJ = Math.floor(st.endB / N) + DZ[st.bd];
+        if (efI >= 0 && efJ >= 0 && efI < N && efJ < N) {
+          var fx = (efI + 0.5) * TILE, fz = (efJ + 0.5) * TILE, fgy = (Z.World && Z.World.groundY ? Z.World.groundY(fx, fz) : 0) + 0.12;
+          gb.addBox(fx, fgy, fz, 0.7, 0.06, 0.7, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x38e56b);
+        }
+        if (ebI >= 0 && ebJ >= 0 && ebI < N && ebJ < N) {
+          var bx = (ebI + 0.5) * TILE, bz = (ebJ + 0.5) * TILE, bgy = (Z.World && Z.World.groundY ? Z.World.groundY(bx, bz) : 0) + 0.12;
+          gb.addBox(bx, bgy, bz, 0.7, 0.06, 0.7, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0xffb838);
+        }
+      }
     }
     var m = gb.build();
     if (m) ovGrp.add(m);
@@ -527,10 +673,11 @@
     if (!root) return;
     grp = new THREE.Group();
     trackGrp = new THREE.Group();
+    chainGrp = new THREE.Group();
     trainGrp = new THREE.Group();
     fxGrp = new THREE.Group();
     ovGrp = new THREE.Group();
-    grp.add(trackGrp); grp.add(trainGrp); grp.add(fxGrp); grp.add(ovGrp);
+    grp.add(trackGrp); grp.add(chainGrp); grp.add(trainGrp); grp.add(fxGrp); grp.add(ovGrp);
     root.add(grp);
   }
 
@@ -545,6 +692,7 @@
         if (overlayOn) rebuildOverlay();
       }
     }
+    updateChains(dtGame);
     updateTrains(dtReal);
     updateSplashes(dtReal);
   }
@@ -562,6 +710,7 @@
       rideTrainId = 0;
       followTrainId = 0;
       if (trackGrp) clearGroup(trackGrp);
+      if (chainGrp) { clearGroup(chainGrp); chainSegs.length = 0; chainMeshes.length = 0; }
       if (trainGrp) { clearGroup(trainGrp); trainMeshes = {}; }
       if (ovGrp) clearGroup(ovGrp);
     });

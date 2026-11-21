@@ -6,21 +6,22 @@
 
   var CD = D.coaster;
   var h = UI.h, fmt = UI.fmt, ic = UI.ic;
+  var DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];
 
   // ---- 1. Coaster Tab Items ----
   function items(bd) {
     var stations = bd(['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'], 'stations')();
     var track = [
       { kind: 'ctrack', id: 'ctrack', name: 'Build Track', emoji: '🛤️', cost: 35, unit: '/tile', star: 0, tpCat: 'track', coasterTool: true,
-        tip: 'Drag from one end of a coaster station and loop back to the other end to complete the circuit.' },
-      { kind: 'craise', id: 'craise', name: 'Raise Track', emoji: '⬆️', cost: 15, unit: '/step', star: 0, tpCat: 'track', coasterTool: true,
-        tip: 'Click or drag over coaster track to raise hills and build bigger drops.' },
+        tip: 'Drag from the green arrow on a coaster station around in a loop to the amber arrow. Curves and hills smooth automatically!' },
+      { kind: 'craise', id: 'craise', name: 'Raise Hill', emoji: '⬆️', cost: 15, unit: '/step', star: 0, tpCat: 'track', coasterTool: true,
+        tip: 'Click or drag over coaster track to raise a smooth hill (+1 level). Stamp a Chain Lift Hill (⛓️) on uphill climbs so trains can reach the top!' },
       { kind: 'clower', id: 'clower', name: 'Lower Track', emoji: '⬇️', cost: 0, priceHtml: 'Free', star: 0, tpCat: 'track', coasterTool: true,
         tip: 'Click or drag over coaster track to lower its height.' },
       { kind: 'ctrackrm', id: 'ctrackrm', name: 'Remove Track', emoji: '✂️', cost: 0, priceHtml: '50% back', star: 0, tpCat: 'track', coasterTool: true,
         tip: 'Drag over coaster track tiles to dismantle them.' },
       { kind: 'cview', id: 'cview', name: 'Track Overlay', emoji: '🗺️', cost: 0, priceHtml: 'Toggle', star: 0, tpCat: 'track', coasterTool: true,
-        tip: 'Highlight coaster track heights and special pieces.' }
+        tip: 'Highlight coaster track heights, station connection arrows, and special pieces.' }
     ];
     var specials = CD.specials.map(function (sp) {
       return {
@@ -32,43 +33,125 @@
     return stations.concat(track).concat(specials);
   }
 
-  // ---- 2. Orthogonal 4-connected Route Normalizer & Station Snapper ----
+  // ---- 2. Orthogonal 4-connected Route Normalizer (with Backtrack Trimming) & Smart Station Snapper ----
+  function stepTile(t, d) {
+    var N = Z.N || 56, i = t % N, j = (t - i) / N;
+    var ni = i + DX[d], nj = j + DZ[d];
+    if (ni < 0 || nj < 0 || ni >= N || nj >= N) return -1;
+    return ni + nj * N;
+  }
+
+  function pushOrtho(out, idxMap, nt) {
+    if (!out.length) { out.push(nt); idxMap[nt] = 0; return; }
+    if (out[out.length - 1] === nt) return;
+    // Backtrack trimming: if the cursor jitters back onto a recently visited tile in this stroke, pop back to it instead of creating an illegal branch!
+    var prevIdx = idxMap[nt];
+    if (prevIdx !== undefined && (out.length - prevIdx) <= 4) {
+      while (out.length - 1 > prevIdx) {
+        var popped = out.pop();
+        delete idxMap[popped];
+      }
+      return;
+    }
+    idxMap[nt] = out.length;
+    out.push(nt);
+  }
+
   function route4(pts) {
-    var N = Z.N || 56, out = [];
+    var N = Z.N || 56, out = [], idxMap = {};
     for (var k = 0; k < pts.length; k++) {
       var t = pts[k].i + pts[k].j * N;
-      if (!out.length) { out.push(t); continue; }
+      if (!out.length) { pushOrtho(out, idxMap, t); continue; }
       var prev = out[out.length - 1];
       if (t === prev) continue;
       var i0 = prev % N, j0 = (prev - i0) / N, i1 = pts[k].i, j1 = pts[k].j;
       while (i0 !== i1 || j0 !== j1) {
         if (Math.abs(i1 - i0) >= Math.abs(j1 - j0)) i0 += i1 > i0 ? 1 : -1;
         else j0 += j1 > j0 ? 1 : -1;
-        var nt = i0 + j0 * N;
-        if (out[out.length - 1] !== nt) out.push(nt);
+        pushOrtho(out, idxMap, i0 + j0 * N);
       }
     }
     return out;
   }
 
+  function orthoConnect(t0, t1, stAt, N) {
+    var path = [t0], i0 = t0 % N, j0 = (t0 - i0) / N, i1 = t1 % N, j1 = (t1 - i1) / N;
+    var guard = 0;
+    while ((i0 !== i1 || j0 !== j1) && guard++ < 32) {
+      var di = i1 - i0, dj = j1 - j0;
+      var stepI = i0 + (di > 0 ? 1 : -1) + j0 * N;
+      var stepJ = i0 + (j0 + (dj > 0 ? 1 : -1)) * N;
+      if (di !== 0 && (dj === 0 || (stAt[stepI] < 0 && Math.abs(di) >= Math.abs(dj)) || stAt[stepJ] >= 0)) {
+        i0 += di > 0 ? 1 : -1;
+      } else {
+        j0 += dj > 0 ? 1 : -1;
+      }
+      var nt = i0 + j0 * N;
+      if (path[path.length - 1] !== nt) path.push(nt);
+    }
+    return path;
+  }
+
   function snapStations(rt) {
-    if (!Z.Coaster || !rt.length) return rt;
+    if (!Z.Coaster || rt.length < 2) return rt;
     var X = Z.Coaster.state(), N = Z.N || 56;
     if (!X.stations.length) return rt;
-    function adjEnd(t) {
-      var ti = t % N, tj = (t - ti) / N;
-      for (var k = 0; k < X.stations.length; k++) {
-        var st = X.stations[k];
-        var eF = st.endF, eB = st.endB;
-        if (Math.abs((eF % N) - ti) + Math.abs(((eF - (eF % N)) / N) - tj) === 1) return eF;
-        if (Math.abs((eB % N) - ti) + Math.abs(((eB - (eB % N)) / N) - tj) === 1) return eB;
+
+    // 1. If drag started INSIDE any of the 8 tiles of a station, route cleanly out of the nearest inline end (endF -> exitF or endB -> exitB)!
+    if (X.stAt[rt[0]] >= 0) {
+      var stIdx0 = X.stAt[rt[0]], st0 = X.stations[stIdx0];
+      var firstOutIdx = -1;
+      for (var k = 0; k < rt.length; k++) if (X.stAt[rt[k]] !== stIdx0) { firstOutIdx = k; break; }
+      if (firstOutIdx < 0) return [st0.endF];
+      var target0 = rt[firstOutIdx];
+      var exitF0 = stepTile(st0.endF, st0.fd), exitB0 = stepTile(st0.endB, st0.bd);
+      var ti0 = target0 % N, tj0 = (target0 - ti0) / N;
+      var dF0 = exitF0 >= 0 ? Math.abs((exitF0 % N) - ti0) + Math.abs(Math.floor(exitF0 / N) - tj0) : 1e9;
+      var dB0 = exitB0 >= 0 ? Math.abs((exitB0 % N) - ti0) + Math.abs(Math.floor(exitB0 / N) - tj0) : 1e9;
+      var useF0 = dF0 <= dB0;
+      var end0 = useF0 ? st0.endF : st0.endB;
+      var ex0 = useF0 ? exitF0 : exitB0;
+      if (ex0 >= 0) {
+        var bridge0 = orthoConnect(ex0, target0, X.stAt, N);
+        rt = [end0].concat(bridge0).concat(rt.slice(firstOutIdx + 1));
       }
-      return -1;
+    } else {
+      // Strictly inline exterior snap: only snap if rt[0] is the exact inline tile in front of endF or endB!
+      for (var s = 0; s < X.stations.length; s++) {
+        var stA = X.stations[s];
+        if (rt[0] === stepTile(stA.endF, stA.fd)) { rt.unshift(stA.endF); break; }
+        if (rt[0] === stepTile(stA.endB, stA.bd)) { rt.unshift(stA.endB); break; }
+      }
     }
-    var a = adjEnd(rt[0]);
-    if (a >= 0 && X.stAt[rt[0]] < 0) rt.unshift(a);
-    var b = adjEnd(rt[rt.length - 1]);
-    if (b >= 0 && X.stAt[rt[rt.length - 1]] < 0) rt.push(b);
+
+    // 2. If drag ended INSIDE any of the 8 tiles of a station, route cleanly into the nearest inline end!
+    var lastT = rt[rt.length - 1];
+    if (X.stAt[lastT] >= 0) {
+      var stIdx1 = X.stAt[lastT], st1 = X.stations[stIdx1];
+      var lastOutIdx = -1;
+      for (var j = rt.length - 1; j >= 0; j--) if (X.stAt[rt[j]] !== stIdx1) { lastOutIdx = j; break; }
+      if (lastOutIdx >= 0) {
+        var target1 = rt[lastOutIdx];
+        var exitF1 = stepTile(st1.endF, st1.fd), exitB1 = stepTile(st1.endB, st1.bd);
+        var ti1 = target1 % N, tj1 = (target1 - ti1) / N;
+        var dF1 = exitF1 >= 0 ? Math.abs((exitF1 % N) - ti1) + Math.abs(Math.floor(exitF1 / N) - tj1) : 1e9;
+        var dB1 = exitB1 >= 0 ? Math.abs((exitB1 % N) - ti1) + Math.abs(Math.floor(exitB1 / N) - tj1) : 1e9;
+        // Prefer the opposite end if rt[0] already used one end of this same station!
+        var useF1 = rt[0] === st1.endF ? false : rt[0] === st1.endB ? true : (dF1 <= dB1);
+        var end1 = useF1 ? st1.endF : st1.endB;
+        var ex1 = useF1 ? exitF1 : exitB1;
+        if (ex1 >= 0) {
+          var bridge1 = orthoConnect(target1, ex1, X.stAt, N);
+          rt = rt.slice(0, lastOutIdx).concat(bridge1).concat([end1]);
+        }
+      }
+    } else {
+      for (var s2 = 0; s2 < X.stations.length; s2++) {
+        var stB = X.stations[s2];
+        if (lastT === stepTile(stB.endF, stB.fd) && rt[0] !== stB.endF) { rt.push(stB.endF); break; }
+        if (lastT === stepTile(stB.endB, stB.bd) && rt[0] !== stB.endB) { rt.push(stB.endB); break; }
+      }
+    }
     return rt;
   }
 
@@ -95,11 +178,21 @@
 
     T.PLAN.ctrack = function (d) {
       if (!Z.Coaster) return { ok: false, cost: 0, n: 0, msg: 'Coaster sim unavailable', spec: null, run: function () { return { n: 0, cost: 0 }; } };
-      var rt = snapStations(route4(d.pts || []));
+      var raw = route4(d.pts || []);
+      // Idle hover before dragging: show a friendly green tile cursor instead of a red error message
+      if (raw.length < 2 && !d.committing) {
+        return {
+          ok: true, cost: 0, n: 0, msg: '',
+          spec: { type: 'tiles', tiles: tileObjs(raw), ok: true },
+          run: function () { return { n: 0, cost: 0, silent: true }; }
+        };
+      }
+      var rt = snapStations(raw);
       var p = Z.Coaster.planTrack(rt, { dry: true });
       return {
         ok: p.ok, cost: p.cost || 0, n: p.tiles ? p.tiles.length : 0, msg: p.msg,
-        spec: { type: 'tiles', tiles: tileObjs(rt), ok: p.ok },
+        label: p.ok && p.tiles ? p.tiles.length + ' track tiles' : '',
+        spec: { type: 'tiles', tiles: tileObjs(p.tiles && p.tiles.length ? p.tiles : rt), ok: p.ok },
         run: function () { var r = Z.Coaster.buildTrack(rt); return { n: r.ok ? (r.tiles ? r.tiles.length : 1) : 0, cost: r.cost || 0 }; }
       };
     };
@@ -108,9 +201,13 @@
       if (!Z.Coaster) return { ok: false, cost: 0, n: 0, spec: null, run: function () { return { n: 0, cost: 0 }; } };
       var ts = uniqTiles(d.pts || []);
       var p = Z.Coaster.changeHeight(ts, 1, { dry: true });
+      if (!p.ok && !d.committing && ts.length === 1 && !Z.Coaster.hasTrack(ts[0])) {
+        return { ok: true, cost: 0, n: 0, msg: '', spec: { type: 'tiles', tiles: tileObjs(ts), ok: true }, run: function () { return { n: 0, cost: 0, silent: true }; } };
+      }
       return {
         ok: p.ok, cost: p.cost || 0, n: p.tiles ? p.tiles.length : 0, msg: p.msg,
-        spec: { type: 'tiles', tiles: tileObjs(ts), ok: p.ok },
+        warn: p.ok && p.peakLv ? 'Hill level +' + p.peakLv + ' (' + (p.peakLv * CD.elevStep).toFixed(1) + 'm)' : '',
+        spec: { type: 'tiles', tiles: tileObjs(p.tiles && p.tiles.length ? p.tiles : ts), ok: p.ok },
         run: function () { var r = Z.Coaster.changeHeight(ts, 1); return { n: r.ok ? (r.tiles ? r.tiles.length : 1) : 0, cost: r.cost || 0 }; }
       };
     };
@@ -119,9 +216,12 @@
       if (!Z.Coaster) return { ok: false, cost: 0, n: 0, spec: null, run: function () { return { n: 0, cost: 0 }; } };
       var ts = uniqTiles(d.pts || []);
       var p = Z.Coaster.changeHeight(ts, -1, { dry: true });
+      if (!p.ok && !d.committing && ts.length === 1 && !Z.Coaster.hasTrack(ts[0])) {
+        return { ok: true, cost: 0, n: 0, msg: '', spec: { type: 'tiles', tiles: tileObjs(ts), ok: true }, run: function () { return { n: 0, cost: 0, silent: true }; } };
+      }
       return {
         ok: p.ok, cost: p.cost || 0, n: p.tiles ? p.tiles.length : 0, msg: p.msg,
-        spec: { type: 'tiles', tiles: tileObjs(ts), ok: p.ok },
+        spec: { type: 'tiles', tiles: tileObjs(p.tiles && p.tiles.length ? p.tiles : ts), ok: p.ok },
         run: function () { var r = Z.Coaster.changeHeight(ts, -1); return { n: r.ok ? (r.tiles ? r.tiles.length : 1) : 0, cost: r.cost || 0 }; }
       };
     };
@@ -130,9 +230,12 @@
       if (!Z.Coaster) return { ok: false, cost: 0, n: 0, spec: null, run: function () { return { n: 0, cost: 0 }; } };
       var ts = uniqTiles(d.pts || []);
       var p = Z.Coaster.removeTiles(ts, { dry: true });
+      if (!p.ok && !d.committing && ts.length === 1 && !Z.Coaster.hasTrack(ts[0])) {
+        return { ok: true, cost: 0, n: 0, msg: '', spec: { type: 'tiles', tiles: tileObjs(ts), ok: true }, run: function () { return { n: 0, cost: 0, silent: true }; } };
+      }
       return {
         ok: p.ok, cost: p.cost || 0, n: p.tiles ? p.tiles.length : 0, msg: p.msg,
-        spec: { type: 'tiles', tiles: tileObjs(ts), ok: p.ok },
+        spec: { type: 'tiles', tiles: tileObjs(p.tiles && p.tiles.length ? p.tiles : ts), ok: p.ok },
         run: function () { var r = Z.Coaster.removeTiles(ts); return { n: r.ok ? (r.tiles ? r.tiles.length : 1) : 0, cost: r.cost || 0 }; }
       };
     };
@@ -142,9 +245,12 @@
       var ts = uniqTiles(d.pts || []);
       var specId = (UI.tool && UI.tool.def && UI.tool.def.id) || (UI.tool && UI.tool.specId) || 1;
       var p = Z.Coaster.placeSpecial(ts, specId, { dry: true });
+      if (!p.ok && !d.committing && ts.length === 1 && !Z.Coaster.hasTrack(ts[0])) {
+        return { ok: true, cost: 0, n: 0, msg: '', spec: { type: 'tiles', tiles: tileObjs(ts), ok: true }, run: function () { return { n: 0, cost: 0, silent: true }; } };
+      }
       return {
         ok: p.ok, cost: p.cost || 0, n: p.tiles ? p.tiles.length : 0, msg: p.msg,
-        spec: { type: 'tiles', tiles: tileObjs(ts), ok: p.ok },
+        spec: { type: 'tiles', tiles: tileObjs(p.tiles && p.tiles.length ? p.tiles : ts), ok: p.ok },
         run: function () { var r = Z.Coaster.placeSpecial(ts, specId); return { n: r.ok ? (r.tiles ? r.tiles.length : 1) : 0, cost: r.cost || 0 }; }
       };
     };
@@ -170,6 +276,10 @@
           Z.CoasterWorld.setOverlay(next);
           UI.toast(next ? 'Coaster track overlay ON' : 'Coaster track overlay OFF', 'info');
         }
+        return;
+      }
+      if (!locked && it && it.coasterTool) {
+        T.start({ kind: it.kind, id: it.id, name: it.name, def: it.def, tip: it.tip, specId: it.specId });
         return;
       }
       return origOnCard.apply(this, arguments);
@@ -201,7 +311,6 @@
 
     b.appendChild(statusEl);
 
-    // Ticket price slider
     var maxP = CD.fareMax || 35;
     var pv = h('b.num');
     var slider = h('input', { type: 'range', min: '0', max: String(maxP), step: '1', value: String(o.price || def.price), 'aria-label': 'Ticket price' });
@@ -228,11 +337,15 @@
       on: { click: function () { Z.Coaster.setPaused(o.id, !o.paused); pauseBtn.textContent = o.paused ? 'Resume Ride' : 'Pause Ride'; UI.snd('click'); } }
     });
     var trackBtn = h('button.btn', {
-      text: 'Build Track',
+      text: '🛤️ Build Track',
       on: { click: function () { UI.Panel.hide(); UI.openCat('coasters', true); UI.Tools.start({ kind: 'ctrack', id: 'ctrack', name: 'Build Track' }); } }
     });
+    var liftBtn = h('button.btn.alt', {
+      text: '⛓️ Add Chain Lift',
+      on: { click: function () { UI.Panel.hide(); UI.openCat('coasters', true); UI.Tools.start({ kind: 'cspec', id: 'cspec_1', specId: 1, name: 'Chain Lift Hill', def: CD.specials[0] }); } }
+    });
     var refund = Math.floor(def.cost * 0.5);
-    b.appendChild(h('div.btnrow', trackBtn, pauseBtn, kit.confirmBtn(ic('trash') + 'Demolish', 'Demolish for +' + fmt(refund) + '?', function () {
+    b.appendChild(h('div.btnrow', { style: 'flex-wrap:wrap' }, trackBtn, liftBtn, pauseBtn, kit.confirmBtn(ic('trash') + 'Demolish', 'Demolish for +' + fmt(refund) + '?', function () {
       Z.Sim.bulldoze(o.i, o.j); UI.snd('build'); UI.Panel.hide();
     }, 'alt')));
 
@@ -243,7 +356,7 @@
         var info = Z.Coaster.stationInfo(o.id);
         if (!info) return false;
         var td = info.typeDef;
-        var key = JSON.stringify([info.ready, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
+        var key = JSON.stringify([info.ready, info.energyOk, info.stallReason, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
         if (key === lastKey) return true;
         lastKey = key;
         syncPrice();
@@ -253,18 +366,20 @@
           statusEl.appendChild(h('ul.issues', h('li.ok', { text: info.paused ? 'Paused — closed to guests' : 'Circuit complete & running!' })));
         } else if (info.branch) {
           statusEl.appendChild(kit.issuesList(['Track cannot branch or cross — remove extra branches']));
+        } else if (info.loop && !info.energyOk && info.stallReason) {
+          statusEl.appendChild(kit.issuesList([info.stallReason]));
         } else {
-          statusEl.appendChild(kit.issuesList(['Incomplete circuit — drag track from one end of this station back to the other end']));
+          statusEl.appendChild(kit.issuesList(['Incomplete circuit — drag track from the green station arrow around in a loop to the amber arrow']));
         }
         if (!info.connected) statusEl.appendChild(kit.issuesList(['Station entrance is not connected to a path']));
 
         statsEl.innerHTML = '';
         var rows = [
-          ['Excitement', info.ready ? info.excitement.toFixed(1) + ' / 10' : '—'],
-          ['Intensity', info.ready ? info.intensity.toFixed(1) + ' / 10' : '—'],
+          ['Excitement', info.loop ? info.excitement.toFixed(1) + ' / 10' : '—'],
+          ['Intensity', info.loop ? info.intensity.toFixed(1) + ' / 10' : '—'],
           ['Track length', info.trackLen + ' tiles'],
           ['Max height / Drop', info.maxHeight + 'm / ' + info.totalDrop + 'm'],
-          ['Peak speed', info.ready ? info.peakSpeed + ' m/s' : '—'],
+          ['Peak speed', info.loop ? info.peakSpeed + ' m/s' : '—'],
           ['Enclosures overlooked', info.overlooks.length],
           ['In queue', info.queueLen],
           ['Riders served', o.uses || 0],
@@ -283,7 +398,7 @@
           trainsEl.appendChild(h('div', { style: 'font-weight:700;font-size:12px;margin-top:4px', text: 'Trains (' + info.trains.length + '/' + td.maxTrains + ')' }));
           info.trains.forEach(function (T) {
             var ti = Z.Coaster.trainInfo(T.id);
-            var stTxt = ti.state === 'broken' ? '⚠️ Broken' : (ti.state === 'dwell' ? 'Boarding' : Math.round(ti.speed) + ' m/s');
+            var stTxt = ti.state === 'broken' ? '⚠️ Broken' : ti.state === 'stalled' ? '⚠️ Stalled on hill' : (ti.state === 'dwell' ? 'Boarding' : Math.round(ti.speed) + ' m/s');
             var row = h('div.btnrow', { style: 'gap:4px' });
             row.appendChild(h('button.btn.alt', {
               text: 'Train #' + T.id + ' (' + T.cars + ' cars • ' + ti.riders + '/' + ti.capacity + ' • ' + stTxt + ')',
@@ -346,7 +461,9 @@
         lastKey = key;
 
         statsEl.innerHTML = '';
-        var stLabel = info.state === 'broken' ? (info.eng ? 'Mechanic repairing (' + Math.ceil(info.fix) + 's)' : 'Broken down! (' + Math.ceil(info.fix) + 's)') : (info.state === 'dwell' ? 'Boarding at station' : 'Running');
+        var stLabel = info.state === 'broken' ? (info.eng ? 'Mechanic repairing (' + Math.ceil(info.fix) + 's)' : 'Broken down! (' + Math.ceil(info.fix) + 's)')
+          : info.state === 'stalled' ? 'Stalled! (Needs Chain Lift ⛓️ or Boost ⚡)'
+          : (info.state === 'dwell' ? 'Boarding at station' : 'Running');
         [
           ['Status', stLabel],
           ['Speed', info.speed.toFixed(1) + ' m/s'],
@@ -392,7 +509,7 @@
     return true;
   }
 
-  // ---- 5. Ride-Along Floating Pill & Breakdown Banner ----
+  // ---- 5. Ride-Along Floating Pill, Station Placement Guide Toast & Breakdown Banner ----
   var ridePill = null;
   function showRidePill(trainId) {
     if (!ridePill && typeof document !== 'undefined') {
@@ -420,6 +537,13 @@
 
   if (Z.bus && Z.bus.on) {
     Z.bus.on('coasterRide', showRidePill);
+    Z.bus.on('objectAdded', function (o) {
+      if (!o || o.kind !== 'building') return;
+      var def = UI.byId(D.buildings, o.type);
+      if (def && def.coasterStation && UI.toast) {
+        UI.toast('Station placed! Use "Build Track" (🛤️) to connect the green & amber arrows, and add a Chain Lift (⛓️) on uphill climbs.', 'info');
+      }
+    });
     Z.bus.on('coasterBroken', function (ev) {
       if (UI.banner && ev) {
         UI.banner({

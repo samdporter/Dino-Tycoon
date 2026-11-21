@@ -2729,16 +2729,23 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   info = z.Coaster.stationInfo(stRes.id);
   assert.ok(info.maxHeight > 4, 'Raising track should increase maxHeight');
   assert.ok(info.excitement > baseExc, 'Adding hills & drops should increase Excitement');
+  // Without a Chain Lift or Boost on the climb, a tall hill should stall due to gravity!
+  assert.equal(info.energyOk, false, 'Tall hill without Chain Lift or Boost should stall due to gravitational potential energy');
+  assert.equal(info.ready, false, 'Coaster should not be ready while stalling on climb');
+  assert.match(info.stallReason, /Chain Lift|Launch Boost/i);
   const hillExc = info.excitement;
 
-  // Stamp Loop-de-Loop (4), Corkscrew (5), Boost (2), Chain Lift (1), Water Splash (3) on straight tiles
+  // Stamp Chain Lift (1) on the east climb (25, 34..32) & north approach (24, 31), plus Loop-de-Loop (4), Corkscrew (5), Boost (2), Water Splash (3)
+  assert.equal(z.Coaster.placeSpecial([tidx(25, 34), tidx(25, 33), tidx(25, 32)], 1).ok, true); // Chain Lift on uphill climb
   assert.equal(z.Coaster.placeSpecial([tidx(24, 35)], 1).ok, true); // Chain Lift
+  assert.equal(z.Coaster.placeSpecial([tidx(19, 35)], 2).ok, true); // Launch Boost
   assert.equal(z.Coaster.placeSpecial([tidx(21, 31)], 4).ok, true); // Loop-de-Loop
-  assert.equal(z.Coaster.placeSpecial([tidx(23, 31)], 5).ok, true); // Corkscrew
-  assert.equal(z.Coaster.placeSpecial([tidx(19, 35)], 2).ok, true); // Boost
+  assert.equal(z.Coaster.placeSpecial([tidx(19, 31)], 5).ok, true); // Corkscrew
   assert.equal(z.Coaster.placeSpecial([tidx(18, 33)], 3).ok, true); // Water Splash
 
   info = z.Coaster.stationInfo(stRes.id);
+  assert.equal(info.energyOk, true, `Chain Lift + Boost should give enough energy to complete circuit, got: ${info.stallReason}`);
+  assert.equal(info.ready, true);
   assert.ok(info.excitement > hillExc, 'Adding loop-de-loop, corkscrew & boost should significantly increase Excitement');
   assert.equal(info.specs[4], 1);
   assert.equal(info.specs[5], 1);
@@ -2878,6 +2885,8 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
     tidx(19, 33), tidx(19, 34), tidx(19, 35), tidx(20, 35)
   ];
   assert.equal(z.Coaster.buildTrack(route).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(24, 34)], 2).ok, true); // Launch Boost on straight tile to power through Loop & Corkscrew
+  assert.equal(z.Coaster.placeSpecial([tidx(24, 33)], 1).ok, true); // Chain Lift Hill (verifies animated 3D chain links)
   assert.equal(z.Coaster.placeSpecial([tidx(22, 32)], 4).ok, true); // Loop-de-Loop
   assert.equal(z.Coaster.placeSpecial([tidx(20, 32)], 5).ok, true); // Corkscrew
 
