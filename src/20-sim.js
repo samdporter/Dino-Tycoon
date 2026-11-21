@@ -649,19 +649,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // terrain
     var prefs = geneTerrain(sp, E.tr[spId], E.bySp[spId] || 1), hasWaterPref = prefs.water > 0, tot = 0, tcounts = E.terr;
     for (k = 0; k < tcounts.length; k++) { if (k === WATER && !hasWaterPref) continue; tot += tcounts[k]; }
-    var l1 = 0, psum = 0, id;
+    var l1 = 0, psum = 0, id, top = '', bestDef = 0;
     for (id in prefs) if (id !== 'water' || hasWaterPref) psum += prefs[id];
     if (tot < 1) tot = 1; if (psum <= 0) psum = 1;
     for (k = 0; k < tcounts.length; k++) {
       if (k === WATER && !hasWaterPref) continue;
-      var tid = D.terrain[k].id, want = (prefs[tid] || 0) / psum, have = tcounts[k] / tot;
-      l1 += Math.abs(want - have);
+      var tid = D.terrain[k].id, want = (prefs[tid] || 0) / psum, have = tcounts[k] / tot, diff = want - have;
+      l1 += Math.abs(diff);
+      if (diff > bestDef) { bestDef = diff; top = tid; }
     }
     var terrain = clamp(1 - l1 / 2, 0, 1);
     var trs = E.tr[spId], nHere = E.bySp[spId] || 1, hf = trs ? Math.min(1, (trs.hardy || 0) / nHere) : 0;
     if (hf) terrain += (1 - terrain) * 0.45 * hf;
     if (terrain < 0.7) {
-      var top = '', tv = 0; for (id in prefs) if (prefs[id] > tv) { tv = prefs[id]; top = id; }
+      if (!top) { var tv = 0; for (id in prefs) if (prefs[id] > tv) { tv = prefs[id]; top = id; } }
       iss.push('Prefers ' + (D.terrain[TI[top]] ? D.terrain[TI[top]].name.toLowerCase() : top) + ' terrain');
     }
     // space

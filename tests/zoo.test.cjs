@@ -2849,7 +2849,21 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   assert.equal(z.Coaster.trainInfo(trainId).eng, true);
   for (let step = 0; step < 30; step++) z.Sim._step(0.2);
   assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Coaster should be repaired');
+  assert.equal(z.Coaster.stationInfo(stRes.id).condition, 100, 'Emergency mechanic should restore condition to 100%');
   assert.notEqual(z.Coaster.trainInfo(trainId).state, 'broken', 'Train should resume operating (run or dwell) after mechanic repair');
+
+  // Test Safety Override resets to 80% condition and multi-train wear does not stack
+  assert.equal(z.Coaster.breakdown(trainId), true);
+  for (let step = 0; step < 340; step++) {
+    z.Sim._step(0.2);
+    if (!z.Coaster.stationInfo(stRes.id).broken) break;
+  }
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Safety Override should reset coaster after fixTime');
+  assert.equal(z.Coaster.stationInfo(stRes.id).condition, 80, 'Safety Override should restore condition to 80%');
+  const stObjZoo = z.state.objects.find(o => o.id === stRes.id);
+  stObjZoo.condition = 100;
+  for (let step = 0; step < 500; step++) z.Sim._step(0.2);
+  assert.ok(stObjZoo.condition >= 97, `2-train Zoo coaster condition after 100s should be >= 97%, got ${stObjZoo.condition}`);
 
   // Test hired Mechanic staff member responds by radio and repairs a broken coaster automatically
   const hireMech = z.Sim.hireStaff('mechanic', 25, 37);
@@ -3010,3 +3024,49 @@ test('Zoo paths do not create enclosures, close open fences, or break MAX_ENC_TI
   assert.ok(z.Sim.enclosureAt(22, 16));
   assert.equal(z.Sim.enclosureAt(22, 16).area, 16);
 });
+
+test('Zoo suitability reports largest terrain deficit instead of always reporting top preference', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 2029, map: 'grassland', money: 200000 });
+  const N = z.N;
+  for (let j = 13; j <= 18; j++) for (let i = 13; i <= 18; i++) {
+    const t = i + j * N;
+    const oid = z.state.tileObj[t];
+    if (oid) {
+      const o = z.state.objects.find(x => x.id === oid);
+      if (o) z.Sim.bulldoze(o.i, o.j);
+    }
+    z.state.terrain[t] = 0;
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  for (let i = 14; i <= 17; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 18 }, 'low_wood').ok, true);
+  }
+  for (let j = 14; j <= 17; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 14, j }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 18, j }, 'low_wood').ok, true);
+  }
+  const enc = z.Sim.enclosureAt(15, 15);
+  assert.ok(enc);
+
+  // 100% grass: Meerkat (sand 0.5, savannah 0.3, dirt 0.2) wants sand most
+  let suit = z.Sim.suitabilityFor(enc.id, 'meerkat');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers sand terrain'));
+
+  // Paint 100% sand: terrain < 0.7 (0.5), largest deficit is savannah (0.3)
+  for (let j = 14; j <= 17; j++) for (let i = 14; i <= 17; i++) z.Sim.paintTerrain(i, j, 'sand', 0);
+  suit = z.Sim.suitabilityFor(enc.id, 'meerkat');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers savannah terrain'), `Expected savannah deficit, got: ${suit.issues.join('; ')}`);
+  assert.equal(suit.issues.includes('Prefers sand terrain'), false);
+
+  // Hippo (water 0.5, savannah 0.3, dirt 0.2; hasWaterPref = true): 100% water reports savannah deficit
+  for (let j = 14; j <= 17; j++) for (let i = 14; i <= 17; i++) z.Sim.paintTerrain(i, j, 'water', 0);
+  suit = z.Sim.suitabilityFor(enc.id, 'hippo');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers savannah terrain'), `Expected savannah deficit, got: ${suit.issues.join('; ')}`);
+  assert.equal(suit.issues.includes('Prefers water terrain'), false);
+});
+

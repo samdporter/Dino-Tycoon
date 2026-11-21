@@ -1938,4 +1938,41 @@ test('paths do not create enclosures or close open fences in Dino Tycoon', () =>
   assert.equal(z.state.enclosures[0].area, 16);
 });
 
+test('suitability reports largest terrain deficit instead of always reporting top preference', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 2028, money: 200000 });
+  setupFlatZone(z, 12, 12, 20, 20);
+  for (let i = 14; i <= 17; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 18 }, 'low_wood').ok, true);
+  }
+  for (let j = 14; j <= 17; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 14, j }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 18, j }, 'low_wood').ok, true);
+  }
+  const enc = z.state.enclosures[0];
+  assert.ok(enc);
+
+  // 100% grass ("Fern meadow"): Dryosaurus (forest 0.4, grass 0.3, savannah 0.2, dirt 0.1) wants conifer forest most
+  let suit = z.Sim.suitabilityFor(enc.id, 'dryosaurus');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers conifer forest terrain'));
+
+  // Paint 100% forest ("Conifer forest"): terrain < 0.7 (0.4), largest deficit is grass ("Fern meadow", 0.3)
+  for (let j = 14; j <= 17; j++) for (let i = 14; i <= 17; i++) z.Sim.paintTerrain(i, j, 'forest', 0);
+  suit = z.Sim.suitabilityFor(enc.id, 'dryosaurus');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers fern meadow terrain'), `Expected fern meadow deficit, got: ${suit.issues.join('; ')}`);
+  assert.equal(suit.issues.includes('Prefers conifer forest terrain'), false);
+
+  // Compsognathus (rock 0.5, sand 0.3, dirt 0.2; no water pref): 50% rock + 50% water ignores water in tot
+  for (let j = 14; j <= 15; j++) for (let i = 14; i <= 17; i++) z.Sim.paintTerrain(i, j, 'rock', 0);
+  for (let j = 16; j <= 17; j++) for (let i = 14; i <= 17; i++) z.Sim.paintTerrain(i, j, 'water', 0);
+  suit = z.Sim.suitabilityFor(enc.id, 'compsognathus');
+  assert.ok(suit.terrain < 0.7);
+  assert.ok(suit.issues.includes('Prefers sand terrain'), `Expected sand deficit, got: ${suit.issues.join('; ')}`);
+  assert.equal(suit.issues.includes('Prefers rock terrain'), false);
+});
+
+
 
