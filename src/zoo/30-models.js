@@ -2585,10 +2585,10 @@ function birdUpdate(I, dt, ent) {
       var m = sex !== 'f', C = body(sex);
       g.loft([[-0.64, 0.24, 0.25, 1.5], [-0.28, 0.43, 0.43, 1.52], [0.16, 0.41, 0.43, 1.56], [0.54, 0.28, 0.3, 1.62], [0.68, 0.14, 0.16, 1.68]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return plume(z < -0.34 ? tipc(sex) : C, x, y, z, 0.16); });
       // drooping rump plumes layered over the back
-      for (var i = 0; i < 9; i++) { var a = (i - 4) * 0.2; feather(g, sin(a) * 0.3, 1.8 - abs(a) * 0.25, -0.1 - cos(a) * 0.05, 0.4, 0.075, [-0.35 - abs(a) * 0.4, -a * 0.5, 0], i % 2 ? tipc(sex) : C, 0.018); }
-      for (var j = 0; j < 7; j++) { var b = (j - 3) * 0.22; feather(g, sin(b) * 0.2, 1.82, -0.5, 0.5, 0.085, [-0.15 - abs(b) * 0.5, -b * 0.55, 0], tipc(sex), 0.018); }
+      for (var i = 0; i < 7; i++) { var a = (i - 3) * 0.26; feather(g, sin(a) * 0.3, 1.8 - abs(a) * 0.25, -0.1 - cos(a) * 0.05, 0.4, 0.075, [-0.35 - abs(a) * 0.4, -a * 0.5, 0], i % 2 ? tipc(sex) : C, 0.018); }
+      for (var j = 0; j < 5; j++) { var b = (j - 2) * 0.3; feather(g, sin(b) * 0.2, 1.82, -0.5, 0.5, 0.085, [-0.15 - abs(b) * 0.5, -b * 0.55, 0], tipc(sex), 0.018); }
       // fluffy shoulder/neck-base tufts
-      for (var k = 0; k < 6; k++) { var c = (k - 2.5) * 0.28; feather(g, sin(c) * 0.22, 1.9, 0.38, 0.18, 0.05, [-1.0, -c * 0.4, 0], C, 0.014); }
+      for (var k = 0; k < 4; k++) { var c = (k - 1.5) * 0.4; feather(g, sin(c) * 0.22, 1.9, 0.38, 0.18, 0.05, [-1.0, -c * 0.4, 0], C, 0.014); }
     },
     neckA: { y: 1.8, z: 0.42, len: 0.55, up: 1.0, r0: 0.15, r1: 0.11, col: SK },
     neckB: { len: 0.6, up: 1.25, r0: 0.11, r1: 0.08, col: SK },
@@ -2625,13 +2625,13 @@ function birdUpdate(I, dt, ent) {
       var g = B(), s = r ? -1 : 1, C = body(sex), T = tipc(sex), i;
       g.sph(0.07, 0.13, 0.2, s * 0.03, -0.12, -0.05, C, { s: [6, 5] });
       // hanging plume fan: coverts, primaries, long white-tipped feathers
-      for (i = 0; i < 10; i++) { var a = -1.9 + i * 0.12; feather(g, s * 0.05, -0.04 - i * 0.012, 0.2 - i * 0.06, 0.28 + i * 0.015, 0.07, [a, s * 0.2, PI / 2], plume(C, i, 1, 1, 0.2), 0.02); }
-      for (i = 0; i < 9; i++) { var b = -1.95 + i * 0.12; feather(g, s * 0.07, -0.12, 0.18 - i * 0.055, 0.46 + abs(i - 4) * -0.02 + 0.06, 0.085, [b, s * 0.28, PI / 2], T, 0.02); }
+      for (i = 0; i < 8; i++) { var a = -1.9 + i * 0.15; feather(g, s * 0.05, -0.04 - i * 0.012, 0.2 - i * 0.075, 0.28 + i * 0.015, 0.08, [a, s * 0.2, PI / 2], plume(C, i, 1, 1, 0.2), 0.02); }
+      for (i = 0; i < 7; i++) { var b = -1.95 + i * 0.15; feather(g, s * 0.07, -0.12, 0.18 - i * 0.07, 0.46 + abs(i - 4) * -0.02 + 0.06, 0.085, [b, s * 0.28, PI / 2], T, 0.02); }
       for (i = 0; i < 7; i++) { var c = -2.0 + i * 0.12; feather(g, s * 0.09, -0.2, 0.1 - i * 0.05, 0.5, 0.09, [c, s * 0.34, PI / 2], plume(T, i, 2, 2, 0.1), 0.02); }
       return g.build();
     },
     tailGeo: function (g, sex) {
-      for (var i = 0; i < 11; i++) { var a = (i - 5) * 0.16; feather(g, sin(a) * 0.1, 1.74, -0.6, 0.55, 0.075, [-0.4 - abs(a) * 0.15, -a * 0.45, 0], (i % 2) ? tipc(sex) : shade(tipc(sex), 0.95), 0.018); }
+      for (var i = 0; i < 8; i++) { var a = (i - 3.5) * 0.22; feather(g, sin(a) * 0.1, 1.74, -0.6, 0.55, 0.075, [-0.4 - abs(a) * 0.15, -a * 0.45, 0], (i % 2) ? tipc(sex) : shade(tipc(sex), 0.95), 0.018); }
     },
     eat: { na: 0.15, nb: -1.0, tp: 0.15, ty: -0.2 },
     sleep: { lie: 0.5, na: 0.2, nb: -0.15, hy: 0.0 }
