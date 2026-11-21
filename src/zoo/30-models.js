@@ -2398,8 +2398,9 @@ function scaly(base) { return function (x, y) { return shade(base, fract(y * 26)
 // straight-down muscular limb loft; bl = muscle bulge, dz = forward drift of the far end
 function tlimb(g, len, r0, r1, bl, dz, col) {
   var k = [[0, r0 * 0.9], [0.2, r0 * (1 + bl * 0.4)], [0.42, lerp(r0, r1, 0.45) * (1 + bl)], [0.75, lerp(r0, r1, 0.8) * (1 + bl * 0.25)], [1, r1]];
-  g.loft(k.map(function (a) { return [a[0] * len, a[1], a[1] * 0.92, dz * a[0]]; }), { down: true, rings: 5, seg: 6, cap0: true, cap1: true }, col);
-  g.sph(r0, r0 * 0.95, r0, 0, 0, 0, col, { s: [5, 4] });
+  var cf = typeof col === 'function' ? function (zc, ca, sa, x, y, z) { return col(x, y, z, sa, ca); } : col;
+  g.loft(k.map(function (a) { return [a[0] * len, a[1], a[1] * 0.92, dz * a[0]]; }), { down: true, rings: 5, seg: 6, cap0: true, cap1: true }, cf);
+  g.sph(r0, r0 * 0.95, r0, 0, 0, 0, cf, { s: [5, 4] });
 }
 // hanging hand with jointed fingers curling forward and a thumb on the inner side (side = +1 for the +x arm)
 function hand(g, x, y, z, s, side, col) {
@@ -3964,6 +3965,11 @@ OTHERS.puss_in_boots = function (opts) {
     g.sph(0.022, 0.028, 0.018, -0.062, 0.135, 0.15, 0x111111, { s: [5, 4] });
     g.sph(0.01, 0.01, 0.008, 0.072, 0.148, 0.162, 0xffffff, { s: [4, 3] });
     g.sph(0.01, 0.01, 0.008, -0.052, 0.148, 0.162, 0xffffff, { s: [4, 3] });
+    g.sph(0.04, 0.012, 0.012, 0, 0.056, 0.176, 0x7a3a3a, { s: [5, 3] });
+    for (var wk = -1; wk <= 1; wk += 2) {
+      g.sph(0.04, 0.02, 0.03, wk * 0.068, 0.172, 0.12, shade(OR, 0.8), { s: [5, 4] });
+      for (var w2 = 0; w2 < 3; w2++) g.limb(wk * 0.05, 0.07 + w2 * 0.008, 0.155, wk * 0.17, 0.085 + (w2 - 1) * 0.03, 0.14 - w2 * 0.015, 0.0035, 0.0015, 0xfff4e0, { seg: 4 });
+    }
     // cat ears
     earCone(g, 0.105, 0.24, 0.0, 0.05, 0.11, 0.25, OR, 0xf2b0b8);
     earCone(g, -0.105, 0.24, 0.0, 0.05, 0.11, 0.25, OR, 0xf2b0b8);
@@ -3983,13 +3989,15 @@ OTHERS.puss_in_boots = function (opts) {
 
     // left arm (empty paw) & right arm (holding shiny silver rapier with gold guard!)
     g = B();
-    g.limb(0, 0, 0, 0, -0.26, 0.02, 0.045, 0.034, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; }, { seg: 6 });
-    g.sph(0.042, 0.045, 0.042, 0, -0.28, 0.03, CR, { s: [5, 4] });
+    tlimb(g, 0.26, 0.045, 0.034, 0.18, 0.02, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; });
+    g.sph(0.04, 0.034, 0.036, 0, -0.285, 0.03, CR, { s: [6, 5] });
+    for (var pt = -1; pt <= 1; pt++) g.sph(0.014, 0.012, 0.016, pt * 0.022, -0.31, 0.045, shade(CR, 0.95), { s: [4, 3] });
     P.armL = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.26, 0.03, 0.045, 0.034, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; }, { seg: 6 });
-    g.sph(0.042, 0.045, 0.042, 0, -0.28, 0.04, CR, { s: [5, 4] });
+    tlimb(g, 0.26, 0.045, 0.034, 0.18, 0.03, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; });
+    g.sph(0.04, 0.034, 0.036, 0, -0.285, 0.04, CR, { s: [6, 5] });
+    for (var pt = -1; pt <= 1; pt++) g.sph(0.014, 0.012, 0.016, pt * 0.022, -0.31, 0.055, shade(CR, 0.95), { s: [4, 3] });
     // rapier sword with gold guard & pommel held pointing forward/up
     g.cyl(0.016, 0.016, 0.11, 0, -0.28, 0.06, BT, { seg: 6, rot: [1.15, 0, 0] });
     g.sph(0.022, 0.022, 0.022, 0, -0.26, 0.01, GD, { s: [5, 4] }); // gold pommel
@@ -3999,7 +4007,7 @@ OTHERS.puss_in_boots = function (opts) {
     P.armR = g.build();
 
     // thighs & tall dark leather boots with sculpted folded cuffs
-    g = B(); g.limb(0, 0, 0, 0, -0.17, 0, 0.062, 0.048, OR, { seg: 6 }); P.thigh = g.build();
+    g = B(); tlimb(g, 0.17, 0.062, 0.048, 0.25, 0, OR); P.thigh = g.build();
     g = B();
     g.lathe([[0.048, -0.055], [0.066, 0.01], [0.06, 0.035], [0.046, 0.02]], BT2, { seg: 10 }); // folded leather cuff
     g.limb(0, -0.02, 0, 0, -0.22, 0, 0.048, 0.042, BT, { seg: 8 }); // boot shaft
@@ -4012,7 +4020,7 @@ OTHERS.puss_in_boots = function (opts) {
     P.tail = [];
     for (var ti = 0; ti < 3; ti++) {
       var gt = B(), r0 = lerp(0.036, 0.022, ti / 3), r1 = lerp(0.036, 0.022, (ti + 1) / 3);
-      gt.limb(0, 0, 0, 0, 0, -0.20, r0, r1, function (x, y, z) { return fract(-z * 11) < 0.35 ? STR : OR; }, { seg: 5, hs: 3 });
+      gt.loft([[-0.22, r1, r1, 0], [-0.1, (r0 + r1) / 2 * 1.04, (r0 + r1) / 2 * 1.04, 0], [0.0, r0, r0, 0], [0.02, r0 * 0.97, r0 * 0.97, 0]], { rings: 5, seg: 7, cap0: true }, function (zc, ca, sa, x, y, z) { return fract(-z * 11) < 0.35 ? STR : OR; });
       if (ti === 2) gt.sph(0.025, 0.025, 0.035, 0, 0, -0.20, STR, { s: [5, 4] });
       P.tail.push(gt.build());
     }
