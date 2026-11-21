@@ -331,8 +331,26 @@ test('Dino Coasters: guests ride, earn revenue, breakdowns stop all trains, engi
   assert.equal(z.Coaster.trainInfo(train1Id).eng, true);
   for (let step = 0; step < 40; step++) z.Sim._step(0.2);
   assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Emergency callEngineer should repair coaster');
+  assert.equal(z.Coaster.stationInfo(stRes.id).condition, 100, 'Emergency callEngineer should restore condition to 100%');
   assert.notEqual(z.Coaster.trainInfo(train1Id).state, 'broken');
   assert.notEqual(z.Coaster.trainInfo(train2Id).state, 'broken');
+
+  // Safety Override (without mechanic or callEngineer) resets condition to 80% (>= 60% threshold)
+  assert.equal(z.Coaster.breakdown(train1Id), true);
+  for (let step = 0; step < 340; step++) {
+    z.Sim._step(0.2);
+    if (!z.Coaster.stationInfo(stRes.id).broken) break;
+  }
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Safety Override should reset broken coaster after fixTime');
+  assert.equal(z.Coaster.stationInfo(stRes.id).condition, 80, 'Safety Override should restore condition to 80% (above 60% wear threshold)');
+
+  // Multi-train condition decay does not stack across trains & stays reliable over a full day
+  stObj.condition = 100;
+  const bdBefore = z.state.coaster.stats.breakdowns || 0;
+  for (let step = 0; step < 500; step++) z.Sim._step(0.2); // 100s with 2 trains running
+  const condAfter100s = stObj.condition;
+  assert.ok(condAfter100s >= 97, `2-train coaster condition after 100s should be >= 97% (no per-train stacking), got ${condAfter100s}`);
+  assert.ok((z.state.coaster.stats.breakdowns || 0) - bdBefore <= 1, 'Breakdowns over 100s must be rare (<= 1)');
 
   // Hire Mechanic staff: counted by Z.Power AND automatically repairs broken coaster via radio dispatch
   const powerBefore = z.Power.report();

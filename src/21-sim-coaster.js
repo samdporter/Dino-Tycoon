@@ -1283,16 +1283,17 @@
     return true;
   }
 
-  function onMechanicRepair(stationId, mechName) {
+  function onMechanicRepair(stationId, mechName, targetCond) {
     var s = C.getS();
     if (!s || !s.coaster) return false;
     var st = X.stById[stationId], o = st ? st.obj : null;
     var L = lineForStation(stationId);
     var nm = L ? L.typeDef.name : 'Rollercoaster';
     var wasBroken = !!(o && o.broken);
+    var newCond = targetCond === undefined ? 100 : targetCond;
     if (o) {
       o.broken = false;
-      o.condition = 100;
+      o.condition = newCond;
     }
     var peers = trainsOnStation(stationId);
     for (var k = 0; k < peers.length; k++) {
@@ -1306,10 +1307,10 @@
       }
     }
     if (wasBroken) {
-      C.msg((mechName ? mechName + ' repaired ' : 'Repaired ') + nm + ' — rollercoaster is back up and running at 100% condition!', 'good');
+      C.msg((mechName ? mechName + ' repaired ' : 'Repaired ') + nm + ' — rollercoaster is back up and running at ' + newCond + '% condition!', 'good');
       C.bus.emit('coasterFixed', { stationId: stationId, trainId: peers[0] ? peers[0].id : 0 });
     } else if (o) {
-      C.msg((mechName || 'Mechanic') + ' serviced ' + nm + ' back to 100% condition.', 'info', false);
+      C.msg((mechName || 'Mechanic') + ' serviced ' + nm + ' back to ' + newCond + '% condition.', 'info', false);
     }
     return true;
   }
@@ -1533,8 +1534,8 @@
       rt.fix -= dt;
       T.fix = rt.fix;
       if (rt.fix <= 0) {
-        onMechanicRepair(T.stationId, rt.eng ? 'Emergency Mechanic' : 'Safety Override');
-        if (!rt.eng && stObj) stObj.condition = 55;
+        var wasEng = !!rt.eng;
+        onMechanicRepair(T.stationId, wasEng ? 'Emergency Mechanic' : 'Safety Override', wasEng ? 100 : 80);
       }
       placeRiders(T, L);
       return;
@@ -1637,28 +1638,41 @@
       }
     }
 
-    // Mechanical wear & tear + breakdown check while running
-    if (rt.state === 'run' && stObj) {
-      stObj.condition = Math.max(0, (stObj.condition === undefined ? 100 : stObj.condition) - dt * 0.06);
-      if (rt.leftStation && CD.breakdownPerHour > 0) {
-        var wearMul = stObj.condition < 35 ? 6.0 : stObj.condition < 60 ? 2.5 : 1.0;
-        var pBreak = (CD.breakdownPerHour * wearMul / (C.DAY_SECONDS / 24)) * dt;
-        if (stObj.condition <= 8 || C.rng.chance(pBreak)) breakdown(T.id);
-      }
-    }
-
     placeRiders(T, L);
   }
 
   function step(dt) {
     var s = C.getS();
     if (!s || !s.coaster || !s.coaster.trains.length) return;
+    var activeStations = [], seenStation = {};
     for (var k = 0; k < s.coaster.trains.length; k++) {
       var T = s.coaster.trains[k];
       var L = lineForStation(T.stationId);
       if (!L || !L.loop || L.branch) continue;
       if (!TR[T.id]) TR[T.id] = { s: T.s || L.stMidS, v: T.v || 0, state: T.state || 'dwell', dwell: T.dwell || 2, fix: T.fix || 0, eng: !!T.eng, riders: [] };
       stepTrain(T, L, dt);
+      var rt = TR[T.id];
+      var stObj = L.station ? L.station.obj : null;
+      if (stObj && rt && rt.state === 'run' && !stObj.broken) {
+        var entry = seenStation[T.stationId];
+        if (!entry) {
+          entry = seenStation[T.stationId] = { stObj: stObj, outTrainId: 0 };
+          activeStations.push(entry);
+        }
+        if (rt.leftStation && !entry.outTrainId) entry.outTrainId = T.id;
+      }
+    }
+    // Per-station wear & tear + breakdown check (does not stack across multiple trains on the same coaster)
+    var RT = C.getRT();
+    var mechMul = (RT && RT.mechCount > 0) ? 0.5 : 1.0;
+    for (k = 0; k < activeStations.length; k++) {
+      var stInfo = activeStations[k], so = stInfo.stObj;
+      so.condition = Math.max(0, (so.condition === undefined ? 100 : so.condition) - dt * 0.015);
+      if (stInfo.outTrainId && CD.breakdownPerHour > 0) {
+        var wearMul = so.condition < 35 ? 4.0 : so.condition < 60 ? 2.0 : 1.0;
+        var pBreak = (CD.breakdownPerHour * wearMul * mechMul / (C.DAY_SECONDS / 24)) * dt;
+        if (so.condition <= 8 || C.rng.chance(pBreak)) breakdown(stInfo.outTrainId);
+      }
     }
   }
 
