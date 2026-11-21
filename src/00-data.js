@@ -444,7 +444,13 @@ window.Z.DATA = {
     { id: "bin", name: "Litter bin", emoji: "🗑️", cost: 40, kind: "deco", biome: "any", aesthetic: 0, inEnclosure: false },
     { id: "fossil_skeleton", name: "Fossil skeleton", emoji: "🦴", cost: 900, kind: "deco", biome: "any", aesthetic: 5, inEnclosure: false },
     { id: "picnic_table", name: "Picnic table", emoji: "🧺", cost: 110, kind: "deco", biome: "grass", aesthetic: 2, inEnclosure: false },
-    { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false }
+    { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false },
+    { id: "themepark_arch", name: "Midway Welcome Arch", emoji: "🎪", cost: 450, kind: "deco", biome: "any", aesthetic: 5, inEnclosure: false, star: 0, themepark: true, info: "Festive illuminated fairground archway welcoming guests to the midway." },
+    { id: "bunting_poles", name: "Carnival Bunting Flags", emoji: "🎏", cost: 140, kind: "deco", biome: "any", aesthetic: 3, inEnclosure: false, star: 0, themepark: true, info: "Colourful triangular pennant flags strung between striped carnival poles." },
+    { id: "funhouse_mirror", name: "Funhouse Mirrors", emoji: "🪞", cost: 220, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 0, themepark: true, info: "Wavy gilt-framed laughing mirrors that amuse passing guests." },
+    { id: "balloon_arch", name: "Balloon Archway", emoji: "🎈", cost: 280, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 0, themepark: true, info: "Bright rainbow cluster arch of helium carnival balloons." },
+    { id: "circus_lamp", name: "Festoon String Lights", emoji: "🏮", cost: 160, kind: "deco", biome: "any", aesthetic: 3, inEnclosure: false, star: 0, themepark: true, info: "Warm glowing fairground festoon bulbs on a striped pole." },
+    { id: "clown_statue", name: "Jester Mascot Statue", emoji: "🤡", cost: 420, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 1, themepark: true, info: "Cheerful golden theme-park mascot statue on a striped plinth." }
   ],
 
   mapSizes: [
@@ -512,9 +518,9 @@ window.Z.DATA = {
       info: "Park restrooms (8 stalls, free to use, full comfort). Entrance must touch a path." },
     { id: "gift_shop", name: "Gift shop", emoji: "🎁", cost: 2500, upkeep: 30, type: "shop", price: 12, capacity: 6, w: 2, h: 2, satisfies: { fun: 0.2 }, star: 1,
       info: "Souvenir shop (capacity 6, +20% fun, high ticket spend). Entrance must touch a path." },
-    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0,
+    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0, themepark: true,
       info: "Compact souvenir stand (capacity 2, +20% fun). Entrance must touch a path." },
-    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 3, h: 3, satisfies: { fun: 0.8 }, star: 1,
+    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 3, h: 3, satisfies: { fun: 0.8 }, star: 1, themepark: true,
       info: "Dinosaur ride for guests (capacity 12, +80% fun and mood boost). Entrance must touch a path." },
     { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0,
       info: "Park map and guide booth (capacity 4, free). Entrance must touch a path." },
@@ -538,7 +544,21 @@ window.Z.DATA = {
     { id: "coaster_mine", name: "Mine Train Station", emoji: "⛏️", cost: 4200, upkeep: 55, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "mine", thrill: 3, price: 10, capacity: 20, w: 4, h: 2, satisfies: { fun: 0.94 }, star: 1, themepark: true, info: "Custom rugged mine-cart coaster station. Supports hills, Chain Lifts and Launch Boosts." },
     { id: "coaster_flume", name: "Log Flume Station", emoji: "🪵", cost: 5000, upkeep: 65, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "flume", thrill: 3, price: 11, capacity: 16, w: 4, h: 2, satisfies: { fun: 0.96, thirst: 0.12 }, star: 2, themepark: true, info: "Custom elevated water-chute station. Pair high drops with Water Splash troughs for massive guest thrills." },
     { id: "coaster_steel", name: "Steel Thrill Coaster Station", emoji: "⚡", cost: 6800, upkeep: 85, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "steel", thrill: 5, price: 14, capacity: 24, w: 4, h: 2, satisfies: { fun: 1.0 }, star: 3, themepark: true, info: "High-speed tubular steel coaster station. Unlocks Loop-de-Loops, Corkscrews and Launch Boosts!" },
-    { id: "coaster_hyper", name: "Mythical Hyper Coaster Station", emoji: "🐉", cost: 9500, upkeep: 115, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "hyper", thrill: 5, price: 18, capacity: 24, w: 4, h: 2, satisfies: { fun: 1.0 }, star: 4, themepark: true, info: "Enchanted sky-high dragon coaster supporting every special element, extreme heights and blistering speed." }
+    { id: "coaster_hyper", name: "Mythical Hyper Coaster Station", emoji: "🐉", cost: 9500, upkeep: 115, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "hyper", thrill: 5, price: 18, capacity: 24, w: 4, h: 2, satisfies: { fun: 1.0 }, star: 4, themepark: true, info: "Enchanted sky-high dragon coaster supporting every special element, extreme heights and blistering speed." },
+    { id: "wooden_coaster", name: "Wooden Rollercoaster", emoji: "🎢", cost: 7500, upkeep: 95, type: "ride", rideKind: "coaster", thrill: 3, price: 10, capacity: 16, w: 5, h: 4, satisfies: { fun: 0.95 }, star: 2, themepark: true, legacyCoaster: true, info: "Classic timber rollercoaster with rattling lift hill, camelback drops and screaming guests (capacity 16, +95% fun). Entrance must touch a path." },
+    { id: "loop_coaster", name: "Steel Loop Coaster", emoji: "➿", cost: 11000, upkeep: 140, type: "ride", rideKind: "coaster", thrill: 5, price: 14, capacity: 20, w: 6, h: 4, satisfies: { fun: 1.0 }, star: 3, themepark: true, legacyCoaster: true, info: "High-speed steel inversion coaster with a towering vertical loop and banked helix (capacity 20, +100% fun). Entrance must touch a path." },
+    { id: "mine_coaster", name: "Runaway Mine Train", emoji: "🛤️", cost: 6200, upkeep: 80, type: "ride", rideKind: "coaster", thrill: 2, price: 8, capacity: 14, w: 4, h: 3, satisfies: { fun: 0.85 }, star: 1, themepark: true, legacyCoaster: true, info: "Family rocky canyon mine-cart coaster spiralling around craggy boulders (capacity 14, +85% fun). Entrance must touch a path." },
+    { id: "log_flume", name: "Splash Log Flume", emoji: "🪵", cost: 8500, upkeep: 110, type: "ride", rideKind: "coaster", thrill: 3, price: 11, capacity: 16, w: 4, h: 4, satisfies: { fun: 0.92, thirst: 0.1 }, star: 2, themepark: true, legacyCoaster: true, info: "Elevated water chute ride ending in a refreshing splashdown drop (capacity 16, +92% fun). Entrance must touch a path." },
+    { id: "ferris_wheel", name: "Giant Ferris Wheel", emoji: "🎡", cost: 6800, upkeep: 85, type: "ride", rideKind: "wheel", thrill: 2, price: 9, capacity: 18, w: 3, h: 3, satisfies: { fun: 0.88, energy: 0.1 }, star: 2, themepark: true, info: "Revolving observation wheel giving guests sweeping views over the dinosaur park and theme park (capacity 18, +88% fun). Entrance must touch a path." },
+    { id: "rubber_duck_stand", name: "Hook-a-Duck Stall", emoji: "🦆", cost: 900, upkeep: 14, type: "arcade", price: 5, capacity: 4, w: 2, h: 1, satisfies: { fun: 0.45 }, star: 0, themepark: true, info: "Classic fairground rubber-ducking water trough where guests hook floating yellow ducks for prizes (capacity 4, +45% fun). Entrance must touch a path." },
+    { id: "air_rifle_stand", name: "Air Rifle Shooting Gallery", emoji: "🎯", cost: 1300, upkeep: 18, type: "arcade", price: 6, capacity: 6, w: 2, h: 2, satisfies: { fun: 0.55 }, star: 1, themepark: true, info: "Cork & tin-can air-rifling gallery with moving mechanical targets and bullseyes (capacity 6, +55% fun). Entrance must touch a path." },
+    { id: "ring_toss_stand", name: "Ring Toss Stall", emoji: "⭕", cost: 850, upkeep: 12, type: "arcade", price: 4, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.4 }, star: 0, themepark: true, info: "Carnival bottle ring-toss booth stacked with giant plush prizes (capacity 4, +40% fun). Entrance must touch a path." },
+    { id: "whack_a_mole", name: "Whack-a-Dino Arcade", emoji: "🔨", cost: 1100, upkeep: 16, type: "arcade", price: 5, capacity: 6, w: 2, h: 1, satisfies: { fun: 0.5 }, star: 1, themepark: true, info: "Rowdy mallet arcade cabinet where pop-up dinosaurs test guests' reflexes (capacity 6, +50% fun). Entrance must touch a path." },
+    { id: "high_striker", name: "Strongman High Striker", emoji: "🔔", cost: 950, upkeep: 12, type: "arcade", price: 5, capacity: 3, w: 1, h: 2, satisfies: { fun: 0.48 }, star: 0, themepark: true, info: "Towering carnival bell-ringer where guests swing a heavy mallet to ring the top gong (capacity 3, +48% fun). Entrance must touch a path." },
+    { id: "candy_floss", name: "Candy Floss Stand", emoji: "🍭", cost: 750, upkeep: 12, type: "food", price: 5, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.22, fun: 0.25 }, star: 0, themepark: true, info: "Spins clouds of pink and blue spun sugar on a stick (serves 4, -22% hunger, +25% fun). Entrance must touch a path." },
+    { id: "popcorn_stand", name: "Popcorn Kiosk", emoji: "🍿", cost: 800, upkeep: 14, type: "food", price: 5, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.25, fun: 0.18 }, star: 0, themepark: true, info: "Buttery kettle-popped corn in classic red-and-white striped tubs (serves 4, -25% hunger, +18% fun). Entrance must touch a path." },
+    { id: "hot_dog_stand", name: "Hot Dog Cart", emoji: "🌭", cost: 1100, upkeep: 18, type: "food", price: 6, capacity: 6, w: 2, h: 1, satisfies: { hunger: 0.48, fun: 0.1 }, star: 0, themepark: true, info: "Sizzling fairground frankfurters topped with mustard and ketchup (serves 6, -48% hunger, +10% fun). Entrance must touch a path." },
+    { id: "slushie_bar", name: "Slushie & Soda Bar", emoji: "🧊", cost: 850, upkeep: 14, type: "drink", price: 4, capacity: 6, w: 2, h: 1, satisfies: { thirst: 0.65, fun: 0.15 }, star: 1, themepark: true, info: "Brain-freezing neon cherry and blue-raspberry ice slushies (serves 6, -65% thirst, +15% fun). Entrance must touch a path." }
   ],
 
   staff: [
@@ -592,7 +612,8 @@ window.Z.DATA = {
     { id: "predator_1", text: "Keep a predator safely behind strong fences", type: "predators", target: 1, reward: 2500 },
     { id: "genome_100", text: "Bring one species' genome to 100%", type: "genome100", target: 1, reward: 3500 },
     { id: "traits_1", text: "Splice your first trait into a dinosaur", type: "traits", target: 1, reward: 5000 },
-    { id: "rating_4", text: "Reach a 4-star park rating", type: "rating", target: 4, reward: 8000 }
+    { id: "rating_4", text: "Reach a 4-star park rating", type: "rating", target: 4, reward: 8000 },
+    { id: "themepark_3", text: "Build 3 theme park rides or arcade stalls", type: "themepark", target: 3, reward: 1800 }
   ],
 
   guestNames: [
@@ -797,6 +818,17 @@ window.Z.DATA = {
     coasterStuck: [
       "Uh oh, the coaster train has stopped on the track!",
       "Hope a mechanic gets us moving again soon!"
+    ],
+    arcade: [
+      "I hooked a rubber duck and won a prize!",
+      "Bullseye at the air rifle gallery!",
+      "The carnival games here are brilliant!",
+      "Nearly rang the bell on the high striker!"
+    ],
+    candyFloss: [
+      "Ooh, pink candy floss!",
+      "Nothing beats fairground popcorn and candy floss.",
+      "Sticky fingers, happy days!"
     ]
   },
 

@@ -255,7 +255,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (def.realm === 'boat' || def.realm === 'drone') return 'Recovery station';
     if (def.safariPortal) return 'Safari barrier';
     if (def.safariRanger) return 'Safari rangers';
-    return ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', info: 'Information', staff: 'Staff building', science: 'Science building', transport: 'Transport building', utility: 'Utility building' })[def.type] || '';
+    if (def.rideKind === 'coaster') return 'Rollercoaster';
+    return ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', arcade: 'Arcade & game stall', info: 'Information', staff: 'Staff building', science: 'Science building', transport: 'Transport building', utility: 'Utility building' })[def.type] || '';
   }
   function openObject(id) {
     sciUpd = null;
@@ -322,6 +323,7 @@ window.Z = window.Z || {}; var Z = window.Z;
               if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]);
               rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]);
               if (def.capacity > 0) rows.push(['Capacity', def.capacity + ' guests']);
+              if (def.thrill > 0) rows.push(['Thrill rating', '★'.repeat(def.thrill)]);
             }
             if (q.type === 'keeper_hut' || q.type === 'vet_clinic') {
               var stTiles = covO ? (q.type === 'vet_clinic' ? (covO.vetClinicTiles || 48) : covO.stationTiles) : 48;

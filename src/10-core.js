@@ -75,7 +75,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       safari: { routes: [], veh: [], nextRoute: 1, nextVeh: 1, zones: {}, away: [], lockdown: 0, cleanDays: 0, stats: { riders: 0, income: 0, sea: 0, air: 0, wildSeen: 0, wildIn: 0, kills: 0, seenKills: 0, injuries: 0, stranded: 0, nudges: 0, mainland: 0, returned: 0, lost: 0, close: 0, fed: 0, prot: {} } },   // safari package: routes, vehicles, per-zone settings, escapees away on the mainland
       objects: [], enclosures: [], animals: [], guests: [], staff: [],
       finance: { today: Z.emptyFinance(), history: [] },
-      goals: {}, stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0, predations: 0, fundingTotal: 0, ridesTaken: 0 },
+      goals: {}, stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0, predations: 0, fundingTotal: 0, ridesTaken: 0, arcadePlayed: 0 },
       unlocked: { star: 0 }, messages: [], nextId: 1,
       research: null, panic: 0,
       difficulty: 'normal', weather: { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' }, activeEvents: [], eventAt: -1, debtWarn: 0
