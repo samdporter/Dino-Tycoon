@@ -3178,9 +3178,9 @@ OTHERS.nessie = function (opts) {
   var baby = !!opts.baby, P = partsCache.nessie;
   var EM = 0x1b6356, EM2 = 0x287c6c, DK = 0x12443b, BL = 0x78aa96, EYE = 0xf4c430;
   var bc = function (x, y, z, nx, ny) {
-    if (ny < -0.35) return BL;
+    if (ny < -0.35) return shade(BL, fract(z * 11) > 0.55 ? 0.9 : 1.04);
     var h = hash3(Math.floor(x * 7), Math.floor(y * 7), Math.floor(z * 7));
-    return h > 0.65 ? EM2 : (ny > 0.55 ? DK : EM);
+    return shade(h > 0.65 ? EM2 : (ny > 0.55 ? DK : EM), fract(z * 14 + x * 3) > 0.8 ? 0.86 : 1);
   };
   if (!P) {
     P = partsCache.nessie = {};
@@ -3202,7 +3202,14 @@ OTHERS.nessie = function (opts) {
     g = B();
     g.loft([[-0.04, 0.09, 0.085, 0], [0.1, 0.115, 0.098, 0], [0.28, 0.078, 0.062, -0.022], [0.4, 0.052, 0.04, -0.03]], { rings: 9, seg: 9, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     g.tube([[0, 0.06, 0.06], [0, 0.14, -0.04], [0, 0.17, -0.15]], [0.032, 0.02, 0.004], DK, { seg: 5, steps: 2 });
-    eyePair(g, 0.075, 0.035, 0.16, 0.024, EYE);
+    // lower jaw, brow ridge, nostrils and peg teeth
+    g.loft([[0.0, 0.07, 0.035, -0.07], [0.18, 0.062, 0.03, -0.062], [0.36, 0.038, 0.022, -0.05]], { rings: 6, seg: 8, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return ca > 0.3 ? shade(BL, 0.8) : BL; });
+    for (var nn = -1; nn <= 1; nn += 2) {
+      g.sph(0.012, 0.008, 0.014, nn * 0.022, 0.01, 0.385, 0x0a2a24, { s: [4, 3] });
+      g.sph(0.03, 0.018, 0.05, nn * 0.07, 0.058, 0.14, shade(EM, 0.7), { s: [5, 4] });
+      for (var tk = 0; tk < 4; tk++) g.cone(0.006, 0.02, nn * (0.035 - tk * 0.003), -0.022, 0.2 + tk * 0.045, 0xf0f0e0, { seg: 4, rot: [PI, 0, 0] });
+    }
+    eyes(g, 0.075, 0.035, 0.16, 0.022, EYE, DK);
     P.head = g.build();
 
     // sculpted cambered hydrofoil plesiosaur flippers
@@ -3223,7 +3230,8 @@ OTHERS.nessie = function (opts) {
     var tLen = [0.65, 0.65, 0.65], tR = [0.22, 0.14, 0.075, 0.022];
     for (var ti = 0; ti < 3; ti++) {
       var gt = B();
-      gt.limb(0, 0, 0, 0, 0, -tLen[ti], tR[ti], tR[ti + 1], bc, { seg: 7 });
+      gt.loft([[-tLen[ti], tR[ti + 1], tR[ti + 1] * 0.92, 0], [-tLen[ti] * 0.5, lerp(tR[ti], tR[ti + 1], 0.5) * 1.03, lerp(tR[ti], tR[ti + 1], 0.5) * 0.95, 0], [0, tR[ti], tR[ti] * 0.94, 0], [0.05, tR[ti] * 0.98, tR[ti] * 0.92, 0]], { rings: 7, seg: 9, cap0: true, ridge: 0.1 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      if (ti === 2) gt.extrude([[0, 0.0], [0.12, -0.08], [0.2, -0.2], [0.06, -0.16], [0, -0.12], [-0.06, -0.16], [-0.2, -0.2], [-0.12, -0.08]], 0.03, 0, 0.0, -tLen[ti] + 0.04, [0, 0, 0], DK, { axis: 'y', bev: 0.008 });
       if (ti === 0) gt.sph(0.16, 0.2, 0.24, 0, 0.16, -0.28, DK, { s: [7, 5] }); // 3rd arched hump
       else gt.cone(0.03, 0.1, 0, tR[ti] * 0.9, -tLen[ti] * 0.5, DK, { seg: 4 });
       P.tail.push(gt.build());
@@ -3330,7 +3338,7 @@ OTHERS.anaconda = function (opts) {
 
     // sculpted broad triangular anaconda head (vertex-shaded post-ocular stripe, no box stripes!)
     g = B();
-    g.loft([[-0.04, 0.11, 0.08, 0], [0.1, 0.145, 0.088, 0], [0.25, 0.105, 0.064, -0.01], [0.38, 0.07, 0.042, -0.015]], { rings: 10, seg: 10, cap0: true, cap1: true, flatBot: 0.65 }, function (zc, ca, sa, x, y, z) {
+    g.loft([[-0.04, 0.11, 0.08, 0], [0.1, 0.145, 0.088, 0], [0.25, 0.105, 0.064, -0.01], [0.37, 0.068, 0.045, -0.014], [0.42, 0.04, 0.03, -0.016], [0.44, 0.012, 0.01, -0.018]], { rings: 13, seg: 10, cap0: true, cap1: true, flatBot: 0.65 }, function (zc, ca, sa, x, y, z) {
       if (ca < -0.28) return BL;
       if (abs(sa) > 0.65 && ca > -0.15 && ca < 0.38 && z > 0.02 && z < 0.22) return DK;
       return scCol(x, y, z, sa, ca);
@@ -3340,7 +3348,13 @@ OTHERS.anaconda = function (opts) {
     g.limb(0, -0.02, 0.37, 0, -0.024, 0.49, 0.01, 0.008, 0xc83a48, { seg: 4 });
     g.limb(0, -0.024, 0.49, 0.022, -0.028, 0.55, 0.007, 0.003, 0xc83a48, { seg: 3 });
     g.limb(0, -0.024, 0.49, -0.022, -0.028, 0.55, 0.007, 0.003, 0xc83a48, { seg: 3 });
-    eyePair(g, 0.088, 0.032, 0.21, 0.024, EYE);
+    for (var sn = -1; sn <= 1; sn += 2) {
+      g.tube([[sn * 0.085, -0.02, 0.06], [sn * 0.07, -0.03, 0.2], [sn * 0.04, -0.03, 0.38]], [0.007, 0.006, 0.004], 0xd8e0b0, { seg: 4, steps: 2 });
+      g.tube([[sn * 0.1, 0.05, 0.12], [sn * 0.09, 0.062, 0.2], [sn * 0.06, 0.05, 0.3]], [0.01, 0.014, 0.008], shade(OL, 0.7), { seg: 4, steps: 2 });
+      g.sph(0.02, 0.016, 0.026, sn * 0.06, 0.0, 0.395, shade(OL, 1.1), { s: [4, 3] });
+    }
+    eyes(g, 0.088, 0.034, 0.21, 0.022, EYE, DK);
+    for (var sp = -1; sp <= 1; sp += 2) g.sph(0.004, 0.02, 0.006, sp * (0.088 + 0.022 * 1.35 + 0.0), 0.034, 0.215, 0x0a0a06, { s: [3, 4] });
     P.head = g.build();
 
     // 6 smooth overlapping tapered tail segments
