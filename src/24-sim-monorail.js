@@ -1341,7 +1341,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     // riders re-attach to their trains
     var gs = s.guests, k;
     for (k = gs.length - 1; k >= 0; k--) {
-      var g = gs[k]; if (g.state !== 'ride' || g.sfv) continue;   // safari package: its riders are relinked by Z.Safari.afterLoad
+      var g = gs[k]; if (g.state !== 'ride' || g.sfv || g.coasterTrain) continue;   // safari & coaster packages: their riders are relinked by their own afterLoad
       var T = s.mono.trains.filter(function (t) { return t.id === g.rtr; })[0], rt = T && TR[T.id];
       if (T && rt && rt.line && rt.line.ok && T.st !== 'idle') { rt.pax.push(g); }
       else { var o = X.stations.length ? X.stations[0].o : null; if (o) stepOff(g, o); else { g.state = 'walk'; g.y = 0; g.gt = ''; g.dk = ''; } }

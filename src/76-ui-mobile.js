@@ -64,7 +64,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.guests.classList.toggle('xl', el.guestsN.textContent.length >= 5);
   }
   // overlay cards (On/Off) must follow the real overlay state, whoever toggles it (card, panel button, tool start/cancel)
-  ['RealmsWorld', 'MoatsWorld', 'MonoWorld', 'SafariWorld'].forEach(function (n) {
+  ['RealmsWorld', 'MoatsWorld', 'MonoWorld', 'SafariWorld', 'CoasterWorld'].forEach(function (n) {
     var w = Z[n]; if (!w || !w.setOverlay || w._syncCards) return; w._syncCards = true;
     function isOn() { return typeof w.overlayOn === 'function' ? !!w.overlayOn() : !!w.overlayOn; }
     var o = w.setOverlay;

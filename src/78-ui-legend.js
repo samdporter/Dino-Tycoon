@@ -36,7 +36,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     { id: 'power', title: 'Power coverage', on: function () { var w = Z.PowerWorld; return !!(w && w.coverageOn && w.coverageOn()); }, rows: [['#4fc3f7', 'ring2', 'Powered: solid ring'], ['#e0574a', 'dashring', 'No power: dashed ring']] },
     { id: 'zones', title: 'Zones', on: function () { var w = Z.RealmsWorld; return !!(w && w.overlayOn && w.overlayOn()); }, rows: [['#4aff9a', 'post', 'Short green post: powered'], ['#ff3b2a', 'spike', 'Tall red spike: no power']] },
     { id: 'mono', title: 'Monorail', on: function () { return !!(Z.MonoWorld && Z.MonoWorld.overlayOn); }, rows: [['#3ab5e8', null, 'Line working'], ['#e8a23a', 'x', 'Line not working'], ['#f5d36a', 'dot', 'Pylon'], ['#6ed99a', 's1', 'Enclosure under the line']] },
-    { id: 'safari', title: 'Safari', on: function () { return !!(Z.SafariWorld && Z.SafariWorld.overlayOn); }, rows: [['#6ed99a', null, 'Zone ready'], ['#e8a23a', 'dots', 'Zone: no power'], ['#b0b6ba', 'diag', 'Zone: not connected'], ['#46e08a', null, 'Route works'], ['#e0614a', 'x', 'Route broken'], ['#ff7a3a', 'ring', 'Corridor marker']] }
+    { id: 'safari', title: 'Safari', on: function () { return !!(Z.SafariWorld && Z.SafariWorld.overlayOn); }, rows: [['#6ed99a', null, 'Zone ready'], ['#e8a23a', 'dots', 'Zone: no power'], ['#b0b6ba', 'diag', 'Zone: not connected'], ['#46e08a', null, 'Route works'], ['#e0614a', 'x', 'Route broken'], ['#ff7a3a', 'ring', 'Corridor marker']] },
+    { id: 'coaster', title: 'Rollercoaster', on: function () { return !!(Z.CoasterWorld && Z.CoasterWorld.isOverlay && Z.CoasterWorld.isOverlay()); }, rows: [['#56d97e', null, 'Low track'], ['#ff9e3b', 's1', 'Mid hill'], ['#e8386d', 's2', 'High peak'], ['#38e56b', 'dot', 'Launch arrow (drag from)'], ['#ffb838', 'ring', 'Return arrow (drag to)']] }
   ];
   var el = null, sig = '';
   function tick() {

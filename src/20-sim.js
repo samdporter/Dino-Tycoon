@@ -52,13 +52,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
       encx: {}, bq: {}, benchOcc: {}, byType: { food: [], drink: [], toilet: [], fun: [], bench: [], bin: [] },
       t1: 0, t2: 0, escAcc: 0, arrAcc: 0, rate: 0.3, arrMul: 1, arrMulT: 0, pendingSpawn: 0,
-      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
+      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, mechCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
       advice: {}, claim: {}, groupLead: new Map(), nextGroup: 1, dirtyCount: 0, ghEMA: 65, value: 10,
       queue: new Int32Array(NN), prev: new Int32Array(NN), stamp: new Int32Array(NN), stampN: 0, binVer: 0,
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
       undo: [], stroke: null, strokeDepth: 0, labs: [], hatcheries: [], bunkers: [], platforms: [], labNear: new Uint8Array(NN), platTile: new Uint8Array(NN),
       dangerEsc: 0, hunters: {}, resAcc: 0, labOnline: false, undoBusy: false,
       allLabs: [], allHatch: [], allBunkers: [], allPlat: [], sea: null, seaNear: null,
+      rides: [], coasters: [],
       comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: [], inWorld: false
     };
   }
@@ -124,6 +125,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function tileSlope(i, j) { return Z.inb(i, j) && S.elev ? slopeOfT(i + j * N, S.elev) : 0; }
   function isCliff(i, j) { return tileSlope(i, j) >= 3; }
   function cliffT(t) { return slopeOfT(t, S.elev) >= 3; }
+  function cornerElev(i, j) { return S && S.elev && i >= 0 && j >= 0 && i <= N && j <= N ? S.elev[j * (N + 1) + i] : 0; }
   function heightAt(x, z) {
     var u = x / TILE, v = z / TILE;
     if (u < 0) u = 0; else if (u > N) u = N; if (v < 0) v = 0; else if (v > N) v = N;
@@ -344,6 +346,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var bt = RT.byType; bt.food = []; bt.drink = []; bt.toilet = []; bt.fun = []; bt.bench = []; bt.bin = [];
     RT.hasHut = false; RT.huts.length = 0; RT.hasVet = false; RT.vets.length = 0; RT.hasEdu = false;
     RT.allLabs = []; RT.allHatch = []; RT.allBunkers = []; RT.allPlat = []; RT.skeletons = 0;
+    RT.rides = []; RT.coasters = [];
     S.tileObj.fill(0);
     for (var k = 0; k < S.objects.length; k++) {
       var o = S.objects[k]; RT.oById.set(o.id, o);
@@ -353,6 +356,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (def.type === 'food') bt.food.push(o); else if (def.type === 'drink') bt.drink.push(o);
         else if (def.type === 'toilet') bt.toilet.push(o);
         else if (def.type === 'shop' || def.type === 'ride' || def.type === 'info' || def.type === 'science') { if (o.type !== 'emergency_bunker') bt.fun.push(o); }
+        if (def.type === 'ride') { RT.rides.push(o); if (def.rideKind === 'coaster') RT.coasters.push(o); }
         if (o.type === 'research_lab') RT.allLabs.push(o); else if (o.type === 'hatchery') RT.allHatch.push(o);
         else if (o.type === 'emergency_bunker') RT.allBunkers.push(o); else if (o.type === 'viewing_platform' || def.plat) RT.allPlat.push(o);   // realms package: galleries, grandstand, canopy tower
         if (o.type === 'keeper_hut') { RT.hasHut = true; RT.huts.push(o); } if (o.type === 'vet_clinic') { RT.hasVet = true; RT.vets.push(o); } if (o.type === 'education_centre') RT.hasEdu = true;
@@ -763,6 +767,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       recomputeEnclosures();
       if (Z.Realms) Z.Realms.update();   // realms package: towers, plants, tank supply, zone cover (after enclosures are known)
       if (Z.Monorail) Z.Monorail.update();   // monorail package: track graph, lines, pylons, enclosures overlooked (after enclosures are known)
+      if (Z.Coaster) Z.Coaster.updateGraph();   // coaster package: track graph, loops, physics & overlooked enclosures (after enclosures are known)
+      if (Z.Coaster) Z.Coaster.update();
       if (Z.Safari) Z.Safari.update();   // safari package: zones, routes, gates (after enclosures and realms are known)
       RT.rbDirty = true;
     } finally {
@@ -1030,6 +1036,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (inEnc) return fail("Buildings can't go inside an enclosure");
       if (!def.utility && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
       if (def.mono && Z.Monorail) { var mn = Z.Monorail.placeCheck(type, fp); if (mn && mn.msg) return fail(mn.msg); if (mn && mn.warn) warn = mn.warn; }   // monorail package: a station needs a path at its entrance
+      if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp, rot); if (cr) return fail(cr); }   // coaster package: buildings cannot overlap coaster track
       if (def.moat && Z.Moats) { var mc = Z.Moats.placeCheck(type, fp); if (mc && mc.msg) return fail(mc.msg); if (mc && mc.warn) warn = mc.warn; }   // moats package: pump beside water, ditch contact
       if (def.safari && Z.Safari) { var sfc = Z.Safari.placeCheck(type, fp); if (sfc && sfc.msg) return fail(sfc.msg); if (sfc && sfc.warn && !warn) warn = sfc.warn; }   // safari package: depot needs a path, harbour needs water
       if (def.needsPower && Z.Power) { var pc = Z.Power.placeCheck(def, fp); if (pc && pc.warn) warn = (warn ? warn + '. ' : '') + (def.mono ? 'Not on the power grid: the station and its trains stay stopped until a substation or cable covers it' : pc.warn); }   // power package: outside every substation's radius (QA: also when the entrance warning is showing; monorail wording)
@@ -1067,6 +1074,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (gu.bid === o.id) { releaseGuest(gu); if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; } }
     }
     delete RT.bq[o.id];
+    if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
     bus.emit('objectRemoved', o);
   }
   function bulldoze(i, j, opts) {
@@ -1099,6 +1107,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (Z.Realms && S.tileEnc[t]) { var rbz = Z.Realms.bulldozeTile(i, j, dry); if (rbz) return rbz; }   // realms package: remove a tank / dome / zone
     if (S.rail[t] && Z.Monorail && Z.Monorail.hasTrack(t)) return Z.Monorail.removeTiles([t], dry ? { dry: true } : null);   // monorail package: remove a bare piece of track
+    if (S.coasterRail && S.coasterRail[t] && Z.Coaster && Z.Coaster.hasTrack(t)) return Z.Coaster.removeTiles([t], dry ? { dry: true } : opts);   // coaster package: remove a bare piece of coaster track
     if (S.ditch[t] && Z.Moats) return Z.Moats.fill(i, j, dry ? { dry: true } : null);   // moats package: fill the ditch in (50% refund)
     return fail('Nothing to remove here');
   }
@@ -1161,7 +1170,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
               (tj > 0 && W.path[t - N] && W.fenceX[t]) || (tj < N - 1 && W.path[t + N] && W.fenceX[t + N])) return 'A fence is in the way';
         }
         W.path[t] = op.old; return null;
-      case 'x': return op.chk ? op.chk(W) : null;   // generic plug-in op {k:'x', chk(W), ap(), net} (monorail package)
+      case 'x': return op.chk ? op.chk(W) : (op.check ? op.check(W) : null);   // generic plug-in op {k:'x', chk/check(W), ap/undo(), net} (monorail & coaster packages)
       case 'ditch':   // moats package
         for (k = 0; k < op.ts.length; k++) {
           t = op.ts[k];
@@ -1246,7 +1255,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           var e0 = op.box; ebox = ebox ? [Math.min(ebox[0], e0[0]), Math.min(ebox[1], e0[1]), Math.max(ebox[2], e0[2]), Math.max(ebox[3], e0[3])] : e0.slice();
           navChanged = true; break;
         }
-        case 'x': { if (op.ap) op.ap(); navChanged = true; break; }   // monorail package
+        case 'x': { if (op.ap) op.ap(); else if (op.undo) op.undo(); navChanged = true; break; }   // monorail & coaster packages
         case 'ditch': {
           for (var q5 = 0; q5 < op.ts.length; q5++) S.ditch[op.ts[q5]] = op.old[q5];
           var d0 = op.box; box = box ? [Math.min(box[0], d0[0]), Math.min(box[1], d0[1]), Math.max(box[2], d0[2]), Math.max(box[3], d0[3])] : d0.slice();
@@ -1637,7 +1646,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!seen[a.species] && a.enc) { seen[a.species] = 1; spCount++; } }
     RT.speciesCount = spCount;
     var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) ap += aAppeal(q); } RT.appeal = ap;
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + (Z.Monorail ? Z.Monorail.valueBonus() : 0);   // monorail package: a working line adds to what a ticket is worth
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + (Z.Monorail ? Z.Monorail.valueBonus() : 0) + (Z.Coaster ? Z.Coaster.valueBonus() : 0);   // monorail & coaster packages: working rides add to what a ticket is worth
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
@@ -1674,7 +1683,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     g.tol = rng.range(1.05, 1.9);                  // highest price multiple (vs the standard price) they will pay
     g.thor = rng.range(0.75, 1.0);                 // fraction of the exhibits they want to see
     g.tiredAt = rng.range(28, 46);
-    g.al = { meal: rng.chance(0.7) ? 1 + (rng.chance(0.1) ? 1 : 0) : 0, drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0, treat: rng.chance(0.2) ? 1 : 0, shop: rng.chance(0.13) ? 1 : 0, act: rng.chance(0.25) ? 1 : 0 };
+    g.al = { meal: rng.chance(0.7) ? 1 + (rng.chance(0.1) ? 1 : 0) : 0, drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0, treat: rng.chance(0.2) ? 1 : 0, shop: rng.chance(0.13) ? 1 : 0, act: (RT.coasters && RT.coasters.length) ? (1 + (rng.chance(0.5) ? 1 : 0)) : (rng.chance(0.25) ? 1 : 0) };
     g.seenEnc = g.seenEnc || {}; g.seenB = g.seenB || {};
     g.spent = g.spent || 0; g.paid = ticket || 0; g.nSeen = 0; g.nView = 0;
     g.prettyE = 0.3; g.nbuy = 0; g.done = 0; g.strollNext = 0; g.idle = 0; g.gAge = 0; g.ix = g.x; g.iz = g.z; g.glide = 0; g.sx = g.x; g.sz = g.z; g.spot = 0; g.lm = 0; g.wat = 0;
@@ -1709,7 +1718,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function releaseGuest(g) {
     if (g.state === 'ride' && g.sfv && Z.Safari) Z.Safari.release(g);   // safari package: step off the truck or boat
-    else if (g.state === 'ride' && Z.Monorail) Z.Monorail.release(g);   // monorail package: step off the train (alights at the nearest path)
+    else if (g.state === 'ride' && g.coasterTrain && Z.Coaster) Z.Coaster.release(g);   // coaster package: step off the train
+    else if (g.state === 'ride' && g.rtr && Z.Monorail) Z.Monorail.release(g);   // monorail package: step off the train (alights at the nearest path)
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -1781,17 +1791,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (kind === 'cover') { if (!gxIndoor(o) || def.type === 'science') continue; }
       else if (gxKind(o) !== kind) continue;
       if (Z.Power && !Z.Power.usable(o)) continue;   // power package: dark shops and stopped rides lose their customers
+      if (def.coasterStation) { if (!Z.Coaster || !Z.Coaster.stationReady(o.id)) continue; }
       if (kind === 'act' && g.seenB[o.id]) continue;
       var price = o.price === undefined ? def.price : o.price;
+      var refPrice = (def.coasterStation && Z.Coaster) ? Z.Coaster.recommendedPrice(o.id) : def.price;
       if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
       var f = getField('b' + o.id);
       if (!f || !(f[g.ti] < INF)) continue;
       cand++;
-      if (price > 0 && (price > g.money * 0.7 || (def.price > 0 && price > def.price * tolE))) { rejected++; continue; }
+      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.7) || (refPrice > 0 && price > refPrice * tolE))) { rejected++; continue; }
       var q = RT.bq[o.id], ql = q ? q.q.length : 0;
       var cap = Math.max(5, Math.ceil(def.capacity * 1.5) + 2);
       if (ql >= cap) continue;
-      var sc = f[g.ti] * 1.6 + rng.next() * 12 + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 6 : 0);
+      var sc = f[g.ti] * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 6 : 0);
+      var effThrill = (def.coasterStation && Z.Coaster) ? Z.Coaster.stationExcitement(o.id) * 0.7 : (def.thrill || 0);
+      if (kind === 'act') sc -= effThrill * 1.8 + (def.type === 'ride' ? 7 : 1);
       if (sc < bs) { bs = sc; best = o; }
     }
     if (!best) {
@@ -1958,6 +1972,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   // stand on a tile in one of a few slots so that people never share a single point; spills onto connected neighbour tiles
   function gxPlace(g, own) {
+    if (!RT.gstand) gxGrid();
     var t = g.ti, best = t, bc = RT.gstand[t], nbm = RT.nb[t], d;
     if (!own && bc >= 2) {
       for (d = 0; d < 4; d++) if (nbm & (1 << d)) { var n = t + DT4[d]; if (RT.gstand[n] < bc) { bc = RT.gstand[n]; best = n; } }
@@ -2036,6 +2051,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!o) { g.gt = ''; return; }
       if (BD[o.type].safari && Z.Safari) { Z.Safari.arrive(g, o); return; }   // safari package: queue at the depot or jetty
       if (BD[o.type].mono && Z.Monorail) { Z.Monorail.arrive(g, o); return; }   // monorail package: queue on the platform
+      if (BD[o.type].coasterStation && Z.Coaster) { if (!Z.Coaster.arrive(g, o)) { g.gt = ''; g.dk = ''; } return; }   // coaster package: queue at the station
       var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] }), def = BD[o.type];
       var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
       if (q.use < def.capacity && q.q.length === 0) { gxPlace(g, false); startUse(g, o); }
@@ -2238,7 +2254,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!anyCover || rng.chance(0.2)) g.stay = Math.min(g.stay, hr * rng.range(0.1, 0.7));
       }
     } else { g.wxd = 0; g.cov = 0; }
-    if (g.state === 'ride') { if (g.sfv) { if (Z.Safari) Z.Safari.rideTick(g, a); } else if (Z.Monorail) Z.Monorail.rideTick(g, a); return; }   // monorail package: viewing, resting, getting off
+    if (g.state === 'ride') {
+      if (g.sfv) { if (Z.Safari) Z.Safari.rideTick(g, a); }
+      else if (g.coasterTrain) { if (Z.Coaster) Z.Coaster.rideTick(g, a); }
+      else if (g.rtr && Z.Monorail) Z.Monorail.rideTick(g, a);
+      return;
+    }   // monorail/safari/coaster package: viewing, resting, getting off
     // closing time / leaving
     if (g.state !== 'leave') {
       if (g.rleave) {
@@ -2331,7 +2352,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'watch') { g.idle = 0; watchTick(g, a); }
     else if (g.state === 'queue') {
       g.idle = 0; g.wt += a;
-      if (g.wt > Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0)) {   // monorail package: platforms are allowed a longer wait
+      var qObj = g.gid ? RT.oById.get(g.gid) : null;
+      var qLim = Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0, (qObj && BD[qObj.type] && BD[qObj.type].coasterStation) ? 45 : 0);
+      if (g.wt > qLim) {   // monorail/safari/coaster package: platforms & stations are allowed a longer wait
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
         g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 2; g.nbuy = hr * 0.2; say(g, 'crowded');
       }
@@ -2443,7 +2466,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (--RT.gaesT <= 0) { RT.gaesT = 60; gxAes(); RT.gaesInit = 1; }
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
-      if (!o) { delete RT.bq[id]; continue; }
+      if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
+      if (BD[o.type].coasterStation) continue;   // coaster package: trains board from RT.bq[id].q directly
       var cap = BD[o.type].capacity;
       while (q.q.length && q.use < cap) {
         var gq = RT.gById.get(q.q.shift());
@@ -3163,7 +3187,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== STAFF ======================
-  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'cleaner' ? 1.9 : 2.2; }
+  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : 2.2; }
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
@@ -3346,7 +3370,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     var r = findRoute(s.ti, function (t) { return t === tgt; });
     if (!r) return false;
-    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner') ? 'Patrolling (radio ready)' : 'Walking the paths';
+    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic') ? 'Patrolling (radio ready)' : 'Walking the paths';
     return true;
   }
 
@@ -3421,6 +3445,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var vs3 = new Set(e.viewTiles), r3 = findRoute(s.ti, function (t) { return vs3.has(t); });
         if (r3) { s.tk = { k: 'tour', ph: 'go', t: rng.range(8, 14) }; s.route = r3; s.ri = 0; s.task = 'Guiding visitors at ' + e.name; return; }
       }
+    } else if (s.type === 'mechanic' && Z.Coaster && Z.Coaster.pickMechanicTarget) {
+      var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
+      if (mt) {
+        var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
+        if (rm) {
+          RT.claim['c' + mt.station.id] = { by: s.id, until: S.day + S.time + 0.4 };
+          s.tk = { k: 'coaster', id: mt.station.id, ph: 'go', broken: mt.broken }; s.route = rm; s.ri = 0;
+          s.task = (mt.broken ? 'Repairing ' : 'Inspecting ') + BD[mt.station.type].name; return;
+        }
+      }
     }
     if (!startPatrol(s)) { s.tk = null; s.state = 'idle'; s.speed = 0; s.task = 'Waiting for work'; }
   }
@@ -3430,13 +3464,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var tk = s.tk, a, enc, E;
     if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.speed = 0; s.state = 'idle'; s.task = 'Off sick'; return; }
     if (tk && s.type === 'security' && RT.escaped.length && (tk.k === 'patrol' || tk.k === 'tour')) { s.tk = null; tk = null; s.wt = 0; }
-    if (tk && tk.k === 'patrol' && (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner')) {
+    if (tk && tk.k === 'patrol' && (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic')) {
       tk.chk = (tk.chk === undefined ? 1 : tk.chk) - dt;
       if (tk.chk <= 0) {
         tk.chk = s.type === 'cleaner' ? 1.5 : 1.0;
         var st0 = tileOf(s.x, s.z), scP = RT.comp[S.path[st0] ? st0 : s.ti];
         var urgent = s.type === 'keeper' ? keeperHasUrgentTask(s)
           : s.type === 'vet' ? !!pickVetAnimal(s, scP)
+          : s.type === 'mechanic' ? !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, scP, claimed))
           : hasCleanerWork(scP);
         if (urgent) { s.tk = null; tk = null; s.route = null; s.wt = 0; }
       }
@@ -3527,6 +3562,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         } else {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
           if (tk.t <= 0) { a.held = 0; var who = s.type === 'security' ? 'Security' : s.name + ' the ranger'; s.tk = null; s.wt = 0.5; recapture(a, who); }
+        }
+        break;
+      case 'coaster':
+        if (!RT.oById.has(tk.id)) { delete RT.claim['c' + tk.id]; s.tk = null; break; }
+        RT.claim['c' + tk.id] = { by: s.id, until: S.day + S.time + 0.4 };
+        if (tk.ph === 'go') {
+          if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster'; }
+        } else {
+          s.state = 'work'; s.speed = 0; tk.t -= dt;
+          if (tk.t <= 0) {
+            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(tk.id, s.name);
+            delete RT.claim['c' + tk.id]; s.tk = null; s.wt = 0.6; s.task = 'Ready';
+          }
         }
         break;
       default: s.tk = null;
@@ -3883,7 +3931,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, a, e;
     if (!RT.wxInit) ensureInit();
     refreshEncAnimals();
-    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.dangerEsc = 0;
+    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.dangerEsc = 0;
     for (k = 0; k < S.animals.length; k++) if (S.animals[k].state === 'escaped') { RT.escaped.push(S.animals[k]); if (aDanger(S.animals[k]) >= 2) RT.dangerEsc++; }
     if (S.panic > 0) S.panic = Math.max(0, S.panic - 0.003 - (Z.Monorail ? Z.Monorail.panicRelief() : 0));   // monorail package: a working line calms the park faster
     if (RT.dangerEsc > 0 && !RT.lockdown) { RT.lockdown = true; msg('The gates are closed to new visitors until the dangerous dinosaur is back in its enclosure.', 'bad', false); }
@@ -3891,7 +3939,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;   // off sick
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
@@ -4013,6 +4061,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var intr = loanSummary().dailyInterest;
     if (intr > 0) spend(intr, 'interest');
     if (Z.Monorail) Z.Monorail.newDay();   // monorail package: train upkeep, daily station figures
+    if (Z.Coaster) Z.Coaster.newDay();   // coaster package: train upkeep
     if (Z.Safari) Z.Safari.newDay();   // safari package: vehicle upkeep, daily figures
     var t = S.finance.today;
     var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing + (t.interest || 0));
@@ -4089,6 +4138,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = gs.length - 1; k >= 0; k--) { if (k < gs.length) guestStep(gs[k], dt); }
     updateQueues();
     if (Z.Monorail) Z.Monorail.step(dt);   // monorail package: trains, boarding, riders
+    if (Z.Coaster) Z.Coaster.step(dt);   // coaster package: trains, boarding, riders, physics
     if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
@@ -4797,6 +4847,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     addBack: function (an) { S.animals.push(an); RT.aById.set(an.id, an); }, addAnimal: addAnimal, cliffT: cliffT, cxOf: cxOf, czOf: czOf, fxOf: fxOf, spawnGuestHook: null, lc: lc, gateTile: function () { return GATE_I0 + GATE_J * N; }
   };
 
+  // Context for the rollercoaster package (src/21-sim-coaster.js)
+  Z.coasterCtx = {
+    getS: function () { return S; },
+    getRT: function () { return RT; },
+    getN: function () { return N; },
+    getWX: function () { return WX; },
+    getDIFF: function () { return DIFF; },
+    BD: BD, SP: SP, WATER: WATER, TILE: TILE, DAY_SECONDS: DAY_SECONDS,
+    bus: bus, rng: rng, fmt: fmt,
+    inMap: inMap, cxOf: cxOf, czOf: czOf, tileOf: tileOf,
+    cornerElev: cornerElev, heightAt: heightAt,
+    footprint: footprint, buildingConnected: buildingConnected,
+    encById: encById, gxHr: gxHr, gxPlace: gxPlace,
+    earn: earn, spend: spend, msg: msg, say: say,
+    jBegin: jBegin, jOp: jOp, jEnd: jEnd,
+    afterWorldChange: afterWorldChange,
+    fail: fail, okr: okr, dryOf: dryOf
+  };
+
   // ====================== NEW GAME / SAVE / LOAD ======================
   function rawPlace(type, i, j, rot) {
     var dk = defOf(type); if (!dk) return null;
@@ -5226,6 +5295,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Moats) Z.Moats.afterLoad ? Z.Moats.afterLoad(true) : Z.Moats.update();   // moats package: fresh ditch/water state
     recomputeEnclosures();
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package
+    if (Z.Coaster) Z.Coaster.afterLoad();   // coaster package
     if (Z.Realms) { Z.Realms.reset(); Z.Realms.update(); }   // realms package
     if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
     if (Z.News) Z.News.afterLoad(true);   // news package: empty feed
@@ -5241,12 +5311,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return v;
     });
   }
-  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array };
+  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array, coasterRail: Uint8Array, coasterElev: Int8Array, coasterSpec: Uint8Array };
   function arrLenFor(n) {
     var nn = n * n;
-    return { terrain: nn, path: nn, fenceX: n * (n + 1), fenceZ: (n + 1) * n, tileObj: nn, tileEnc: nn, dirt: nn, ditch: nn, rail: nn };
+    return { terrain: nn, path: nn, fenceX: n * (n + 1), fenceZ: (n + 1) * n, tileObj: nn, tileEnc: nn, dirt: nn, ditch: nn, rail: nn, coasterRail: nn, coasterElev: nn, coasterSpec: nn };
   }
-  var ARR_OPTIONAL = { ditch: 1, rail: 1 };   // moats package: old saves have no ditch layer (defaults to none)
+  var ARR_OPTIONAL = { ditch: 1, rail: 1, coasterRail: 1, coasterElev: 1, coasterSpec: 1 };   // moats, monorail & coaster packages: old saves default to empty layers
   function load(str) {
     var obj, ns, prevN = N, gridN = 56;
     try {
@@ -5328,6 +5398,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package: default fields of old saves, relink riders, derive the track graph
+    if (Z.Coaster) Z.Coaster.afterLoad();   // coaster package: default fields of old saves, relink riders, derive the track graph
     if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
     if (Z.Safari) Z.Safari.afterLoad();   // safari package: riders relink, derived routes and zones (after realms and enclosures)
     if (Z.News) Z.News.afterLoad();   // news package

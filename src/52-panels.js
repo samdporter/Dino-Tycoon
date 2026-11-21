@@ -68,16 +68,17 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function $q(s, r) { return r.querySelector(s); }
   function thumbBox(kind, id, size, fb) { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px' }); UI.lazyThumb(d, kind, id, fb || '', size || 96, true); return d; }
-  Panel.kit = { frame: frame, bars: bars, confirmBtn: confirmBtn, thumbBox: thumbBox, find: find, setCur: function (c) { cur = c; } };   // for sibling packages (monorail) that draw their own panels
+  Panel.kit = { frame: frame, bars: bars, confirmBtn: confirmBtn, thumbBox: thumbBox, issuesList: issuesList, find: find, setCur: function (c) { cur = c; } };   // for sibling packages (monorail, coaster) that draw their own panels
 
   Panel.open = function (kind, id) {
     if (UI.tool) return;
     try { Z.World.highlightEnclosure(null); Z.World.setPreview(null); } catch (e) { }
     var ok = false;
     if (kind === 'animal') ok = openAnimal(id); else if (kind === 'enclosure') ok = openEnc(id); else if (kind === 'guest') ok = openGuest(id);
-    else if (kind === 'object') ok = (UI.Mono && UI.Mono.open(kind, id)) || (UI.Safari && UI.Safari.open(kind, id)) || openObject(id); else if (kind === 'staff') ok = openStaff(id);
+    else if (kind === 'object') ok = (UI.Coaster && UI.Coaster.open && UI.Coaster.open(kind, id)) || (UI.Mono && UI.Mono.open(kind, id)) || (UI.Safari && UI.Safari.open(kind, id)) || openObject(id); else if (kind === 'staff') ok = openStaff(id);
     else if ((kind === 'safari_veh' || kind === 'wild') && UI.Safari) ok = UI.Safari.open(kind, id);   // safari package: vehicle and wild visitor panels
     else if (kind === 'train' && UI.Mono) ok = UI.Mono.open(kind, id);   // monorail package: station panel (objects) and train panel
+    else if (kind === 'ctrain' && UI.Coaster && UI.Coaster.open(kind, id)) ok = true;   // coaster package: train panel
     if (ok) { UI.sel = { kind: kind, id: id }; el.panel.scrollTop = 0; }
   };
   Panel.update = function () {

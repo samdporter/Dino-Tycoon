@@ -533,7 +533,12 @@ window.Z.DATA = {
     { id: "hatchery", name: "Hatchery", emoji: "🥚", cost: 4000, upkeep: 40, type: "science", price: 0, capacity: 2, w: 3, h: 2, satisfies: {}, star: 0,
       info: "Incubates dinosaur eggs (adds 2 egg slots). Needs power and a path at its entrance." },
     { id: "research_lab", name: "Research lab", emoji: "🔬", cost: 6000, upkeep: 90, type: "science", price: 0, capacity: 2, w: 4, h: 3, satisfies: {}, star: 0,
-      info: "Houses scientists for amber extraction and DNA splicing. Needs power and a path at its entrance." }
+      info: "Houses scientists for amber extraction and DNA splicing. Needs power and a path at its entrance." },
+    { id: "coaster_wooden", name: "Wooden Coaster Station", emoji: "🎢", cost: 3200, upkeep: 45, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "wooden", thrill: 2, price: 8, capacity: 20, w: 4, h: 2, satisfies: { fun: 0.95 }, star: 0, themepark: true, info: "Place this entrance station and drag custom wooden coaster track in a loop back to the station. Raise hills and add Chain Lifts!" },
+    { id: "coaster_mine", name: "Mine Train Station", emoji: "⛏️", cost: 4200, upkeep: 55, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "mine", thrill: 3, price: 10, capacity: 20, w: 4, h: 2, satisfies: { fun: 0.94 }, star: 1, themepark: true, info: "Custom rugged mine-cart coaster station. Supports hills, Chain Lifts and Launch Boosts." },
+    { id: "coaster_flume", name: "Log Flume Station", emoji: "🪵", cost: 5000, upkeep: 65, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "flume", thrill: 3, price: 11, capacity: 16, w: 4, h: 2, satisfies: { fun: 0.96, thirst: 0.12 }, star: 2, themepark: true, info: "Custom elevated water-chute station. Pair high drops with Water Splash troughs for massive guest thrills." },
+    { id: "coaster_steel", name: "Steel Thrill Coaster Station", emoji: "⚡", cost: 6800, upkeep: 85, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "steel", thrill: 5, price: 14, capacity: 24, w: 4, h: 2, satisfies: { fun: 1.0 }, star: 3, themepark: true, info: "High-speed tubular steel coaster station. Unlocks Loop-de-Loops, Corkscrews and Launch Boosts!" },
+    { id: "coaster_hyper", name: "Mythical Hyper Coaster Station", emoji: "🐉", cost: 9500, upkeep: 115, type: "ride", rideKind: "coaster", coasterStation: true, coasterType: "hyper", thrill: 5, price: 18, capacity: 24, w: 4, h: 2, satisfies: { fun: 1.0 }, star: 4, themepark: true, info: "Enchanted sky-high dragon coaster supporting every special element, extreme heights and blistering speed." }
   ],
 
   staff: [
@@ -763,6 +768,105 @@ window.Z.DATA = {
       "The colours look so authentic.",
       "I can't believe how lifelike the {animal} is.",
       "Proper prehistoric, this."
+    ],
+    coaster: [
+      "Hands up on the rollercoaster!",
+      "That drop on the coaster was wicked!",
+      "My heart is still racing from that ride!",
+      "Best rollercoaster in any park!"
+    ],
+    coasterCustom: [
+      "What a brilliant custom rollercoaster!",
+      "I loved flying over the park on that track!",
+      "That drop took my breath away!",
+      "Let's queue up and ride that coaster again!"
+    ],
+    coasterLoop: [
+      "WHOA! We went completely upside down on that loop!",
+      "That loop-de-loop was unreal!",
+      "My stomach is still in the corkscrew!"
+    ],
+    coasterSplash: [
+      "Haha, soaked on the splashdown!",
+      "What a refreshing water splash!"
+    ],
+    coasterOverlook: [
+      "You can see the dinosaurs right from the coaster track!",
+      "Flying above the dinosaur enclosures is amazing!"
+    ],
+    coasterStuck: [
+      "Uh oh, the coaster train has stopped on the track!",
+      "Hope a mechanic gets us moving again soon!"
+    ]
+  },
+
+  coaster: {
+    clearance: 1.8,
+    stationDeck: 1.8,
+    elevStep: 1.6,
+    maxSlope: 1.8,
+    maxSpan: 5,
+    prefSpan: 3,
+    refund: 0.5,
+    refundTrain: 0.6,
+    carLen: 2.1,
+    carGap: 0.22,
+    dwell: 6,
+    fareMax: 35,
+    viewRadius: 4,
+    breakdownPerHour: 0.03,
+    fixTime: 65,
+    engineerTime: 4.5,
+    engineerFee: 180,
+    callOutFee: 60,
+    types: {
+      wooden: {
+        id: "wooden", name: "Wooden Coaster", stationId: "coaster_wooden", star: 0,
+        trackCost: 35, waterExtra: 35, trainCost: 2400, carCost: 500, trainUpkeep: 28, carUpkeep: 6,
+        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 5,
+        baseSpeed: 8.5, maxSpeed: 15.5, excMul: 1.0,
+        allowedSpecs: [1, 3],
+        colors: { rail: 0x8b5a2b, tie: 0x6d421e, support: 0x9b6b3c, car: 0xc93b3b, accent: 0xf4e4c1, station: 0x8b5a2b, roof: 0xb84232 }
+      },
+      mine: {
+        id: "mine", name: "Runaway Mine Train", stationId: "coaster_mine", star: 1,
+        trackCost: 42, waterExtra: 40, trainCost: 3000, carCost: 650, trainUpkeep: 34, carUpkeep: 7,
+        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 7,
+        baseSpeed: 9.2, maxSpeed: 17.0, excMul: 1.1,
+        allowedSpecs: [1, 2, 3],
+        colors: { rail: 0x5c534a, tie: 0x6b4423, support: 0x7a5230, car: 0x9c5a2c, accent: 0xe6b44c, station: 0x735238, roof: 0x585c62 }
+      },
+      flume: {
+        id: "flume", name: "Splash Log Flume", stationId: "coaster_flume", star: 2,
+        trackCost: 48, waterExtra: 20, trainCost: 3200, carCost: 700, trainUpkeep: 38, carUpkeep: 8,
+        minCars: 2, maxCars: 4, maxTrains: 3, capacity: 4, maxHeight: 8,
+        baseSpeed: 8.0, maxSpeed: 16.0, excMul: 1.15,
+        allowedSpecs: [1, 3],
+        colors: { rail: 0x3b8ec4, tie: 0x2a6d9c, support: 0x7e5a38, car: 0x7a4822, accent: 0x9be2ff, station: 0x4b7b9e, roof: 0x3b6e52 }
+      },
+      steel: {
+        id: "steel", name: "Steel Thrill Coaster", stationId: "coaster_steel", star: 3,
+        trackCost: 60, waterExtra: 50, trainCost: 4400, carCost: 900, trainUpkeep: 48, carUpkeep: 10,
+        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 12,
+        baseSpeed: 10.5, maxSpeed: 21.0, excMul: 1.3,
+        allowedSpecs: [1, 2, 3, 4, 5],
+        colors: { rail: 0xd93838, tie: 0x354352, support: 0xcfd6de, car: 0x2574c4, accent: 0xffd24c, station: 0x34465a, roof: 0xd93838 }
+      },
+      hyper: {
+        id: "hyper", name: "Mythical Hyper Coaster", stationId: "coaster_hyper", star: 4,
+        trackCost: 80, waterExtra: 55, trainCost: 5800, carCost: 1150, trainUpkeep: 60, carUpkeep: 12,
+        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 18,
+        baseSpeed: 12.0, maxSpeed: 25.0, excMul: 1.5,
+        allowedSpecs: [1, 2, 3, 4, 5],
+        colors: { rail: 0x9b4dff, tie: 0x3a205c, support: 0xe6c15c, car: 0x6f2dbd, accent: 0x56f0d0, station: 0x4d267a, roof: 0xd4a438 }
+      }
+    },
+    specials: [
+      { id: 1, key: "lift", name: "Chain Lift Hill", emoji: "⛓️", cost: 60, star: 0, excitement: 0.3, intensity: 0.1, info: "Motorized chain lift that pulls coaster trains briskly up steep climbs." },
+      { id: 2, key: "boost", name: "Launch Boost", emoji: "⚡", cost: 180, star: 2, excitement: 0.9, intensity: 0.7, info: "High-speed launch pads that rocket trains down straight track. Requires Mine, Steel or Hyper coaster." },
+      { id: 3, key: "splash", name: "Water Splash", emoji: "💦", cost: 160, star: 2, excitement: 0.85, intensity: 0.4, info: "Splashdown water trough that sprays guests as the train zooms through. Bonus excitement on Log Flumes!" },
+      { id: 4, key: "loop", name: "Loop-de-Loop", emoji: "➿", cost: 450, star: 3, excitement: 1.65, intensity: 1.4, info: "Full 360° vertical inversion loop on straight track. Requires Steel or Hyper coaster." },
+      { id: 5, key: "corkscrew", name: "Corkscrew", emoji: "🌀", cost: 520, star: 3, excitement: 1.85, intensity: 1.6, info: "Twisting 360° barrel-roll inversion on straight track. Requires Steel or Hyper coaster." }
     ]
   },
 
@@ -1007,7 +1111,7 @@ window.Z.DATA.donors = [
   // existing buildings and scenery that plausibly use mains power
   D.buildings.forEach(function (b) { var kw = D.power.draws[b.id]; if (kw && !b.powerDraw) { b.needsPower = true; b.powerDraw = kw; } });
   D.scenery.forEach(function (s) { var kw = D.power.sceneryDraws[s.id]; if (kw && !s.powerDraw) { s.needsPower = true; s.powerDraw = kw; } });
-  D.staff.push({ id: 'mechanic', name: 'Mechanic', emoji: '🔧', 'wage/day': 75, hireCost: 300, effect: 'Keeps generators and pumps running: fewer breakdowns, faster repairs after a cut' });
+  D.staff.push({ id: 'mechanic', name: 'Mechanic', emoji: '🔧', 'wage/day': 75, hireCost: 300, effect: 'Keeps generators & pumps running (fewer breakdowns, faster power repairs) and inspects & repairs rollercoasters across reachable paths' });
   D.goals.push({ id: 'power_backup', text: 'Build a backup generator and a battery bank', type: 'powerBackup', target: 1, reward: 2200 });
   D.guestThoughts.blackout = [
     "Why has it gone so dark?", "Is the power off? I can't see the menu!", "No lights, no ice lollies... this is grim.", "Somebody call an electrician!",

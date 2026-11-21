@@ -33,7 +33,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if ((e.ctrlKey || e.metaKey) && k === 'z') { if (!(UI.modalOpen && UI.modalOpen())) { UI.doUndo(); e.preventDefault(); } return; }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     var S = Z.state;
-    if (k === 'escape') { if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
+    if (k === 'escape') { if (Z.CoasterWorld && Z.CoasterWorld.isRiding && Z.CoasterWorld.isRiding()) { Z.CoasterWorld.endRide(); e.preventDefault(); return; } if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
     if (UI.modalOpen && UI.modalOpen()) return;
     if (k === ' ') { UI.setSpeed(S.speed === 0 ? (UI.lastSpeed || 1) : 0); if (S.speed) UI.lastSpeed = S.speed; e.preventDefault(); return; }
     if (k === '1') UI.setSpeed(1); else if (k === '2') UI.setSpeed(2); else if (k === '3') UI.setSpeed(4);
@@ -127,16 +127,22 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- tool lifecycle
   var HINTS = {
     path: 'Drag in a straight line. A tap lays one tile.', terrain: 'Paint with your finger. Pick a brush size.', sculpt: 'Press and hold, or drag, to keep going. One level each time.', fence: '', scenery: 'Tap to place. Slide to adjust before you lift.',
-    building: 'Tap to place. Slide to adjust. Touch a path edge.', ditch: 'Drag to dig. Width and shape are set on the right.', animal: 'Tap inside an enclosure to place it.', staff: 'Tap a path tile to hire here.', bulldoze: '', animalmove: 'Tap inside an enclosure to move it there.'
+    building: 'Tap to place. Slide to adjust. Touch a path edge.', ditch: 'Drag to dig. Width and shape are set on the right.', animal: 'Tap inside an enclosure to place it.', staff: 'Tap a path tile to hire here.', bulldoze: '', animalmove: 'Tap inside an enclosure to move it there.',
+    ctrack: 'Drag track from the green station arrow around in a loop back to the amber arrow. Smooth curves & hills form automatically!',
+    craise: 'Click or drag over coaster track to raise a smooth hill (+1 level). Remember to stamp a Chain Lift Hill (⛓️) on uphill climbs!',
+    clower: 'Click or drag over coaster track to lower its height (-1 level).',
+    ctrackrm: 'Click or drag over coaster track tiles to dismantle them (50% refund).',
+    cspec: 'Click or drag on straight coaster track to stamp this special piece.'
   };
   Tools.start = function (spec) {
     var prev = UI.tool;
-    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
+    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
     if (UI.tool.kind === 'scenery' || UI.tool.kind === 'building') rerollRot();
     if (UI.Panel) UI.Panel.hide(true);
     clearPreview(); hover = null; drag = null;
     el.strip.classList.add('on'); buildStrip(); UI.markSelected(); syncSide();
-    if ((UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain' && spec.kind !== 'sculpt') || window.innerHeight < 520) { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
+    var isCoasterTool = spec.kind === 'ctrack' || spec.kind === 'craise' || spec.kind === 'clower' || spec.kind === 'ctrackrm' || spec.kind === 'cspec' || (spec.kind === 'building' && spec.def && spec.def.coasterStation);
+    if ((UI.narrow() && window.innerHeight < 860 && spec.kind !== 'fence' && spec.kind !== 'terrain' && spec.kind !== 'sculpt' && !isCoasterTool) || window.innerHeight < 520) { el.cards.className = 'empty'; UI.cat = null; UI.markTabs(); }
     if (UI.Tutorial) UI.Tutorial.onTool(UI.tool);
   };
   Tools.cancel = function (quiet) {

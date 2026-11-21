@@ -2677,9 +2677,9 @@ test('Zoo Custom Rollercoasters: star unlock progression and Zoo-only isolation'
   const wdOk = z.Sim.placeObject('coaster_wooden', 20, 35, 0);
   assert.equal(wdOk.ok, true, 'Wooden coaster should be buildable at 0 stars');
 
-  // Dino Tycoon must NOT have Z.Coaster
+  // Dino Tycoon must NOT load Zoo-specific coaster scripts
   const dinoIndex = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
-  assert.equal(dinoIndex.includes('coaster'), false, 'index.html (Dino Tycoon) must not load Zoo coaster scripts');
+  assert.equal(dinoIndex.includes('src/zoo/'), false, 'index.html (Dino Tycoon) must not load Zoo scripts');
 });
 
 test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, dynamic excitement, undo & save/load', () => {

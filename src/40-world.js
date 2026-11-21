@@ -2033,26 +2033,30 @@ function updateEntities(dt, dtGame) {
       var dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz + cy * cy;
       var vis = isFin(d2) && d2 < far2;
       if (vis && SV.blend > 0.4 && dx * dx + dz * dz < 0.9) vis = false; // street view: never draw a body around the camera
-      if (vis) { _sph.center.set(x, rec.ht * 0.5 + ey, z); _sph.radius = Math.max(rec.ht * 0.8 + 1.2, rec.vis.cullR || 0); vis = _fr.intersectsSphere(_sph); }   // e.y: altitude / depth offset (creatures package); cullR: wing span etc.
+      var hasAbsY = typeof e.absY === 'number' && isFin(e.absY);
+      if (vis) { _sph.center.set(x, (hasAbsY ? e.absY : groundY(x, z) + ey) + rec.ht * 0.5, z); _sph.radius = Math.max(rec.ht * 0.8 + 1.2, rec.vis.cullR || 0); vis = _fr.intersectsSphere(_sph); }   // e.y: altitude / depth offset (creatures package); cullR: wing span etc.
       rec.vis_ = vis; rec.imp = false;
       if (!vis) { rec.group.visible = false; continue; }
       rec.d2 = d2;
       var gy, eyOff = e.y || 0;
       var wl = waterLvlAt(x, z);
-      if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
+      if (hasAbsY) { gy = e.absY; rec.gy = e.absY; rec.gy0 = groundY(x, z); }
       else {
-        var ti = (x / T) | 0, tj = (z / T) | 0, bdy = null;
-        gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0);
-        if (Z.MoatsWorld) { bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) gy = bdy; }
-        if (bdy === null && wl > -50 && eyOff < 0 && (e.wb === undefined || e.wb === null || e.wb === false)) {
-          gy = Math.max(groundY(x, z), wl + eyOff);
-          eyOff = 0;
+        if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
+        else {
+          var ti = (x / T) | 0, tj = (z / T) | 0, bdy = null;
+          gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0);
+          if (Z.MoatsWorld) { bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) gy = bdy; }
+          if (bdy === null && wl > -50 && eyOff < 0 && (e.wb === undefined || e.wb === null || e.wb === false)) {
+            gy = Math.max(groundY(x, z), wl + eyOff);
+            eyOff = 0;
+          }
         }
+        if (Z.RealmsWorld) { var rdy = Z.RealmsWorld.deckY(x, z); if (rdy !== null && e.state !== 'swim' && e.wb === undefined) gy = rdy; }   // realms package: piers carry guests and staff
+        if (e.wb !== undefined && e.wb !== null && e.wb !== false) gy = e.wb;   // realms package: sea animals hang from the water surface of their tank or pen
+        rec.gy = gy + eyOff; rec.gy0 = gy;
       }
-      if (Z.RealmsWorld) { var rdy = Z.RealmsWorld.deckY(x, z); if (rdy !== null && e.state !== 'swim' && e.wb === undefined) gy = rdy; }   // realms package: piers carry guests and staff
-      if (e.wb !== undefined && e.wb !== null && e.wb !== false) gy = e.wb;   // realms package: sea animals hang from the water surface of their tank or pen
       rec.wl = wl;
-      rec.gy = gy + eyOff; rec.gy0 = gy;
       if (kind === 'animal' && e.wb !== undefined && e.wb !== null && e.wb !== false && Z.RealmsWorld) {   // realms package: sea animals pass over acrylic tunnels, not through them
         var tct = Z.RealmsWorld.tunnelTop(x, z), tgt = tct === null ? -6 : tct + 0.55; rec.tcl = rec.tcl === undefined ? tgt : rec.tcl + (tgt - rec.tcl) * 0.14;
         if (rec.tcl > -5 && rec.gy < rec.tcl) rec.gy = rec.tcl;
@@ -2138,7 +2142,7 @@ function updateBuildings(dtGame) {
 function entityRec(kind, id) { var m = ents[kind]; return m ? m.get(id) : null; }
 
 /* --------------------------------------------- overlays: bubbles, floaters */
-var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋' };
+var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋', coaster: '🎢' };
 var BUB = {}, EMO = {}, bubSprites = [], floaters = [], emotes = [], thoughtCache = {};
 var thoughtIdx = null;
 function mkSpriteMat(canvas) {
@@ -2243,6 +2247,7 @@ function thoughtCat(text) {
     res = /hungr|eat|starv|burger|bite|food/.test(l) ? 'hungry' : /thirst|drink|water/.test(l) ? 'thirsty' : /loo|toilet|wait much/.test(l) ? 'toilet' :
       /bored|dull|nothing/.test(l) ? 'bored' : /tired|rest|feet/.test(l) ? 'tired' : /bench|sit/.test(l) ? 'noBench' : /litter|bin|dirty|mess/.test(l) ? 'dirty' :
       /expensive|price|cost/.test(l) ? 'expensive' : /cheap|bargain/.test(l) ? 'cheap' : /crowd|busy/.test(l) ? 'crowded' : /escape|loose/.test(l) ? 'escaped' :
+      /coaster|loop|flume/.test(l) ? 'coaster' :
       /baby|cub|foal/.test(l) ? 'baby' : /see|view/.test(l) ? 'cantSee' : /leav|home/.test(l) ? 'leaving' : /unhappy|sad|poor/.test(l) ? 'animalsUnhappy' : 'happy';
   }
   thoughtCache[text] = res; return res;
@@ -2839,9 +2844,15 @@ function updateCamera(dt) {
     } else { SV.on = false; SV.blend = 0; }
   }
   camera.fov = isFin(fov) && fov > 1 ? fov : (G.baseFov || 42);
-  camera.updateProjectionMatrix();
-  camera.lookAt(lkx, lky, lkz);
-  camera.updateMatrixWorld();
+  camera.up.set(0, 1, 0);
+  if (Z.CoasterWorld && Z.CoasterWorld.applyCamera && Z.CoasterWorld.applyCamera(camera, dt)) {
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+  } else {
+    camera.updateProjectionMatrix();
+    camera.lookAt(lkx, lky, lkz);
+    camera.updateMatrixWorld();
+  }
   view3.set(view.x, view.ty, view.z);
   _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _fr.setFromProjectionMatrix(_vp);
@@ -2981,7 +2992,17 @@ function pickEntity(cx, cy) {
       if (d < rad && sc < bestS) { bestS = sc; best = { kind: kind, id: rec.id }; }
     });
   }
-  if (best) return best;
+  if (Z.CoasterWorld && Z.CoasterWorld.pickTrain) {
+    var ct = Z.CoasterWorld.pickTrain(cx, cy, projectPoint, pxPerUnit, base);
+    if (ct) return ct;
+  }
+  if (best) {
+    if (best.kind === 'guest') {
+      var ge = ents.guest.get(best.id);
+      if (ge && ge.ent && ge.ent.state === 'ride' && ge.ent.coasterTrain) return { kind: 'ctrain', id: ge.ent.coasterTrain };
+    }
+    return best;
+  }
   var gp = pickGround(cx, cy), s = Z.state;
   if (gp) {
     var idx = gp.i + gp.j * N, oid = s.tileObj ? s.tileObj[idx] : 0;
@@ -3125,6 +3146,7 @@ function frame(dtReal) {
   updateLamps(dtReal);
   if (Z.PowerWorld) Z.PowerWorld.frame(dtReal);
   if (Z.RealmsWorld) Z.RealmsWorld.preRender(dtReal, SV);   // realms package: dome crackle, geofence shimmer, underwater tint in tunnels
+  if (Z.CoasterWorld && Z.CoasterWorld.frame) Z.CoasterWorld.frame(dtReal, dtGame);
   updatePreview();
   renderer.render(scene, camera);
 }
@@ -3163,6 +3185,7 @@ World._G = G;
 World.renderer = function () { return renderer; };
 World.setQuality = function (pr, budget) { if (pr) G.prCap = pr; if (budget) MESH_BUDGET = budget; resize(); };
 World.scene = function () { return scene; };
+World.root = function () { return root; };
 World.camera = function () { return camera; };
 })();
 

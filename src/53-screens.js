@@ -81,7 +81,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (ns <= 5) next.appendChild(h('div.chips', ul.length ? ul.map(function (n) { return h('span.chip', { text: n }); }) : [h('span.chip', { text: 'Bragging rights' })]));
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your park' }));
-      [['Day', S2.day], ['Dinosaurs', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Species unlocked', Z.Sim.research.summary().unlockedSpecies + ' of 20'], ['Experiments', S2.research.stats.experiments], ['Hatched', S2.research.stats.hatched], ['Guests in the park', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]].forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
+      var stList = [['Day', S2.day], ['Dinosaurs', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Species unlocked', Z.Sim.research.summary().unlockedSpecies + ' of 20'], ['Experiments', S2.research.stats.experiments], ['Hatched', S2.research.stats.hatched], ['Guests in the park', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
+      if (S2.stats && S2.stats.ridesTaken > 0) stList.push(['Rides taken', S2.stats.ridesTaken]);
+      stList.forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
     }
     upd(); return upd;
   }

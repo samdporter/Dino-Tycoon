@@ -103,7 +103,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     vial: 'M9 3h6M10 3v14a2 2 0 004 0V3M10 10h4',
     leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8',
     bolt: ['fill', 'M13.500 2L5 13.500h5.500L9.500 22 19 10h-5.800z'],
-    paper: 'M4 5h13v14H6a2 2 0 01-2-2zM17 8h3v9a2 2 0 01-2 2M7 8.500h7M7 12h7M7 15.500h4'
+    paper: 'M4 5h13v14H6a2 2 0 01-2-2zM17 8h3v9a2 2 0 01-2 2M7 8.500h7M7 12h7M7 15.500h4',
+    coaster: 'M3 19h18M5 19V11c2-5 5-5 7 0s5 5 7-2v10M8 15v4M12 11v8M16 14v5'
   };
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
@@ -566,6 +567,18 @@ window.Z = window.Z || {}; var Z = window.Z;
   function renderCards(c) {
     var cards = el.cards, items = c.items(), S = Z.state; cards.innerHTML = ''; cards.className = '';
     cards.scrollLeft = 0;
+    if (c.id === 'coasters') {
+      var cSeg = h('div.seg.drawer-mode', { style: 'margin: 0 4px 6px 4px;' });
+      var cMode = UI.coasterDrawerMode || 'all';
+      [['all', 'All'], ['stations', 'Stations'], ['track', 'Track & Height'], ['specials', 'Specials']].forEach(function (m) {
+        cSeg.appendChild(h('button' + (cMode === m[0] ? '.on' : ''), {
+          text: m[1],
+          on: { click: function () { UI.coasterDrawerMode = m[0]; UI.refreshCards(); } }
+        }));
+      });
+      cards.appendChild(cSeg);
+      if (cMode !== 'all') items = items.filter(function (it) { return it.tpCat === cMode; });
+    }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star || !!it.locked;
       if (it.first) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
@@ -585,6 +598,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       else if (!locked) { var sp = cardSpec(it); if (sp) card.appendChild(h('span.spb', { text: sp })); }
       if (it.iconHtml) th.innerHTML = it.iconHtml;
       else if (it.sculpt) th.innerHTML = sculptIcon(it.id);
+      else if (it.coasterTool) { th.innerHTML = '<span style="font-size:26px;line-height:1">' + (it.emoji || '🎢') + '</span>'; }
       else if (it.kind === 'terrain' || it.kind === 'path' || it.kind === 'fence') th.appendChild(UI.swatch(it.kind, it.def));
       else lazyThumb(th, it.kind === 'animal' ? 'animal' : it.kind === 'staff' ? 'staff' : it.kind, it.id, it.emoji || '', 96);
       card.addEventListener('click', function () { UI.snd('click'); UI.onCard(it, locked); });
@@ -614,7 +628,14 @@ window.Z = window.Z || {}; var Z = window.Z;
   UI.costOf = function (k, id) {
     var d = k === 'path' ? D.paths : k === 'terrain' ? D.terrain : k === 'fence' ? D.fences : k === 'animal' ? D.animals : k === 'scenery' ? D.scenery : k === 'building' ? D.buildings : D.staff;
     if (k === 'animal') return Z.Sim.research.hatchOdds(id).cost;
-    if (k === 'sculpt' || k === 'moatview') return 0;
+    if (k === 'sculpt' || k === 'moatview' || k === 'clower' || k === 'ctrackrm' || k === 'cview') return 0;
+    if (k === 'ctrack') return 35;
+    if (k === 'craise') return 15;
+    if (k === 'cspec' && D.coaster) {
+      var sid = Number(String(id).replace('cspec_', ''));
+      for (var q = 0; q < D.coaster.specials.length; q++) if (D.coaster.specials[q].id === sid) return D.coaster.specials[q].cost;
+      return 0;
+    }
     if (UI.Realms && UI.Realms.costOf && UI.Realms.costOf(k, id) !== undefined) return UI.Realms.costOf(k, id);
     if (k === 'ditch') return Z.DATA.moats.depths[(+id || 1) - 1].cost;
     var x = UI.byId(d, id); return x ? (x.cost !== undefined ? x.cost : x.hireCost) : 0;
