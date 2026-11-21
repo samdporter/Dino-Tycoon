@@ -2386,7 +2386,7 @@ function feather(g, x, y, z, len, wid, rot, col, th) {
 // iris + pupil + darker lid ring on both sides of the head
 function eyes(g, x, y, z, r, iris, lid) {
   for (var s = -1; s <= 1; s += 2) {
-    g.sph(r * 1.35, r * 1.2, r * 1.3, s * x, y, z, lid, { s: [5, 4] });
+    g.sph(r * 1.18, r * 1.1, r * 1.12, s * x, y, z, lid, { s: [5, 4] });
     g.sph(r, r, r, s * (x + r * 0.35), y, z + r * 0.1, iris, { s: [6, 5] });
     g.sph(r * 0.55, r * 0.55, r * 0.55, s * (x + r * 0.95), y, z + r * 0.2, 0x0a0806, { s: [4, 4] });
   }
@@ -2395,6 +2395,32 @@ function eyes(g, x, y, z, r, iris, lid) {
 function plume(base, x, y, z, amt) { return shade(base, 1 - amt * 0.5 + amt * hash3(Math.round(x * 36), Math.round(y * 36), Math.round(z * 36))); }
 // leg scale banding
 function scaly(base) { return function (x, y) { return shade(base, fract(y * 26) > 0.55 ? 0.88 : 1.04); }; }
+// straight-down muscular limb loft; bl = muscle bulge, dz = forward drift of the far end
+function tlimb(g, len, r0, r1, bl, dz, col) {
+  var k = [[0, r0 * 0.9], [0.2, r0 * (1 + bl * 0.4)], [0.42, lerp(r0, r1, 0.45) * (1 + bl)], [0.75, lerp(r0, r1, 0.8) * (1 + bl * 0.25)], [1, r1]];
+  g.loft(k.map(function (a) { return [a[0] * len, a[1], a[1] * 0.92, dz * a[0]]; }), { down: true, rings: 5, seg: 6, cap0: true, cap1: true }, col);
+  g.sph(r0, r0 * 0.95, r0, 0, 0, 0, col, { s: [5, 4] });
+}
+// hanging hand with jointed fingers curling forward and a thumb on the inner side (side = +1 for the +x arm)
+function hand(g, x, y, z, s, side, col) {
+  g.sph(0.042 * s, 0.05 * s, 0.026 * s, x, y - 0.045 * s, z + 0.005 * s, col, { s: [6, 5] });
+  for (var i = 0; i < 4; i++) {
+    var fx = x + (i - 1.5) * 0.019 * s, fl = 1 - abs(i - 1.2) * 0.1, y1 = y - (0.075 + 0.05 * fl) * s, y2 = y - (0.075 + 0.088 * fl) * s;
+    g.limb(fx, y - 0.075 * s, z + 0.004 * s, fx, y1, z + 0.014 * s, 0.0105 * s, 0.009 * s, col, { seg: 4 });
+    g.limb(fx, y1, z + 0.014 * s, fx, y2, z + 0.036 * s, 0.009 * s, 0.0075 * s, shade(col, 0.85), { seg: 4 });
+  }
+  g.limb(x - side * 0.03 * s, y - 0.04 * s, z + 0.014 * s, x - side * 0.038 * s, y - 0.088 * s, z + 0.04 * s, 0.012 * s, 0.009 * s, col, { seg: 4 });
+}
+// primate foot facing +z: heel/sole, four toes and an opposable big toe on the inner side
+function pfoot(g, x, y, z, s, side, col) {
+  g.sph(0.04 * s, 0.024 * s, 0.07 * s, x, y, z + 0.035 * s, col, { s: [6, 4] });
+  for (var i = 0; i < 4; i++) {
+    var fx = x + (i - 1.5) * 0.02 * s, fz = (0.13 - abs(i - 1.5) * 0.014) * s;
+    g.limb(fx, y, z + 0.07 * s, fx, y - 0.002, z + fz * 0.85, 0.011 * s, 0.009 * s, col, { seg: 4 });
+    g.sph(0.009 * s, 0.008 * s, 0.01 * s, fx, y - 0.003, z + fz, shade(col, 0.8), { s: [4, 3] });
+  }
+  g.limb(x - side * 0.035 * s, y, z + 0.04 * s, x - side * 0.055 * s, y, z + 0.1 * s, 0.015 * s, 0.011 * s, col, { seg: 4 });
+}
 function createBird(spec, opts) {
   var baby = !!opts.baby, sex = baby ? 'f' : (opts.sex || 'm'), key = spec.id + (spec.sexed ? sex : ''), P = partsCache[key];
   if (!P) {
@@ -3408,23 +3434,28 @@ OTHERS.monkey = function (opts) {
     g.sph(0.068, 0.055, 0.075, 0, 0.045, 0.125, CR, { s: [7, 5] });
     g.sph(0.022, 0.016, 0.016, 0, 0.065, 0.195, DK, { s: [4, 3] });
     g.tube([[-0.026, 0.027, 0.184], [0, 0.022, 0.196], [0.026, 0.027, 0.184]], 0.006, DK, { seg: 4, steps: 2 });
-    eyePair(g, 0.046, 0.125, 0.148, 0.02, 0x24140a);
+    g.tube([[-0.075, 0.147, 0.13], [-0.04, 0.158, 0.15], [0, 0.152, 0.155], [0.04, 0.158, 0.15], [0.075, 0.147, 0.13]], [0.008, 0.011, 0.01, 0.011, 0.008], mixHex(BR, DK, 0.4), { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.009, 0.062, 0.208, 0x120a06, { s: [4, 3] }); g.sph(0.026, 0.03, 0.02, nn * 0.048, 0.058, 0.14, mixHex(CR, 0xd8b890, 0.5), { s: [5, 4] }); }
+    g.sph(0.04, 0.01, 0.022, 0, 0.026, 0.178, 0xb68a78, { s: [5, 3] });
+    eyes(g, 0.046, 0.125, 0.148, 0.019, 0x24140a, DK);
     earBall(g, 0.13, 0.115, 0.01, 0.046, CR, 0xc8a47c);
     earBall(g, -0.13, 0.115, 0.01, 0.046, CR, 0xc8a47c);
     P.head = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.17, 0.01, 0.046, 0.036, BR, { seg: 6 });
+    tlimb(g, 0.17, 0.046, 0.036, 0.2, 0.01, BR);
     g.sph(0.038, 0.038, 0.038, 0, -0.17, 0.01, BR, { s: [5, 4] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.17, 0.02, 0.036, 0.03, DK, { seg: 6 });
-    g.sph(0.04, 0.045, 0.042, 0, -0.20, 0.03, 0xc8a47c, { s: [5, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.17, 0.036, 0.028, 0.25, 0.02, DK);
+      hand(g, 0, -0.17, 0.02, 0.95, hs ? -1 : 1, 0xc8a47c);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.055, 0.04, BR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.04, 0.03, DK, { seg: 6 });
-    g.sph(0.042, 0.024, 0.075, 0, -0.20, 0.035, 0xc8a47c, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.055, 0.04, 0.3, 0, BR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.19, 0.04, 0.03, 0.3, 0, DK);
+    g.sph(0.034, 0.03, 0.034, 0, -0.19, 0, DK, { s: [5, 4] }); pfoot(g, 0, -0.205, 0.0, 1, 1, 0xc8a47c); P.shank = g.build();
 
     // 4-segment curling prehensile tail
     P.tail = [];
@@ -3446,7 +3477,7 @@ OTHERS.monkey = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.17, 0.15, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.17, 0.01); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.17, 0.01); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.085, -0.14, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.19, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3534,7 +3565,8 @@ OTHERS.chimpanzee = function (opts) {
     g.tube([[-0.115, 0.162, 0.122], [-0.045, 0.184, 0.168], [0, 0.178, 0.175], [0.045, 0.184, 0.168], [0.115, 0.162, 0.122]], [0.018, 0.026, 0.028, 0.026, 0.018], BK, { seg: 5, steps: 2 });
     g.sph(0.028, 0.02, 0.02, 0, 0.075, 0.225, SK2, { s: [4, 3] });
     g.tube([[-0.036, 0.014, 0.222], [0, 0.008, 0.236], [0.036, 0.014, 0.222]], 0.007, 0x5a3a2a, { seg: 4, steps: 2 });
-    eyePair(g, 0.052, 0.135, 0.18, 0.02, 0x1c120a);
+    eyes(g, 0.052, 0.135, 0.18, 0.02, 0x2a1a0a, SK2);
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.007, 0.005, 0.006, nn * 0.012, 0.075, 0.24, 0x120a06, { s: [4, 3] });
     // big rounded tan/peach ears
     earBall(g, 0.175, 0.115, 0.0, 0.076, SK, SK2);
     earBall(g, -0.175, 0.115, 0.0, 0.076, SK, SK2);
@@ -3542,19 +3574,22 @@ OTHERS.chimpanzee = function (opts) {
 
     // long muscular arms (2-segment with articulated elbow)
     g = B();
+    tlimb(g, 0.34, 0.075, 0.06, 0.25, 0, fc);
     g.sph(0.085, 0.09, 0.085, 0, -0.02, 0, BK, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.34, 0, 0.075, 0.06, fc, { seg: 7 });
     g.sph(0.062, 0.062, 0.062, 0, -0.34, 0, fc, { s: [5, 4] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.32, 0.04, 0.06, 0.048, fc, { seg: 7 });
-    g.sph(0.058, 0.065, 0.055, 0, -0.36, 0.05, 0x3b3432, { s: [6, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.32, 0.06, 0.048, 0.2, 0.04, fc);
+      g.sph(0.05, 0.05, 0.05, 0, -0.32, 0.04, 0x3b3432, { s: [5, 4] });
+      hand(g, 0, -0.33, 0.045, 1.7, hs ? -1 : 1, 0x3b3432);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // stocky legs
-    g = B(); g.limb(0, 0, 0, 0, -0.24, 0, 0.095, 0.07, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.24, 0, 0.07, 0.052, fc, { seg: 7 });
-    g.sph(0.06, 0.032, 0.11, 0, -0.25, 0.05, 0x3b3432, { s: [6, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.24, 0.095, 0.07, 0.3, 0, fc); P.thigh = g.build();
+    g = B(); tlimb(g, 0.24, 0.07, 0.052, 0.3, 0, fc);
+    g.sph(0.052, 0.045, 0.055, 0, -0.24, 0, fc, { s: [5, 4] }); pfoot(g, 0, -0.262, 0.0, 1.7, 1, 0x3b3432); P.shank = g.build();
   }
   var sc = baby ? 0.5 : 1.0;
   var root = grp('animal'), rig = grp('rig'), tor = grp('torso');
@@ -3567,7 +3602,7 @@ OTHERS.chimpanzee = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.28, 0.22, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.34, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.34, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.14, -0.22, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.24, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3643,21 +3678,26 @@ OTHERS.lemur = function (opts) {
     // signature black eye patches
     g.sph(0.036, 0.032, 0.02, 0.048, 0.10, 0.115, BK, { s: [5, 4], rot: [0, 0.35, 0.2] });
     g.sph(0.036, 0.032, 0.02, -0.048, 0.10, 0.115, BK, { s: [5, 4], rot: [0, -0.35, -0.2] });
-    eyePair(g, 0.048, 0.102, 0.126, 0.016, 0xe08820);
+    eyes(g, 0.048, 0.102, 0.126, 0.015, 0xe08820, BK);
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.007, 0.005, 0.006, nn * 0.01, 0.046, 0.238, 0x0a0806, { s: [4, 3] });
+    g.limb(0, 0.03, 0.2, 0, 0.032, 0.18, 0.003, 0.003, 0x3a3a3a, { seg: 4 });
     // fuzzy white/grey triangular cupped ears
     for (var es = -1; es <= 1; es += 2) {
       g.extrude([[-0.036, 0], [0.036, 0], [0.022, 0.07], [0, 0.098], [-0.022, 0.07]], 0.016, es * 0.095, 0.132, -0.008, [0.1, es * 0.3, -es * 0.28], function (x, y, z, nx, ny, nz) { return nz > 0.2 ? 0x555860 : WH; }, { bevel: 0.004, curveX: 0.012 });
     }
     P.head = g.build();
 
-    g = B(); g.limb(0, 0, 0, 0, -0.14, 0.008, 0.038, 0.031, GR, { seg: 6 });
+    g = B(); tlimb(g, 0.14, 0.038, 0.031, 0.2, 0.008, GR);
     g.sph(0.032, 0.032, 0.032, 0, -0.14, 0.008, GR, { s: [5, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.13, 0.015, 0.031, 0.026, GR, { seg: 6 });
-    g.sph(0.032, 0.038, 0.036, 0, -0.15, 0.022, BK, { s: [5, 4] }); P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.13, 0.031, 0.026, 0.2, 0.015, GR);
+      hand(g, 0, -0.13, 0.015, 0.85, hs ? -1 : 1, BK);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.05, 0.035, GR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.035, 0.025, GR, { seg: 6 });
-    g.sph(0.036, 0.022, 0.072, 0, -0.20, 0.035, BK, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.05, 0.035, 0.35, 0, GR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.19, 0.035, 0.025, 0.3, 0, GR);
+    g.sph(0.03, 0.026, 0.03, 0, -0.19, 0, GR, { s: [5, 4] }); pfoot(g, 0, -0.205, 0.0, 0.95, 1, BK); P.shank = g.build();
 
     // 5-segment iconic black-and-white ringed tail
     P.tail = [];
@@ -3682,7 +3722,7 @@ OTHERS.lemur = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.145, 0.14, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.14, 0.008); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.14, 0.008); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.08, -0.14, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.19, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3770,7 +3810,10 @@ OTHERS.orangutan = function (opts) {
     g.sph(0.105, 0.08, 0.105, 0, 0.035, 0.145, FC, { s: [7, 5] });
     g.sph(0.028, 0.02, 0.02, 0, 0.085, 0.23, FC2, { s: [4, 3] });
     g.tube([[-0.038, 0.023, 0.226], [0, 0.017, 0.24], [0.038, 0.023, 0.226]], 0.007, FC2, { seg: 4, steps: 2 });
-    eyePair(g, 0.05, 0.14, 0.185, 0.019, 0x1a1008);
+    g.tube([[-0.09, 0.172, 0.15], [-0.04, 0.186, 0.178], [0, 0.18, 0.185], [0.04, 0.186, 0.178], [0.09, 0.172, 0.15]], [0.012, 0.018, 0.016, 0.018, 0.012], FC2, { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.012, 0.083, 0.245, 0x120a06, { s: [4, 3] }); g.sph(0.03, 0.026, 0.02, nn * 0.05, 0.07, 0.2, shade(FC, 1.12), { s: [5, 4] }); }
+    g.sph(0.05, 0.012, 0.03, 0, 0.018, 0.2, shade(FC2, 1.3), { s: [5, 3] });
+    eyes(g, 0.05, 0.14, 0.185, 0.018, 0x2a1a0a, FC2);
     earBall(g, 0.15, 0.12, 0.0, 0.042, FC, FC2);
     earBall(g, -0.15, 0.12, 0.0, 0.042, FC, FC2);
     if (isMale) {
@@ -3782,20 +3825,22 @@ OTHERS.orangutan = function (opts) {
 
     // very long hanging shaggy arms (2-segment with elbow)
     g = B();
+    tlimb(g, 0.44, 0.085, 0.068, 0.22, 0, fc);
     g.sph(0.095, 0.1, 0.095, 0, -0.02, 0, OR, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.44, 0, 0.085, 0.068, fc, { seg: 7 });
     g.sph(0.07, 0.07, 0.07, 0, -0.44, 0, fc, { s: [5, 4] });
-    g.cone(0.07, 0.18, 0, -0.38, -0.05, OR2, { seg: 4, rot: [PI, 0, 0] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.44, 0.04, 0.068, 0.052, fc, { seg: 7 });
-    g.sph(0.062, 0.072, 0.06, 0, -0.48, 0.05, FC, { s: [6, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.44, 0.068, 0.052, 0.2, 0.04, fc);
+      g.sph(0.055, 0.055, 0.055, 0, -0.44, 0.04, FC, { s: [5, 4] });
+      hand(g, 0, -0.45, 0.045, 2.0, hs ? -1 : 1, FC);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // shorter bowed legs
-    g = B(); g.limb(0, 0, 0, 0, -0.23, 0, 0.10, 0.075, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.23, 0, 0.075, 0.055, fc, { seg: 7 });
-    g.sph(0.065, 0.032, 0.115, 0, -0.24, 0.045, FC, { s: [6, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.23, 0.10, 0.075, 0.3, 0, fc); P.thigh = g.build();
+    g = B(); tlimb(g, 0.23, 0.075, 0.055, 0.3, 0, fc);
+    g.sph(0.058, 0.05, 0.058, 0, -0.23, 0, fc, { s: [5, 4] }); pfoot(g, 0, -0.255, 0.0, 1.8, 1, FC); P.shank = g.build();
   }
   var sc = baby ? 0.48 : (isMale ? 1.0 : 0.86);
   var root = grp('animal'), rig = grp('rig'), tor = grp('torso');
@@ -3808,7 +3853,7 @@ OTHERS.orangutan = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.33, 0.22, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.44, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.44, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.16, -0.21, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.23, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
