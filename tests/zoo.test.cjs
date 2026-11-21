@@ -3315,3 +3315,49 @@ test('all Zoo species, scenery, and buildings build valid finite 3D geometry', (
   }
 });
 
+
+test('a walking Zoo animal blocked by a resting herd-mate gives up instead of walking in place', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 4344, map: 'grassland', money: 500000 });
+  z.state.unlocked.star = 5;
+  const N = z.N;
+  for (let j = 8; j <= 28; j++) for (let i = 8; i <= 34; i++) {
+    const t = i + j * N;
+    const oid = z.state.tileObj[t];
+    if (oid) {
+      const o = z.state.objects.find(x => x.id === oid);
+      if (o) z.Sim.bulldoze(o.i, o.j);
+    }
+    z.state.terrain[t] = 0;
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  for (let i = 16; i <= 23; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 18 }, 'reinforced').ok, true);
+  }
+  for (let j = 10; j <= 17; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 16, j }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 24, j }, 'reinforced').ok, true);
+  }
+  const r1 = z.Sim.addAnimal('elephant', 19, 13);
+  const r2 = z.Sim.addAnimal('elephant', 19, 13);
+  assert.equal(r1.ok && r2.ok, true);
+  const walker = z.state.animals.find((a) => a.id === r1.id);
+  const sleeper = z.state.animals.find((a) => a.id === r2.id);
+
+  // The sleeper rests against the east fence, right on the walker's target, so the walker is pushed back every frame
+  sleeper.x = 23 * z.TILE; sleeper.z = 13.5 * z.TILE; sleeper.state = 'sleep'; sleeper.energy = 0; sleeper.heading = Math.PI / 2;
+  walker.x = 18 * z.TILE; walker.z = 13.5 * z.TILE; walker.heading = Math.PI / 2;
+  walker.state = 'walk'; walker.tg = 'wander'; walker.tx = 23.5 * z.TILE; walker.tz = 13.5 * z.TILE;
+  walker.wx = 0; walker.wz = 0; walker.aroute = null; walker.detours = 0; walker.stuck = 0;
+
+  let walkingInPlace = 0;
+  for (let k = 0; k < 400; k++) {
+    const x0 = walker.x, z0 = walker.z;
+    z.Sim.tick(0.05);
+    const moved = Math.hypot(walker.x - x0, walker.z - z0);
+    if (walker.state === 'walk' && walker.speed > 0 && moved < 0.01) walkingInPlace++;
+    else walkingInPlace = 0;
+    assert.ok(walkingInPlace < 60, `Walker kept its walk animation for ${walkingInPlace} ticks without moving`);
+  }
+});
