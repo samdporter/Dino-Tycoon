@@ -85,22 +85,23 @@
         var cm = cmax(t);
         if (cm > mx) mx = cm;
       }
-      // Match 3D model rotation (g.rotation.y = rot * PI/2, local rails at z = -1.0, entrance at +z):
-      // rot 0: entrance +z (j0+1), rails on j0 running W->E (fd=1, bd=3)
-      // rot 1: entrance +x (i0+1), rails on i0 running N->S (fd=2, bd=0)
-      // rot 2: entrance -z (j0),   rails on j0+h-1 running E->W (fd=3, bd=1)
-      // rot 3: entrance -x (i0),   rails on i0+w-1 running S->N (fd=0, bd=2)
-      var fd = (o.rot === 0) ? 1 : (o.rot === 1) ? 2 : (o.rot === 2) ? 3 : 0;
+      // Match 3D model rotation (g.rotation.y = rot * PI/2, local rails at z = -1.0, entrance at +z, launch +x, return -x):
+      // rot 0: entrance +z (j0+h), rails on j0 running W->E (fd=1, bd=3)
+      // rot 1: entrance +x (i0+w), rails on i0 running S->N (fd=0, bd=2)
+      // rot 2: entrance -z (j0-1), rails on j0+h-1 running E->W (fd=3, bd=1)
+      // rot 3: entrance -x (i0-1), rails on i0+w-1 running N->S (fd=2, bd=0)
+      var rot = ((o.rot | 0) % 4 + 4) % 4;
+      var fd = (rot === 0) ? 1 : (rot === 1) ? 0 : (rot === 2) ? 3 : 2;
       var bd = (fd + 2) % 4;
       var trackTiles = [];
-      if (o.rot === 0) {
+      if (rot === 0) {
         for (a = 0; a < fp.w; a++) trackTiles.push((fp.i0 + a) + fp.j0 * N);
-      } else if (o.rot === 2) {
+      } else if (rot === 1) {
+        for (b = fp.h - 1; b >= 0; b--) trackTiles.push(fp.i0 + (fp.j0 + b) * N);
+      } else if (rot === 2) {
         for (a = fp.w - 1; a >= 0; a--) trackTiles.push((fp.i0 + a) + (fp.j0 + fp.h - 1) * N);
-      } else if (o.rot === 1) {
-        for (b = 0; b < fp.h; b++) trackTiles.push(fp.i0 + (fp.j0 + b) * N);
       } else {
-        for (b = fp.h - 1; b >= 0; b--) trackTiles.push((fp.i0 + fp.w - 1) + (fp.j0 + b) * N);
+        for (b = 0; b < fp.h; b++) trackTiles.push((fp.i0 + fp.w - 1) + (fp.j0 + b) * N);
       }
       out.push({
         obj: o, def: def, typeDef: td, fp: fp, tiles: tiles,
@@ -535,14 +536,31 @@
       if (!cnt) continue;
       var sdef = SPEC_BY_ID[sid];
       if (!sdef) continue;
-      var eff = cnt <= 2 ? cnt : 2 + (cnt - 2) * 0.4;
-      var flumeBonus = (td.id === 'flume' && +sid === 3) ? 1.5 : 1.0;
-      specExc += sdef.excitement * eff * flumeBonus;
-      specInt += sdef.intensity * eff;
+      if (+sid === 1) {
+        // Chain Lift is mandatory for hills; give a small capped bonus rather than scaling per lift tile
+        specExc += Math.min(0.25, cnt * 0.10);
+        specInt += Math.min(0.15, cnt * 0.05);
+      } else {
+        var eff = 1 + Math.min(0.7, (cnt - 1) * 0.35);
+        var flumeBonus = (td.id === 'flume' && +sid === 3) ? 1.4 : 1.0;
+        specExc += sdef.excitement * 0.38 * eff * flumeBonus;
+        specInt += sdef.intensity * 0.55 * eff;
+      }
     }
+    specExc = Math.min(1.8, specExc);
+    specInt = Math.min(3.5, specInt);
+
     var peakSpeed = sim.peakSpeed || clamp(td.baseSpeed + Math.sqrt(Math.max(0, totalDrop)) * 1.4 + (specsCount[2] ? 4.0 : 0), td.baseSpeed, td.maxSpeed * 1.15);
-    var excRaw = (1.6 + Math.min(3.0, trackTilesCount * 0.085) + Math.min(2.4, totalDrop * 0.18) + Math.min(1.2, maxH * 0.1) + specExc + Math.min(2.0, overlooks.length * 0.45)) * td.excMul;
-    var intRaw = (1.1 + Math.min(2.8, totalDrop * 0.2) + Math.min(2.2, peakSpeed * 0.1) + specInt) * (0.85 + 0.15 * td.excMul);
+    var rideH = Math.max(0, maxH - CD.clearance);
+    var lenScore = Math.min(1.35, trackTilesCount * 0.03);
+    var dropScore = Math.min(1.8, totalDrop * 0.09);
+    var heightScore = Math.min(0.8, rideH * 0.07);
+    var speedScore = Math.min(1.1, Math.max(0, peakSpeed - 6.5) * 0.09);
+    var overlookScore = Math.min(1.6, overlooks.length * 0.45);
+    var tierBonus = (td.excMul - 1.0) * 1.2;
+
+    var excRaw = 1.45 + lenScore + dropScore + heightScore + speedScore + specExc + overlookScore + tierBonus;
+    var intRaw = (0.9 + Math.min(2.6, totalDrop * 0.10) + Math.min(2.3, Math.max(0, peakSpeed - 6.5) * 0.14) + specInt) * (0.9 + 0.1 * td.excMul);
     var excitement = Math.round(clamp(excRaw, 1.0, 10.0) * 10) / 10;
     var intensity = Math.round(clamp(intRaw, 1.0, 10.0) * 10) / 10;
     var recPrice = Math.round(clamp(4 + excitement * 2.2, 5, CD.fareMax));
@@ -1238,8 +1256,6 @@
       var rtk = TR[peers[k].id];
       if (rtk && rtk.state === 'broken') alreadyBroken = true;
     }
-    if (alreadyBroken) return false;
-
     if (o) {
       o.broken = true;
       o.condition = Math.min(o.condition === undefined ? 100 : o.condition, 20);
@@ -1249,9 +1265,12 @@
       if (!rt) rt = TR[Tk.id] = { s: Tk.s || 0, v: 0, state: 'broken', dwell: 0, fix: CD.fixTime, eng: false, riders: [] };
       rt.state = Tk.state = 'broken';
       rt.v = Tk.v = 0;
-      rt.fix = Tk.fix = CD.fixTime;
-      rt.eng = Tk.eng = false;
+      if (!alreadyBroken) {
+        rt.fix = Tk.fix = CD.fixTime;
+        rt.eng = Tk.eng = false;
+      }
     }
+    if (alreadyBroken) return true;
     if (!trigTrain && peers.length) trigTrain = peers[0];
     s.coaster.stats.breakdowns = (s.coaster.stats.breakdowns || 0) + 1;
     var L = lineForStation(stationId);
@@ -1619,7 +1638,7 @@
 
     // Mechanical wear & tear + breakdown check while running
     if (rt.state === 'run' && stObj) {
-      stObj.condition = Math.max(0, (stObj.condition === undefined ? 100 : stObj.condition) - dt * 0.22);
+      stObj.condition = Math.max(0, (stObj.condition === undefined ? 100 : stObj.condition) - dt * 0.06);
       if (rt.leftStation && CD.breakdownPerHour > 0) {
         var wearMul = stObj.condition < 35 ? 6.0 : stObj.condition < 60 ? 2.5 : 1.0;
         var pBreak = (CD.breakdownPerHour * wearMul / (C.DAY_SECONDS / 24)) * dt;

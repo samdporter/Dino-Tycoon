@@ -865,7 +865,7 @@ window.Z.DATA = {
     dwell: 6,
     fareMax: 35,
     viewRadius: 4,
-    breakdownPerHour: 0.08,
+    breakdownPerHour: 0.03,
     fixTime: 65,
     engineerTime: 4.5,
     engineerFee: 180,

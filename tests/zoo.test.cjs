@@ -2719,6 +2719,7 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   assert.equal(info.loop, true);
   assert.equal(info.trains.length, 1);
   const baseExc = info.excitement;
+  assert.ok(baseExc >= 1.5 && baseExc <= 3.0, `Simple flat 16-tile oval should have modest excitement (1.5..3.0), got ${baseExc}`);
 
   // Raise a tall hill on the north straight (20..23, 31)
   const hillTiles = [tidx(20, 31), tidx(21, 31), tidx(22, 31), tidx(23, 31)];
@@ -2747,6 +2748,7 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   assert.equal(info.energyOk, true, `Chain Lift + Boost should give enough energy to complete circuit, got: ${info.stallReason}`);
   assert.equal(info.ready, true);
   assert.ok(info.excitement > hillExc, 'Adding loop-de-loop, corkscrew & boost should significantly increase Excitement');
+  assert.ok(info.excitement < 8.5, `Medium 16-tile coaster with 0 overlooked enclosures should not max out excitement (<8.5), got ${info.excitement}`);
   assert.equal(info.specs[4], 1);
   assert.equal(info.specs[5], 1);
 
@@ -2847,7 +2849,7 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   assert.equal(z.Coaster.trainInfo(trainId).eng, true);
   for (let step = 0; step < 30; step++) z.Sim._step(0.2);
   assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Coaster should be repaired');
-  assert.equal(z.Coaster.trainInfo(trainId).state, 'run', 'Train should resume running after mechanic repair');
+  assert.notEqual(z.Coaster.trainInfo(trainId).state, 'broken', 'Train should resume operating (run or dwell) after mechanic repair');
 
   // Test hired Mechanic staff member responds by radio and repairs a broken coaster automatically
   const hireMech = z.Sim.hireStaff('mechanic', 25, 37);
@@ -2921,4 +2923,33 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
   }
   z.CoasterWorld.endRide();
   assert.equal(z.CoasterWorld.isRiding(), 0);
+
+  // Verify all 4 station rotations (rot = 0..3) align endF with the 3D green launch arrow and endB with the 3D orange return arrow
+  for (let rot = 0; rot < 4; rot++) {
+    z.Sim.newGame({ seed: 1010 + rot, money: 250000 });
+    for (let j = 28; j <= 38; j++) for (let i = 18; i <= 28; i++) {
+      const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+      const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+      z.state.elev[i + j * (N + 1)] = 0;
+    }
+    const rSt = z.Sim.placeObject('coaster_wooden', 22, 32, rot);
+    assert.equal(rSt.ok, true, `rot=${rot}: ${rSt.msg}`);
+    const stEntry = z.Coaster.state().stById[rSt.id];
+    const fp = stEntry.fp;
+    const cx = (fp.i0 + fp.w / 2) * 2, cz = (fp.j0 + fp.h / 2) * 2;
+    const m = z.Models.createBuilding('coaster_wooden');
+    m.position.set(cx, 0, cz);
+    m.rotation.y = rot * Math.PI / 2;
+    m.updateMatrixWorld(true);
+    // Green launch arrow is at local (+4.15, y, -1.0); orange return arrow is at local (-4.15, y, -1.0)
+    const greenWorld = new THREE.Vector3(4.15, 0, -1.0).applyMatrix4(m.matrixWorld);
+    const orangeWorld = new THREE.Vector3(-4.15, 0, -1.0).applyMatrix4(m.matrixWorld);
+    const endFx = ((stEntry.endF % N) + 0.5) * 2, endFz = (Math.floor(stEntry.endF / N) + 0.5) * 2;
+    const endBx = ((stEntry.endB % N) + 0.5) * 2, endBz = (Math.floor(stEntry.endB / N) + 0.5) * 2;
+    const dGreenToF = Math.hypot(greenWorld.x - endFx, greenWorld.z - endFz);
+    const dGreenToB = Math.hypot(greenWorld.x - endBx, greenWorld.z - endBz);
+    const dOrangeToB = Math.hypot(orangeWorld.x - endBx, orangeWorld.z - endBz);
+    assert.ok(dGreenToF < dGreenToB && dGreenToF < 1.5, `rot=${rot}: endF should be at green launch arrow (d=${dGreenToF})`);
+    assert.ok(dOrangeToB < 1.5, `rot=${rot}: endB should be at orange return arrow (d=${dOrangeToB})`);
+  }
 });
