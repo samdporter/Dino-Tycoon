@@ -2455,16 +2455,72 @@ function newInst(o) {
 
 // ================================================================ BIRD RIG (flamingo, ostrich)
 var BIRDS = {};
+// feather blade, pointing -z in its frame; rot = [pitch (negative = down), lean, roll]
+function feather(g, x, y, z, len, wid, rot, col, th) {
+  th = th || 0.012;
+  g.extrude([[0, 0.03 * len], [wid * 0.8, -0.2 * len], [wid, -0.55 * len], [wid * 0.55, -0.9 * len], [0, -len], [-wid * 0.55, -0.9 * len], [-wid, -0.55 * len], [-wid * 0.8, -0.2 * len]], th, x, y, z, rot, col, { axis: 'y', curveX: 0.6 });
+}
+// iris + pupil + darker lid ring on both sides of the head
+function eyes(g, x, y, z, r, iris, lid) {
+  for (var s = -1; s <= 1; s += 2) {
+    g.sph(r * 1.18, r * 1.1, r * 1.12, s * x, y, z, lid, { s: [5, 4] });
+    g.sph(r, r, r, s * (x + r * 0.35), y, z + r * 0.1, iris, { s: [6, 5] });
+    g.sph(r * 0.55, r * 0.55, r * 0.55, s * (x + r * 0.95), y, z + r * 0.2, 0x0a0806, { s: [4, 4] });
+  }
+}
+// slight per-feather tonal variation for plumage
+function plume(base, x, y, z, amt) { return shade(base, 1 - amt * 0.5 + amt * hash3(Math.round(x * 36), Math.round(y * 36), Math.round(z * 36))); }
+// leg scale banding
+function scaly(base) { return function (x, y) { return shade(base, fract(y * 26) > 0.55 ? 0.88 : 1.04); }; }
+// straight-down muscular limb loft; bl = muscle bulge, dz = forward drift of the far end
+function tlimb(g, len, r0, r1, bl, dz, col) {
+  var k = [[0, r0 * 0.9], [0.2, r0 * (1 + bl * 0.4)], [0.42, lerp(r0, r1, 0.45) * (1 + bl)], [0.75, lerp(r0, r1, 0.8) * (1 + bl * 0.25)], [1, r1]];
+  var cf = typeof col === 'function' ? function (zc, ca, sa, x, y, z) { return col(x, y, z, sa, ca); } : col;
+  g.loft(k.map(function (a) { return [a[0] * len, a[1], a[1] * 0.92, dz * a[0]]; }), { down: true, rings: 4, seg: 5, cap0: true, cap1: true }, cf);
+  g.sph(r0 * 1.1, r0 * 1.05, r0 * 1.1, 0, -r0 * 0.1, 0, cf, { s: [6, 4] });
+}
+// hanging hand: flattened palm loft with tapered fingers growing out of it and lighter nails (side = +1 for the +x arm)
+function hand(g, x, y, z, s, side, col) {
+  var nail = shade(col, 1.35), cf = typeof col === 'function' ? function (zc, ca, sa, px, py, pz) { return col(px, py, pz); } : col;
+  g.loft([[0, 0.034 * s, 0.02 * s, 0.0], [0.04 * s, 0.045 * s, 0.024 * s, 0.003 * s], [0.085 * s, 0.04 * s, 0.018 * s, 0.006 * s]], { down: true, rings: 4, seg: 7, cap0: true, cap1: true, oy: y, ox: x, oz: z }, cf);
+  for (var i = 0; i < 4; i++) {
+    var fx = x + (i - 1.5) * 0.02 * s, fl = 1 - abs(i - 1.2) * 0.1, y0 = y - 0.07 * s, y1 = y - (0.075 + 0.05 * fl) * s, y2 = y - (0.075 + 0.088 * fl) * s;
+    g.limb(fx, y0, z + 0.006 * s, fx, y1, z + 0.016 * s, 0.013 * s, 0.0095 * s, col, { seg: 4 });
+    g.limb(fx, y1, z + 0.016 * s, fx, y2, z + 0.038 * s, 0.0095 * s, 0.006 * s, col, { seg: 4 });
+    g.sph(0.006 * s, 0.006 * s, 0.008 * s, fx, y2 - 0.002 * s, z + 0.042 * s, nail, { s: [4, 3] });
+  }
+  g.limb(x - side * 0.025 * s, y - 0.035 * s, z + 0.01 * s, x - side * 0.04 * s, y - 0.085 * s, z + 0.042 * s, 0.017 * s, 0.008 * s, col, { seg: 4 });
+}
+// primate foot facing +z: sole loft with tapered toes and lighter nails, opposable big toe on the inner side
+function pfoot(g, x, y, z, s, side, col) {
+  var nail = shade(col, 1.35), cf = typeof col === 'function' ? function (zc, ca, sa, px, py, pz) { return col(px, py, pz); } : col;
+  g.loft([[-0.02 * s, 0.03 * s, 0.022 * s, 0.0], [0.04 * s, 0.045 * s, 0.026 * s, 0.002 * s], [0.09 * s, 0.045 * s, 0.018 * s, -0.002 * s]], { rings: 4, seg: 7, cap0: true, cap1: true, ox: x, oy: y, oz: z }, cf);
+  for (var i = 0; i < 4; i++) {
+    var fx = x + (i - 1.5) * 0.02 * s, fz = (0.14 - abs(i - 1.5) * 0.014) * s;
+    g.limb(fx, y, z + 0.07 * s, fx, y - 0.002, z + fz, 0.013 * s, 0.007 * s, col, { seg: 4 });
+    g.sph(0.006 * s, 0.005 * s, 0.008 * s, fx, y - 0.002, z + fz + 0.002 * s, nail, { s: [4, 3] });
+  }
+  g.limb(x - side * 0.03 * s, y, z + 0.035 * s, x - side * 0.055 * s, y, z + 0.1 * s, 0.018 * s, 0.009 * s, col, { seg: 4 });
+}
+// tapered S-curved neck loft along z from a thick base flare to a thin top; overlaps neighbours at both ends
+function neckLoft(g, len, r0, r1, col, flare, amp) {
+  var cf = function (zc, ca, sa, x, y, z) { return typeof col === 'function' ? col(x, y, z) : col; }, k = [];
+  if (flare) k.push([-flare, r0 * 1.9, r0 * 1.7, 0], [-flare * 0.4, r0 * 1.45, r0 * 1.35, 0]);
+  if (!flare) k.push([-0.02, r0, r0, 0]);
+  for (var i = 0; i <= 4; i++) { var t = i / 4, r = lerp(r0, r1, Math.pow(t, 0.8)); k.push([t * len, r, r, amp * sin(t * TAU) * (1 - 0.0)]); }
+  k.push([len * 1.05, r1 * 0.9, r1 * 0.9, 0], [len * 1.1, r1 * 0.7, r1 * 0.7, 0]);
+  g.loft(k, { rings: 5, seg: 5, cap0: true, cap1: true }, cf);
+}
 function createBird(spec, opts) {
   var baby = !!opts.baby, sex = baby ? 'f' : (opts.sex || 'm'), key = spec.id + (spec.sexed ? sex : ''), P = partsCache[key];
   if (!P) {
     P = partsCache[key] = {}; var g = B(); spec.body(g, sex); P.body = g.build(0, -spec.cy, 0);
-    g = B(); var nA = spec.neckA; g.limb(0, 0, -0.02, 0, 0, nA.len, nA.r0, nA.r1, nA.col, { seg: 6 }); g.sph(nA.r0 * 1.05, nA.r0 * 1.05, nA.r0 * 1.05, 0, 0, 0, nA.col, { s: [6, 4] }); P.neckA = g.build();
-    g = B(); var nB = spec.neckB; g.limb(0, 0, -0.02, 0, 0, nB.len, nB.r0, nB.r1, nB.col, { seg: 6 }); spec.head(g, sex, nB.len); P.neckB = g.build();
+    g = B(); var nA = spec.neckA; neckLoft(g, nA.len, nA.r0, nA.r1, nA.col, nA.r0 * 1.6, nA.len * 0.035); P.neckA = g.build();
+    g = B(); var nB = spec.neckB; neckLoft(g, nB.len, nB.r0, nB.r1, nB.col, 0, -nB.len * 0.03); spec.head(g, sex, nB.len); P.neckB = g.build();
     var lg = spec.legs; g = B(); g.sph(lg.r[0] * 1.2, lg.r[0] * 1.2, lg.r[0] * 1.2, 0, 0, 0, lg.thighCol || lg.col, { s: [6, 4] });
     if (lg.thighFluff) g.sph(lg.thighFluff[0], lg.thighFluff[1], lg.thighFluff[2], 0, -lg.thighFluff[1] * 0.5, 0, typeof lg.thighFluffCol === 'function' ? lg.thighFluffCol(sex) : lg.thighFluffCol, { s: [7, 5] });
-    g.limb(0, 0, 0, 0, -lg.thigh, 0, lg.r[0], lg.r[1], lg.thighCol || lg.col, { seg: 5 }); g.sph(lg.r[1] * 1.2, lg.r[1] * 1.2, lg.r[1] * 1.2, 0, -lg.thigh, 0, lg.col, { s: [5, 4] }); P.legU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -lg.shank, 0, lg.r[1], lg.r[2], lg.col, { seg: 5 }); lg.foot(g, -lg.shank); P.legL = g.build();
+    tlimb(g, lg.thigh, lg.r[0], lg.r[1] * 1.15, 0.08, 0, lg.thighCol || lg.col); g.sph(lg.r[1] * 1.3, lg.r[1] * 1.45, lg.r[1] * 1.3, 0, -lg.thigh, 0, lg.col, { s: [5, 4] }); P.legU = g.build();
+    g = B(); tlimb(g, lg.shank, lg.r[1] * 1.3, lg.r[2], 0.0, 0, lg.col); lg.foot(g, -lg.shank); P.legL = g.build();
     if (spec.wings) { P.wing = spec.wings(false, sex); P.wingR = spec.wings(true, sex); }
     if (spec.tailGeo) { g = B(); spec.tailGeo(g, sex); P.tail = g.build(0, -spec.cy, 0); }
   }
@@ -2554,30 +2610,52 @@ function birdUpdate(I, dt, ent) {
 
 // ---- FLAMINGO
 (function () {
-  var PK = 0xf2829c, PL = 0xf8a9bb, PD = 0xd9607f, BK = 0x2a2428, LEG = 0xe5607f;
+  var PK = 0xf2829c, PL = 0xf8a9bb, PD = 0xd9607f, BK = 0x2a2428, LEG = 0xe5607f, BILL = 0xf6d9cf;
   BIRDS.flamingo = {
     id: 'flamingo', cy: 1.0, height: 1.7, walkA: 0.45, runA: 0.7, bend: 1.1, oneLeg: true, liftA: -0.5, liftB: 2.3, babyScale: 0.5, babyHead: 1.35, bob: 1.2,
     body: function (g) {
-      var bc = function (x, y, z, nx, ny) { return (z < -0.18 && ny > -0.2) ? PD : (ny < -0.3 ? PL : PK); };
-      g.loft([[-0.48, 0.05, 0.04, 0.96], [-0.26, 0.17, 0.17, 1.0], [0.02, 0.21, 0.22, 1.01], [0.24, 0.17, 0.18, 1.03], [0.36, 0.09, 0.1, 1.06]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      var bc = function (x, y, z, nx, ny) { var c = (z < -0.18 && ny > -0.2) ? PD : (ny < -0.3 ? PL : PK); return plume(c, x, y, z, 0.12); };
+      g.loft([[-0.48, 0.05, 0.04, 0.96], [-0.26, 0.17, 0.17, 1.0], [0.02, 0.21, 0.22, 1.01], [0.24, 0.17, 0.18, 1.03], [0.34, 0.13, 0.14, 1.05], [0.4, 0.07, 0.08, 1.07], [0.43, 0.02, 0.025, 1.08]], { rings: 13, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      // breast ruff, rump coverts
+      for (var i = 0; i < 3; i++) { var a = -0.9 + i * 0.9; feather(g, sin(a) * 0.11, 1.03 - abs(a) * 0.04, 0.28, 0.14, 0.035, [-1.35, -a * 0.5, 0], PL, 0.01); }
+      for (var k = 0; k < 2; k++) feather(g, (k - 0.5) * 0.06, 0.96, -0.4, 0.2, 0.04, [-0.2 - k * 0.03, (k - 1.5) * 0.12, 0], k % 2 ? PD : PK, 0.01);
     },
     neckA: { y: 1.12, z: 0.28, len: 0.55, up: 1.25, r0: 0.07, r1: 0.05, col: PK },
     neckB: { len: 0.55, up: 0.35, r0: 0.05, r1: 0.04, col: PK },
     head: function (g, sex, L) {
       g.sph(0.06, 0.055, 0.075, 0, 0, L + 0.03, PK, { s: [7, 5] });
-      g.tube([[0, -0.005, L + 0.06], [0, -0.015, L + 0.16], [0, -0.085, L + 0.235]], [0.042, 0.034, 0.012], function (x, y, z, nx, ny, nz, t) { return t > 0.52 ? 0x2a2428 : 0xf6d9cf; }, { seg: 7, steps: 2 });
-      eyePair(g, 0.045, 0.02, L + 0.06, 0.016, 0x111111); g.sph(0.01, 0.01, 0.01, 0.047, 0.025, L + 0.07, 0xf2c030, { s: [3, 3] });
+      g.sph(0.045, 0.04, 0.06, 0, -0.01, L + 0.075, BILL, { s: [6, 4] });
+      // upper and lower mandible, deep-keeled and bent down
+      g.tube([[0, 0.0, L + 0.06], [0, -0.012, L + 0.16], [0, -0.085, L + 0.235]], [0.042, 0.036, 0.012], function (x, y, z, nx, ny, nz, t) { return t > 0.52 ? BK : BILL; }, { seg: 7, steps: 2 });
+      g.tube([[0, -0.034, L + 0.06], [0, -0.05, L + 0.15], [0, -0.1, L + 0.215]], [0.03, 0.027, 0.009], function (x, y, z, nx, ny, nz, t) { return t > 0.5 ? BK : shade(BILL, 0.9); }, { seg: 6, steps: 2 });
+      g.limb(0, -0.032, L + 0.07, 0, -0.04, L + 0.16, 0.003, 0.003, 0x7a4a52, { seg: 4 });
+      for (var s = -1; s <= 1; s += 2) g.sph(0.006, 0.004, 0.012, s * 0.033, 0.012, L + 0.1, 0x7a4a52, { s: [4, 3] });
+      eyes(g, 0.045, 0.02, L + 0.055, 0.015, 0xf2c030, 0xf6d9cf);
     },
-    legs: { x: 0.07, hipY: 0.9, z: 0.0, thigh: 0.45, shank: 0.45, r: [0.032, 0.022, 0.017], col: LEG, thighCol: PK, foot: function (g, y0) {
-      g.extrude([[0, -0.02], [0.065, 0.13], [0, 0.155], [-0.065, 0.13]], 0.016, 0, y0 + 0.01, 0, [0, 0, 0], LEG, { axis: 'y', bev: 0.004 });
-      g.sph(0.025, 0.02, 0.025, 0, y0 + 0.02, 0, LEG, { s: [5, 4] });
+    legs: { x: 0.07, hipY: 0.9, z: 0.0, thigh: 0.45, shank: 0.45, r: [0.032, 0.022, 0.017], col: scaly(LEG), thighCol: PK, foot: function (g, y0) {
+      g.sph(0.026, 0.02, 0.026, 0, y0 + 0.025, 0, shade(LEG, 0.9), { s: [5, 4] });
+      for (var i = -1; i <= 1; i++) {
+        var a = i * 0.5, x1 = sin(a) * 0.075, z1 = cos(a) * 0.075, x2 = sin(a) * 0.16, z2 = cos(a) * 0.16;
+        g.limb(0, y0 + 0.018, 0, x1, y0 + 0.01, z1, 0.014, 0.011, LEG, { seg: 4 });
+        g.limb(x1, y0 + 0.01, z1, x2, y0 + 0.004, z2, 0.011, 0.008, LEG, { seg: 4 });
+        g.sph(0.012, 0.01, 0.012, x1, y0 + 0.012, z1, shade(LEG, 0.85), { s: [4, 3] });
+        g.cone(0.008, 0.025, x2 + sin(a) * 0.012, y0 + 0.004, z2 + cos(a) * 0.012, 0x3a2a2c, { seg: 4, rot: [PI / 2, a, 0] });
+      }
+      g.extrude([[0, 0.03], [0.08, 0.135], [0.04, 0.118], [0, 0.16], [-0.04, 0.118], [-0.08, 0.135]], 0.006, 0, y0 + 0.006, 0, [0, 0, 0], shade(LEG, 1.1), { axis: 'y' });
+      g.limb(0, y0 + 0.02, 0, 0, y0 + 0.012, -0.05, 0.011, 0.007, LEG, { seg: 4 });
     } },
     eat: { na: 0.35, nb: -1.35, tp: 0.12, ty: -0.05 },
     sleep: { na: 0.9, nb: -2.5, hy: 0.0 },
     wingAt: [0.19, 1.04, 0.04],
+    tailGeo: function (g) {
+      for (var i = -2; i <= 2; i++) feather(g, i * 0.025, 0.97, -0.44, 0.24 - abs(i) * 0.02, 0.04, [-0.22 - abs(i) * 0.02, i * 0.1, 0], i % 2 ? PD : PK, 0.01);
+    },
     wings: function (r) {
-      var g = B(), s = r ? -1 : 1;
-      g.extrude([[0.06, 0.2], [0.14, 0.02], [0.08, -0.26], [-0.04, -0.36], [-0.14, -0.14], [-0.08, 0.14]], 0.055, s * 0.02, -0.02, -0.08, [0, 0, 0], function (x, y, z) { return z < -0.14 ? BK : PD; }, { axis: 'x', bev: 0.018, curveX: s * 0.25 });
+      var g = B(), s = r ? -1 : 1, j;
+      // folded wing: smooth cambered volume hugging the flank, coverts as colour only
+      g.loft([[-0.42, 0.006, 0.02, -0.2], [-0.22, 0.026, 0.09, -0.13], [0.0, 0.04, 0.13, -0.07], [0.14, 0.03, 0.1, -0.04], [0.2, 0.01, 0.05, -0.03]], { rings: 10, seg: 9, cap0: true, cap1: true, ox: s * 0.006 }, function (zc, ca, sa, x, y, z) { return plume(y > -0.1 && z > -0.12 ? PD : (y > -0.16 ? PK : shade(PD, 0.8)), x, y, z, 0.14); });
+      for (j = 0; j < 2; j++) feather(g, s * 0.036, -0.1 - j * 0.04, 0.06 - j * 0.07, 0.3, 0.036, [-0.14 - j * 0.02, s * 0.06, PI / 2], plume(PD, j, 4, 4, 0.1), 0.01);
+      for (j = 0; j < 5; j++) feather(g, s * (0.032 - j * 0.002), -0.17 - j * 0.008, 0.0 - j * 0.05, 0.4 - j * 0.02, 0.03, [-0.1 - j * 0.012, s * (0.03 + j * 0.012), PI / 2], j % 2 ? BK : shade(BK, 1.25), 0.008);
       return g.build();
     }
   };
@@ -2585,35 +2663,62 @@ function birdUpdate(I, dt, ent) {
 
 // ---- OSTRICH
 (function () {
-  var BKM = 0x23232a, WH = 0xf4f0e6, FM = 0x9a8470, SK = 0xe3b9a6, BEAK = 0xe8d4a8;
+  var BKM = 0x23232a, WH = 0xf4f0e6, FM = 0x9a8470, SK = 0xe3b9a6, BEAK = 0xe8d4a8, SCALE = 0xe0b2a0;
+  var body = function (sex) { return sex === 'f' ? FM : BKM; }, tipc = function (sex) { return sex === 'f' ? shade(FM, 1.15) : WH; };
   BIRDS.ostrich = {
     id: 'ostrich', sexed: true, fScale: 0.92, cy: 1.55, height: 2.7, walkA: 0.5, runA: 0.8, bend: 0.8, babyScale: 0.4, babyHead: 1.4, bob: 1.5,
     body: function (g, sex) {
-      var m = sex !== 'f', C = m ? BKM : FM;
-      g.loft([[-0.64, 0.24, 0.25, 1.5], [-0.28, 0.43, 0.43, 1.52], [0.16, 0.41, 0.43, 1.56], [0.54, 0.28, 0.3, 1.62], [0.68, 0.14, 0.16, 1.68]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z < -0.34 ? (m ? WH : shade(FM, 1.15)) : C; });
+      var m = sex !== 'f', C = body(sex);
+      g.loft([[-0.64, 0.24, 0.25, 1.5], [-0.28, 0.43, 0.43, 1.52], [0.16, 0.41, 0.43, 1.56], [0.54, 0.28, 0.3, 1.62], [0.66, 0.18, 0.2, 1.67], [0.74, 0.07, 0.09, 1.7], [0.77, 0.02, 0.03, 1.7]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return plume(z < -0.34 ? tipc(sex) : C, x, y, z, 0.16); });
+      // drooping rump plumes layered over the back
+      for (var i = 0; i < 5; i++) { var a = (i - 2) * 0.34; feather(g, sin(a) * 0.3, 1.8 - abs(a) * 0.25, -0.1 - cos(a) * 0.05, 0.4, 0.075, [-0.35 - abs(a) * 0.4, -a * 0.5, 0], i % 2 ? tipc(sex) : C, 0.018); }
+      for (var j = 0; j < 3; j++) { var b = (j - 1) * 0.45; feather(g, sin(b) * 0.2, 1.82, -0.5, 0.5, 0.085, [-0.15 - abs(b) * 0.5, -b * 0.55, 0], tipc(sex), 0.018); }
+      // fluffy shoulder/neck-base tufts
+      for (var k = 0; k < 2; k++) { var c = (k - 0.5) * 0.8; feather(g, sin(c) * 0.22, 1.9, 0.38, 0.18, 0.05, [-1.0, -c * 0.4, 0], C, 0.014); }
     },
     neckA: { y: 1.8, z: 0.42, len: 0.55, up: 1.0, r0: 0.15, r1: 0.11, col: SK },
     neckB: { len: 0.6, up: 1.25, r0: 0.11, r1: 0.08, col: SK },
     head: function (g, sex, L) {
-      g.sph(0.075, 0.07, 0.09, 0, 0.0, L + 0.04, SK, { s: [7, 5] }); g.sph(0.045, 0.03, 0.08, 0, -0.025, L + 0.14, BEAK, { s: [6, 4] });
-      eyePair(g, 0.062, 0.03, L + 0.06, 0.028, 0x1a1008); g.sph(0.07, 0.025, 0.03, 0, 0.065, L + 0.03, 0x4a3a30, { s: [6, 4] });
+      var m = sex !== 'f', HD = m ? 0xe6a3a0 : SK;
+      g.sph(0.075, 0.07, 0.09, 0, 0.0, L + 0.04, HD, { s: [7, 5] });
+      g.sph(0.05, 0.04, 0.05, 0, 0.0, L + 0.1, HD, { s: [6, 4] });
+      // flat broad bill, upper and lower mandible with nostrils
+      g.sph(0.045, 0.022, 0.085, 0, -0.012, L + 0.16, BEAK, { s: [7, 4] });
+      g.sph(0.04, 0.015, 0.075, 0, -0.045, L + 0.15, shade(BEAK, 0.9), { s: [6, 4] });
+      g.sph(0.017, 0.013, 0.014, 0, -0.012, L + 0.243, shade(BEAK, 0.82), { s: [5, 4] });
+      for (var s = -1; s <= 1; s += 2) g.sph(0.008, 0.006, 0.014, s * 0.022, 0.008, L + 0.14, 0x6a5040, { s: [4, 3] });
+      // big eyes with heavy lashes and brow tuft
+      eyes(g, 0.058, 0.032, L + 0.065, 0.026, 0x6a3a14, 0xd49a90);
+      for (var e = -1; e <= 1; e += 2) for (var q = 0; q < 2; q++) g.limb(e * 0.058, 0.06, L + 0.045 + q * 0.03, e * 0.066, 0.085, L + 0.04 + q * 0.03, 0.003, 0.001, 0x1a1410, { seg: 3 });
+      g.sph(0.06, 0.024, 0.04, 0, 0.065, L + 0.03, 0x4a3a30, { s: [6, 4] });
+      for (var t = 0; t < 3; t++) g.cone(0.008, 0.03, (t - 1) * 0.03, 0.085, L + 0.0 + (t % 2) * 0.012, 0x4a3a30, { seg: 4, rot: [-0.3, 0, (t - 1) * 0.2] });
     },
-    legs: { x: 0.17, hipY: 1.3, z: 0.0, thigh: 0.6, shank: 0.7, r: [0.1, 0.075, 0.06], col: 0xe0b2a0, thighCol: 0xe3b9a6,
+    legs: { x: 0.17, hipY: 1.3, z: 0.0, thigh: 0.6, shank: 0.7, r: [0.1, 0.075, 0.06], col: scaly(SCALE), thighCol: 0xe3b9a6,
       thighFluff: [0.22, 0.28, 0.3], thighFluffCol: 0x777, foot: function (g, y0) {
-        g.limb(0, y0 + 0.02, 0, -0.02, y0 + 0.015, 0.18, 0.048, 0.026, 0xd9a898, { seg: 5 });
-        g.limb(0.02, y0 + 0.02, 0, 0.065, y0 + 0.015, 0.13, 0.032, 0.018, 0xd9a898, { seg: 5 });
-        g.cone(0.026, 0.065, -0.02, y0 + 0.02, 0.21, 0x333333, { seg: 5, rot: [PI / 2, 0, 0] });
+        g.sph(0.07, 0.04, 0.065, 0, y0 + 0.03, 0.0, shade(SCALE, 0.9), { s: [6, 4] });
+        // large and small toe with joints, pads and nail
+        g.limb(0, y0 + 0.03, 0, -0.012, y0 + 0.022, 0.1, 0.05, 0.04, 0xd9a898, { seg: 5 });
+        g.limb(-0.012, y0 + 0.022, 0.1, -0.02, y0 + 0.014, 0.19, 0.04, 0.03, 0xd9a898, { seg: 5 });
+        g.cone(0.03, 0.07, -0.02, y0 + 0.014, 0.24, 0x2a2a2a, { seg: 5, rot: [PI / 2, 0, 0], sx: 1 });
+        g.limb(0.03, y0 + 0.03, 0.0, 0.07, y0 + 0.02, 0.1, 0.032, 0.026, 0xd9a898, { seg: 5 });
+        g.cone(0.018, 0.04, 0.075, y0 + 0.016, 0.15, 0x555555, { seg: 5, rot: [PI / 2, 0, 0] });
       } },
     wingAt: [0.42, 1.7, 0.0],
     wings: function (r, sex) {
-      var g = B(), s = r ? -1 : 1, m = sex !== 'f';
-      g.extrude([[0.15, 0.32], [0.26, -0.05], [0.14, -0.46], [-0.14, -0.52], [-0.36, -0.25], [-0.26, 0.22]], 0.11, s * 0.06, -0.24, -0.1, [0, 0, 0], function (x, y, z) { return y < -0.34 ? (m ? WH : shade(FM, 1.15)) : (m ? BKM : FM); }, { axis: 'x', bev: 0.03, curveX: s * 0.22 });
+      var g = B(), s = r ? -1 : 1, C = body(sex), T = tipc(sex), i;
+      g.loft([[-0.25, 0.01, 0.03, -0.1], [-0.05, 0.05, 0.13, -0.1], [0.15, 0.04, 0.12, -0.08], [0.25, 0.01, 0.04, -0.06]], { rings: 8, seg: 8, cap0: true, cap1: true, ox: s * 0.02 }, function (zc, ca, sa, x, y, z) { return plume(C, x, y, z, 0.16); });
+      // hanging plume fan: coverts, primaries, long white-tipped feathers
+      for (i = 0; i < 5; i++) { var a = -1.9 + i * 0.24; feather(g, s * 0.05, -0.04 - i * 0.012, 0.2 - i * 0.12, 0.28 + i * 0.015, 0.1, [a, s * 0.2, PI / 2], plume(C, i, 1, 1, 0.2), 0.02); }
+      for (i = 0; i < 4; i++) { var b = -1.95 + i * 0.26; feather(g, s * 0.07, -0.12, 0.18 - i * 0.12, 0.46 + abs(i - 4) * -0.02 + 0.06, 0.085, [b, s * 0.28, PI / 2], T, 0.02); }
+      for (i = 0; i < 3; i++) { var c = -2.0 + i * 0.3; feather(g, s * 0.09, -0.2, 0.1 - i * 0.12, 0.5, 0.09, [c, s * 0.34, PI / 2], plume(T, i, 2, 2, 0.1), 0.02); }
       return g.build();
+    },
+    tailGeo: function (g, sex) {
+      for (var i = 0; i < 6; i++) { var a = (i - 2.5) * 0.3; feather(g, sin(a) * 0.1, 1.74, -0.6, 0.55, 0.075, [-0.4 - abs(a) * 0.15, -a * 0.45, 0], (i % 2) ? tipc(sex) : shade(tipc(sex), 0.95), 0.018); }
     },
     eat: { na: 0.15, nb: -1.0, tp: 0.15, ty: -0.2 },
     sleep: { lie: 0.5, na: 0.2, nb: -0.15, hy: 0.0 }
   };
-  // fix ostrich legs thighs fluff colour at build: uses sexed body colour (set by thighFluffCol) - give plumage colour hook
   BIRDS.ostrich.legs.thighFluffCol = function (sex) { return sex === 'f' ? FM : BKM; };
 })();
 
@@ -2624,22 +2729,36 @@ function birdUpdate(I, dt, ent) {
   BIRDS.phoenix = {
     id: 'phoenix', cy: 0.80, height: 1.65, walkA: 0.45, runA: 0.72, bend: 0.9, wingSweep: true, babyScale: 0.5, babyHead: 1.38, bob: 1.1,
     body: function (g) {
-      g.loft([[-0.42, 0.08, 0.08, 0.8], [-0.14, 0.24, 0.24, 0.82], [0.18, 0.24, 0.26, 0.84], [0.4, 0.14, 0.16, 0.86]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-0.42, 0.08, 0.08, 0.8], [-0.14, 0.24, 0.24, 0.82], [0.18, 0.24, 0.26, 0.84], [0.36, 0.17, 0.19, 0.86], [0.46, 0.07, 0.09, 0.88], [0.49, 0.02, 0.03, 0.88]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neckA: { y: 0.96, z: 0.34, len: 0.26, up: 0.95, r0: 0.11, r1: 0.085, col: CR },
     neckB: { len: 0.26, up: 1.1, r0: 0.085, r1: 0.068, col: OR },
     head: function (g, sex, L) {
       g.sph(0.09, 0.088, 0.105, 0, 0.01, L + 0.03, CR, { s: [8, 6] });
-      g.tube([[0, 0.01, L + 0.09], [0, -0.01, L + 0.17], [0, -0.055, L + 0.21]], [0.04, 0.028, 0.008], function (x, y, z, nx, ny, nz, t) { return t > 0.6 ? GD : BK; }, { seg: 6, steps: 2 });
-      // regal swept golden crest plumes
-      g.tube([[0, 0.08, L + 0.02], [0, 0.16, L - 0.08], [0, 0.19, L - 0.22]], [0.026, 0.018, 0.004], GD, { seg: 5, steps: 2 });
-      for (var s = -1; s <= 1; s += 2) g.tube([[s * 0.035, 0.075, L + 0.02], [s * 0.065, 0.14, L - 0.06], [s * 0.085, 0.16, L - 0.18]], [0.02, 0.014, 0.003], OR, { seg: 5, steps: 2 });
-      eyePair(g, 0.072, 0.03, L + 0.065, 0.02, 0xffe440);
+      g.sph(0.05, 0.05, 0.06, 0, 0.0, L + 0.09, OR, { s: [6, 4] });
+      // hooked upper mandible over a shorter lower one, with nostrils
+      g.tube([[0, 0.02, L + 0.08], [0, 0.015, L + 0.17], [0, -0.04, L + 0.215], [0, -0.07, L + 0.205]], [0.042, 0.03, 0.017, 0.004], function (x, y, z, nx, ny, nz, t) { return t > 0.6 ? GD : BK; }, { seg: 6, steps: 2 });
+      g.tube([[0, -0.025, L + 0.07], [0, -0.035, L + 0.15], [0, -0.05, L + 0.19]], [0.026, 0.02, 0.006], shade(BK, 0.85), { seg: 5, steps: 2 });
+      for (var n = -1; n <= 1; n += 2) g.sph(0.006, 0.005, 0.012, n * 0.024, 0.025, L + 0.12, 0x7a4a10, { s: [4, 3] });
+      // swept golden crest: layered plumes
+      for (var c = 0; c < 5; c++) feather(g, 0, 0.085 + c * 0.008, L + 0.03 - c * 0.025, 0.2 - c * 0.02, 0.022, [0.5 + c * 0.1, 0, PI / 2], c % 2 ? OR : GD, 0.008);
+      for (var s = -1; s <= 1; s += 2) {
+        g.tube([[s * 0.035, 0.075, L + 0.02], [s * 0.065, 0.14, L - 0.06], [s * 0.085, 0.16, L - 0.18]], [0.02, 0.014, 0.003], OR, { seg: 5, steps: 2 });
+        feather(g, s * 0.075, 0.03, L - 0.03, 0.14, 0.03, [0.35, s * 0.5, 0], CR, 0.008);
+      }
+      eyes(g, 0.072, 0.03, L + 0.065, 0.018, 0xffe440, DK);
     },
-    legs: { x: 0.11, hipY: 0.66, z: 0.0, thigh: 0.32, shank: 0.34, r: [0.05, 0.03, 0.024], col: BK, thighCol: CR,
+    legs: { x: 0.11, hipY: 0.66, z: 0.0, thigh: 0.32, shank: 0.34, r: [0.05, 0.03, 0.024], col: scaly(BK), thighCol: CR,
       foot: function (g, y0) {
-        for (var i = -1; i <= 1; i++) g.limb(0, y0 + 0.02, 0, i * 0.05, y0 + 0.01, 0.14, 0.016, 0.008, BK, { seg: 4 });
-        g.limb(0, y0 + 0.02, 0, 0, y0 + 0.01, -0.08, 0.015, 0.008, BK, { seg: 4 });
+        g.sph(0.03, 0.025, 0.03, 0, y0 + 0.02, 0, shade(BK, 0.85), { s: [5, 4] });
+        for (var i = -1; i <= 1; i++) {
+          var x1 = i * 0.03, x2 = i * 0.075, x3 = i * 0.1;
+          g.limb(0, y0 + 0.02, 0, x1, y0 + 0.014, 0.08, 0.018, 0.012, BK, { seg: 4 });
+          g.limb(x1, y0 + 0.014, 0.08, x2, y0 + 0.008, 0.15, 0.012, 0.009, BK, { seg: 4 });
+          g.cone(0.009, 0.045, x3 * 0.9 + x2 * 0.1, y0 + 0.002, 0.18, 0x3a2a10, { seg: 4, rot: [PI / 2 + 0.3, 0, -i * 0.15] });
+        }
+        g.limb(0, y0 + 0.02, 0, 0, y0 + 0.012, -0.08, 0.016, 0.01, BK, { seg: 4 });
+        g.cone(0.008, 0.04, 0, y0 + 0.006, -0.1, 0x3a2a10, { seg: 4, rot: [-PI / 2 - 0.3, 0, 0] });
       } },
     wingAt: [0.22, 0.94, 0.08],
     wings: function (r) {
@@ -2650,6 +2769,11 @@ function birdUpdate(I, dt, ent) {
         [[0, -0.02, -0.26], [s * 0.48, 0.04, -0.34], [s * 0.96, 0.0, -0.44]],
         [[0, -0.03, -0.42], [s * 0.36, -0.01, -0.46], [s * 0.72, -0.03, -0.52]]
       ], 0.06, function (x, y, z) { return abs(x) > 0.65 ? GD : (abs(x) > 0.3 ? OR : CR); }, { camber: 0.07, scallop: 0.08, uSteps: 3, vSteps: 2 });
+      // layered coverts and secondaries
+      for (var r = 0; r < 3; r++) for (var q = 0; q < 9 - r * 2; q++) {
+        var fx = s * (0.1 + q * (0.11 + r * 0.02)), fz = -0.02 - r * 0.11 - q * 0.03 * (1 + r * 0.3);
+        feather(g, fx, 0.035 - r * 0.01, fz, 0.2 + r * 0.05 - q * 0.008, 0.05 - r * 0.004, [0, s * (0.1 + q * 0.03), 0], r === 0 ? plume(CR, q, 3, r, 0.2) : (r === 1 ? OR : GD), 0.012);
+      }
       // blazing sculpted primary wingtip feather blades
       for (var k = 0; k < 6; k++) {
         var wx = s * (0.36 + k * 0.17), wz = -0.32 - k * 0.04;
@@ -2664,9 +2788,11 @@ function birdUpdate(I, dt, ent) {
         [[0.09, 0.80, -0.34], [0.22, 0.70, -0.88], [0.34, 0.54, -1.38]],
         [[-0.09, 0.80, -0.34], [-0.22, 0.70, -0.88], [-0.34, 0.54, -1.38]],
         [[0.15, 0.78, -0.33], [0.36, 0.74, -0.75], [0.54, 0.64, -1.16]],
-        [[-0.15, 0.78, -0.33], [-0.36, 0.74, -0.75], [-0.54, 0.64, -1.16]]
+        [[-0.15, 0.78, -0.33], [-0.36, 0.74, -0.75], [-0.54, 0.64, -1.16]],
+        [[0.05, 0.82, -0.34], [0.1, 0.74, -0.8], [0.14, 0.62, -1.3]],
+        [[-0.05, 0.82, -0.34], [-0.1, 0.74, -0.8], [-0.14, 0.62, -1.3]]
       ];
-      var cols = [GD, OR, OR, CR, CR];
+      var cols = [GD, OR, OR, CR, CR, GD, GD];
       for (var i = 0; i < plumes.length; i++) {
         var pl = plumes[i], tip = pl[2];
         g.tube(pl, [0.055, 0.032, 0.01], cols[i], { seg: 5, sx: 1.4, sz: 0.5, steps: 2 });
@@ -2689,23 +2815,41 @@ OTHERS.penguin = function (opts) {
     // streamlined hydrodynamic loft body
     g.loft([[-0.94, 0.12, 0.12, 0], [-0.74, 0.25, 0.22, 0.01], [-0.46, 0.28, 0.25, 0.015], [-0.18, 0.22, 0.21, 0.01], [-0.06, 0.12, 0.13, 0]], { down: true, oy: 0, rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) {
       if (y > 0.72 && z > 0.06) return mixHex(WH, YL, clamp((y - 0.72) * 5, 0, 1));
-      return z > 0.045 ? WH : BK;
+      return plume(z > 0.045 ? WH : BK, x, y, z, 0.1);
     });
-    g.cone(0.08, 0.18, 0, 0.12, -0.14, BK, { seg: 5, rot: [-1.1, 0, 0] });
+    for (var f = 0; f < 5; f++) feather(g, (f - 2) * 0.03, 0.14, -0.2, 0.2, 0.035, [-0.5 - abs(f - 2) * 0.03, (f - 2) * 0.12, 0], BK, 0.012);
     P.body = g.build(0, -0.5, 0);
     g = B(); g.sph(0.175, 0.17, 0.17, 0, 0.0, 0.0, function (x, y, z, nx, ny) { return (z > 0.07 && ny < 0.5 && ny > -0.9 && abs(x) < 0.12) ? WH : BK; }, { s: [9, 7] });
-    g.tube([[0, 0.0, 0.13], [0, -0.01, 0.21], [0, -0.025, 0.28]], [0.046, 0.032, 0.008], OR, { seg: 6, steps: 2 });
-    g.sph(0.03, 0.05, 0.015, 0.115, 0.02, 0.05, YL, { s: [5, 4] }); g.sph(0.03, 0.05, 0.015, -0.115, 0.02, 0.05, YL, { s: [5, 4] });
-    eyePair(g, 0.085, 0.05, 0.13, 0.026, 0x050505);
+    g.tube([[0, 0.012, 0.13], [0, 0.008, 0.21], [0, -0.012, 0.285]], [0.042, 0.028, 0.008], function (x, y, z, nx, ny, nz, t) { return t > 0.8 ? 0x2a1a14 : OR; }, { seg: 6, steps: 2 });
+    g.tube([[0, -0.02, 0.13], [0, -0.026, 0.2], [0, -0.03, 0.255]], [0.03, 0.02, 0.006], shade(OR, 0.85), { seg: 5, steps: 2 });
+    g.limb(0, -0.01, 0.14, 0, -0.012, 0.26, 0.003, 0.002, 0x5a2a14, { seg: 4 });
+    for (var n = -1; n <= 1; n += 2) {
+      g.sph(0.006, 0.004, 0.014, n * 0.026, 0.026, 0.19, 0x5a2a14, { s: [4, 3] });
+      g.sph(0.03, 0.05, 0.016, n * 0.115, 0.02, 0.05, YL, { s: [5, 4] });
+      g.sph(0.03, 0.022, 0.05, n * 0.03, 0.15, 0.0, shade(BK, 1.2), { s: [5, 4] });
+    }
+    eyes(g, 0.085, 0.05, 0.12, 0.022, 0x6a2a14, 0xf0e8e0);
     P.head = g.build();
     // hydrofoil swept flippers
     var fp = [[0.02, 0.06], [0.05, -0.12], [0.02, -0.34], [-0.04, -0.44], [-0.1, -0.26], [-0.08, -0.04]];
-    g = B(); g.extrude(fp, 0.042, 0, -0.04, 0, [0, 0, 0], function (x, y, z, nx) { return nx > 0 ? BK : mixHex(BK, WH, 0.35); }, { axis: 'x', bev: 0.014, curveX: 0.18 }); P.fl = g.build();
-    g = B(); g.extrude(fp, 0.042, 0, -0.04, 0, [0, 0, 0], function (x, y, z, nx) { return nx < 0 ? BK : mixHex(BK, WH, 0.35); }, { axis: 'x', bev: 0.014, curveX: -0.18 }); P.fr = g.build();
+    g = B(); g.extrude(fp, 0.042, 0, -0.04, 0, [0, 0, 0], function (x, y, z, nx) { return nx > 0 ? BK : mixHex(BK, WH, 0.35); }, { axis: 'x', bev: 0.014, curveX: 0.18 }); 
+    for (var q = 0; q < 5; q++) feather(g, 0.01, -0.2 - q * 0.04, 0.0 - q * 0.012, 0.16 - q * 0.015, 0.028, [-1.45 + q * 0.12, 0.05, PI / 2], q % 2 ? shade(BK, 1.3) : BK, 0.01);
+    P.fl = g.build();
+    g = B(); g.extrude(fp, 0.042, 0, -0.04, 0, [0, 0, 0], function (x, y, z, nx) { return nx < 0 ? BK : mixHex(BK, WH, 0.35); }, { axis: 'x', bev: 0.014, curveX: -0.18 });
+    for (var q2 = 0; q2 < 5; q2++) feather(g, -0.01, -0.2 - q2 * 0.04, 0.0 - q2 * 0.012, 0.16 - q2 * 0.015, 0.028, [-1.45 + q2 * 0.12, -0.05, PI / 2], q2 % 2 ? shade(BK, 1.3) : BK, 0.01);
+    P.fr = g.build();
     // sculpted webbed 3-toed penguin feet with ankle joint
     g = B();
-    g.cyl(0.038, 0.035, 0.06, 0, 0.025, 0, OR, { seg: 6 });
-    g.extrude([[0, -0.03], [0.085, 0.14], [0.03, 0.17], [0, 0.15], [-0.03, 0.17], [-0.085, 0.14]], 0.028, 0, -0.008, 0.01, [0, 0, 0], OR, { axis: 'y', bev: 0.008 });
+    g.cyl(0.038, 0.035, 0.06, 0, 0.025, 0, scaly(OR), { seg: 6 });
+    g.sph(0.04, 0.025, 0.04, 0, 0.0, 0.0, shade(OR, 0.9), { s: [5, 4] });
+    for (var tt = -1; tt <= 1; tt++) {
+      var ta = tt * 0.55, tx = sin(ta) * 0.09, tz = cos(ta) * 0.09, tx2 = sin(ta) * 0.16, tz2 = cos(ta) * 0.16;
+      g.limb(0, 0.0, 0.01, tx, -0.01, tz, 0.02, 0.017, OR, { seg: 4 });
+      g.sph(0.018, 0.014, 0.018, tx, -0.008, tz, shade(OR, 0.88), { s: [4, 3] });
+      g.limb(tx, -0.01, tz, tx2, -0.015, tz2, 0.017, 0.012, OR, { seg: 4 });
+      g.cone(0.01, 0.03, tx2 * 1.08, -0.015, tz2 * 1.08, 0x2a2a2a, { seg: 4, rot: [PI / 2, ta, 0] });
+    }
+    g.extrude([[0, 0.02], [0.11, 0.14], [0, 0.15], [-0.11, 0.14]], 0.008, 0, -0.016, 0, [0, 0, 0], shade(OR, 1.1), { axis: 'y' });
     P.foot = g.build();
   }
   var sc = baby ? 0.5 : 1;
@@ -2758,19 +2902,44 @@ OTHERS.kangaroo = function (opts) {
     else g.sph(0.14, 0.11, 0.15, 0, -0.22, 0.02, LT, { s: [6, 4] }); // subtle female pouch contour
     P.body = g.build();
     // head in world-aligned frame
-    g = B(); g.limb(0, 0, 0, 0, 0.26, 0.1, 0.13, 0.085, FUR, { seg: 6 });
-    var hy = 0.33, hz = 0.14;
-    g.sph(0.1, 0.095, 0.12, 0, hy, hz, FUR, { s: [8, 6] }); g.sph(0.052, 0.052, 0.11, 0, hy - 0.04, hz + 0.14, LT, { s: [7, 5] }); g.sph(0.03, 0.025, 0.025, 0, hy - 0.025, hz + 0.25, NOSE, { s: [5, 4] });
-    g.cone(0.045, 0.22, 0.065, hy + 0.2, hz - 0.04, FUR, { seg: 5, rot: [0, 0, -0.18] }); g.cone(0.045, 0.22, -0.065, hy + 0.2, hz - 0.04, FUR, { seg: 5, rot: [0, 0, 0.18] });
-    g.cone(0.025, 0.15, 0.065, hy + 0.2, hz - 0.02, 0xe0b0a8, { seg: 4, rot: [0, 0, -0.18] }); g.cone(0.025, 0.15, -0.065, hy + 0.2, hz - 0.02, 0xe0b0a8, { seg: 4, rot: [0, 0, 0.18] });
-    eyePair(g, 0.075, hy + 0.025, hz + 0.07, 0.022, 0x15100a);
+    g = B(); g.limb(0, -0.02, -0.02, 0, 0.26, 0.1, 0.14, 0.085, function (x, y, z, nx, ny) { return ny < -0.3 ? LT : FUR; }, { seg: 7 });
+    var hy = 0.33, hz = 0.14, fc = function (x, y, z, nx, ny) { return plume(ny < -0.4 ? LT : FUR, x, y, z, 0.1); };
+    g.sph(0.1, 0.095, 0.12, 0, hy, hz, fc, { s: [8, 6] });
+    g.loft([[0.0, 0.07, 0.068, hy - 0.01], [0.08, 0.05, 0.052, hy - 0.035], [0.16, 0.036, 0.04, hy - 0.05], [0.24, 0.03, 0.03, hy - 0.055]], { z0: hz + 0.04, z1: hz + 0.26, ox: 0, rings: 6, seg: 8, cap0: false, cap1: true, s0: 0, s1: 0.24, oz: hz + 0.04 }, function (zc, ca, sa, x, y, z) { return ca < -0.35 ? LT : mixHex(FUR, LT, 0.35); });
+    g.sph(0.04, 0.026, 0.03, 0, hy - 0.04, hz + 0.275, NOSE, { s: [6, 4] });
+    for (var n = -1; n <= 1; n += 2) {
+      g.sph(0.008, 0.006, 0.012, n * 0.016, hy - 0.035, hz + 0.298, 0x0a0604, { s: [4, 3] });
+      g.sph(0.026, 0.02, 0.05, n * 0.03, hy - 0.073, hz + 0.16, shade(LT, 0.93), { s: [5, 4] });
+      g.sph(0.035, 0.014, 0.045, n * 0.068, hy + 0.05, hz + 0.07, FUR, { s: [5, 4] });
+      g.limb(n * 0.06, hy + 0.08, hz - 0.045, n * 0.085, hy + 0.3, hz - 0.07, 0.05, 0.006, FUR, { seg: 5, sz: 0.4 });
+      g.limb(n * 0.062, hy + 0.09, hz - 0.034, n * 0.083, hy + 0.27, hz - 0.058, 0.033, 0.004, 0xe0b0a8, { seg: 4, sz: 0.3 });
+      g.limb(n * 0.083, hy + 0.27, hz - 0.07, n * 0.086, hy + 0.305, hz - 0.074, 0.012, 0.004, DK, { seg: 4, sz: 0.4 });
+    }
+    g.limb(0, hy - 0.058, hz + 0.05, 0, hy - 0.062, hz + 0.26, 0.004, 0.003, DK, { seg: 4 });
+    eyes(g, 0.074, hy + 0.02, hz + 0.075, 0.019, 0x2a1a0a, shade(FUR, 0.8));
     P.head = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -AL * 0.9, 0.0, 0.05, 0.035, FUR, { seg: 5 }); g.sph(0.045, 0.06, 0.05, 0, -AL * 0.95, 0.02, DK, { s: [5, 4] }); P.arm = g.build();
-    g = B(); g.sph(0.15, 0.2, 0.17, 0, -0.12, 0, FUR, { s: [7, 6] }); g.limb(0, 0, 0, 0, -UL, 0.0, 0.14, 0.075, FUR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -SL, -0.05, 0.075, 0.045, FUR, { seg: 6 }); P.shank = g.build();
-    g = B(); g.limb(0, 0.0, -0.05, 0, 0.0, FL, 0.05, 0.04, DK, { seg: 5 }); g.sph(0.045, 0.03, 0.07, 0, 0, FL + 0.03, 0x3a2a20, { s: [5, 4] }); P.foot = g.build();
+    // arm with chest-side shoulder, forearm, 4-fingered clawed hand
+    g = B(); g.sph(0.06, 0.085, 0.07, 0, -0.03, 0, FUR, { s: [6, 5] }); g.limb(0, 0, 0, 0, -AL * 0.9, 0.03, 0.055, 0.035, FUR, { seg: 6 }); g.sph(0.04, 0.05, 0.04, 0, -AL * 0.35, 0.0, FUR, { s: [5, 4] });
+    g.sph(0.04, 0.04, 0.05, 0, -AL * 0.95, 0.04, DK, { s: [5, 4] });
+    for (var h = -1.5; h <= 1.5; h++) { g.limb(h * 0.018, -AL * 0.96, 0.05, h * 0.024, -AL * 1.02, 0.08, 0.009, 0.006, DK, { seg: 4 }); g.cone(0.005, 0.025, h * 0.026, -AL * 1.03, 0.092, 0x2a2018, { seg: 4, rot: [PI / 2 - 0.5, 0, 0] }); }
+    P.arm = g.build();
+    // thigh: big quad muscle + hamstring, tapering to the knee
+    g = B(); g.sph(0.17, 0.22, 0.2, 0, -0.14, -0.02, FUR, { s: [8, 6] }); g.sph(0.1, 0.17, 0.1, 0.0, -0.22, 0.09, shade(FUR, 1.05), { s: [6, 5] });
+    g.limb(0, -0.02, 0, 0, -UL, 0.0, 0.14, 0.075, FUR, { seg: 7 }); g.sph(0.07, 0.07, 0.075, 0, -UL, 0, FUR, { s: [5, 4] }); P.thigh = g.build();
+    g = B(); g.sph(0.07, 0.14, 0.08, 0, -0.12, -0.04, FUR, { s: [6, 5] }); g.limb(0, 0, 0, 0, -SL, -0.05, 0.075, 0.042, FUR, { seg: 6 }); g.sph(0.045, 0.045, 0.045, 0, -SL, -0.05, DK, { s: [5, 4] }); P.shank = g.build();
+    // long narrow hind foot: heel, big toe with claw, small side toe
+    g = B(); g.sph(0.04, 0.04, 0.05, 0, 0.0, -0.06, DK, { s: [5, 4] }); g.limb(0, 0.0, -0.05, 0, -0.005, FL * 0.7, 0.05, 0.045, DK, { seg: 6 });
+    g.limb(0, -0.005, FL * 0.7, 0, -0.01, FL + 0.05, 0.045, 0.036, 0x3a2a20, { seg: 5 }); g.sph(0.032, 0.026, 0.04, 0, -0.012, FL + 0.04, 0x2a1c14, { s: [5, 4] });
+    g.cone(0.022, 0.07, 0, -0.012, FL + 0.11, 0x161008, { seg: 5, rot: [PI / 2, 0, 0] });
+    for (var d = -1; d <= 1; d += 2) { g.limb(d * 0.04, 0.0, FL * 0.5, d * 0.05, -0.01, FL * 0.8, 0.022, 0.016, 0x3a2a20, { seg: 4 }); g.cone(0.01, 0.04, d * 0.052, -0.01, FL * 0.86, 0x161008, { seg: 4, rot: [PI / 2, 0, 0] }); }
+    P.foot = g.build();
+    // heavy muscular tail: broad root, dorsal ridge, light belly
     P.tail = [];
-    for (var i = 0; i < 3; i++) { var gt = B(), r0 = lerp(0.14, 0.04, i / 3), r1 = lerp(0.14, 0.04, (i + 1) / 3); gt.limb(0, 0, 0, 0, 0, -0.38, r0, r1, function (x, y, z, nx, ny) { return ny < -0.4 ? LT : FUR; }, { seg: 6 }); P.tail.push(gt.build()); }
+    for (var i = 0; i < 3; i++) {
+      var gt = B(), r0 = lerp(0.16, 0.045, i / 3), r1 = lerp(0.16, 0.045, (i + 1) / 3), rm = (r0 + r1) / 2;
+      gt.loft([[-0.4, r1, r1 * 0.9, 0], [-0.2, rm * 1.02, rm * 0.95, 0], [0.0, r0, r0 * 0.92, 0], [0.03, r0 * 0.95, r0 * 0.88, 0]], { rings: 6, seg: 8, cap0: true, cap1: false }, function (zc, ca, sa, x, y, z) { return plume(ca < -0.4 ? LT : FUR, x, y, z, 0.1); });
+      P.tail.push(gt.build());
+    }
   }
   var sc = baby ? 0.45 : (sex === 'f' ? 0.88 : 1.0);
   var root = grp('animal'), rig = grp('rig'), tor = grp('torso'); root.add(rig); rig.add(tor); rig.scale.setScalar(sc);
@@ -2860,7 +3029,10 @@ OTHERS.winged_monkey = function (opts) {
     g.sph(0.085, 0.068, 0.09, 0, 0.06, 0.14, FACE, { s: [7, 5] });
     g.sph(0.024, 0.018, 0.018, 0, 0.08, 0.225, FUR_DK, { s: [4, 3] });
     g.tube([[-0.032, 0.038, 0.21], [0, 0.033, 0.225], [0.032, 0.038, 0.21]], 0.008, FUR_DK, { seg: 4, steps: 2 });
-    eyePair(g, 0.055, 0.145, 0.165, 0.022, 0xd89620);
+    g.tube([[-0.085, 0.172, 0.14], [-0.04, 0.184, 0.16], [0, 0.178, 0.165], [0.04, 0.184, 0.16], [0.085, 0.172, 0.14]], [0.01, 0.014, 0.012, 0.014, 0.01], FUR_DK, { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.01, 0.084, 0.24, 0x0a0a0c, { s: [4, 3] }); g.sph(0.025, 0.02, 0.025, nn * 0.04, 0.052, 0.17, shade(FACE, 1.1), { s: [5, 4] }); }
+    g.sph(0.045, 0.01, 0.02, 0, 0.03, 0.2, shade(FACE, 0.7), { s: [5, 3] });
+    eyes(g, 0.055, 0.145, 0.165, 0.021, 0xd89620, FUR_DK);
     earBall(g, 0.155, 0.13, 0.01, 0.055, FACE, shade(FACE, 0.8));
     earBall(g, -0.155, 0.13, 0.01, 0.055, FACE, shade(FACE, 0.8));
     // iconic tiny round bellhop pillbox cap tilted jauntily
@@ -2870,10 +3042,14 @@ OTHERS.winged_monkey = function (opts) {
     P.head = g.build();
 
     // 2-segment articulated arms (upper + forearm) & legs
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0.01, 0.052, 0.042, FUR, { seg: 6 }); g.sph(0.044, 0.044, 0.044, 0, -0.19, 0.01, FUR, { s: [5, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0.02, 0.04, 0.034, FUR, { seg: 6 }); g.sph(0.046, 0.052, 0.046, 0, -0.22, 0.03, FACE, { s: [5, 4] }); P.armL = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.22, 0, 0.065, 0.048, FUR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.22, 0, 0.046, 0.036, FUR, { seg: 6 }); g.sph(0.048, 0.028, 0.085, 0, -0.23, 0.04, FACE, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.052, 0.042, 0.22, 0.01, FUR); g.sph(0.044, 0.044, 0.044, 0, -0.19, 0.01, FUR, { s: [5, 4] }); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.19, 0.04, 0.034, 0.25, 0.02, FUR);
+      hand(g, 0, -0.19, 0.02, 1.05, hs ? -1 : 1, FACE);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
+    g = B(); tlimb(g, 0.22, 0.065, 0.048, 0.3, 0, FUR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.22, 0.046, 0.036, 0.3, 0, FUR); g.sph(0.04, 0.036, 0.04, 0, -0.22, 0, FUR, { s: [5, 4] }); pfoot(g, 0, -0.238, 0.0, 1.15, 1, FACE); P.shank = g.build();
 
     // curled tail segments
     P.tail = [];
@@ -2891,6 +3067,8 @@ OTHERS.winged_monkey = function (opts) {
       gw.tube([sh, wr, t1], [0.034, 0.024, 0.01], STRUT, { seg: 5, steps: 2 });
       gw.tube([wr, t2], [0.02, 0.008], STRUT, { seg: 4 });
       gw.tube([wr, t3], [0.018, 0.008], STRUT, { seg: 4 });
+      gw.tube([wr, [s * 0.82, -0.04, -0.14]], [0.019, 0.008], STRUT, { seg: 4 });
+      gw.limb(wr[0], wr[1], wr[2], wr[0] + s * 0.05, wr[1] + 0.08, wr[2] + 0.05, 0.016, 0.004, 0xcfcfd4, { seg: 4 });
       gw.wingMembrane([[wr, t1], [wr, t2], [wr, t3], [sh, rt]], 0.022, WING, { camber: 0.06, scallop: 0.22, uSteps: 3, vSteps: 2 });
       return gw.build();
     };
@@ -2907,7 +3085,7 @@ OTHERS.winged_monkey = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.21, 0.18, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.19, 0.01); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.19, 0.01); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.1, -0.15, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.22, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
     var wg = grp(s ? 'rWing' : 'lWing'); wg.rotation.order = 'YXZ'; wg.position.set(sd * 0.14, 0.17, -0.14);
@@ -2997,6 +3175,9 @@ OTHERS.sasquatch = function (opts) {
     g.sph(0.14, 0.1, 0.14, 0, 0.02, 0.22, SK, { s: [7, 5] });
     g.tube([[-0.18, 0.22, 0.2], [-0.07, 0.26, 0.27], [0.07, 0.26, 0.27], [0.18, 0.22, 0.2]], [0.036, 0.048, 0.048, 0.036], DK, { seg: 6, steps: 2 });
     g.sph(0.045, 0.035, 0.03, 0, 0.11, 0.31, 0x261814, { s: [5, 4] });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.012, 0.008, 0.01, nn * 0.02, 0.095, 0.335, 0x0a0604, { s: [4, 3] }); g.sph(0.07, 0.025, 0.05, nn * 0.08, 0.04, 0.26, shade(SK, 1.15), { s: [5, 4] }); g.sph(0.045, 0.1, 0.04, nn * 0.24, 0.12, 0.02, SK, { s: [5, 4] }); }
+    g.tube([[-0.07, 0.0, 0.3], [0, -0.012, 0.325], [0.07, 0.0, 0.3]], 0.011, 0x1a0e0a, { seg: 4, steps: 2 });
+    for (var tf = 0; tf < 7; tf++) feather(g, (tf - 3) * 0.06, 0.4, 0.0 - abs(tf - 3) * 0.02, 0.22, 0.05, [-0.9 - abs(tf - 3) * 0.08, (tf - 3) * -0.06, 0], tf % 2 ? MH : RB, 0.02);
     P.head = g.build();
 
     var eg = B();
@@ -3004,15 +3185,29 @@ OTHERS.sasquatch = function (opts) {
     eg.sph(0.032, 0.026, 0.022, -0.078, 0.185, 0.27, EYE, { s: [5, 4] });
     P.eyes = eg.build();
 
-    // 2-segment articulated long shaggy arms (shoulder + elbow)
-    g = B(); g.sph(0.15, 0.16, 0.15, 0, -0.02, 0, RB, { s: [7, 5] }); g.limb(0, 0, 0, 0, -0.52, 0, 0.13, 0.1, fc, { seg: 7 }); g.sph(0.1, 0.1, 0.1, 0, -0.52, 0, fc, { s: [6, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.48, 0.06, 0.1, 0.08, fc, { seg: 7 }); g.sph(0.105, 0.12, 0.105, 0, -0.53, 0.08, SK, { s: [6, 5] }); P.armL = g.build();
+    // 2-segment articulated long shaggy arms (shoulder + elbow), matted fur hanging in layers
+    var shag = function (g, len, r, n, col, dy0) {
+      var body = function (x, y, z) { return fc(x, y, z, 0, 0); };
+      for (var i = 0; i < n; i++) for (var fs = -1; fs <= 1; fs += 2) for (var q = -1; q <= 1; q += 2) feather(g, q * r * 0.45, dy0 - i * len / n, fs * r * 0.8, len * 0.5, r * 0.22, [-PI / 2 - 0.06 * fs, q * 0.06, 0], body, 0.03);
+    };
+    g = B(); tlimb(g, 0.52, 0.13, 0.1, 0.2, 0, fc); g.sph(0.1, 0.1, 0.1, 0, -0.52, 0, fc, { s: [6, 4] }); shag(g, 0.4, 0.12, 3, RB, -0.1); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.48, 0.1, 0.08, 0.2, 0.06, fc); shag(g, 0.34, 0.09, 2, MH, -0.1);
+      g.sph(0.07, 0.08, 0.07, 0, -0.48, 0.06, SK, { s: [6, 5] });
+      hand(g, 0, -0.5, 0.07, 3.0, hs ? -1 : 1, SK);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // heavy legs & sculpted arched bigfoot feet
-    g = B(); g.limb(0, 0, 0, 0, -0.45, 0, 0.17, 0.13, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.45, 0, 0.13, 0.1, fc, { seg: 7 });
+    g = B(); tlimb(g, 0.45, 0.17, 0.13, 0.22, 0, fc); shag(g, 0.3, 0.15, 2, MH, -0.1); P.thigh = g.build();
+    g = B(); tlimb(g, 0.45, 0.13, 0.1, 0.25, 0, fc);
     g.loft([[-0.1, 0.08, 0.06, -0.47], [0.06, 0.11, 0.065, -0.465], [0.24, 0.125, 0.055, -0.475], [0.34, 0.095, 0.04, -0.48]], { rings: 8, seg: 8, cap0: true, cap1: true, flatBot: 0.85 }, SK);
-    for (var t2 = -1; t2 <= 1; t2++) g.sph(0.042, 0.035, 0.062, t2 * 0.065, -0.48, 0.34, shade(SK, 0.85), { s: [5, 4] });
+    for (var t2 = -2; t2 <= 2; t2++) {
+      var tx = t2 * 0.05, tl = 0.36 - abs(t2) * 0.012;
+      g.limb(tx * 0.9, -0.485, 0.28, tx, -0.49, tl, 0.034, 0.028, SK, { seg: 4 });
+      g.sph(0.03, 0.026, 0.034, tx, -0.49, tl + 0.02, shade(SK, 0.85), { s: [4, 3] });
+      g.cone(0.014, 0.03, tx, -0.485, tl + 0.05, 0x1a120e, { seg: 4, rot: [PI / 2, 0, 0] });
+    }
     P.shank = g.build();
   }
   var sc = baby ? 0.5 : 1.0;
@@ -3027,7 +3222,7 @@ OTHERS.sasquatch = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.52, 0.42, 0.05); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.52, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.52, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.24, -0.44, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.45, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3067,9 +3262,9 @@ OTHERS.nessie = function (opts) {
   var baby = !!opts.baby, P = partsCache.nessie;
   var EM = 0x1b6356, EM2 = 0x287c6c, DK = 0x12443b, BL = 0x78aa96, EYE = 0xf4c430;
   var bc = function (x, y, z, nx, ny) {
-    if (ny < -0.35) return BL;
+    if (ny < -0.35) return shade(BL, fract(z * 11) > 0.55 ? 0.9 : 1.04);
     var h = hash3(Math.floor(x * 7), Math.floor(y * 7), Math.floor(z * 7));
-    return h > 0.65 ? EM2 : (ny > 0.55 ? DK : EM);
+    return shade(h > 0.65 ? EM2 : (ny > 0.55 ? DK : EM), fract(z * 14 + x * 3) > 0.8 ? 0.86 : 1);
   };
   if (!P) {
     P = partsCache.nessie = {};
@@ -3091,7 +3286,14 @@ OTHERS.nessie = function (opts) {
     g = B();
     g.loft([[-0.04, 0.09, 0.085, 0], [0.1, 0.115, 0.098, 0], [0.28, 0.078, 0.062, -0.022], [0.4, 0.052, 0.04, -0.03]], { rings: 9, seg: 9, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     g.tube([[0, 0.06, 0.06], [0, 0.14, -0.04], [0, 0.17, -0.15]], [0.032, 0.02, 0.004], DK, { seg: 5, steps: 2 });
-    eyePair(g, 0.075, 0.035, 0.16, 0.024, EYE);
+    // lower jaw, brow ridge, nostrils and peg teeth
+    g.loft([[0.0, 0.07, 0.035, -0.07], [0.18, 0.062, 0.03, -0.062], [0.36, 0.038, 0.022, -0.05]], { rings: 6, seg: 8, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return ca > 0.3 ? shade(BL, 0.8) : BL; });
+    for (var nn = -1; nn <= 1; nn += 2) {
+      g.sph(0.012, 0.008, 0.014, nn * 0.022, 0.01, 0.385, 0x0a2a24, { s: [4, 3] });
+      g.sph(0.03, 0.018, 0.05, nn * 0.07, 0.058, 0.14, shade(EM, 0.7), { s: [5, 4] });
+      for (var tk = 0; tk < 4; tk++) g.cone(0.006, 0.02, nn * (0.035 - tk * 0.003), -0.022, 0.2 + tk * 0.045, 0xf0f0e0, { seg: 4, rot: [PI, 0, 0] });
+    }
+    eyes(g, 0.075, 0.035, 0.16, 0.022, EYE, DK);
     P.head = g.build();
 
     // sculpted cambered hydrofoil plesiosaur flippers
@@ -3112,7 +3314,8 @@ OTHERS.nessie = function (opts) {
     var tLen = [0.65, 0.65, 0.65], tR = [0.22, 0.14, 0.075, 0.022];
     for (var ti = 0; ti < 3; ti++) {
       var gt = B();
-      gt.limb(0, 0, 0, 0, 0, -tLen[ti], tR[ti], tR[ti + 1], bc, { seg: 7 });
+      gt.loft([[-tLen[ti], tR[ti + 1], tR[ti + 1] * 0.92, 0], [-tLen[ti] * 0.5, lerp(tR[ti], tR[ti + 1], 0.5) * 1.03, lerp(tR[ti], tR[ti + 1], 0.5) * 0.95, 0], [0, tR[ti], tR[ti] * 0.94, 0], [0.05, tR[ti] * 0.98, tR[ti] * 0.92, 0]], { rings: 7, seg: 9, cap0: true, ridge: 0.1 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      if (ti === 2) gt.extrude([[0, 0.0], [0.12, -0.08], [0.2, -0.2], [0.06, -0.16], [0, -0.12], [-0.06, -0.16], [-0.2, -0.2], [-0.12, -0.08]], 0.03, 0, 0.0, -tLen[ti] + 0.04, [0, 0, 0], DK, { axis: 'y', bev: 0.008 });
       if (ti === 0) gt.sph(0.16, 0.2, 0.24, 0, 0.16, -0.28, DK, { s: [7, 5] }); // 3rd arched hump
       else gt.cone(0.03, 0.1, 0, tR[ti] * 0.9, -tLen[ti] * 0.5, DK, { seg: 4 });
       P.tail.push(gt.build());
@@ -3219,7 +3422,7 @@ OTHERS.anaconda = function (opts) {
 
     // sculpted broad triangular anaconda head (vertex-shaded post-ocular stripe, no box stripes!)
     g = B();
-    g.loft([[-0.04, 0.11, 0.08, 0], [0.1, 0.145, 0.088, 0], [0.25, 0.105, 0.064, -0.01], [0.38, 0.07, 0.042, -0.015]], { rings: 10, seg: 10, cap0: true, cap1: true, flatBot: 0.65 }, function (zc, ca, sa, x, y, z) {
+    g.loft([[-0.04, 0.11, 0.08, 0], [0.1, 0.145, 0.088, 0], [0.25, 0.105, 0.064, -0.01], [0.37, 0.068, 0.045, -0.014], [0.42, 0.04, 0.03, -0.016], [0.44, 0.012, 0.01, -0.018]], { rings: 13, seg: 10, cap0: true, cap1: true, flatBot: 0.65 }, function (zc, ca, sa, x, y, z) {
       if (ca < -0.28) return BL;
       if (abs(sa) > 0.65 && ca > -0.15 && ca < 0.38 && z > 0.02 && z < 0.22) return DK;
       return scCol(x, y, z, sa, ca);
@@ -3229,7 +3432,13 @@ OTHERS.anaconda = function (opts) {
     g.limb(0, -0.02, 0.37, 0, -0.024, 0.49, 0.01, 0.008, 0xc83a48, { seg: 4 });
     g.limb(0, -0.024, 0.49, 0.022, -0.028, 0.55, 0.007, 0.003, 0xc83a48, { seg: 3 });
     g.limb(0, -0.024, 0.49, -0.022, -0.028, 0.55, 0.007, 0.003, 0xc83a48, { seg: 3 });
-    eyePair(g, 0.088, 0.032, 0.21, 0.024, EYE);
+    for (var sn = -1; sn <= 1; sn += 2) {
+      g.tube([[sn * 0.085, -0.02, 0.06], [sn * 0.07, -0.03, 0.2], [sn * 0.04, -0.03, 0.38]], [0.007, 0.006, 0.004], 0xd8e0b0, { seg: 4, steps: 2 });
+      g.tube([[sn * 0.1, 0.05, 0.12], [sn * 0.09, 0.062, 0.2], [sn * 0.06, 0.05, 0.3]], [0.01, 0.014, 0.008], shade(OL, 0.7), { seg: 4, steps: 2 });
+      g.sph(0.02, 0.016, 0.026, sn * 0.06, 0.0, 0.395, shade(OL, 1.1), { s: [4, 3] });
+    }
+    eyes(g, 0.088, 0.034, 0.21, 0.022, EYE, DK);
+    for (var sp = -1; sp <= 1; sp += 2) g.sph(0.004, 0.02, 0.006, sp * (0.088 + 0.022 * 1.35 + 0.0), 0.034, 0.215, 0x0a0a06, { s: [3, 4] });
     P.head = g.build();
 
     // 6 smooth overlapping tapered tail segments
@@ -3332,13 +3541,7 @@ OTHERS.monkey = function (opts) {
   if (!P) {
     P = partsCache.monkey = {};
     var g = B();
-    g.loft([
-      [0.24, 0, 0.08, 0.08, 0.005],
-      [0.14, 0, 0.145, 0.125, 0.01],
-      [0.01, 0, 0.155, 0.132, 0.0],
-      [-0.12, 0, 0.142, 0.128, -0.005],
-      [-0.24, 0, 0.095, 0.09, -0.01]
-    ], { axis: 'y', seg: 10, steps: 2 }, function (zc, ca, sa, x, y, z) {
+    g.loft([[-0.24, 0.08, 0.08, 0.005], [-0.14, 0.145, 0.125, 0.01], [-0.01, 0.155, 0.132, 0], [0.12, 0.142, 0.128, -0.005], [0.24, 0.095, 0.09, -0.01]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) {
       if (z > 0.02 && y > -0.16 && abs(x) < 0.12) return CR;
       return BR;
     });
@@ -3355,23 +3558,28 @@ OTHERS.monkey = function (opts) {
     g.sph(0.068, 0.055, 0.075, 0, 0.045, 0.125, CR, { s: [7, 5] });
     g.sph(0.022, 0.016, 0.016, 0, 0.065, 0.195, DK, { s: [4, 3] });
     g.tube([[-0.026, 0.027, 0.184], [0, 0.022, 0.196], [0.026, 0.027, 0.184]], 0.006, DK, { seg: 4, steps: 2 });
-    eyePair(g, 0.046, 0.125, 0.148, 0.02, 0x24140a);
+    g.tube([[-0.075, 0.147, 0.13], [-0.04, 0.158, 0.15], [0, 0.152, 0.155], [0.04, 0.158, 0.15], [0.075, 0.147, 0.13]], [0.008, 0.011, 0.01, 0.011, 0.008], mixHex(BR, DK, 0.4), { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.009, 0.062, 0.208, 0x120a06, { s: [4, 3] }); g.sph(0.026, 0.03, 0.02, nn * 0.048, 0.058, 0.14, mixHex(CR, 0xd8b890, 0.5), { s: [5, 4] }); }
+    g.sph(0.04, 0.01, 0.022, 0, 0.026, 0.178, 0xb68a78, { s: [5, 3] });
+    eyes(g, 0.046, 0.125, 0.148, 0.019, 0x24140a, DK);
     earBall(g, 0.13, 0.115, 0.01, 0.046, CR, 0xc8a47c);
     earBall(g, -0.13, 0.115, 0.01, 0.046, CR, 0xc8a47c);
     P.head = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.17, 0.01, 0.046, 0.036, BR, { seg: 6 });
+    tlimb(g, 0.17, 0.046, 0.036, 0.2, 0.01, BR);
     g.sph(0.038, 0.038, 0.038, 0, -0.17, 0.01, BR, { s: [5, 4] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.17, 0.02, 0.036, 0.03, DK, { seg: 6 });
-    g.sph(0.04, 0.045, 0.042, 0, -0.20, 0.03, 0xc8a47c, { s: [5, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.17, 0.036, 0.028, 0.25, 0.02, DK);
+      hand(g, 0, -0.17, 0.02, 0.95, hs ? -1 : 1, 0xc8a47c);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.055, 0.04, BR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.04, 0.03, DK, { seg: 6 });
-    g.sph(0.042, 0.024, 0.075, 0, -0.20, 0.035, 0xc8a47c, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.055, 0.04, 0.3, 0, BR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.19, 0.04, 0.03, 0.3, 0, DK);
+    g.sph(0.034, 0.03, 0.034, 0, -0.19, 0, DK, { s: [5, 4] }); pfoot(g, 0, -0.205, 0.0, 1, 1, 0xc8a47c); P.shank = g.build();
 
     // 4-segment curling prehensile tail
     P.tail = [];
@@ -3393,7 +3601,7 @@ OTHERS.monkey = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.17, 0.15, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.17, 0.01); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.17, 0.01); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.085, -0.14, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.19, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3471,13 +3679,7 @@ OTHERS.chimpanzee = function (opts) {
   if (!P) {
     P = partsCache.chimpanzee = {};
     var g = B();
-    g.loft([
-      [0.36, 0, 0.14, 0.13, 0.02],
-      [0.24, 0, 0.30, 0.21, 0.02],
-      [0.06, 0, 0.27, 0.22, 0.02],
-      [-0.14, 0, 0.25, 0.20, 0.0],
-      [-0.33, 0, 0.15, 0.14, -0.01]
-    ], { axis: 'y', seg: 10, steps: 2 }, function (zc, ca, sa, x, y, z) { return fc(x, y, z); });
+    g.loft([[-0.36, 0.14, 0.13, 0.02], [-0.24, 0.3, 0.21, 0.02], [-0.06, 0.27, 0.22, 0.02], [0.14, 0.25, 0.2, 0], [0.33, 0.15, 0.14, -0.01]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return fc(x, y, z); });
     P.body = g.build();
 
     g = B();
@@ -3487,7 +3689,8 @@ OTHERS.chimpanzee = function (opts) {
     g.tube([[-0.115, 0.162, 0.122], [-0.045, 0.184, 0.168], [0, 0.178, 0.175], [0.045, 0.184, 0.168], [0.115, 0.162, 0.122]], [0.018, 0.026, 0.028, 0.026, 0.018], BK, { seg: 5, steps: 2 });
     g.sph(0.028, 0.02, 0.02, 0, 0.075, 0.225, SK2, { s: [4, 3] });
     g.tube([[-0.036, 0.014, 0.222], [0, 0.008, 0.236], [0.036, 0.014, 0.222]], 0.007, 0x5a3a2a, { seg: 4, steps: 2 });
-    eyePair(g, 0.052, 0.135, 0.18, 0.02, 0x1c120a);
+    eyes(g, 0.052, 0.135, 0.18, 0.02, 0x2a1a0a, SK2);
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.007, 0.005, 0.006, nn * 0.012, 0.075, 0.24, 0x120a06, { s: [4, 3] });
     // big rounded tan/peach ears
     earBall(g, 0.175, 0.115, 0.0, 0.076, SK, SK2);
     earBall(g, -0.175, 0.115, 0.0, 0.076, SK, SK2);
@@ -3495,19 +3698,21 @@ OTHERS.chimpanzee = function (opts) {
 
     // long muscular arms (2-segment with articulated elbow)
     g = B();
-    g.sph(0.085, 0.09, 0.085, 0, -0.02, 0, BK, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.34, 0, 0.075, 0.06, fc, { seg: 7 });
+    tlimb(g, 0.34, 0.075, 0.06, 0.25, 0, fc);
     g.sph(0.062, 0.062, 0.062, 0, -0.34, 0, fc, { s: [5, 4] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.32, 0.04, 0.06, 0.048, fc, { seg: 7 });
-    g.sph(0.058, 0.065, 0.055, 0, -0.36, 0.05, 0x3b3432, { s: [6, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.32, 0.06, 0.048, 0.2, 0.04, fc);
+      g.sph(0.05, 0.05, 0.05, 0, -0.32, 0.04, 0x3b3432, { s: [5, 4] });
+      hand(g, 0, -0.33, 0.045, 1.7, hs ? -1 : 1, 0x3b3432);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // stocky legs
-    g = B(); g.limb(0, 0, 0, 0, -0.24, 0, 0.095, 0.07, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.24, 0, 0.07, 0.052, fc, { seg: 7 });
-    g.sph(0.06, 0.032, 0.11, 0, -0.25, 0.05, 0x3b3432, { s: [6, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.24, 0.095, 0.07, 0.3, 0, fc); P.thigh = g.build();
+    g = B(); tlimb(g, 0.24, 0.07, 0.052, 0.3, 0, fc);
+    g.sph(0.052, 0.045, 0.055, 0, -0.24, 0, fc, { s: [5, 4] }); pfoot(g, 0, -0.262, 0.0, 1.7, 1, 0x3b3432); P.shank = g.build();
   }
   var sc = baby ? 0.5 : 1.0;
   var root = grp('animal'), rig = grp('rig'), tor = grp('torso');
@@ -3520,7 +3725,7 @@ OTHERS.chimpanzee = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.28, 0.22, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.34, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.34, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.14, -0.22, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.24, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3584,13 +3789,7 @@ OTHERS.lemur = function (opts) {
   if (!P) {
     P = partsCache.lemur = {};
     var g = B();
-    g.loft([
-      [0.24, 0, 0.08, 0.075, 0.005],
-      [0.14, 0, 0.135, 0.12, 0.01],
-      [0.01, 0, 0.145, 0.128, 0.0],
-      [-0.12, 0, 0.14, 0.125, -0.005],
-      [-0.24, 0, 0.095, 0.085, -0.01]
-    ], { axis: 'y', seg: 10, steps: 2 }, function (zc, ca, sa, x, y, z) { return z > 0.01 ? WH : GR; });
+    g.loft([[-0.24, 0.08, 0.075, 0.005], [-0.14, 0.135, 0.12, 0.01], [-0.01, 0.145, 0.128, 0], [0.12, 0.14, 0.125, -0.005], [0.24, 0.095, 0.085, -0.01]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.01 ? WH : GR; });
     P.body = g.build();
 
     // white face, silver-grey crown, black eye patches & pointed snout with black nose
@@ -3602,21 +3801,26 @@ OTHERS.lemur = function (opts) {
     // signature black eye patches
     g.sph(0.036, 0.032, 0.02, 0.048, 0.10, 0.115, BK, { s: [5, 4], rot: [0, 0.35, 0.2] });
     g.sph(0.036, 0.032, 0.02, -0.048, 0.10, 0.115, BK, { s: [5, 4], rot: [0, -0.35, -0.2] });
-    eyePair(g, 0.048, 0.102, 0.126, 0.016, 0xe08820);
+    eyes(g, 0.048, 0.102, 0.126, 0.015, 0xe08820, BK);
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.007, 0.005, 0.006, nn * 0.01, 0.046, 0.238, 0x0a0806, { s: [4, 3] });
+    g.limb(0, 0.03, 0.2, 0, 0.032, 0.18, 0.003, 0.003, 0x3a3a3a, { seg: 4 });
     // fuzzy white/grey triangular cupped ears
     for (var es = -1; es <= 1; es += 2) {
       g.extrude([[-0.036, 0], [0.036, 0], [0.022, 0.07], [0, 0.098], [-0.022, 0.07]], 0.016, es * 0.095, 0.132, -0.008, [0.1, es * 0.3, -es * 0.28], function (x, y, z, nx, ny, nz) { return nz > 0.2 ? 0x555860 : WH; }, { bevel: 0.004, curveX: 0.012 });
     }
     P.head = g.build();
 
-    g = B(); g.limb(0, 0, 0, 0, -0.14, 0.008, 0.038, 0.031, GR, { seg: 6 });
+    g = B(); tlimb(g, 0.14, 0.038, 0.031, 0.2, 0.008, GR);
     g.sph(0.032, 0.032, 0.032, 0, -0.14, 0.008, GR, { s: [5, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.13, 0.015, 0.031, 0.026, GR, { seg: 6 });
-    g.sph(0.032, 0.038, 0.036, 0, -0.15, 0.022, BK, { s: [5, 4] }); P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.13, 0.031, 0.026, 0.2, 0.015, GR);
+      hand(g, 0, -0.13, 0.015, 0.85, hs ? -1 : 1, BK);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.05, 0.035, GR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0, 0.035, 0.025, GR, { seg: 6 });
-    g.sph(0.036, 0.022, 0.072, 0, -0.20, 0.035, BK, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.05, 0.035, 0.35, 0, GR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.19, 0.035, 0.025, 0.3, 0, GR);
+    g.sph(0.03, 0.026, 0.03, 0, -0.19, 0, GR, { s: [5, 4] }); pfoot(g, 0, -0.205, 0.0, 0.95, 1, BK); P.shank = g.build();
 
     // 5-segment iconic black-and-white ringed tail
     P.tail = [];
@@ -3641,7 +3845,7 @@ OTHERS.lemur = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.145, 0.14, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.14, 0.008); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.14, 0.008); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.08, -0.14, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.19, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3715,13 +3919,7 @@ OTHERS.orangutan = function (opts) {
     P = partsCache[key] = {};
     var g = B();
     // rounded belly and shaggy shoulders
-    g.loft([
-      [0.37, 0, 0.17, 0.15, 0.02],
-      [0.24, 0, 0.33, 0.24, 0.025],
-      [0.02, 0, 0.35, 0.30, 0.04],
-      [-0.16, 0, 0.32, 0.28, 0.02],
-      [-0.36, 0, 0.20, 0.18, -0.01]
-    ], { axis: 'y', seg: 11, steps: 2 }, function (zc, ca, sa, x, y, z) { return fc(x, y, z); });
+    g.loft([[-0.37, 0.17, 0.15, 0.02], [-0.24, 0.33, 0.24, 0.025], [-0.02, 0.35, 0.3, 0.04], [0.16, 0.32, 0.28, 0.02], [0.36, 0.2, 0.18, -0.01]], { down: true, rings: 12, seg: 11, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return fc(x, y, z); });
     // shaggy shoulder fur tufts
     g.cone(0.12, 0.22, 0.34, 0.24, 0.0, OR2, { seg: 5, rot: [0, 0, -2.5] });
     g.cone(0.12, 0.22, -0.34, 0.24, 0.0, OR2, { seg: 5, rot: [0, 0, 2.5] });
@@ -3735,7 +3933,10 @@ OTHERS.orangutan = function (opts) {
     g.sph(0.105, 0.08, 0.105, 0, 0.035, 0.145, FC, { s: [7, 5] });
     g.sph(0.028, 0.02, 0.02, 0, 0.085, 0.23, FC2, { s: [4, 3] });
     g.tube([[-0.038, 0.023, 0.226], [0, 0.017, 0.24], [0.038, 0.023, 0.226]], 0.007, FC2, { seg: 4, steps: 2 });
-    eyePair(g, 0.05, 0.14, 0.185, 0.019, 0x1a1008);
+    g.tube([[-0.09, 0.172, 0.15], [-0.04, 0.186, 0.178], [0, 0.18, 0.185], [0.04, 0.186, 0.178], [0.09, 0.172, 0.15]], [0.012, 0.018, 0.016, 0.018, 0.012], FC2, { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.012, 0.083, 0.245, 0x120a06, { s: [4, 3] }); g.sph(0.03, 0.026, 0.02, nn * 0.05, 0.07, 0.2, shade(FC, 1.12), { s: [5, 4] }); }
+    g.sph(0.05, 0.012, 0.03, 0, 0.018, 0.2, shade(FC2, 1.3), { s: [5, 3] });
+    eyes(g, 0.05, 0.14, 0.185, 0.018, 0x2a1a0a, FC2);
     earBall(g, 0.15, 0.12, 0.0, 0.042, FC, FC2);
     earBall(g, -0.15, 0.12, 0.0, 0.042, FC, FC2);
     if (isMale) {
@@ -3747,20 +3948,21 @@ OTHERS.orangutan = function (opts) {
 
     // very long hanging shaggy arms (2-segment with elbow)
     g = B();
-    g.sph(0.095, 0.1, 0.095, 0, -0.02, 0, OR, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.44, 0, 0.085, 0.068, fc, { seg: 7 });
+    tlimb(g, 0.44, 0.085, 0.068, 0.22, 0, fc);
     g.sph(0.07, 0.07, 0.07, 0, -0.44, 0, fc, { s: [5, 4] });
-    g.cone(0.07, 0.18, 0, -0.38, -0.05, OR2, { seg: 4, rot: [PI, 0, 0] });
     P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.44, 0.04, 0.068, 0.052, fc, { seg: 7 });
-    g.sph(0.062, 0.072, 0.06, 0, -0.48, 0.05, FC, { s: [6, 4] });
-    P.armL = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B();
+      tlimb(g, 0.44, 0.068, 0.052, 0.2, 0.04, fc);
+      g.sph(0.055, 0.055, 0.055, 0, -0.44, 0.04, FC, { s: [5, 4] });
+      hand(g, 0, -0.45, 0.045, 2.0, hs ? -1 : 1, FC);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // shorter bowed legs
-    g = B(); g.limb(0, 0, 0, 0, -0.23, 0, 0.10, 0.075, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.23, 0, 0.075, 0.055, fc, { seg: 7 });
-    g.sph(0.065, 0.032, 0.115, 0, -0.24, 0.045, FC, { s: [6, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.23, 0.10, 0.075, 0.3, 0, fc); P.thigh = g.build();
+    g = B(); tlimb(g, 0.23, 0.075, 0.055, 0.3, 0, fc);
+    g.sph(0.058, 0.05, 0.058, 0, -0.23, 0, fc, { s: [5, 4] }); pfoot(g, 0, -0.255, 0.0, 1.8, 1, FC); P.shank = g.build();
   }
   var sc = baby ? 0.48 : (isMale ? 1.0 : 0.86);
   var root = grp('animal'), rig = grp('rig'), tor = grp('torso');
@@ -3773,7 +3975,7 @@ OTHERS.orangutan = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.33, 0.22, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.44, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.44, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.16, -0.21, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.23, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
@@ -3836,13 +4038,7 @@ OTHERS.puss_in_boots = function (opts) {
     P = partsCache.puss_in_boots = {};
     // upright orange tabby torso + leather belt & gold buckle
     var g = B();
-    g.loft([
-      [0.24, 0, 0.085, 0.08, 0.0],
-      [0.14, 0, 0.148, 0.132, 0.006],
-      [0.01, 0, 0.158, 0.138, 0.0],
-      [-0.12, 0, 0.146, 0.132, -0.004],
-      [-0.25, 0, 0.098, 0.092, -0.008]
-    ], { axis: 'y', seg: 10, steps: 2 }, function (zc, ca, sa, x, y, z) { return tabby(x, y, z); });
+    g.loft([[-0.24, 0.085, 0.08, 0], [-0.14, 0.148, 0.132, 0.006], [-0.01, 0.158, 0.138, 0], [0.12, 0.146, 0.132, -0.004], [0.25, 0.098, 0.092, -0.008]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return tabby(x, y, z); });
     g.cyl(0.155, 0.155, 0.055, 0, -0.09, 0, BT, { seg: 10 });
     g.bevelBox(0.068, 0.068, 0.032, 0.008, 0, -0.09, 0.146, GD); // gold belt buckle
     g.sph(0.032, 0.032, 0.025, 0.11, 0.18, 0.08, GD, { s: [5, 4] }); // cape clasps
@@ -3865,6 +4061,11 @@ OTHERS.puss_in_boots = function (opts) {
     g.sph(0.022, 0.028, 0.018, -0.062, 0.135, 0.15, 0x111111, { s: [5, 4] });
     g.sph(0.01, 0.01, 0.008, 0.072, 0.148, 0.162, 0xffffff, { s: [4, 3] });
     g.sph(0.01, 0.01, 0.008, -0.052, 0.148, 0.162, 0xffffff, { s: [4, 3] });
+    g.sph(0.04, 0.012, 0.012, 0, 0.056, 0.176, 0x7a3a3a, { s: [5, 3] });
+    for (var wk = -1; wk <= 1; wk += 2) {
+      g.sph(0.04, 0.02, 0.03, wk * 0.068, 0.172, 0.12, shade(OR, 0.8), { s: [5, 4] });
+      for (var w2 = 0; w2 < 3; w2++) g.limb(wk * 0.05, 0.07 + w2 * 0.008, 0.155, wk * 0.17, 0.085 + (w2 - 1) * 0.03, 0.14 - w2 * 0.015, 0.0035, 0.0015, 0xfff4e0, { seg: 4 });
+    }
     // cat ears
     earCone(g, 0.105, 0.24, 0.0, 0.05, 0.11, 0.25, OR, 0xf2b0b8);
     earCone(g, -0.105, 0.24, 0.0, 0.05, 0.11, 0.25, OR, 0xf2b0b8);
@@ -3884,13 +4085,15 @@ OTHERS.puss_in_boots = function (opts) {
 
     // left arm (empty paw) & right arm (holding shiny silver rapier with gold guard!)
     g = B();
-    g.limb(0, 0, 0, 0, -0.26, 0.02, 0.045, 0.034, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; }, { seg: 6 });
-    g.sph(0.042, 0.045, 0.042, 0, -0.28, 0.03, CR, { s: [5, 4] });
+    tlimb(g, 0.26, 0.045, 0.034, 0.18, 0.02, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; });
+    g.sph(0.04, 0.034, 0.036, 0, -0.285, 0.03, CR, { s: [6, 5] });
+    for (var pt = -1; pt <= 1; pt++) g.sph(0.014, 0.012, 0.016, pt * 0.022, -0.31, 0.045, shade(CR, 0.95), { s: [4, 3] });
     P.armL = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.26, 0.03, 0.045, 0.034, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; }, { seg: 6 });
-    g.sph(0.042, 0.045, 0.042, 0, -0.28, 0.04, CR, { s: [5, 4] });
+    tlimb(g, 0.26, 0.045, 0.034, 0.18, 0.03, function (x, y) { return fract(y * 12) < 0.3 ? STR : OR; });
+    g.sph(0.04, 0.034, 0.036, 0, -0.285, 0.04, CR, { s: [6, 5] });
+    for (var pt = -1; pt <= 1; pt++) g.sph(0.014, 0.012, 0.016, pt * 0.022, -0.31, 0.055, shade(CR, 0.95), { s: [4, 3] });
     // rapier sword with gold guard & pommel held pointing forward/up
     g.cyl(0.016, 0.016, 0.11, 0, -0.28, 0.06, BT, { seg: 6, rot: [1.15, 0, 0] });
     g.sph(0.022, 0.022, 0.022, 0, -0.26, 0.01, GD, { s: [5, 4] }); // gold pommel
@@ -3900,7 +4103,7 @@ OTHERS.puss_in_boots = function (opts) {
     P.armR = g.build();
 
     // thighs & tall dark leather boots with sculpted folded cuffs
-    g = B(); g.limb(0, 0, 0, 0, -0.17, 0, 0.062, 0.048, OR, { seg: 6 }); P.thigh = g.build();
+    g = B(); tlimb(g, 0.17, 0.062, 0.048, 0.25, 0, OR); P.thigh = g.build();
     g = B();
     g.lathe([[0.048, -0.055], [0.066, 0.01], [0.06, 0.035], [0.046, 0.02]], BT2, { seg: 10 }); // folded leather cuff
     g.limb(0, -0.02, 0, 0, -0.22, 0, 0.048, 0.042, BT, { seg: 8 }); // boot shaft
@@ -3913,7 +4116,7 @@ OTHERS.puss_in_boots = function (opts) {
     P.tail = [];
     for (var ti = 0; ti < 3; ti++) {
       var gt = B(), r0 = lerp(0.036, 0.022, ti / 3), r1 = lerp(0.036, 0.022, (ti + 1) / 3);
-      gt.limb(0, 0, 0, 0, 0, -0.20, r0, r1, function (x, y, z) { return fract(-z * 11) < 0.35 ? STR : OR; }, { seg: 5, hs: 3 });
+      gt.loft([[-0.22, r1, r1, 0], [-0.1, (r0 + r1) / 2 * 1.04, (r0 + r1) / 2 * 1.04, 0], [0.0, r0, r0, 0], [0.02, r0 * 0.97, r0 * 0.97, 0]], { rings: 5, seg: 7, cap0: true }, function (zc, ca, sa, x, y, z) { return fract(-z * 11) < 0.35 ? STR : OR; });
       if (ti === 2) gt.sph(0.025, 0.025, 0.035, 0, 0, -0.20, STR, { s: [5, 4] });
       P.tail.push(gt.build());
     }
@@ -4011,13 +4214,10 @@ OTHERS.peacock = function (opts) {
     P = partsCache[key] = {};
     var g = B();
     var bodyCol = male ? function (zc, ca, sa, x, y, z) { return ca > 0.25 ? TL : RB; } : function (zc, ca, sa, x, y, z) { return ca < -0.35 ? FM_LT : FM; };
-    g.loft([
-      [0.34, 0.06, 0.075, 0.085, 0],
-      [0.20, 0.03, 0.145, 0.152, 0],
-      [0.02, 0.0, 0.175, 0.168, 0],
-      [-0.14, -0.01, 0.145, 0.135, 0],
-      [-0.29, 0.01, 0.075, 0.07, 0]
-    ], { seg: 10, steps: 2 }, bodyCol);
+    g.loft([[-0.29, 0.075, 0.07, 0.01], [-0.14, 0.145, 0.135, -0.01], [0.02, 0.175, 0.168, 0], [0.2, 0.145, 0.152, 0.03], [0.34, 0.075, 0.085, 0.06]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return plume(bodyCol(zc, ca, sa), x, y, z, 0.12); });
+    // breast scallops and rump coverts
+    for (var bf = 0; bf < 6; bf++) { var ba = (bf - 2.5) * 0.4; feather(g, sin(ba) * 0.12, 0.0 - abs(ba) * 0.03, 0.24 - abs(ba) * 0.05, 0.14, 0.04, [-1.2, -ba * 0.5, 0], male ? (bf % 2 ? TL : RB) : FM_LT, 0.012); }
+    for (var rf = 0; rf < 5; rf++) feather(g, (rf - 2) * 0.05, 0.1, -0.24, 0.2, 0.045, [-0.1 - abs(rf - 2) * 0.03, (rf - 2) * 0.1, 0], male ? EM1 : FM, 0.012);
     P.body = g.build();
 
     // lower neck
@@ -4035,7 +4235,9 @@ OTHERS.peacock = function (opts) {
     g.sph(0.022, 0.018, 0.028, 0.038, 0.015, L + 0.04, WH, { s: [5, 4] });
     g.sph(0.022, 0.018, 0.028, -0.038, 0.015, L + 0.04, WH, { s: [5, 4] });
     // pointed beak
-    g.cone(0.023, 0.085, 0, -0.005, L + 0.105, BEAK, { seg: 5, rot: [PI / 2 + 0.1, 0, 0] });
+    g.tube([[0, 0.008, L + 0.05], [0, 0.004, L + 0.1], [0, -0.012, L + 0.15]], [0.024, 0.016, 0.004], function (x, y, z, nx, ny, nz, t) { return t > 0.7 ? shade(BEAK, 0.8) : BEAK; }, { seg: 5, steps: 2 });
+    g.tube([[0, -0.012, L + 0.05], [0, -0.016, L + 0.1], [0, -0.02, L + 0.135]], [0.016, 0.011, 0.004], shade(BEAK, 1.3), { seg: 4, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.004, 0.003, 0.008, nn * 0.014, 0.012, L + 0.09, 0x151210, { s: [3, 3] });
     // tiny golden head crest
     var crCol = male ? GD : 0x9c8e78, crCh = male ? 0.11 : 0.075;
     for (var ci = -1; ci <= 1; ci++) {
@@ -4043,7 +4245,7 @@ OTHERS.peacock = function (opts) {
       g.limb(cx * 0.4, 0.055, L + 0.01, cx, cy, L - 0.01, 0.005, 0.004, male ? TL : FM, { seg: 4 });
       g.sph(0.014, 0.018, 0.01, cx, cy + 0.008, L - 0.01, crCol, { s: [5, 4] });
     }
-    eyePair(g, 0.043, 0.022, L + 0.046, 0.013, 0x111111);
+    eyes(g, 0.043, 0.022, L + 0.046, 0.011, 0x2a1a0a, WH);
     P.neckB = g.build();
 
     // slender bird legs
@@ -4054,8 +4256,9 @@ OTHERS.peacock = function (opts) {
     P.legU = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.24, 0, 0.019, 0.014, LEG, { seg: 5 });
-    for (var ti = -1; ti <= 1; ti++) g.limb(0, -0.235, 0, ti * 0.036, -0.24, 0.09, 0.01, 0.006, LEG, { seg: 4 });
+    g.limb(0, 0, 0, 0, -0.24, 0, 0.019, 0.014, scaly(LEG), { seg: 5 });
+    g.cone(0.006, 0.025, 0, -0.17, -0.02, shade(LEG, 0.8), { seg: 4, rot: [-1.2, 0, 0] });
+    for (var ti = -1; ti <= 1; ti++) { g.limb(0, -0.235, 0, ti * 0.022, -0.238, 0.05, 0.011, 0.008, LEG, { seg: 4 }); g.limb(ti * 0.022, -0.238, 0.05, ti * 0.04, -0.24, 0.1, 0.008, 0.006, LEG, { seg: 4 }); g.cone(0.005, 0.014, ti * 0.043, -0.24, 0.11, 0x2a2420, { seg: 4, rot: [PI / 2, 0, 0] }); }
     g.limb(0, -0.235, 0, 0, -0.24, -0.045, 0.01, 0.006, LEG, { seg: 4 });
     P.legL = g.build();
 
@@ -4063,6 +4266,7 @@ OTHERS.peacock = function (opts) {
     var mkWing = function (r) {
       var wg = B(), s = r ? -1 : 1, wc = male ? WG : shade(FM, 0.85);
       wg.extrude([[0.12, 0.05], [0.02, 0.095], [-0.14, 0.065], [-0.28, 0.005], [-0.24, -0.055], [-0.08, -0.095], [0.08, -0.065]], 0.038, s * 0.022, -0.02, -0.04, [0.08, 0, s * 0.14], function (x, y, z) { return z < -0.14 ? shade(wc, 0.86) : wc; }, { axis: 'x', bevel: 0.012, curveX: s * 0.022 });
+      for (var wi = 0; wi < 3; wi++) for (var wj = 0; wj < 5; wj++) feather(wg, s * (0.02 + wi * 0.004), 0.05 - wi * 0.04, 0.1 - wj * 0.06 - wi * 0.02, 0.13 + wi * 0.04, 0.03, [-0.3 - wi * 0.1, s * 0.06, PI / 2], wi === 0 ? plume(wc, wj, wi, 1, 0.2) : (wi === 1 ? shade(wc, 1.2) : shade(wc, 0.8)), 0.01);
       return wg.build();
     };
     P.wingL = mkWing(false); P.wingR = mkWing(true);
@@ -4211,22 +4415,19 @@ OTHERS.koala = function (opts) {
   if (!P) {
     P = partsCache.koala = {};
     var g = B();
-    var bc = function (x, y, z) { return (z > 0.02 && abs(x) < 0.15) ? WH : GR; };
-    g.loft([
-      [0.24, 0, 0.11, 0.10, 0.01],
-      [0.12, 0, 0.195, 0.175, 0.01],
-      [-0.03, 0, 0.215, 0.195, 0.0],
-      [-0.17, 0, 0.19, 0.175, -0.01],
-      [-0.28, 0, 0.115, 0.105, -0.015]
-    ], { axis: 'y', seg: 10, steps: 2 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z); });
+    var bc = function (x, y, z) { return plume((z > 0.02 && abs(x) < 0.15) ? WH : GR, x, y, z, 0.1); };
+    g.loft([[-0.24, 0.11, 0.1, 0.01], [-0.12, 0.195, 0.175, 0.01], [0.03, 0.215, 0.195, 0], [0.17, 0.19, 0.175, -0.01], [0.28, 0.115, 0.105, -0.015]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z); });
     P.body = g.build();
 
     // round koala head, big fluffy round ears with white tufts, prominent oval black nose
     g = B();
-    g.sph(0.175, 0.16, 0.155, 0, 0.10, 0.02, function (x, y, z) { return (z > 0.06 && y < 0.07 && abs(x) < 0.09) ? WH : GR; }, { s: [9, 7] });
+    g.sph(0.175, 0.16, 0.155, 0, 0.10, 0.02, function (x, y, z) { return plume((z > 0.06 && y < 0.07 && abs(x) < 0.09) ? WH : GR, x, y, z, 0.1); }, { s: [9, 7] });
     // prominent oval black nose
     g.sph(0.042, 0.058, 0.036, 0, 0.088, 0.165, NOSE, { s: [7, 5] });
-    eyePair(g, 0.074, 0.125, 0.144, 0.020, 0x141214);
+    g.sph(0.05, 0.03, 0.04, 0, 0.055, 0.14, shade(GR, 1.12), { s: [6, 4] });
+    g.tube([[-0.035, 0.035, 0.155], [0, 0.028, 0.17], [0.035, 0.035, 0.155]], 0.005, 0x3a3030, { seg: 4, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.009, 0.006, 0.006, nn * 0.016, 0.112, 0.2, 0x35353a, { s: [4, 3] }); g.sph(0.03, 0.014, 0.02, nn * 0.074, 0.15, 0.13, shade(GR, 0.8), { s: [5, 3] }); }
+    eyes(g, 0.074, 0.125, 0.144, 0.018, 0x141214, shade(GR, 0.7));
     // big fluffy round ears + white inner tufts
     earBall(g, 0.17, 0.17, 0.0, 0.095, GR, WH);
     earBall(g, -0.17, 0.17, 0.0, 0.095, GR, WH);
@@ -4234,27 +4435,19 @@ OTHERS.koala = function (opts) {
     g.sph(0.065, 0.068, 0.032, -0.17, 0.16, 0.024, 0xf7f7f5, { s: [6, 5], rot: [0, 0.45, 0] });
     P.head = g.build();
 
-    // stubby 2-segment arms with curved grasping claws
-    g = B();
-    g.limb(0, 0, 0, 0, -0.115, 0.015, 0.068, 0.056, GR, { seg: 6 });
-    g.sph(0.056, 0.056, 0.056, 0, -0.115, 0.015, GR, { s: [5, 4] });
-    P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.11, 0.018, 0.056, 0.048, GR, { seg: 6 });
-    g.sph(0.052, 0.05, 0.055, 0, -0.12, 0.026, GR_DK, { s: [5, 4] });
-    g.sph(0.022, 0.018, 0.032, 0, -0.138, 0.066, CLAW, { s: [4, 3] });
-    P.armL = g.build();
+    // stubby 2-segment arms with grasping hands and hooked claws
+    g = B(); tlimb(g, 0.115, 0.068, 0.056, 0.05, 0.015, GR); g.sph(0.056, 0.056, 0.056, 0, -0.115, 0.015, GR, { s: [5, 4] }); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.11, 0.056, 0.048, 0.05, 0.018, GR);
+      g.sph(0.052, 0.05, 0.055, 0, -0.12, 0.026, GR_DK, { s: [5, 4] });
+      hand(g, 0, -0.12, 0.03, 0.85, hs ? -1 : 1, GR_DK);
+      for (var c = -1; c <= 1; c++) g.cone(0.007, 0.035, c * 0.02, -0.215, 0.07, CLAW, { seg: 4, rot: [PI - 0.7, 0, 0] });
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // stubby legs
-    g = B();
-    g.sph(0.085, 0.09, 0.085, 0, -0.04, 0, GR, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.15, 0, 0.078, 0.055, GR, { seg: 6 });
-    P.thigh = g.build();
-
-    g = B();
-    g.limb(0, 0, 0, 0, -0.14, 0, 0.055, 0.045, GR, { seg: 6 });
-    g.sph(0.052, 0.03, 0.085, 0, -0.15, 0.035, GR_DK, { s: [5, 4] });
-    P.shank = g.build();
+    g = B(); g.sph(0.085, 0.09, 0.085, 0, -0.04, 0, GR, { s: [6, 5] }); tlimb(g, 0.15, 0.078, 0.055, 0.05, 0, GR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.14, 0.055, 0.045, 0.05, 0, GR); g.sph(0.046, 0.04, 0.046, 0, -0.14, 0, GR_DK, { s: [5, 4] }); pfoot(g, 0, -0.158, 0.0, 1.15, 1, GR_DK); P.shank = g.build();
   }
 
   var sc = baby ? 0.54 : 1.0;
@@ -4270,7 +4463,7 @@ OTHERS.koala = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.20, 0.14, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.115, 0.015); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.115, 0.015); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.13, -0.16, 0.02); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.15, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
