@@ -1206,47 +1206,179 @@
     }
   }
 
-  function breakdown(trainId) {
+  function adjPathTilesForStation(st) {
+    var s = C.getS(), N = C.getN(), fp = st.fp, out = [];
+    for (var a = -1; a <= fp.w; a++) for (var b = -1; b <= fp.h; b++) {
+      if (a >= 0 && a < fp.w && b >= 0 && b < fp.h) continue;
+      if ((a < 0 || a >= fp.w) && (b < 0 || b >= fp.h)) continue; // orthogonal neighbors only
+      var xi = fp.i0 + a, xj = fp.j0 + b;
+      if (xi >= 0 && xj >= 0 && xi < N && xj < N && s.path[xi + xj * N]) out.push(xi + xj * N);
+    }
+    return out;
+  }
+
+  // Whole-coaster breakdown: stops ALL trains on the coaster station and marks the station broken until repaired by a Mechanic!
+  function breakdown(idOrStationId) {
     var s = C.getS();
     if (!s || !s.coaster) return false;
+    var stationId = 0, trigTrain = null;
     for (var k = 0; k < s.coaster.trains.length; k++) {
       var T = s.coaster.trains[k];
-      if (T.id === trainId) {
-        var rt = TR[T.id]; if (!rt || rt.state === 'broken') return false;
-        rt.state = T.state = 'broken';
-        rt.v = T.v = 0;
-        rt.fix = T.fix = CD.fixTime;
+      if (T.id === idOrStationId) { stationId = T.stationId; trigTrain = T; break; }
+    }
+    if (!stationId && X.stById[idOrStationId]) stationId = idOrStationId;
+    if (!stationId) return false;
+
+    var st = X.stById[stationId];
+    var o = st ? st.obj : null;
+    var peers = trainsOnStation(stationId);
+    if (!peers.length && !o) return false;
+    var alreadyBroken = o && o.broken;
+    for (k = 0; k < peers.length; k++) {
+      var rtk = TR[peers[k].id];
+      if (rtk && rtk.state === 'broken') alreadyBroken = true;
+    }
+    if (alreadyBroken) return false;
+
+    if (o) {
+      o.broken = true;
+      o.condition = Math.min(o.condition === undefined ? 100 : o.condition, 20);
+    }
+    for (k = 0; k < peers.length; k++) {
+      var Tk = peers[k], rt = TR[Tk.id];
+      if (!rt) rt = TR[Tk.id] = { s: Tk.s || 0, v: 0, state: 'broken', dwell: 0, fix: CD.fixTime, eng: false, riders: [] };
+      rt.state = Tk.state = 'broken';
+      rt.v = Tk.v = 0;
+      rt.fix = Tk.fix = CD.fixTime;
+      rt.eng = Tk.eng = false;
+    }
+    if (!trigTrain && peers.length) trigTrain = peers[0];
+    s.coaster.stats.breakdowns = (s.coaster.stats.breakdowns || 0) + 1;
+    var L = lineForStation(stationId);
+    var nm = L ? L.typeDef.name : 'Rollercoaster';
+    var RT = C.getRT();
+    var hasMech = RT && RT.mechCount > 0;
+    C.msg(nm + ' has broken down and stopped! ' + (hasMech ? 'A Mechanic is responding by radio.' : 'Hire a Mechanic in Staff or click Call Mechanic on its panel.'), 'bad');
+    C.bus.emit('coasterBroken', { trainId: trigTrain ? trigTrain.id : 0, stationId: stationId, name: nm });
+    return true;
+  }
+
+  function onMechanicRepair(stationId, mechName) {
+    var s = C.getS();
+    if (!s || !s.coaster) return false;
+    var st = X.stById[stationId], o = st ? st.obj : null;
+    var L = lineForStation(stationId);
+    var nm = L ? L.typeDef.name : 'Rollercoaster';
+    var wasBroken = !!(o && o.broken);
+    if (o) {
+      o.broken = false;
+      o.condition = 100;
+    }
+    var peers = trainsOnStation(stationId);
+    for (var k = 0; k < peers.length; k++) {
+      var T = peers[k], rt = TR[T.id];
+      if (rt && rt.state === 'broken') {
+        wasBroken = true;
+        rt.state = T.state = 'run';
+        rt.fix = T.fix = 0;
         rt.eng = T.eng = false;
-        s.coaster.stats.breakdowns = (s.coaster.stats.breakdowns || 0) + 1;
-        var L = lineForStation(T.stationId);
-        var nm = L ? L.typeDef.name : 'Rollercoaster';
-        C.msg(nm + ' train #' + T.id + ' has broken down! Call a mechanic from its panel for a faster repair.', 'bad');
-        C.bus.emit('coasterBroken', { trainId: T.id, stationId: T.stationId, name: nm });
-        return true;
+        rt.v = T.v = STATION_PUSH;
+      }
+    }
+    if (wasBroken) {
+      C.msg((mechName ? mechName + ' repaired ' : 'Repaired ') + nm + ' — rollercoaster is back up and running at 100% condition!', 'good');
+      C.bus.emit('coasterFixed', { stationId: stationId, trainId: peers[0] ? peers[0].id : 0 });
+    } else if (o) {
+      C.msg((mechName || 'Mechanic') + ' serviced ' + nm + ' back to 100% condition.', 'info', false);
+    }
+    return true;
+  }
+
+  function callEngineer(idOrStationId) {
+    var s = C.getS();
+    if (!s || !s.coaster) return C.fail('Coaster not found');
+    var stationId = 0;
+    for (var k = 0; k < s.coaster.trains.length; k++) {
+      var T = s.coaster.trains[k];
+      if (T.id === idOrStationId) { stationId = T.stationId; break; }
+    }
+    if (!stationId && X.stById[idOrStationId]) stationId = idOrStationId;
+    if (!stationId) return C.fail('Coaster not found');
+
+    var st = X.stById[stationId], o = st ? st.obj : null;
+    var peers = trainsOnStation(stationId);
+    var isBroken = !!(o && o.broken);
+    var alreadyEng = false;
+    for (k = 0; k < peers.length; k++) {
+      var rt = TR[peers[k].id];
+      if (rt && rt.state === 'broken') isBroken = true;
+      if (rt && rt.eng) alreadyEng = true;
+    }
+    if (!isBroken) {
+      // Preventative tune-up service if not broken but worn
+      if (o && (o.condition === undefined ? 100 : o.condition) < 95) {
+        var srvFee = CD.callOutFee || 60;
+        if (s.money < srvFee) return C.fail('Need ' + C.fmt(srvFee) + ' for service');
+        C.spend(srvFee, 'upkeep');
+        o.condition = 100;
+        C.msg('Serviced ' + st.typeDef.name + ' back to 100% condition (' + C.fmt(srvFee) + ').', 'good');
+        return C.okr(srvFee);
+      }
+      return C.fail('Coaster is running fine');
+    }
+    if (alreadyEng) return C.fail('Emergency mechanic already on the way');
+    var fee = CD.engineerFee;
+    if (s.money < fee) return C.fail('Need ' + C.fmt(fee) + ' for emergency mechanic');
+    C.spend(fee, 'upkeep');
+    for (k = 0; k < peers.length; k++) {
+      var Tk = peers[k], rtk = TR[Tk.id];
+      if (rtk) {
+        rtk.eng = Tk.eng = true;
+        rtk.fix = Tk.fix = Math.min(rtk.fix || CD.engineerTime, CD.engineerTime);
+      }
+    }
+    C.msg('Emergency mechanic dispatched to ' + (st ? st.typeDef.name : 'Rollercoaster') + ' (' + C.fmt(fee) + ').', 'info');
+    return C.okr(fee);
+  }
+
+  function hasUrgentMechanicWork(staff, sc0, claimedFn) {
+    var RT = C.getRT();
+    for (var k = 0; k < X.stations.length; k++) {
+      var st = X.stations[k], o = st.obj;
+      if (!o.broken && (o.condition === undefined ? 100 : o.condition) >= 50) continue;
+      if (claimedFn && claimedFn('c' + o.id, staff)) continue;
+      var pts = adjPathTilesForStation(st);
+      for (var i = 0; i < pts.length; i++) {
+        if (!sc0 || !RT.comp || RT.comp[pts[i]] === sc0) return true;
       }
     }
     return false;
   }
 
-  function callEngineer(trainId) {
-    var s = C.getS();
-    if (!s || !s.coaster) return C.fail('Train not found');
-    for (var k = 0; k < s.coaster.trains.length; k++) {
-      var T = s.coaster.trains[k];
-      if (T.id === trainId) {
-        var rt = TR[T.id];
-        if (!rt || rt.state !== 'broken') return C.fail('Train is running fine');
-        if (rt.eng) return C.fail('Mechanic already on the way');
-        var fee = CD.engineerFee;
-        if (s.money < fee) return C.fail('Need ' + C.fmt(fee) + ' for mechanic');
-        C.spend(fee, 'upkeep');
-        rt.eng = T.eng = true;
-        rt.fix = T.fix = Math.min(rt.fix, CD.engineerTime);
-        C.msg('Mechanic dispatched to Coaster Train #' + T.id + ' (' + C.fmt(fee) + ').', 'info');
-        return C.okr(fee);
+  function pickMechanicTarget(staff, sc0, claimedFn) {
+    var RT = C.getRT(), best = null, bestScore = 1e9;
+    for (var k = 0; k < X.stations.length; k++) {
+      var st = X.stations[k], o = st.obj;
+      var cond = o.condition === undefined ? 100 : o.condition;
+      var isBroken = !!o.broken;
+      var peers = trainsOnStation(o.id);
+      for (var p = 0; p < peers.length; p++) if (TR[peers[p].id] && TR[peers[p].id].state === 'broken') isBroken = true;
+      if (!isBroken && cond >= 75) continue;
+      if (claimedFn && claimedFn('c' + o.id, staff)) continue;
+      var pts = adjPathTilesForStation(st);
+      var reach = [];
+      for (var i = 0; i < pts.length; i++) {
+        if (!sc0 || !RT.comp || RT.comp[pts[i]] === sc0) reach.push(pts[i]);
+      }
+      if (!reach.length) continue;
+      var dist = Math.abs(o.i - (staff.ti % C.getN())) + Math.abs(o.j - Math.floor(staff.ti / C.getN()));
+      var score = (isBroken ? -1000 : cond * 2) + dist;
+      if (score < bestScore) {
+        bestScore = score;
+        best = { station: o, tiles: reach, broken: isBroken };
       }
     }
-    return C.fail('Train not found');
+    return best;
   }
 
   function setPaused(stationId, paused) {
@@ -1260,7 +1392,7 @@
   function stationReady(stationId) {
     var L = lineForStation(stationId);
     if (!L || !L.ready) return false;
-    if (L.station && L.station.obj.paused) return false;
+    if (L.station && (L.station.obj.paused || L.station.obj.broken)) return false;
     return trainsOnStation(stationId).length > 0;
   }
 
@@ -1370,19 +1502,19 @@
 
   // ---- Simulation Step (Real Gravitational Potential + Friction + Chain Lift Physics) ----
   function stepTrain(T, L, dt) {
-    var rt = TR[T.id], td = L.typeDef;
+    var rt = TR[T.id], td = L.typeDef, stObj = L.station ? L.station.obj : null;
     if (!rt) return;
 
-    if (rt.state === 'broken') {
+    if (stObj && stObj.condition === undefined) stObj.condition = 100;
+
+    if (rt.state === 'broken' || (stObj && stObj.broken)) {
+      rt.state = T.state = 'broken';
+      rt.v = T.v = 0;
       rt.fix -= dt;
       T.fix = rt.fix;
       if (rt.fix <= 0) {
-        rt.state = T.state = 'run';
-        rt.fix = T.fix = 0;
-        rt.eng = T.eng = false;
-        rt.v = T.v = STATION_PUSH;
-        C.msg(td.name + ' train #' + T.id + ' is back up and running!', 'good');
-        C.bus.emit('coasterFixed', { trainId: T.id, stationId: T.stationId });
+        onMechanicRepair(T.stationId, rt.eng ? 'Emergency Mechanic' : 'Safety Override');
+        if (!rt.eng && stObj) stObj.condition = 55;
       }
       placeRiders(T, L);
       return;
@@ -1391,10 +1523,10 @@
     if (rt.state === 'dwell') {
       rt.v = T.v = 0;
       rt.stalled = false;
-      if (L.ready) boardFromQueue(T, L);
+      if (L.ready && (!stObj || !stObj.broken)) boardFromQueue(T, L);
       rt.dwell -= dt;
       T.dwell = rt.dwell;
-      if (rt.dwell <= 0 && L.ready && !L.station.obj.paused) {
+      if (rt.dwell <= 0 && L.ready && (!stObj || (!stObj.paused && !stObj.broken))) {
         rt.state = T.state = 'run';
         rt.v = T.v = STATION_PUSH;
         rt.seenLoop = false; rt.seenSplash = false;
@@ -1485,9 +1617,14 @@
       }
     }
 
-    if (rt.state === 'run' && rt.leftStation && CD.breakdownPerHour > 0) {
-      var pBreak = (CD.breakdownPerHour / (C.DAY_SECONDS / 24)) * dt;
-      if (C.rng.chance(pBreak)) breakdown(T.id);
+    // Mechanical wear & tear + breakdown check while running
+    if (rt.state === 'run' && stObj) {
+      stObj.condition = Math.max(0, (stObj.condition === undefined ? 100 : stObj.condition) - dt * 0.22);
+      if (rt.leftStation && CD.breakdownPerHour > 0) {
+        var wearMul = stObj.condition < 35 ? 6.0 : stObj.condition < 60 ? 2.5 : 1.0;
+        var pBreak = (CD.breakdownPerHour * wearMul / (C.DAY_SECONDS / 24)) * dt;
+        if (stObj.condition <= 8 || C.rng.chance(pBreak)) breakdown(T.id);
+      }
     }
 
     placeRiders(T, L);
@@ -1603,7 +1740,10 @@
       trains: trains,
       queueLen: q ? q.q.length : 0,
       connected: C.buildingConnected(st.obj),
-      paused: !!st.obj.paused
+      paused: !!st.obj.paused,
+      broken: !!st.obj.broken || trains.some(function (t) { return TR[t.id] && TR[t.id].state === 'broken'; }),
+      condition: Math.round(st.obj.condition === undefined ? 100 : st.obj.condition),
+      eng: trains.some(function (t) { return TR[t.id] && TR[t.id].eng; })
     };
   }
 
@@ -1654,6 +1794,9 @@
     sellTrain: sellTrain,
     breakdown: breakdown,
     callEngineer: callEngineer,
+    onMechanicRepair: onMechanicRepair,
+    hasUrgentMechanicWork: hasUrgentMechanicWork,
+    pickMechanicTarget: pickMechanicTarget,
     setPaused: setPaused,
     stationReady: stationReady,
     stationExcitement: stationExcitement,

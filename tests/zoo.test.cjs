@@ -2833,15 +2833,33 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   assert.ok(z.state.coaster.stats.boardings >= 1, 'Boardings counter should increment');
   assert.ok(z.state.coaster.stats.income > 0, 'Coaster ticket revenue should be earned');
 
-  // Test breakdown & mechanic repair
+  // Test breakdown stops the ENTIRE rollercoaster (station + all trains) & emergency mechanic repair
   const trainId = z.state.coaster.trains[0].id;
+  const train2Id = z.state.coaster.trains[1].id;
   assert.equal(z.Coaster.breakdown(trainId), true);
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, true, 'Station should be marked broken');
+  assert.equal(z.Coaster.stationReady(stRes.id), false, 'Broken coaster should stop accepting guests');
   assert.equal(z.Coaster.trainInfo(trainId).state, 'broken');
+  assert.equal(z.Coaster.trainInfo(train2Id).state, 'broken', 'All trains on the coaster should stop on breakdown');
+  assert.equal(z.Coaster.trainInfo(trainId).speed, 0);
   const engRes = z.Coaster.callEngineer(trainId);
   assert.equal(engRes.ok, true, engRes.msg);
   assert.equal(z.Coaster.trainInfo(trainId).eng, true);
-  for (let step = 0; step < 40; step++) z.Sim._step(0.2);
+  for (let step = 0; step < 30; step++) z.Sim._step(0.2);
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Coaster should be repaired');
   assert.equal(z.Coaster.trainInfo(trainId).state, 'run', 'Train should resume running after mechanic repair');
+
+  // Test hired Mechanic staff member responds by radio and repairs a broken coaster automatically
+  const hireMech = z.Sim.hireStaff('mechanic', 25, 37);
+  assert.equal(hireMech.ok, true, hireMech.msg);
+  assert.equal(z.Coaster.breakdown(stRes.id), true);
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, true);
+  for (let step = 0; step < 80; step++) {
+    z.Sim._step(0.2);
+    if (!z.Coaster.stationInfo(stRes.id).broken) break;
+  }
+  assert.equal(z.Coaster.stationInfo(stRes.id).broken, false, 'Hired Mechanic staff should walk to the coaster and repair it');
+  assert.equal(z.Coaster.stationInfo(stRes.id).condition, 100);
 
   // Sell second train
   assert.equal(z.Coaster.sellTrain(buy2.id).ok, true);

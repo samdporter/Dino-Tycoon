@@ -322,6 +322,7 @@
           }
           // Record segment for animated moving chain links!
           chainSegs.push({
+            stationId: L.station ? L.station.obj.id : 0,
             x: mx + u0x * 0.155, y: my + u0y * 0.155, z: mz + u0z * 0.155,
             fx: fx, fy: fy, fz: fz, ux: u0x, uy: u0y, uz: u0z, rx: r0x, ry: r0y, rz: r0z,
             len: segLen
@@ -401,13 +402,19 @@
     }
   }
 
+  var chainTime = 0;
   function updateChains(dtGame) {
     if (!chainMeshes.length) return;
-    var t = (Z.World && Z.World._G ? Z.World._G.t : 0) * 3.5;
+    chainTime += (dtGame || 0) * 3.5;
     for (var k = 0; k < chainMeshes.length; k++) {
       var cm = chainMeshes[k], cs = cm.seg;
-      // Scroll each link smoothly forward along its segment's tangent vector
-      var phase = ((t + k * 0.35) % 1) - 0.5;
+      var stopped = false;
+      if (cs.stationId && Z.Coaster) {
+        var stInfo = Z.Coaster.stationInfo(cs.stationId);
+        if (stInfo && (stInfo.broken || stInfo.paused)) stopped = true;
+      }
+      if (stopped) continue;
+      var phase = ((chainTime + k * 0.35) % 1) - 0.5;
       var d = phase * cs.len;
       cm.mesh.position.set(cs.x + cs.fx * d, cs.y + cs.fy * d, cs.z + cs.fz * d);
     }

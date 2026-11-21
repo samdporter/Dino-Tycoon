@@ -356,13 +356,25 @@
         var info = Z.Coaster.stationInfo(o.id);
         if (!info) return false;
         var td = info.typeDef;
-        var key = JSON.stringify([info.ready, info.energyOk, info.stallReason, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
+        var mechStaff = null, mechCount = 0;
+        if (Z.state && Z.state.staff) {
+          for (var ms = 0; ms < Z.state.staff.length; ms++) {
+            var sf = Z.state.staff[ms];
+            if (sf.type === 'mechanic') {
+              mechCount++;
+              if (sf.tk && sf.tk.k === 'coaster' && sf.tk.id === o.id) mechStaff = sf;
+            }
+          }
+        }
+        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
         if (key === lastKey) return true;
         lastKey = key;
         syncPrice();
 
         statusEl.innerHTML = '';
-        if (info.ready) {
+        if (info.broken) {
+          statusEl.appendChild(kit.issuesList(['⚠️ BROKEN DOWN — Rollercoaster Stopped! ' + (info.eng ? 'Emergency mechanic repairing...' : mechStaff ? ('Mechanic ' + mechStaff.name + ' is on the way!') : 'Call an emergency mechanic below or hire a Mechanic in Staff.')]));
+        } else if (info.ready) {
           statusEl.appendChild(h('ul.issues', h('li.ok', { text: info.paused ? 'Paused — closed to guests' : 'Circuit complete & running!' })));
         } else if (info.branch) {
           statusEl.appendChild(kit.issuesList(['Track cannot branch or cross — remove extra branches']));
@@ -374,7 +386,11 @@
         if (!info.connected) statusEl.appendChild(kit.issuesList(['Station entrance is not connected to a path']));
 
         statsEl.innerHTML = '';
+        var condTxt = info.broken ? '⚠️ Broken (' + info.condition + '%)' : (info.condition + '% ' + (info.condition >= 75 ? '(Good)' : info.condition >= 45 ? '(Worn)' : '(Needs service!)'));
+        var mechTxt = info.eng ? '🔧 Emergency crew repairing' : mechStaff ? ('🔧 ' + mechStaff.name + ' (' + (mechStaff.state === 'work' ? 'Repairing' : 'On the way') + ')') : mechCount > 0 ? ('🔧 ' + mechCount + ' on radio call') : 'None hired (hire in Staff)';
         var rows = [
+          ['Condition', condTxt],
+          ['Mechanics', mechTxt],
           ['Excitement', info.loop ? info.excitement.toFixed(1) + ' / 10' : '—'],
           ['Intensity', info.loop ? info.intensity.toFixed(1) + ' / 10' : '—'],
           ['Track length', info.trackLen + ' tiles'],
@@ -394,6 +410,45 @@
         rows.forEach(function (r) { statsEl.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
 
         trainsEl.innerHTML = '';
+        // Breakdown / Maintenance Action Row right on the Station panel!
+        var maintRow = h('div.btnrow', { style: 'gap:4px;flex-wrap:wrap' });
+        if (info.broken && !info.eng) {
+          maintRow.appendChild(h('button.btn', {
+            text: '🔧 Call Mechanic (' + fmt(CD.engineerFee) + ')',
+            on: {
+              click: function () {
+                var res = Z.Coaster.callEngineer(o.id);
+                if (!res.ok) UI.toast(res.msg, 'bad');
+                else { UI.snd('click'); UI.toast('Emergency mechanic dispatched!', 'good'); lastKey = ''; }
+              }
+            }
+          }));
+        } else if (!info.broken && info.condition < 95) {
+          maintRow.appendChild(h('button.btn.alt', {
+            text: '🔧 Service Now (' + fmt(CD.callOutFee) + ')',
+            on: {
+              click: function () {
+                var res = Z.Coaster.callEngineer(o.id);
+                if (!res.ok) UI.toast(res.msg, 'bad');
+                else { UI.snd('click'); lastKey = ''; }
+              }
+            }
+          }));
+        }
+        if (mechCount === 0) {
+          maintRow.appendChild(h('button.btn.alt', {
+            text: '🔧 Hire Mechanic',
+            on: {
+              click: function () {
+                var mDef = UI.byId(D.staff, 'mechanic');
+                UI.Panel.hide();
+                UI.openCat('staff', true);
+                if (mDef) UI.Tools.start({ kind: 'staff', id: 'mechanic', name: mDef.name, def: mDef });
+              }
+            }
+          }));
+        }
+        if (maintRow.children.length) trainsEl.appendChild(maintRow);
         if (info.trains.length) {
           trainsEl.appendChild(h('div', { style: 'font-weight:700;font-size:12px;margin-top:4px', text: 'Trains (' + info.trains.length + '/' + td.maxTrains + ')' }));
           info.trains.forEach(function (T) {

@@ -3089,7 +3089,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== STAFF ======================
-  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'cleaner' ? 1.9 : 2.2; }
+  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : 2.2; }
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
@@ -3191,6 +3191,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (s.type === 'keeper') return !!pickKeeperEnc(s, sc0) || (RT.secCount === 0 && hasEscapeeToCatch(s));
     if (s.type === 'vet') return !!pickVetAnimal(s, sc0);
     if (s.type === 'cleaner') return hasCleanerWork(s, sc0);
+    if (s.type === 'mechanic') return !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, sc0, claimed));
     return false;
   }
   function staffCoverage() {
@@ -3240,7 +3241,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function startPatrol(s) {
     s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 1.2); s.tk = null; s.route = null;
-    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner') ? 'Patrolling (radio ready)' : 'Patrolling';
+    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner' || s.type === 'mechanic') ? 'Patrolling (radio ready)' : 'Patrolling';
     var pt = RT.pathTiles; if (!pt.length || !S.path[s.ti]) return;
     var sc0 = RT.comp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.comp[c] === sc0; }) : pt;
     if (!pool.length) return;
@@ -3339,6 +3340,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         s.route = rc; s.ri = 0; return;
       }
     }
+    if (s.type === 'mechanic' && Z.Coaster && Z.Coaster.pickMechanicTarget) {
+      var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
+      if (mt) {
+        var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
+        if (rm) {
+          RT.claim['c' + mt.station.id] = s.id;
+          s.tk = { k: 'coaster', id: mt.station.id, broken: mt.broken };
+          s.task = (mt.broken ? 'Repairing ' : 'Inspecting ') + BD[mt.station.type].name;
+          s.route = rm; s.ri = 0; return;
+        }
+      }
+    }
     startPatrol(s);
   }
 
@@ -3382,6 +3395,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             s.state = 'work'; s.wt = 2; s.task = 'Emptying bin';
           } else if (tk.k === 'dirt') {
             s.state = 'work'; s.wt = 2.5; s.task = 'Sweeping';
+          } else if (tk.k === 'coaster') {
+            s.state = 'work'; s.wt = 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster';
           }
         } else startPatrol(s);
       }
@@ -3415,6 +3430,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           else if (done.k === 'dirt') {
             S.dirt[done.t] = 0;
             delete RT.claim['t' + done.t];
+          }
+          else if (done.k === 'coaster') {
+            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(done.id, s.name);
+            delete RT.claim['c' + done.id];
           }
         }
         s.tk = null; s.state = 'idle'; s.wt = 0.6; s.task = 'Ready';
@@ -3816,7 +3835,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, a, e;
     if (!RT.wxInit) ensureInit();
     refreshEncAnimals();
-    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.dangerEsc = 0;
+    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.dangerEsc = 0;
     for (k = 0; k < S.animals.length; k++) {
       if (S.animals[k].state === 'escaped') {
         RT.escaped.push(S.animals[k]);
@@ -3836,7 +3855,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;

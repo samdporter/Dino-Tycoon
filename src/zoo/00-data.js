@@ -642,7 +642,8 @@ window.Z.DATA = {
     { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick & injured animals across reachable paths (responds immediately by radio)" },
     { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
     { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
-    { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped animals" }
+    { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped animals" },
+    { id: "mechanic", name: "Mechanic", emoji: "🔧", "wage/day": 85, hireCost: 300, effect: "Inspects & repairs rollercoasters across reachable paths (responds immediately by radio on breakdowns)" }
   ],
 
   goals: [
@@ -864,8 +865,8 @@ window.Z.DATA = {
     dwell: 6,
     fareMax: 35,
     viewRadius: 4,
-    breakdownPerHour: 0.012,
-    fixTime: 18,
+    breakdownPerHour: 0.08,
+    fixTime: 65,
     engineerTime: 4.5,
     engineerFee: 180,
     callOutFee: 60,
