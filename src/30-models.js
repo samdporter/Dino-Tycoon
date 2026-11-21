@@ -858,7 +858,7 @@ function legGeos(S) {
     var L = Lg.L, w = Lg.w, g = B(), c = legCol(S, 0, L[0] + L[1]), fc = S.footc || shade(S.back, 0.6);
     // thigh: rounded drumstick domed into the hip, swept back as caudofemoral mass, knee bump
     var tc = flankLeg(S, c, Lg.z || 0, L[0]);
-    g.loft([[-w[0] * 0.55, w[0] * 0.55, w[0] * 0.7, -w[0] * 0.35], [-w[0] * 0.2, w[0] * 1.0, w[0] * 1.25, -w[0] * 0.35], [0, w[0] * 1.15, w[0] * 1.4, -w[0] * 0.32], [L[0] * 0.15, w[0] * 1.25, w[0] * 1.45, -w[0] * 0.16], [L[0] * 0.42, w[0] * 1.1, w[0] * 1.25, w[0] * 0.06], [L[0] * 0.75, w[0] * 0.74, w[0] * 0.82, w[0] * 0.16], [L[0], w[0] * 0.55, w[0] * 0.6, w[0] * 0.14]], { down: true, rings: 10, seg: 12 }, tc);
+    g.loft([[-w[0] * 0.7, w[0] * 0.4, w[0] * 0.6, -w[0] * 0.35], [-w[0] * 0.3, w[0] * 0.75, w[0] * 1.1, -w[0] * 0.35], [0, w[0] * 0.92, w[0] * 1.3, -w[0] * 0.32], [L[0] * 0.15, w[0] * 1.02, w[0] * 1.38, -w[0] * 0.16], [L[0] * 0.42, w[0] * 0.95, w[0] * 1.2, w[0] * 0.06], [L[0] * 0.75, w[0] * 0.74, w[0] * 0.82, w[0] * 0.16], [L[0], w[0] * 0.55, w[0] * 0.6, w[0] * 0.14]], { down: true, rings: 10, seg: 12 }, tc);
     g.sph(w[0] * 0.5, w[0] * 0.5, w[0] * 0.66, 0, -L[0], w[0] * 0.16, tc(0, 0, 0, 0, -L[0] * 0.95), { s: [7, 5] });
     if (Lg.thighExtra) Lg.thighExtra(g, S);
     G.up = g.build();
@@ -897,9 +897,9 @@ function legGeos(S) {
         // shoulder/thigh muscle mass tapering to a slender, tendon-like lower limb
         var uc = flankLeg(S, c, q.z || 0, L[0]);
         g.loft([[-w[0] * 0.6, w[0] * 0.6, w[0] * 0.65, w[0] * 0.14 * back], [-w[0] * 0.25, w[0] * 1.0, w[0] * 1.08, w[0] * 0.13 * back], [0, w[0] * 1.15, w[0] * 1.22, w[0] * 0.1 * back], [L[0] * 0.2, w[0] * 1.2, w[0] * 1.26, w[0] * 0.1 * back], [L[0] * 0.55, w[0] * 0.98, w[0] * 1.04, 0], [L[0], w[1] * 1.1, w[1] * 1.1, 0]], { down: true, rings: 7, seg: 10 }, uc);
-        g.sph(w[1] * 1.12, w[1] * 1.08, w[1] * 1.12, 0, -L[0], 0, c(0, 0, 0, 0, -L[0] * 0.9), { s: [6, 4] });
+        g.sph(w[1] * 1.06, w[1] * 1.0, w[1] * 1.06, 0, -L[0], 0, c(0, 0, 0, 0, -L[0] * 0.9), { s: [6, 4] });
         var up = g.build(); g = B();
-        g.loft([[0, w[1] * 1.2, w[1] * 1.2, 0], [L[1] * 0.28, w[1] * 1.08, w[1] * 1.1, 0], [L[1] * 0.68, w[1] * 0.88, w[1] * 0.9, 0], [L[1], w2 * 1.0, w2 * 1.0, 0]], { down: true, rings: 5, seg: 9 }, c);
+        g.loft([[0, w[1] * 1.04, w[1] * 1.04, 0], [L[1] * 0.14, w[1] * 1.1, w[1] * 1.12, 0], [L[1] * 0.45, w[1] * 0.96, w[1] * 0.98, 0], [L[1] * 0.75, w[1] * 0.88, w[1] * 0.9, 0], [L[1], w2 * 1.0, w2 * 1.0, 0]], { down: true, rings: 6, seg: 9 }, c);
         if (q.foot) q.foot(g, L[1], S); else { g.sph(w[1] * 1.5, w[1] * 0.7, w[1] * 1.8, 0, -L[1] + w[1] * 0.5, w[1] * 0.5, S.footc || 0x444444, { s: [7, 4] }); }
         G[k] = { up: up, lo: g.build() };
       }
@@ -1214,9 +1214,9 @@ function zk(K, k, from) { return K.map(function (r) { var s = r[0] > from ? from
 // generic skull + lower jaw builder. o: {keys, jkeys, eye:[x,y,z,r], nos:[x,y,z,r], teeth:{z0,z1,n,x,y,len,w}, jteeth, kf, bk, skin, jskin, iris, extra(g,k,b)}
 function headStd(g, jg, b, S, o) {
   var k = b ? (o.bk || 0.8) : 1, kf = o.kf === undefined ? 0.1 : o.kf, K = zk(o.keys, k, kf), K2 = zk(o.jkeys, k, kf);
-  var hs = o.skin || fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
+  var hs = o.skin || fixZ(skin({ back: S.back, belly: mixHex(S.back, S.belly, 0.45), bAt: -0.35, bW: 0.7, mott: 0.05 }), 0.6);
   g.loft(K, { rings: o.rings || 12, seg: o.seg || 9, cap0: true, cap1: true }, hs);
-  jg.loft(K2, { rings: o.jrings || 8, seg: 8, cap0: true, cap1: true }, o.jskin || fixZ(skin({ back: shade(S.belly, 0.88), belly: S.belly, bAt: 0.4, bW: 0.6, mott: 0.04 }), 0.5));
+  jg.loft(K2, { rings: o.jrings || 8, seg: 8, cap0: true, cap1: true }, o.jskin || fixZ(skin({ back: shade(S.back, 0.78), belly: shade(mixHex(S.back, S.belly, 0.3), 0.85), bAt: 0.0, bW: 1.0, mott: 0.04 }), 0.5));
   // subtle rear jaw-muscle cheek gusset so wide roars/bites don't gap behind the hinge
   if (K2.length >= 2) {
     var j0 = K2[0], j1 = K2[1], jh = S.head.jaw;
@@ -1741,23 +1741,31 @@ reg((function () {
         gg.loft([[0.42 * k, 0.062, 0.08, -0.03], [0.5 * k, 0.05, 0.078, -0.045], [0.56 * k, 0.036, 0.066, -0.07], [0.592 * k, 0.016, 0.046, -0.098], [0.6 * k, 0.004, 0.012, -0.112]], { rings: 8, seg: 8, cap0: true, cap1: true }, 0x5a564e);
         jj.loft([[0.47 * k, 0.03, 0.022, -0.114], [0.53 * k, 0.03, 0.028, -0.118], [0.575 * k, 0.014, 0.022, -0.122]], { rings: 5, seg: 7, cap0: true, cap1: true }, 0x4e4a44);
         // saddle frill: swept up and back, thick at the base, thinning to a raised, scalloped rim with veined colour
-        var th = 0.5, cy0 = 0.2, cz0 = -0.1, rx = 0.36, ry = 0.33, NU = 44, vs = [0, 0.22, 0.45, 0.68, 0.86, 0.95, 1], ts = [0.06, 0.05, 0.038, 0.028, 0.022, 0.03, 0.004], pts = [], cols = [], u, vi, fp = function (a, v, side) {
+        var th = 0.5, cy0 = 0.2, cz0 = -0.1, rx = 0.36, ry = 0.33, NU = 44, vs = [0, 0.22, 0.45, 0.68, 0.86, 0.95, 1], ts = [0.06, 0.05, 0.038, 0.028, 0.022, 0.03, 0.004], pts = [[], []], nm = [[], []], u, vi, sf;
+        var fp = function (a, v, side) {
           var sc = 1 + 0.07 * Math.pow(abs(Math.sin(a * 10.5)), 0.6) * smooth(v, 0.9, 1), px = Math.cos(a) * rx * v * sc, py = Math.sin(a) * ry * v * sc, dz = -0.34 * py * py + 0.16 * px * px - 0.05 * v + side * ts[Math.min(6, Math.round(v * 6))] * 0.5;
-          var yy = py * cos(th) + dz * sin(th), zz = -py * sin(th) + dz * cos(th); return [px, cy0 + yy, cz0 + zz];
+          return [px, cy0 + py * cos(th) + dz * sin(th), cz0 - py * sin(th) + dz * cos(th)];
         };
-        for (vi = 0; vi < vs.length; vi++) { pts.push([[], []]); for (u = 0; u <= NU; u++) { var ua = -0.4 + (PI + 0.8) * u / NU; pts[vi][0].push(fp(ua, vs[vi], 1, vi)); pts[vi][1].push(fp(ua, vs[vi], -1, vi)); } }
         var fcol = function (a, v) {
-          var c = mixHex(0x7a6a46, 0x9a5236, smooth(v, 0.1, 0.5)); c = mixHex(c, 0xb87048, smooth(v, 0.5, 0.85)); c = mixHex(c, 0xd8c090, smooth(v, 0.88, 0.98));
-          var vein = 1 - smooth(abs(Math.sin(a * 6.2 + 0.3)), 0.0, 0.16); return shade(c, 1 - vein * 0.14 * smooth(v, 0.15, 0.6) + (hash1(Math.floor(a * 30) + v * 9) - 0.5) * 0.06);
+          var c = mixHex(shade(S.back, 1.12), 0xa8764e, 0.3 * (1 - smooth(v, 0.05, 0.45)));
+          c = shade(c, 1.04 - 0.2 * smooth(v, 0.88, 1) + (sin(a * 9 + v * 5) * 0.5 + sin(a * 23 - v * 11) * 0.5) * 0.05 + (hash1(Math.floor(a * 14) * 7 + Math.floor(v * 6)) - 0.5) * 0.05);
+          return [(c >> 16 & 255) / 255, (c >> 8 & 255) / 255, (c & 255) / 255];
         };
-        for (vi = 0; vi < vs.length - 1; vi++) for (u = 0; u < NU; u++) {
-          var am = -0.4 + (PI + 0.8) * (u + 0.5) / NU, vm = (vs[vi] + vs[vi + 1]) / 2, cc = fcol(am, vm);
-          for (var sf = 0; sf < 2; sf++) {
-            var P = pts, A = P[vi][sf][u], Bq = P[vi][sf][u + 1], C = P[vi + 1][sf][u + 1], D = P[vi + 1][sf][u], nz = sf ? -1 : 1, hy = nz * sin(th), hz = nz * cos(th);
-            gg.tri(A, Bq, C, cc, 0, hy, hz); gg.tri(A, C, D, cc, 0, hy, hz);
+        for (sf = 0; sf < 2; sf++) for (vi = 0; vi < vs.length; vi++) { pts[sf].push([]); for (u = 0; u <= NU; u++) pts[sf][vi].push(fp(-0.4 + (PI + 0.8) * u / NU, vs[vi], sf ? -1 : 1)); }
+        for (sf = 0; sf < 2; sf++) {
+          var nz = sf ? -1 : 1, hy = nz * sin(th), hz = nz * cos(th);
+          for (vi = 0; vi < vs.length; vi++) { nm[sf].push([]); for (u = 0; u <= NU; u++) {
+            var p = pts[sf], t1 = p[vi][min(NU, u + 1)], t0 = p[vi][max(0, u - 1)], v1 = p[min(vs.length - 1, vi + 1)][u], v0 = p[max(0, vi - 1)][u];
+            _e1.set(t1[0] - t0[0], t1[1] - t0[1], t1[2] - t0[2]); _e2.set(v1[0] - v0[0], v1[1] - v0[1], v1[2] - v0[2]); _n.crossVectors(_e1, _e2).normalize();
+            if (_n.lengthSq() < 0.5) _n.set(0, hy, hz); else if (_n.y * hy + _n.z * hz < 0) _n.negate();
+            nm[sf][vi].push([_n.x, _n.y, _n.z]);
+          } }
+          for (vi = 0; vi < vs.length - 1; vi++) for (u = 0; u < NU; u++) {
+            var q = [[vi, u], [vi, u + 1], [vi + 1, u + 1], [vi + 1, u]], V = q.map(function (k) { return [pts[sf][k[0]][k[1]], nm[sf][k[0]][k[1]], fcol(-0.4 + (PI + 0.8) * k[1] / NU, vs[k[0]])]; });
+            [[0, 1, 2], [0, 2, 3]].forEach(function (t) { var A = V[t[0]], Bq = V[t[1]], C = V[t[2]]; _pushTriAO(gg, A[0][0], A[0][1], A[0][2], A[1][0], A[1][1], A[1][2], A[2], Bq[0][0], Bq[0][1], Bq[0][2], Bq[1][0], Bq[1][1], Bq[1][2], Bq[2], C[0][0], C[0][1], C[0][2], C[1][0], C[1][1], C[1][2], C[2]); });
           }
         }
-        for (u = 0; u < NU; u++) { var ec = 0xd8c090; gg.tri(pts[6][0][u], pts[6][0][u + 1], pts[6][1][u + 1], ec, 0, 1, 0); gg.tri(pts[6][0][u], pts[6][1][u + 1], pts[6][1][u], ec, 0, 1, 0); }
+        for (u = 0; u < NU; u++) { var ec = 0x6a5a44; gg.tri(pts[0][6][u], pts[0][6][u + 1], pts[1][6][u + 1], ec, 0, 1, 0); gg.tri(pts[0][6][u], pts[1][6][u + 1], pts[1][6][u], ec, 0, 1, 0); }
       } });
   } };
   S.tail = { n: 3, len: 0.95, at: [0.0, -0.58], rr: 5, seg: 8, keys: [[0, 0.14, 0.17, 0], [0.45, 0.09, 0.11, 0], [0.95, 0.012, 0.018, 0]], rest: [-0.05, -0.12, -0.2], amp: 0.06, gaitAmp: 0.08, stab: 0.9 };
