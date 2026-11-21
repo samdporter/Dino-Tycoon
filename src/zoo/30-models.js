@@ -753,7 +753,7 @@ function addFoot(g, ft, y0, fr, fh, col) { // col: leg colour fn (x,y,z,nx,ny,nz
   } else if (type === 'foot') {
     g.loft([[0, fr * 1.0, fr * 1.0, 0], [fh * 0.7, fr * 1.12, fr * 1.12, 0], [fh, fr * 1.1, fr * 1.1, 0]], { down: true, oy: y0 + fh, rings: 4, seg: 10, cap1: true },
       function (zc, ca, sa, x, y, z) { var b = typeof base === 'function' ? base(zc, ca, sa, x, y, z) : base; return zc < fh * 0.3 ? shade(b, 1.1) : (fract(zc * 40) < 0.5 ? b : shade(b, 0.88)); });
-    for (i = -2; i <= 2; i++) { var an = i * 0.42; g.sph(fr * 0.3, fh * 0.3, fr * 0.2, Math.sin(an) * fr * 1.05, y0 + fh * 0.42, Math.cos(an) * fr * 1.1, fc, { s: [5, 4], rot: [0, an, 0] }); }
+    for (i = -1; i <= 1; i++) { var an = i * 0.6; g.sph(fr * 0.26, fh * 0.2, fr * 0.1, Math.sin(an) * fr * 1.1, y0 + fh * 0.4, Math.cos(an) * fr * 1.12, fc, { s: [6, 4], rot: [0, an, 0] }); }
   } else if (type === 'toes') {
     g.loft([[0, fr * 0.95, fr * 1.0, 0], [fh * 0.6, fr * 1.1, fr * 1.15, fr * 0.1], [fh, fr * 1.15, fr * 1.25, fr * 0.15]], { down: true, oy: y0 + fh, rings: 3, seg: 8, cap1: true }, lc);
     for (i = -1; i <= 1; i++) {
@@ -844,11 +844,11 @@ function quadParts(spec, sex) {
     var tr = spec.trunk; P.trunk = [];
     for (var i = 0; i < tr.n; i++) {
       var gg = B(), r0 = lerp(tr.r0, tr.r1, i / tr.n), r1 = lerp(tr.r0, tr.r1, (i + 1) / tr.n), sl = tr.len / tr.n, tc = tr.col, tk = [[-r0 * 0.5, r0 * 0.7, r0 * 0.7, 0]], m = 6, j;
-      for (j = 0; j <= m; j++) tk.push([sl * 1.06 * j / m, lerp(r0, r1, j / m) * (j % 2 ? 0.94 : 1.03), lerp(r0, r1, j / m) * (j % 2 ? 0.94 : 1.03), 0]);
+      for (j = 0; j <= m; j++) tk.push([sl * 1.06 * j / m, lerp(r0, r1, j / m) * (j % 2 ? 0.99 : 1.008), lerp(r0, r1, j / m) * (j % 2 ? 0.99 : 1.008), 0]);
       if (i === tr.n - 1) { tk.push([sl * 1.06 + r1 * 0.4, r1 * 1.25, r1 * 1.1, 0]); tk.push([sl * 1.06 + r1 * 0.75, r1 * 0.9, r1 * 0.75, 0]); } else tk.push([sl * 1.06 + r1 * 0.4, r1 * 0.7, r1 * 0.7, 0]);
       var endSeg = i === tr.n - 1;
       gg.loft(tk, { down: true, rings: m * 2 + 4, seg: 9, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) {
-        var w = fract(zc / sl * m * 0.5 + 0.25) < 0.5 ? 1 : 0.86;
+        var w = fract(zc / sl * m * 0.5 + 0.25) < 0.5 ? 1 : 0.95;
         return shade(endSeg && zc > sl * 1.06 + r1 * 0.2 ? shade(tc, 0.8) : tc, w * (ca < -0.3 ? 0.95 : 1));
       });
       P.trunk.push(gg.build());
@@ -1204,7 +1204,7 @@ function earBall(g, x, y, z, r, col, inner) {
       g.extrude(ep.map(function (p) { return [-p[0], p[1]]; }), 0.03, -0.11, 0.1, -0.02, [0.15, 0.25, -0.18], TAN, { axis: 'z', bev: 0.008, curveX: -0.35 });
     },
     legs: { hs: 6, fx: 0.2, fy: 1.75, fz: 0.52, hy: 1.7, hz: -0.58, hx: 0.21, fLen: 1.75, hLen: 1.7, fr: [0.125, 0.085, 0.065], hr: [0.14, 0.085, 0.065], haunch: [0.2, 0.34, 0.25],
-      col: function (y, ny) { return y < -0.9 ? (fract(y * 4) < 0.1 ? 0xb88c48 : 0xefd9a0) : cells(0, y, 0.0, 3.4, 0.2); }, foot: { type: 'hoof', col: 0x3a2e24, h: 0.09 }, kf: 0.5 },
+      col: function (y, ny) { return mixHex(cells(0, y, 0.0, 3.4, 0.2), 0xefd9a0, clamp((-y - 0.75) * 6, 0, 1)); }, foot: { type: 'hoof', col: 0x3a2e24, h: 0.09 }, kf: 0.5 },
     tail: { y: 2.3, z: -0.9, n: 2, len: 1.2, r0: 0.045, r1: 0.03, col: TAN, up: -1.2, curl: 0.0, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.05, 0.16, 0x3a2a1a); } },
     fold: { fa: -1.25, ha: -1.2, splay: 0.15, hp: 1.1, hy: 1.4 }
   };
@@ -1271,32 +1271,40 @@ function earBall(g, x, y, z, r, col, inner) {
   QUADS.tiger = {
     id: 'tiger', cy: 0.82, hl: 0.9, hh: 0.33, height: 1.4, size: 1.0, walkA: 0.45, runA: 0.8, bend: 0.9,
     body: function (g) {
-      g.loft([[-1.0, 0.03, 0.04, 0.8], [-0.95, 0.1, 0.13, 0.8], [-0.82, 0.24, 0.29, 0.83], [-0.55, 0.31, 0.35, 0.85], [-0.1, 0.26, 0.31, 0.8], [0.3, 0.29, 0.36, 0.84], [0.62, 0.31, 0.39, 0.88], [0.84, 0.24, 0.3, 0.88], [0.93, 0.14, 0.18, 0.89], [0.97, 0.03, 0.04, 0.89]],
-        { rings: 30, seg: 18, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      var fn = function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); };
+      g.loft([[-1.0, 0.03, 0.04, 0.8], [-0.95, 0.1, 0.13, 0.82], [-0.8, 0.24, 0.29, 0.85], [-0.55, 0.31, 0.33, 0.88], [-0.3, 0.26, 0.26, 0.85], [0.1, 0.28, 0.3, 0.82], [0.45, 0.3, 0.38, 0.86], [0.65, 0.31, 0.37, 0.9], [0.84, 0.24, 0.3, 0.9], [0.93, 0.14, 0.18, 0.89], [0.97, 0.03, 0.04, 0.89]],
+        { rings: 30, seg: 18, cap0: true, cap1: true }, fn);
+      g.loft([[-0.82, 0.03, 0.02, 0.58], [-0.62, 0.1, 0.05, 0.56], [-0.4, 0.1, 0.05, 0.56], [-0.2, 0.03, 0.02, 0.58]], { rings: 8, seg: 8, cap0: true, cap1: true }, fn);
     },
     neck: { y: 0.96, z: 0.66, len: 0.28, up: 0.45, r0: 0.21, r1: 0.19, hs: 3, col: function (x, y, z, nx, ny) { return ny < -0.4 ? WH : (fract(z * 12 + x * 3) < 0.3 ? K : OR); } },
     hpitch: 0.3, eatY: 0.2,
     head: function (g) {
       var hc = function (x, y, z, nx, ny) {
         var ax = abs(x);
-        if (z > 0.3) return (ny < 0.4 || y < -0.03) ? WH : (fract(ax * 30) < 0.2 ? K : OR);
-        if (y < -0.045 && z > 0.08) return WH;
-        if (z > 0.17 && ax > 0.05 && y > 0.0) return mixHex(OR, WH, 0.35);
+        if (z > 0.27) return (ny < 0.3 || y < -0.04) ? WH : (fract(ax * 30) < 0.15 ? K : OR);
+        if (y < -0.05 && z > 0.06) return WH;
+        if (z > 0.12 && ax > 0.06 && y < 0.0) return WH;
         if (y > 0.04 && z < 0.2) return fract(ax * 17 + z * 2) < 0.3 ? K : OR;
         return fract(z * 15 + ax * 5 + y * 3) < 0.28 ? K : (y < 0 ? OL : OR);
       };
-      g.loft([[-0.12, 0.14, 0.14, 0.02], [0.02, 0.2, 0.18, 0.0], [0.14, 0.21, 0.175, -0.01], [0.23, 0.15, 0.115, -0.04], [0.3, 0.12, 0.09, -0.055], [0.36, 0.1, 0.075, -0.06], [0.4, 0.07, 0.055, -0.058]],
+      g.loft([[-0.12, 0.14, 0.13, 0.02], [0.02, 0.2, 0.17, 0.0], [0.12, 0.22, 0.16, -0.015], [0.2, 0.17, 0.12, -0.03], [0.26, 0.125, 0.09, -0.045], [0.33, 0.11, 0.075, -0.055], [0.38, 0.085, 0.06, -0.055], [0.405, 0.05, 0.035, -0.055]],
         { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
-      g.sph(0.048, 0.03, 0.026, 0, -0.025, 0.4, 0xd68a8a, { s: [6, 4] });
+      g.sph(0.034, 0.02, 0.016, 0, -0.022, 0.4, 0xb8695a, { s: [6, 4] });
       for (var s = -1; s <= 1; s += 2) {
+        g.tube([[s * 0.05, 0.075, 0.21], [s * 0.095, 0.092, 0.19], [s * 0.14, 0.085, 0.14]], [0.012, 0.022, 0.012], shade(OR, 0.8), { seg: 5, steps: 2 });
         for (var r = 0; r < 3; r++) g.cone(0.065 - r * 0.012, 0.2 - r * 0.03, s * 0.15, -0.065 - r * 0.025, 0.06 - r * 0.045, WH, { seg: 5, rot: [0.2, 0, -s * (1.25 + r * 0.12)] });
-        g.sph(0.012, 0.008, 0.008, s * 0.03, 0.0, 0.365, K, { s: [3, 3] });
       }
       eyePair(g, 0.125, 0.055, 0.19, 0.026, 0xc8a020);
     },
-    earAt: [0, 0.1, 0.0], ears: function (g) { earBall(g, 0.13, 0.19, -0.01, 0.07, K, 0xe8d8c8); earBall(g, -0.13, 0.19, -0.01, 0.07, K, 0xe8d8c8); },
+    earAt: [0, 0.1, 0.0], ears: function (g) {
+      for (var s = -1; s <= 1; s += 2) {
+        earCone(g, s * 0.165, 0.15, -0.01, 0.075, 0.12, 0.55, OR, 0xe8d8c8);
+        g.sph(0.04, 0.036, 0.008, s * 0.17, 0.158, -0.036, K, { s: [6, 4], rot: [0, 0, -s * 0.55] });
+        g.sph(0.017, 0.015, 0.005, s * 0.17, 0.165, -0.041, WH, { s: [5, 3] });
+      }
+    },
     legs: { hs: 4, fx: 0.13, fy: 0.62, fz: 0.47, hy: 0.6, hz: -0.58, hx: 0.14, fLen: 0.62, hLen: 0.6, fr: [0.095, 0.07, 0.06], hr: [0.11, 0.07, 0.06], haunch: [0.13, 0.17, 0.2],
-      col: function (y, ny) { return y < -0.5 ? WH : (fract(y * 10) < 0.3 ? K : OR); }, foot: { type: 'paw', col: 0x222222, h: 0.07, pawCol: WH } },
+      col: function (y, ny) { return y > -0.42 && fract(y * 10) < 0.3 ? K : OL; }, foot: { type: 'paw', col: 0x222222, h: 0.07, pawCol: OL } },
     tail: { y: 0.84, z: -0.82, n: 3, len: 1.0, r0: 0.05, r1: 0.04, hs: 4, col: function (i, x, y, z) { return fract(-z * 9 + i * 0.4) < 0.3 ? K : OR; }, up: -0.6, curl: 0.15, tip: function (g, sl) { tuft(g, -sl, 0.045, 0.08, K); } },
     fold: { roll: 0.1, hp: 0.6, hy: 0.9 }
   };
@@ -1344,19 +1352,19 @@ function earBall(g, x, y, z, r, col, inner) {
     earPivot: [0.5, 0.3, 0.08], earFlare: 0.35, earFlap: 0.4,
     earsLR: function (r) {
       var g = B(), s = r ? -1 : 1;
-      g.loft([[0.0, 0.4, 0.1, 0.0], [0.1, 0.62, 0.085, 0.01], [0.3, 0.72, 0.065, 0.03], [0.55, 0.63, 0.045, 0.06], [0.78, 0.41, 0.03, 0.1], [0.93, 0.17, 0.02, 0.13], [1.0, 0.02, 0.012, 0.14]],
-        { down: true, ox: s * 0.3, oy: 0.1, rings: 22, seg: 20, cap0: true, cap1: true },
+      g.loft([[0.0, 0.42, 0.12, 0.0], [0.1, 0.64, 0.1, -0.01], [0.32, 0.76, 0.07, -0.03], [0.58, 0.75, 0.045, -0.05], [0.8, 0.58, 0.03, -0.07], [0.93, 0.3, 0.02, -0.08], [1.0, 0.04, 0.012, -0.08]].map(function (k) { return [k[0] * 1.25, k[1] * 1.2, k[2], k[3]]; }),
+        { down: true, ox: s * 0.36, oy: 0.1, rings: 22, seg: 20, cap0: true, cap1: true },
         function (zc, ca, sa, x, y, z) {
           var inner = ca < 0;
-          if (inner) return mixHex(PK, GR, clamp(0.85 - zc * 0.5 - fract(z * 7 + y * 4) * 0.2, 0, 1) * (1 - zc * 0.3));
-          return fract(y * 8 + z * 2) < 0.12 ? GD : (zc > 0.85 ? GD : GR);
+          if (inner) return mixHex(PK, GR, clamp(0.8 - zc * 0.35 - Math.abs(sin(z * 9 + y * 5)) * 0.12, 0, 1) * 0.8);
+          return hash3(Math.floor(y * 12), Math.floor(z * 12), 5) > 0.8 ? shade(GR, 0.93) : GR;
         });
       var geo = g.build();
       geo.rotateY(s * PI / 2);
       return geo;
     },
     legs: { fx: 0.55, fy: 1.5, fz: 1.0, hy: 1.5, hz: -1.15, hx: 0.55, fLen: 1.5, hLen: 1.5, fr: [0.36, 0.31, 0.29], hr: [0.38, 0.31, 0.29], two: true, kf: 0.54, col: function (y, ny, front, x, z) { return skin(x || 0, y, z || 0, ny); },
-      foot: { type: 'foot', col: 0xe0dac8, h: 0.14, base: GD } },
+      foot: { type: 'foot', col: 0xb9b5a8, h: 0.14, base: GD } },
     tail: { y: 2.25, z: -1.85, n: 2, len: 1.3, r0: 0.06, r1: 0.04, col: GR, up: -1.3, curl: -0.1, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.04, 0.12, 0x333338); } },
     fold: { fa: -0.5, ha: -0.5, fb: 0, hb: 0, splay: 1.25, hp: 0.7, hy: 0.0, na: 0, lieY: 1.15 }
   };
@@ -1391,7 +1399,7 @@ function earBall(g, x, y, z, r, col, inner) {
       eyePair(g, 0.27, 0.1, 0.3, 0.026);
     },
     earAt: [0, 0.2, 0.0], ears: function (g) { earCone(g, 0.19, 0.3, 0.0, 0.1, 0.28, 0.35, GR, 0xc9a8a0); earCone(g, -0.19, 0.3, 0.0, 0.1, 0.28, 0.35, GR, 0xc9a8a0); },
-    legs: { fx: 0.4, fy: 0.78, fz: 0.62, hy: 0.78, hz: -0.7, hx: 0.42, fLen: 0.78, hLen: 0.78, fr: [0.23, 0.2, 0.19], hr: [0.25, 0.21, 0.19], two: true, kf: 0.52, col: function (y) { return y < -0.55 ? GD : GR; },
+    legs: { fx: 0.4, fy: 0.78, fz: 0.62, hy: 0.78, hz: -0.7, hx: 0.42, fLen: 0.78, hLen: 0.78, fr: [0.23, 0.2, 0.19], hr: [0.25, 0.21, 0.19], two: true, kf: 0.52, col: function (y) { return mixHex(GR, GD, clamp((-y - 0.35) * 4, 0, 1)); },
       foot: { type: 'toes', col: 0x4a4844, h: 0.09 }, bend: 0.3 },
     tail: { y: 1.25, z: -1.4, n: 2, len: 0.75, r0: 0.05, r1: 0.03, col: GD, up: -1.2, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.035, 0.07, 0x333333); } },
     fold: { fa: -0.4, ha: -0.4, splay: 1.2, hp: 0.9, hy: 0.4, na: -0.2 }
@@ -1428,13 +1436,12 @@ function earBall(g, x, y, z, r, col, inner) {
         g.tube([[s * 0.23, -0.26, 0.92], [s * 0.25, -0.16, 0.98], [s * 0.24, -0.08, 0.96]], [0.04, 0.03, 0.008], 0xf0ead8, { seg: 6, steps: 2 });
         g.sph(0.085, 0.06, 0.085, s * 0.19, 0.12, 1.0, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 5] });
         g.sph(0.04, 0.025, 0.05, s * 0.19, 0.15, 1.02, 0x2e2630, { s: [5, 4] });
-        g.sph(0.11, 0.09, 0.11, s * 0.3, 0.37, 0.3, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 5] });
-        g.sph(0.026, 0.018, 0.03, s * 0.3, 0.37, 0.37, 0x5a4a58, { s: [4, 3] });
-      }
-      eyePair(g, 0.31, 0.43, 0.34, 0.04, 0x1a1210);
+        g.sph(0.13, 0.08, 0.13, s * 0.3, 0.34, 0.3, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 5] });
+              }
+      eyePair(g, 0.31, 0.4, 0.35, 0.036, 0x1a1210);
     },
-    earAt: [0, 0.3, 0.05], ears: function (g) { earBall(g, 0.34, 0.55, 0.05, 0.075, GR, PK); earBall(g, -0.34, 0.55, 0.05, 0.075, GR, PK); },
-    legs: { fx: 0.46, fy: 0.55, fz: 0.75, hy: 0.55, hz: -0.8, hx: 0.48, fLen: 0.55, hLen: 0.55, fr: [0.26, 0.23, 0.22], hr: [0.27, 0.23, 0.22], two: true, kf: 0.52, col: function (y) { return y < -0.4 ? GD : GR; },
+    earAt: [0, 0.3, 0.05], ears: function (g) { earBall(g, 0.37, 0.42, 0.0, 0.1, GR, PK); earBall(g, -0.37, 0.42, 0.0, 0.1, GR, PK); },
+    legs: { fx: 0.46, fy: 0.55, fz: 0.75, hy: 0.55, hz: -0.8, hx: 0.48, fLen: 0.55, hLen: 0.55, fr: [0.26, 0.23, 0.22], hr: [0.27, 0.23, 0.22], two: true, kf: 0.52, col: function (y) { return mixHex(GR, GD, clamp((-y - 0.2) * 4, 0, 1)); },
       foot: { type: 'toes', col: 0x4a4048, h: 0.08 } },
     tail: { y: 1.2, z: -1.4, n: 1, len: 0.3, r0: 0.07, r1: 0.04, col: GD, up: -0.7 },
     fold: { fa: -0.4, ha: -0.4, splay: 1.25, hp: 0.4, hy: 0.5, na: -0.1 }
@@ -1594,9 +1601,9 @@ function earBall(g, x, y, z, r, col, inner) {
       eyePair(g, 0.082, 0.052, 0.175, 0.021, 0xd8a020);
     },
     earAt: [0, 0.1, 0.0], ears: function (g) { earCone(g, 0.075, 0.2, -0.02, 0.075, 0.2, 0.12, GR, 0xd8b8b0); earCone(g, -0.075, 0.2, -0.02, 0.075, 0.2, 0.12, GR, 0xd8b8b0); },
-    legs: { fx: 0.11, fy: 0.54, fz: 0.4, hy: 0.52, hz: -0.46, hx: 0.12, fLen: 0.54, hLen: 0.52, fr: [0.07, 0.05, 0.042], hr: [0.08, 0.05, 0.042], haunch: [0.1, 0.16, 0.16], col: function (y) { return y < -0.35 ? LT : GR; },
-      foot: { type: 'paw', col: 0x222222, h: 0.05, pawCol: LT } },
-    tail: { y: 0.78, z: -0.66, n: 2, len: 0.85, r0: 0.05, r1: 0.09, col: function (i, x, y, z, nx, ny) { return (i === 1 && z < -0.3) ? 0x2c2d33 : (ny > 0.4 ? DK : GR); }, up: -0.55, curl: -0.1 },
+    legs: { fx: 0.11, fy: 0.54, fz: 0.4, hy: 0.52, hz: -0.46, hx: 0.12, fLen: 0.54, hLen: 0.52, fr: [0.07, 0.05, 0.042], hr: [0.08, 0.05, 0.042], haunch: [0.1, 0.16, 0.16], col: function (y) { return mixHex(GR, 0xa8a398, clamp((-y - 0.15) * 4, 0, 1)); },
+      foot: { type: 'paw', col: 0x222222, h: 0.05, pawCol: 0xa8a398 } },
+    tail: { y: 0.78, z: -0.66, n: 2, len: 0.85, r0: 0.05, r1: 0.09, col: function (i, x, y, z, nx, ny) { return ny > 0.4 ? DK : GR; }, up: -0.55, curl: -0.1, tip: function (g, sl) { tuft(g, -sl * 0.7, 0.08, 0.1, 0x2c2d33); } },
     fold: { roll: 0.15, hp: 0.7, hy: 0.8 }
   };
 })();
@@ -1705,7 +1712,7 @@ function earBall(g, x, y, z, r, col, inner) {
     },
     earAt: [0, 0.1, 0.0], ears: function (g) { earBall(g, 0.1, 0.18, -0.03, 0.05, TN, 0xd9a0a0); earBall(g, -0.1, 0.18, -0.03, 0.05, TN, 0xd9a0a0); },
     legs: { fx: 0.2, fy: 1.2, fz: 0.55, hy: 1.2, hz: -0.58, hx: 0.21, fLen: 1.2, hLen: 1.2, fr: [0.12, 0.085, 0.065], hr: [0.14, 0.09, 0.065], haunch: [0.17, 0.28, 0.24],
-      col: function (y) { return y < -0.9 ? DK : TN; }, foot: { type: 'paw', col: 0xa07c50, h: 0.08, pawCol: 0xa07c50 } },
+      col: function (y) { return mixHex(TN, DK, clamp((-y - 0.7) * 4, 0, 1)); }, foot: { type: 'paw', col: 0xa07c50, h: 0.08, pawCol: 0xa07c50 } },
     tail: { y: 1.62, z: -1.1, n: 2, len: 0.75, r0: 0.04, r1: 0.04, col: DK, up: -1.1, curl: 0, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.045, 0.11, 0x5a4028); } },
     fold: { fa: -1.3, ha: -1.25, splay: 0.25, hp: 0.9, hy: 0.2, na: 0.2, lieY: 0.85 }
   };
