@@ -1587,9 +1587,12 @@ reg((function () {
   S.body = { rings: 14, seg: 9, keys: [[-0.46, 0.045, 0.07, 0.05], [-0.34, 0.09, 0.12, 0.04], [-0.12, 0.13, 0.17, 0.02], [0.1, 0.14, 0.18, 0.015], [0.3, 0.11, 0.14, 0.04], [0.45, 0.07, 0.09, 0.07], [0.52, 0.045, 0.055, 0.09]] };
   S.neck = { n: 2, len: 0.5, at: [0, 0.1, 0.46], rr: 4, seg: 7, keys: [[0, 0.075, 0.08, 0], [0.5, 0.042, 0.048, 0]], rest: [1.0, 0.4], hrest: -0.25, stab: [0.5, 0.9], look: 0.8 };
   S.head = { len: 0.3, scale: 1.0, jaw: [-0.035, 0.05], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.04, 0.05, 0], [0.04, 0.064, 0.076, 0], [0.14, 0.056, 0.064, -0.006], [0.23, 0.04, 0.044, -0.014], [0.285, 0.036, 0.03, -0.02], [0.305, 0.024, 0.02, -0.022]],
-      jkeys: [[0.03, 0.03, 0.022, -0.068], [0.14, 0.044, 0.024, -0.074], [0.25, 0.034, 0.016, -0.074], [0.295, 0.02, 0.01, -0.072]], eye: [0.062, 0.04, 0.1, 0.021], nos: [0.014, 0.018, 0.24, 0.006], iris: 0x6a3a18,
-      extra: function (gg, k) { gg.sph(0.032, 0.014, 0.03, 0, -0.026, 0.29 * k, 0xe0c880, { s: [5, 4] }); } });
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, keys: [[-0.03, 0.04, 0.05, 0], [0.04, 0.064, 0.076, 0], [0.14, 0.056, 0.064, -0.006], [0.23, 0.04, 0.044, -0.014], [0.285, 0.036, 0.03, -0.02], [0.305, 0.024, 0.02, -0.022]],
+      jkeys: [[0.03, 0.03, 0.022, -0.068], [0.14, 0.044, 0.024, -0.074], [0.25, 0.034, 0.016, -0.074], [0.295, 0.02, 0.01, -0.072]], eye: [0.06, 0.038, 0.1, 0.025], nos: [0.014, 0.018, 0.24, 0.006], iris: 0x6a3a18,
+      extra: function (gg, k, bb, jj) {
+        gg.loft([[0.235 * k, 0.03, 0.03, -0.014], [0.27 * k, 0.034, 0.03, -0.022], [0.295 * k, 0.026, 0.026, -0.03], [0.312 * k, 0.008, 0.012, -0.036], [0.316 * k, 0.002, 0.004, -0.038]], { rings: 7, seg: 8, cap0: true, cap1: true }, function (x, y, z, nx, ny) { return mixHex(0xe0c880, 0x8a6a40, smooth(-ny, 0.2, 0.9) * 0.5); });
+        jj.loft([[0.25 * k, 0.022, 0.014, -0.074], [0.285 * k, 0.022, 0.016, -0.076], [0.306 * k, 0.008, 0.01, -0.078], [0.31 * k, 0.002, 0.004, -0.078]], { rings: 5, seg: 7, cap0: true, cap1: true }, 0xe0c880);
+      } });
   } };
   S.tail = { n: 4, len: 1.3, at: [0.04, -0.42], rr: 4, seg: 7, keys: [[0, 0.07, 0.095, 0], [0.45, 0.05, 0.065, 0], [0.9, 0.03, 0.038, 0], [1.3, 0.008, 0.012, 0]], rest: [0.03, 0.02, 0.0, -0.02], amp: 0.06, gaitAmp: 0.05, stab: 0.95, run: 0.0 };
   S.arms = { at: [0.11, 0.0, 0.4], rest: 0.3, swing: 0.35, out: 0.1, build: function (g) { dinoArm(g, [[0, 0, 0], [0, -0.1, 0.04], [0, -0.17, 0.1]], [0.025, 0.02, 0.016], 0xb89350, { n: 3, len: 0.04, r: 0.008, sp: 0.014, down: 0.1, col: 0x6a5030 }); } };
@@ -1610,9 +1613,13 @@ reg((function () {
     extra: function (g) { for (var i = 0; i < 12; i++) { for (var s = -1; s <= 1; s += 2) feather(g, s * (0.02 + 0.07 * Math.sin(i * 0.5)), 0.14, -0.32 + i * 0.07, s * 0.03, 0.05, -0.04, 0.018, i % 3 ? 0xc8d4e4 : 0xe8a050, false); } } };
   S.neck = { n: 2, len: 0.4, at: [0, 0.09, 0.42], rr: 4, seg: 7, keys: [[0, 0.065, 0.07, 0], [0.4, 0.045, 0.05, 0]], rest: [0.95, 0.4], hrest: -0.2, stab: [0.5, 0.9], look: 0.9 };
   S.head = { len: 0.26, scale: 1.1, jaw: [-0.03, 0.045], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.9, keys: [[-0.03, 0.05, 0.06, 0], [0.04, 0.07, 0.078, 0], [0.12, 0.054, 0.06, -0.004], [0.2, 0.034, 0.038, -0.01], [0.25, 0.02, 0.022, -0.012], [0.265, 0.01, 0.012, -0.014]],
-      jkeys: [[0.03, 0.03, 0.022, -0.058], [0.12, 0.04, 0.022, -0.062], [0.22, 0.022, 0.014, -0.058], [0.26, 0.01, 0.008, -0.056]], eye: [0.066, 0.04, 0.075, 0.034], nos: [0.01, 0.008, 0.25, 0.005], iris: 0x2a1a10,
-      extra: function (gg, k) { for (var i = 0; i < 4; i++) feather(gg, (i - 1.5) * 0.015, 0.075, -0.01, (i - 1.5) * 0.01, 0.035, -0.04, 0.012, i % 2 ? 0xe8a050 : 0xc8d4e4, false); } });
+    headStd(g, jg, b, S, { bk: 0.9, roundPupil: true, keys: [[-0.03, 0.05, 0.06, 0], [0.04, 0.07, 0.078, 0], [0.12, 0.054, 0.06, -0.004], [0.2, 0.034, 0.038, -0.01], [0.25, 0.02, 0.022, -0.012], [0.265, 0.01, 0.012, -0.014]],
+      jkeys: [[0.03, 0.03, 0.022, -0.058], [0.12, 0.04, 0.022, -0.062], [0.22, 0.022, 0.014, -0.058], [0.26, 0.01, 0.008, -0.056]], eye: [0.066, 0.04, 0.075, 0.035], nos: [0.01, 0.008, 0.25, 0.005], iris: 0x2a1a10,
+      extra: function (gg, k, bb, jj) {
+        for (var i = 0; i < 4; i++) feather(gg, (i - 1.5) * 0.015, 0.075, -0.01, (i - 1.5) * 0.01, 0.035, -0.04, 0.012, i % 2 ? 0xe8a050 : 0xc8d4e4, false);
+        gg.loft([[0.19 * k, 0.026, 0.026, -0.008], [0.225 * k, 0.026, 0.026, -0.014], [0.248 * k, 0.018, 0.02, -0.02], [0.262 * k, 0.005, 0.008, -0.024], [0.266 * k, 0.001, 0.003, -0.026]], { rings: 6, seg: 7, cap0: true, cap1: true }, function (x, y, z, nx, ny) { return mixHex(0xd8c8a0, 0x6a5a48, smooth(-ny, 0.2, 0.9) * 0.5); });
+        jj.loft([[0.2 * k, 0.016, 0.012, -0.056], [0.235 * k, 0.016, 0.014, -0.058], [0.256 * k, 0.006, 0.008, -0.058], [0.26 * k, 0.001, 0.003, -0.058]], { rings: 5, seg: 6, cap0: true, cap1: true }, 0xd8c8a0);
+      } });
   } };
   S.tail = { n: 4, len: 2.1, at: [0.04, -0.42], rr: 4, seg: 6, keys: [[0, 0.06, 0.08, 0], [0.6, 0.04, 0.052, 0], [1.4, 0.022, 0.03, 0], [2.1, 0.008, 0.01, 0]], rest: [0.04, 0.02, 0.0, -0.03], amp: 0.14, gaitAmp: 0.12, stab: 0.9, freq: 1.4,
     each: function (g, i, n, seg) { for (var s = -1; s <= 1; s += 2) feather(g, s * 0.025, 0.02, -seg * 0.3, s * 0.03, 0.04, -0.06, 0.016, i % 2 ? 0xe8a050 : 0xc8d4e4, false); } };
@@ -1632,14 +1639,31 @@ reg((function () {
   S.body = { rings: 14, seg: 9, keys: [[-0.46, 0.07, 0.1, 0.05], [-0.32, 0.14, 0.18, 0.035], [-0.1, 0.19, 0.23, 0.01], [0.12, 0.2, 0.24, 0.01], [0.32, 0.16, 0.2, 0.03], [0.46, 0.1, 0.13, 0.06], [0.54, 0.06, 0.08, 0.08]] };
   S.neck = { n: 2, len: 0.42, at: [0, 0.1, 0.48], rr: 4, seg: 8, keys: [[0, 0.1, 0.105, 0], [0.42, 0.07, 0.075, 0]], rest: [0.85, 0.35], hrest: -0.2, stab: [0.5, 0.9], look: 0.6 };
   S.head = { len: 0.3, scale: 1.0, jaw: [-0.04, 0.05], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.055, 0.065, 0], [0.04, 0.08, 0.09, 0], [0.14, 0.07, 0.078, -0.005], [0.23, 0.05, 0.05, -0.014], [0.285, 0.04, 0.036, -0.02], [0.305, 0.026, 0.024, -0.022]],
-      jkeys: [[0.03, 0.036, 0.028, -0.082], [0.14, 0.055, 0.03, -0.086], [0.25, 0.04, 0.022, -0.082], [0.3, 0.022, 0.014, -0.08]], eye: [0.075, 0.04, 0.115, 0.017], nos: [0.014, 0.012, 0.275, 0.006],
+    var hk = [[-0.03, 0.058, 0.08, 0.012], [0.03, 0.086, 0.125, 0.03], [0.1, 0.08, 0.112, 0.022], [0.16, 0.068, 0.082, -0.002], [0.23, 0.05, 0.052, -0.014], [0.285, 0.04, 0.036, -0.02], [0.305, 0.026, 0.024, -0.022]];
+    var hsk = fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
+    var bone = function (x, y, z) { return mixHex(0xc99560, 0xe2b878, hash3(Math.floor(x * 70), Math.floor(y * 70), Math.floor(z * 70)) * 0.8); };
+    var sk = function (zc, ca, sa, x, y, z) { return mixHex(hsk(zc, ca, sa, x, y, z), bone(x, y, z), smooth(y, 0.095, 0.135) * (1 - smooth(z, 0.12, 0.18)) * 0.9); };
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, skin: sk, keys: hk,
+      jkeys: [[0.03, 0.036, 0.028, -0.082], [0.14, 0.055, 0.03, -0.086], [0.25, 0.04, 0.022, -0.082], [0.3, 0.022, 0.014, -0.08]], eye: [0.078, 0.04, 0.115, 0.019], nos: [0.014, 0.012, 0.275, 0.006],
       teeth: { z0: 0.18, z1: 0.25, n: 3, x: 0.05, y: -0.075, len: 0.018, w: 0.006 },
-      extra: function (gg, k) { var dm = 0xe0a060, kn = 0xc88848;
-        gg.sph(0.07, 0.07, 0.1, 0, 0.1, 0.08 * k, function (x, y, z, nx, ny) { return ny > 0.3 ? dm : shade(dm, 0.82); }, { s: [9, 7] });
-        for (var i = 0; i < 7; i++) { var a = i / 7 * TAU; bump(gg, Math.sin(a) * 0.085, 0.045, 0.02 + Math.cos(a) * 0.01 - 0.0, 0.016, kn); }
-        for (i = -1; i <= 1; i++) gg.cone(0.014, 0.036, i * 0.025, 0.04, -0.025, kn, { seg: 4, rot: [-0.6, 0, 0] });
-        for (i = 0; i < 3; i++) bump(gg, (i - 1) * 0.022, 0.06, 0.2 * k + i * 0.0, 0.015, kn); } });
+      extra: function (gg, k, bb, jj) {
+        var kz = function (z) { return z > 0.1 ? 0.1 + (z - 0.1) * k : z; }, hz = zk(hk, k, 0.1), i, j, s;
+        // bony node sunk into the skull surface at angle a (0 = top) around the cross-section at z
+        var node = function (z, a, r, h, tilt) {
+          r *= 1.5; h *= 1.4;
+          var p = profAt(hz, kz(z)), nx = Math.sin(a) / p[0], ny = Math.cos(a) / p[1], l = Math.sqrt(nx * nx + ny * ny + tilt * tilt), x = Math.sin(a) * p[0], y = p[2] + Math.cos(a) * p[1];
+          nx /= l; ny /= l; var nz = -tilt / l;
+          gg.tube([[x - nx * r * 0.8, y - ny * r * 0.8, kz(z) - nz * r * 0.8], [x + nx * h, y + ny * h, kz(z) + nz * h]], [r, r * 0.55], function (px, py, pz, qx, qy, qz, t) { return shade(bone(px, py, pz), 0.8 + 0.14 * t); }, { seg: 6, smooth: false, cap0: false });
+        };
+        for (i = -3; i <= 3; i++) node(-0.015, i * 0.42, 0.014, 0.012, 0.9);
+        for (s = -1; s <= 1; s += 2) {
+          for (j = 0; j < 3; j++) node(0.035 + j * 0.045, s * 1.22, 0.013, 0.012, 0.25);
+          for (j = 0; j < 2; j++) node(0.13 + j * 0.04, s * 0.95, 0.011, 0.01, 0.1);
+          node(0.17, s * 1.35, 0.01, 0.01, 0.1); node(0.215, s * 0.6, 0.008, 0.009, 0.1);
+        }
+        for (i = -1; i <= 1; i++) node(0.2, i * 0.5, 0.009, 0.01, 0.1);
+        gg.loft([[0.27 * k, 0.034, 0.03, -0.018], [0.3 * k, 0.036, 0.032, -0.022], [0.32 * k, 0.02, 0.022, -0.03], [0.326 * k, 0.005, 0.008, -0.034]], { rings: 6, seg: 8, cap0: true, cap1: true }, function (x, y, z, nx, ny) { return mixHex(0xb8a070, 0x6a5a40, smooth(-ny, 0.2, 0.9) * 0.5); });
+      } });
   } };
   S.tail = { n: 4, len: 1.2, at: [0.04, -0.42], rr: 4, seg: 7, keys: [[0, 0.1, 0.13, 0], [0.5, 0.07, 0.09, 0], [0.9, 0.04, 0.05, 0], [1.2, 0.01, 0.014, 0]], rest: [0.03, 0.02, 0.0, -0.02], amp: 0.04, gaitAmp: 0.04, stab: 0.95, run: 0.0 };
   S.arms = { at: [0.15, 0.0, 0.42], rest: 0.3, swing: 0.3, out: 0.1, build: function (g) { dinoArm(g, [[0, 0, 0], [0, -0.1, 0.04], [0, -0.16, 0.1]], [0.03, 0.024, 0.02], 0x554240, { n: 3, len: 0.04, r: 0.008, sp: 0.014, down: 0.1 }); } };
@@ -1655,15 +1679,19 @@ reg((function () {
   var S = { id: 'parasaurolophus', kind: 'quad', H: 2.2, J: 0.74, p0: 0.0, bs: 0.35, bh: 1.4, runAt: 4.5 };
   S.back = 0x4d8c78; S.belly = 0xe2e2bc; S.footc = 0x3a3c2a; S.legc = 0x437c6a;
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0x5a9c86, bAt: -0.05, bW: 0.6, bars: { c: 0x1f3a32, f: 6, w: 0.4, k: 0.6, from: -0.6, to: 1.3, ca0: 0.1 }, dors: { c: 0x2a5648, k: 0.6 }, spots: { c: 0xe8a050, f: 8, k: 4, d: 0.08, a: 0.7 } });
-  S.body = { rings: 20, seg: 10, keys: [[-0.56, 0.07, 0.1, 0.06], [-0.4, 0.13, 0.18, 0.05], [-0.2, 0.2, 0.25, 0.03], [0.0, 0.23, 0.28, 0.01], [0.3, 0.23, 0.28, 0.0], [0.55, 0.18, 0.23, 0.0], [0.72, 0.1, 0.13, 0.04]] };
-  S.neck = { n: 2, len: 0.6, at: [0, 0.1, 0.66], rr: 4, seg: 8, keys: [[0, 0.12, 0.13, 0], [0.3, 0.09, 0.1, 0], [0.6, 0.065, 0.075, 0]], rest: [0.65, 0.2], hrest: -0.3, stab: [0.55, 0.85], look: 0.7 };
+  S.body = { rings: 20, seg: 10, ridge: 0.05, keys: [[-0.56, 0.07, 0.1, 0.06], [-0.4, 0.13, 0.18, 0.05], [-0.2, 0.2, 0.25, 0.03], [0.0, 0.23, 0.28, 0.01], [0.3, 0.23, 0.28, 0.0], [0.55, 0.18, 0.23, 0.0], [0.72, 0.1, 0.13, 0.04]] };
+  S.neck = { n: 2, len: 0.6, at: [0, 0.1, 0.66], rr: 4, seg: 8, ridge: 0.06, keys: [[0, 0.12, 0.13, 0], [0.3, 0.09, 0.1, 0], [0.6, 0.065, 0.075, 0]], rest: [0.65, 0.2], hrest: -0.3, stab: [0.55, 0.85], look: 0.7 };
   S.head = { len: 0.4, scale: 1.0, jaw: [-0.045, 0.06], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.8, keys: [[-0.03, 0.05, 0.07, 0], [0.05, 0.08, 0.095, 0], [0.16, 0.066, 0.075, -0.01], [0.27, 0.056, 0.05, -0.026], [0.35, 0.078, 0.034, -0.034], [0.4, 0.074, 0.026, -0.036], [0.415, 0.05, 0.018, -0.036]],
-      jkeys: [[0.03, 0.036, 0.03, -0.088], [0.15, 0.055, 0.032, -0.094], [0.28, 0.05, 0.024, -0.092], [0.38, 0.066, 0.016, -0.088], [0.415, 0.04, 0.01, -0.086]], eye: [0.074, 0.05, 0.11, 0.02], nos: [0.02, 0.05, 0.27, 0.008],
+    var hsk = fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
+    var sk = function (zc, ca, sa, x, y, z) { return mixHex(hsk(zc, ca, sa, x, y, z), 0x5a5238, smooth(z, 0.375, 0.41) * 0.75); };
+    headStd(g, jg, b, S, { bk: 0.8, roundPupil: true, skin: sk, keys: [[-0.03, 0.05, 0.07, 0], [0.05, 0.08, 0.095, 0], [0.16, 0.066, 0.075, -0.01], [0.27, 0.056, 0.05, -0.026], [0.35, 0.078, 0.034, -0.034], [0.4, 0.074, 0.026, -0.036], [0.415, 0.05, 0.018, -0.036]],
+      jkeys: [[0.03, 0.036, 0.03, -0.088], [0.15, 0.055, 0.032, -0.094], [0.28, 0.05, 0.024, -0.092], [0.38, 0.066, 0.016, -0.088], [0.415, 0.04, 0.01, -0.086]], eye: [0.074, 0.05, 0.11, 0.02], nos: [0.026, 0.064, 0.262, 0.007],
       extra: function (gg, k) {
-        var cc = function (x, y, z) { return fract(z * 11 + y * 4) < 0.35 ? 0xe85a30 : 0xf0a040; };
-        gg.tube([[0, 0.068, 0.14 * k], [0, 0.165, 0.02], [0, 0.26, -0.15], [0, 0.295, -0.33], [0, 0.255, -0.48]], [0.046, 0.042, 0.038, 0.033, 0.026], cc, { seg: 8, sx: 0.72, sz: 1.25, steps: 3 });
-        gg.sph(0.05, 0.03, 0.04, 0, 0.065, 0.1, S.back, { s: [6, 4] }); } });
+        var zs = function (z) { return z > 0.1 ? 0.1 + (z - 0.1) * k : z; };
+        var cc = function (x, y, z, nx, ny, nz, t) { var c = mixHex(hsk(0, clamp(ny, -1, 1), 0, x, y, z), fract(t * 9 + 0.2) < 0.42 ? 0xe85a30 : 0xf0a040, smooth(t, 0.12, 0.32)); return shade(c, 0.9 + 0.12 * smooth(ny, -0.3, 0.8)); };
+        // hollow nasal tube: leaves the snout above the nares, rises and sweeps back over the neck; laterally compressed
+        gg.tube([[0, 0.0, zs(0.34)], [0, 0.05, zs(0.3)], [0, 0.12, zs(0.2)], [0, 0.21, zs(0.06)], [0, 0.285, -0.1], [0, 0.31, -0.26], [0, 0.285, -0.4], [0, 0.235, -0.48]], [0.032, 0.036, 0.044, 0.05, 0.053, 0.051, 0.045, 0.036], cc, { seg: 10, sx: 0.72, sz: 1.2, steps: 3 });
+      } });
   } };
   S.tail = { n: 4, len: 1.55, at: [0.04, -0.5], rr: 5, seg: 8, keys: [[0, 0.095, 0.13, 0], [0.5, 0.075, 0.115, 0], [1.1, 0.04, 0.065, 0], [1.55, 0.01, 0.02, 0]], rest: [0.03, 0.0, -0.05, -0.1], amp: 0.06, gaitAmp: 0.08, stab: 0.9, run: 0.03 };
   S.legs = { chord: 0.93,
@@ -1683,24 +1711,35 @@ reg((function () {
   S.back = 0x6f8248; S.belly = 0xd9d6a2; S.footc = 0x3c4028; S.legc = 0x647644;
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0x7b8e4f, bAt: -0.05, bW: 0.6, spots: { c: 0x3a4a24, f: 7, k: 4, d: 0.16, a: 0.7 }, bars: { c: 0x445a2a, f: 4, w: 0.3, k: 0.45, from: -0.6, to: 1.5, ca0: 0.1 }, mott: 0.08 });
   var K = [[-0.55, 0.08, 0.11, 0.06], [-0.4, 0.15, 0.2, 0.06], [-0.2, 0.24, 0.29, 0.05], [0.0, 0.27, 0.32, 0.04], [0.25, 0.27, 0.3, 0.0], [0.5, 0.2, 0.23, -0.04], [0.68, 0.11, 0.13, -0.06]];
+  // thick-based, tapering, backswept plate lofted upward from (x,y0,z); vascular grooves fan out from the base
+  var stegPlate = function (g, x, y0, z, h, hw, th) {
+    g.loft([[-h, th * 0.05, hw * 0.03, -h * 0.22], [-h * 0.95, th * 0.12, hw * 0.3, -h * 0.2], [-h * 0.78, th * 0.3, hw * 0.72, -h * 0.15], [-h * 0.55, th * 0.55, hw * 0.96, -h * 0.09], [-h * 0.3, th * 0.86, hw, -h * 0.04], [0, th, hw * 0.96, 0], [0.06, th, hw * 0.96, 0]], { down: true, rings: 8, seg: 10, ox: x, oy: y0, oz: z, cap1: true },
+      function (zc, ca, sa, px, py, pz) {
+        var t = clamp((py - y0) / h, 0, 1), c = mixHex(mixHex(shade(S.back, 0.92), 0xc4582a, smooth(t, 0.02, 0.22)), 0xf0a048, smooth(t, 0.25, 0.85));
+        if (abs(sa) > 0.35) c = shade(c, fract((pz - z) / (0.03 + t * h * 0.35) * 0.9) < 0.22 ? 0.78 : 1.0); else c = shade(c, 1.12);
+        return mixHex(c, 0xf6d894, smooth(t, 0.86, 1) * 0.55);
+      });
+  };
   S.body = { rings: 20, seg: 10, keys: K, extra: function (g) {
-    var pc = function (x, y, z) { return y > 0.45 ? 0xf09a3e : (y > 0.25 ? 0xe2702c : 0xb8502a); };
     for (var i = 0; i < 9; i++) { var z = -0.34 + i * 0.1, pr = profAt(K, z), top = pr[2] + pr[1] * 0.96, h = 0.16 + 0.26 * Math.sin(PI * (0.12 + 0.76 * i / 8)), sd = i % 2 ? 1 : -1;
-      g.extrude([[0, -0.085], [h * 0.46, -0.105], [h, -0.01], [h * 0.48, 0.095], [0, 0.085]], 0.026, sd * 0.045, top - 0.03, z + sd * 0.025, [0, 0, -sd * 0.12], pc, { axis: 'x', bev: 0.008 }); } } };
+      stegPlate(g, sd * 0.042, top - 0.045, z + sd * 0.025, h, 0.07 + h * 0.1, 0.026); } } };
   S.neck = { n: 1, len: 0.4, at: [0, 0.0, 0.66], rr: 4, seg: 8, keys: [[0, 0.14, 0.15, 0], [0.4, 0.085, 0.09, 0]], rest: [-0.15], hrest: -0.45, stab: [0.5], look: 0.7 };
   S.head = { len: 0.32, scale: 1.0, jaw: [-0.03, 0.05], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.05, 0.06, 0], [0.04, 0.07, 0.08, 0], [0.14, 0.058, 0.06, -0.006], [0.24, 0.042, 0.04, -0.016], [0.3, 0.034, 0.03, -0.02], [0.32, 0.02, 0.02, -0.022]],
-      jkeys: [[0.03, 0.034, 0.024, -0.068], [0.14, 0.046, 0.024, -0.072], [0.26, 0.032, 0.016, -0.07], [0.31, 0.016, 0.01, -0.068]], eye: [0.066, 0.036, 0.1, 0.015], nos: [0.014, 0.012, 0.3, 0.006],
-      extra: function (gg, k) { gg.sph(0.03, 0.016, 0.03, 0, -0.03, 0.305 * k, 0xd8c890, { s: [5, 4] }); } });
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, keys: [[-0.03, 0.05, 0.06, 0], [0.04, 0.07, 0.08, 0], [0.14, 0.058, 0.06, -0.006], [0.24, 0.042, 0.04, -0.016], [0.3, 0.034, 0.03, -0.02], [0.32, 0.02, 0.02, -0.022]],
+      jkeys: [[0.03, 0.034, 0.024, -0.068], [0.14, 0.046, 0.024, -0.072], [0.26, 0.032, 0.016, -0.07], [0.31, 0.016, 0.01, -0.068]], eye: [0.066, 0.036, 0.1, 0.017], nos: [0.014, 0.012, 0.3, 0.006],
+      extra: function (gg, k, bb, jj) {
+        gg.loft([[0.25 * k, 0.034, 0.032, -0.014], [0.285 * k, 0.038, 0.036, -0.02], [0.315 * k, 0.03, 0.032, -0.03], [0.335 * k, 0.012, 0.016, -0.038], [0.34 * k, 0.003, 0.005, -0.04]], { rings: 7, seg: 8, cap0: true, cap1: true }, function (x, y, z, nx, ny) { return mixHex(0xb8a878, 0x6a5a40, smooth(-ny, 0.2, 0.9) * 0.5); });
+        jj.loft([[0.26 * k, 0.026, 0.016, -0.07], [0.3 * k, 0.026, 0.02, -0.074], [0.33 * k, 0.012, 0.014, -0.078], [0.337 * k, 0.003, 0.004, -0.078]], { rings: 5, seg: 7, cap0: true, cap1: true }, 0xc8b888);
+      } });
   } };
   S.tail = { n: 4, len: 1.45, at: [-0.04, -0.58], rr: 5, seg: 8, keys: [[0, 0.13, 0.16, 0], [0.5, 0.09, 0.12, 0], [1.1, 0.05, 0.065, 0], [1.45, 0.016, 0.02, 0]], rest: [0.12, 0.16, 0.16, 0.14], amp: 0.07, gaitAmp: 0.09, stab: 0.9, run: 0.04,
     each: function (g, i, n, seg) {
-      var pc = function (y, z) { return y > 0.1 ? 0xf09a3e : 0xe2702c; };
-      if (i === 0 || i === 1) for (var k = 0; k < 2; k++) { var sd = k ? 1 : -1, pr = profAt(S.tail.keys, i * seg + seg * (0.25 + k * 0.5)); g.plate([[0, -0.06], [0.14, -0.07], [0.22 - i * 0.03, 0], [0.14, 0.06], [0, 0.06]], 0.01, sd * 0.03, pr[1] * 0.9, -seg * (0.25 + k * 0.5), [0, 0, -sd * 0.12], pc);
-      }
+      if (i < 3) for (var k = 0; k < 2; k++) { var sd = k ? 1 : -1, zp = -seg * (0.25 + k * 0.5), pr = profAt(S.tail.keys, i * seg - zp), h = 0.22 - i * 0.05 - k * 0.012;
+        stegPlate(g, sd * 0.026, pr[1] * 0.9 - 0.04, zp, h, 0.078 - i * 0.01, 0.02); }
       if (i === n - 1) for (var q = 0; q < 2; q++) for (var s = -1; s <= 1; s += 2) {
-        var spZ = -seg * (0.35 + q * 0.4), spL = 0.34 - q * 0.04;
-        g.tube([[s * 0.025, 0.02, spZ], [s * (0.025 + spL * 0.46), 0.04 + spL * 0.24, spZ - spL * 0.22], [s * (0.025 + spL * 0.85), 0.05 + spL * 0.44, spZ - spL * 0.42]], [0.028, 0.016, 0.002], 0xe8dcc0, { seg: 6, steps: 2 });
+        var L = 0.44 - q * 0.06, dx = q ? 0.62 : 0.45, dy = q ? 0.28 : 0.62, dz = q ? -0.72 : -0.62, z0 = -0.05 - q * 0.12;
+        g.tube([[s * 0.02, 0.03, z0], [s * (0.02 + dx * L * 0.4), 0.03 + dy * L * 0.4, z0 + dz * L * 0.4], [s * (0.02 + dx * L * 0.75), 0.03 + dy * L * 0.75 + L * 0.04, z0 + dz * L * 0.75], [s * (0.02 + dx * L), 0.03 + dy * L + L * 0.12, z0 + dz * L]], [0.042, 0.032, 0.019, 0.002],
+          function (x, y, z, nx, ny, nz, t) { return mixHex(shade(S.back, 0.8), mixHex(0x4a3a2c, 0xe8dcc0, smooth(t, 0.35, 0.9)), smooth(t, 0.1, 0.3)); }, { seg: 7, steps: 3 });
       } } };
   S.legs = { chord: 0.94,
     h: { x: 0.2, y: 0, z: 0, r: [1, 1.05], w: [0.12, 0.075, 0.07], fx: 0.03, bend: 1, foot: padFoot(3, 0.07, 0x3c4028, 0x2a2a20) },
@@ -1764,18 +1803,45 @@ reg((function () {
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0xcfaa6c, bAt: -0.05, bW: 0.6, spots: { c: 0x7a5a34, f: 9, k: 4, d: 0.18, a: 0.6 }, bars: { c: 0x8a6a3c, f: 6, w: 0.3, k: 0.4, from: -0.5, to: 0.8, ca0: 0.1 }, mott: 0.08 });
   S.body = { rings: 14, seg: 9, keys: [[-0.5, 0.08, 0.11, 0.05], [-0.36, 0.15, 0.2, 0.03], [-0.1, 0.2, 0.25, 0.0], [0.2, 0.21, 0.25, 0.0], [0.42, 0.16, 0.2, 0.02], [0.56, 0.1, 0.13, 0.04]] };
   S.neck = { n: 1, len: 0.25, at: [0, 0.06, 0.6], rr: 4, seg: 8, keys: [[0, 0.14, 0.14, 0], [0.25, 0.1, 0.11, 0]], rest: [0.2], hrest: -0.15, stab: [0.5], look: 0.7 };
+  // curved, rib-strutted frill shell: thick bony centre thinning to a scalloped rim, rolled back at the edges
+  var frill = function (g, cy0, cz0, rx, ry, th, thick) {
+    var R = 9, N = 22, a0 = -0.2, a1 = PI + 0.2, ct = cos(th), st = sin(th), sh, i, k, q, a, v, rim, px, py, w, tt, yy, zz, c;
+    for (sh = 0; sh < 2; sh++) {
+      var P = new Float32Array((R + 1) * (N + 1) * 3), Nr = new Float32Array(P.length), CC = new Float32Array(P.length);
+      for (i = 0; i <= R; i++) for (k = 0; k <= N; k++) {
+        a = a0 + (a1 - a0) * k / N; v = 0.1 + 0.9 * i / R; rim = v * (1 + 0.05 * Math.cos(a * 9));
+        px = Math.cos(a) * rx * rim; py = Math.sin(a) * ry * rim;
+        tt = thick * (1 - 0.9 * v * v); w = -0.5 * px * px / rx - 0.3 * py * py / ry + 0.006 * Math.cos(a * 10) * v + (sh ? -tt : tt);
+        yy = cy0 + py * ct + w * st; zz = cz0 - py * st + w * ct; q = (i * (N + 1) + k) * 3;
+        P[q] = px; P[q + 1] = yy; P[q + 2] = zz;
+        c = mixHex(sh ? 0x9a6a46 : 0xcf9462, 0xe8cc98, Math.max(smooth(v, 0.76, 0.94), smooth(Math.cos(a * 10), 0.65, 0.95) * 0.7 * smooth(v, 0.15, 0.4)));
+        c = mixHex(c, 0x8a5a3a, 0.5 * (hash3(Math.floor(v * 9), Math.floor(a * 6), sh) > 0.85 ? 1 : 0) * (1 - smooth(v, 0.7, 0.8)));
+        CC[q] = (c >> 16 & 255) / 255; CC[q + 1] = (c >> 8 & 255) / 255; CC[q + 2] = (c & 255) / 255;
+      }
+      for (i = 0; i <= R; i++) for (k = 0; k <= N; k++) {
+        var ia = Math.max(0, i - 1), ib = Math.min(R, i + 1), ka = Math.max(0, k - 1), kb = Math.min(N, k + 1), A = (ia * (N + 1) + k) * 3, Bq = (ib * (N + 1) + k) * 3, Cq = (i * (N + 1) + ka) * 3, Dq = (i * (N + 1) + kb) * 3;
+        _l1.set(P[Bq] - P[A], P[Bq + 1] - P[A + 1], P[Bq + 2] - P[A + 2]); _l2.set(P[Dq] - P[Cq], P[Dq + 1] - P[Cq + 1], P[Dq + 2] - P[Cq + 2]);
+        _ln.crossVectors(_l1, _l2).normalize(); if (_ln.y * st + _ln.z * ct < 0 === !sh) _ln.negate();
+        q = (i * (N + 1) + k) * 3; Nr[q] = _ln.x; Nr[q + 1] = _ln.y; Nr[q + 2] = _ln.z;
+      }
+      _emitGrid(g, P, Nr, CC, R, N, false);
+    }
+    for (k = 1; k < 15; k++) { a = PI * k / 15; var dx = Math.cos(a), dy = Math.sin(a) * ct, dz = -Math.sin(a) * st;
+      px = dx * rx * 0.99; yy = cy0 + Math.sin(a) * ry * 0.99 * ct + (-0.5 * px * px / rx - 0.3 * Math.pow(Math.sin(a) * ry, 2) / ry) * st; zz = cz0 - Math.sin(a) * ry * 0.99 * st + (-0.5 * px * px / rx - 0.3 * Math.pow(Math.sin(a) * ry, 2) / ry) * ct;
+      g.tube([[px - dx * 0.012, yy - dy * 0.012, zz - dz * 0.012], [px + dx * 0.034, yy + dy * 0.034, zz + dz * 0.034]], [0.017, 0.003], 0xf0dcb0, { seg: 5, smooth: false, cap0: false }); }
+  };
   S.head = { len: 0.45, scale: 1.0, jaw: [-0.05, 0.07], build: function (g, jg, b) {
-    var fc = function (x, y, z, nx, ny) { var ex = Math.sqrt(x * x / 0.09 + (y - 0.2) * (y - 0.2) / 0.08); return ex > 0.82 ? 0xf0dcb0 : (hash3(Math.floor(x * 12), Math.floor(y * 12), 5) > 0.82 ? 0x8a5a3a : (ny > 0 ? 0xd8845a : 0xa8643e)); };
-    headStd(g, jg, b, S, { bk: 0.8, kf: 0.15, keys: [[-0.05, 0.09, 0.1, 0], [0.04, 0.12, 0.135, 0], [0.18, 0.1, 0.12, -0.005], [0.3, 0.08, 0.1, -0.02], [0.4, 0.055, 0.085, -0.035], [0.44, 0.035, 0.06, -0.04], [0.465, 0.015, 0.03, -0.042]],
+    var hsk = fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6), hcol = function (x, y, z, nx, ny) { return hsk(0, clamp(ny, -1, 1), 0, x, y, z); };
+    headStd(g, jg, b, S, { bk: 0.8, kf: 0.15, skin: hsk, roundPupil: true, keys: [[-0.05, 0.09, 0.1, 0], [0.04, 0.12, 0.135, 0], [0.18, 0.1, 0.12, -0.005], [0.3, 0.08, 0.1, -0.02], [0.4, 0.055, 0.085, -0.035], [0.44, 0.035, 0.06, -0.04], [0.465, 0.015, 0.03, -0.042]],
       jkeys: [[0.04, 0.05, 0.036, -0.118], [0.18, 0.07, 0.036, -0.124], [0.34, 0.05, 0.03, -0.118], [0.42, 0.03, 0.022, -0.112], [0.46, 0.014, 0.012, -0.108]], eye: [0.108, 0.06, 0.15, 0.025], nos: [0.02, 0.05, 0.4, 0.008],
-      extra: function (gg, k) {
-        gg.sph(0.05, 0.03, 0.06, 0, 0.12, 0.3 * k, 0xc09858, { s: [6, 4] });
-        gg.sph(0.04, 0.05, 0.055, 0, -0.04, 0.44 * k, 0xe0cc90, { s: [6, 4] });
-        var th = 0.36, cy0 = 0.17, cz0 = -0.11, rx = 0.31, ry = 0.27, pPoly = [], pi;
-        for (pi = 0; pi < 14; pi++) { var pa = -0.2 + (PI + 0.4) * (pi / 13); pPoly.push([Math.cos(pa) * rx, Math.sin(pa) * ry]); }
-        gg.extrude(pPoly, 0.036, 0, cy0, cz0, [-th, 0, 0], fc, { axis: 'z', bev: 0.01, curveX: -0.24, curveY: -0.15 });
-        for (var i = 1; i < 16; i++) { var a = PI * (i / 16), px = Math.cos(a) * rx * 0.98, py = Math.sin(a) * ry * 0.98, dz = -0.24 * px * px - 0.15 * py * py; gg.cone(0.016, 0.04, px, cy0 + py * cos(th) + dz * sin(th), cz0 - py * sin(th) + dz * cos(th), 0xf0dcb0, { seg: 4, rot: [-th, 0, -Math.cos(a) * 0.9] }); }
-        for (var s = -1; s <= 1; s += 2) gg.sph(0.07, 0.07, 0.04, s * 0.22, 0.05, 0.0, 0xd8a060, { s: [6, 4] }); } });
+      extra: function (gg, k, bb, jj) {
+        var kz = function (z) { return z > 0.15 ? 0.15 + (z - 0.15) * k : z; };
+        gg.loft([[kz(0.24), 0.03, 0.022, 0.07], [kz(0.29), 0.046, 0.04, 0.1], [kz(0.335), 0.04, 0.034, 0.092], [kz(0.375), 0.02, 0.018, 0.07]], { rings: 6, seg: 8, cap0: true, cap1: true }, hsk);
+        gg.loft([[0.38 * k, 0.052, 0.062, -0.034], [0.43 * k, 0.05, 0.064, -0.044], [0.455 * k, 0.034, 0.054, -0.056], [0.472 * k, 0.008, 0.02, -0.064]], { rings: 7, seg: 8, cap0: true, cap1: true }, 0xd8c88c);
+        jj.loft([[0.4 * k, 0.032, 0.024, -0.112], [0.44 * k, 0.03, 0.028, -0.116], [0.465 * k, 0.01, 0.016, -0.12]], { rings: 5, seg: 7, cap0: true, cap1: true }, 0xe0cc90);
+        for (var s = -1; s <= 1; s += 2) gg.tube([[s * 0.1, 0.03, kz(0.1)], [s * 0.17, 0.04, kz(0.05)], [s * 0.225, 0.05, kz(-0.02)]], [0.06, 0.05, 0.022], function (x, y, z, nx, ny, nz, t) { return mixHex(hcol(x, y, z, nx, ny), 0xd8b878, smooth(t, 0.4, 0.9)); }, { seg: 8, steps: 2, sx: 0.7 });
+        frill(gg, 0.09, -0.09, 0.37, 0.36, 0.5, 0.026);
+      } });
   } };
   S.tail = { n: 3, len: 1.1, at: [0.0, -0.5], rr: 4, seg: 7, keys: [[0, 0.1, 0.13, 0], [0.5, 0.06, 0.08, 0], [1.1, 0.01, 0.014, 0]], rest: [-0.02, -0.08, -0.15], amp: 0.1, gaitAmp: 0.1, stab: 0.9, freq: 1.3 };
   S.legs = { chord: 0.92,
@@ -1791,28 +1857,70 @@ reg((function () {
 reg((function () {
   var S = { id: 'ankylosaurus', kind: 'quad', H: 1.4, J: 0.5, p0: 0.0, bs: 0.35, bh: 1.35, runAt: 3.5 };
   S.back = 0x655a50; S.belly = 0xb4a68a; S.footc = 0x3a322c; S.legc = 0x584e46;
-  S.sk = skin({ back: S.back, belly: S.belly, mid: 0x70655a, bAt: -0.05, bW: 0.6, spots: { c: 0x3c342e, f: 7, k: 4, d: 0.14, a: 0.6 }, mott: 0.1 });
+  var sk0 = skin({ back: S.back, belly: S.belly, mid: 0x70655a, bAt: -0.05, bW: 0.6, spots: { c: 0x3c342e, f: 7, k: 4, d: 0.14, a: 0.6 }, mott: 0.1 });
+  S.sk = function (zc, ca, sa, x, y, z, t) {
+    var c = sk0(zc, ca, sa, x, y, z, t), k = smooth(ca, 0.15, 0.6) * smooth(zc, -0.6, -0.5) * (1 - smooth(zc, 0.62, 0.74));
+    if (k <= 0) return c;
+    var ph = (zc + 0.46) / 0.125;
+    c = shade(c, 1 - 0.2 * k * smooth(Math.abs(fract(ph) - 0.5), 0.36, 0.5));
+    return mixHex(shade(c, 0.9 + hash3(Math.floor(ph), Math.floor((sa + 1) * 6), 1) * 0.22), 0xa8906a, 0.22 * k);
+  };
+  var oc = function (x, y, z, nx, ny, nz, t) { return mixHex(shade(S.back, 1.12), 0xc2a878, smooth(t, 0.1, 0.65)); };
+  var sp = function (x, y, z, nx, ny, nz, t) { return mixHex(shade(S.back, 1.1), 0xe6d8b8, smooth(t, 0.15, 0.7)); };
+  // keeled osteoderm sunk into the skin along unit-ish normal (nx,ny,nz)
+  var osteo = function (g, x, y, z, nx, ny, nz, r, h) {
+    var l = Math.sqrt(nx * nx + ny * ny + nz * nz); nx /= l; ny /= l; nz /= l;
+    g.tube([[x - nx * r * 0.6, y - ny * r * 0.6, z - nz * r * 0.6], [x + nx * h, y + ny * h, z + nz * h - h * 0.1]], [r, r * 0.3], oc, { seg: 6, smooth: false, cap0: false, sx: 1.6, sz: 0.9 });
+  };
+  var spike = function (g, x, y, z, dx, dy, dz, r, len) {
+    var l = Math.sqrt(dx * dx + dy * dy + dz * dz); dx /= l; dy /= l; dz /= l;
+    g.tube([[x - dx * r * 0.5, y - dy * r * 0.5, z - dz * r * 0.5], [x + dx * len * 0.5, y + dy * len * 0.5, z + dz * len * 0.5], [x + dx * len, y + dy * len + len * 0.06, z + dz * len - len * 0.1]], [r, r * 0.62, 0.003], sp, { seg: 5, smooth: false, cap0: false });
+  };
+  var ring = function (g, pr, z, cnt, r, h, k0) {
+    for (var k = 0; k < cnt; k++) { var a = (k - (cnt - 1) / 2) * 0.36, f = 0.85 + 0.12 * Math.abs(k - (cnt - 1) / 2), nx = Math.sin(a) / pr[0], ny = Math.cos(a) / pr[1];
+      osteo(g, Math.sin(a) * pr[0], pr[2] + Math.cos(a) * pr[1], z + (k % 2) * 0.03 * k0, nx, ny, 0, r * f, h * f); }
+  };
   var K = [[-0.72, 0.09, 0.09, 0.06], [-0.55, 0.28, 0.17, 0.06], [-0.3, 0.46, 0.24, 0.05], [0.0, 0.52, 0.27, 0.04], [0.3, 0.5, 0.27, 0.04], [0.55, 0.4, 0.22, 0.04], [0.72, 0.24, 0.15, 0.05], [0.82, 0.1, 0.08, 0.05]];
   S.body = { rings: 20, seg: 12, keys: K, flatBot: 0.65, extra: function (g) {
-    var oc = function (x, y, z, nx, ny) { return ny > 0.3 ? 0xc8aa74 : 0x8a7650; };
-    for (var i = 0; i < 9; i++) { var z = -0.46 + i * 0.125, pr = profAt(K, z);
-      for (var row = 0; row < 5; row++) { var a = (row - 2) * 0.34, x = Math.sin(a) * pr[0] * 0.96, y = pr[2] + Math.cos(a) * pr[1] * 0.96, big = row === 2 ? 0.78 : 1;
-        g.bevelBox(0.08 * big, 0.042 * big, 0.092 * big, 0.016 * big, x, y + 0.016, z + (row % 2) * 0.03, oc, { rot: [0, 0, -Math.sin(a) * 0.5] });
-        g.cone(0.026 * big, 0.052 * big + (row % 2) * 0.012, x, y + 0.042, z + (row % 2) * 0.03, oc, { seg: 4, rot: [0, 0, -Math.sin(a) * 0.5] }); }
-      for (var s = -1; s <= 1; s += 2) g.tube([[s * (pr[0] - 0.02), pr[2], z], [s * (pr[0] + 0.08), pr[2] + 0.015, z - 0.02], [s * (pr[0] + 0.145), pr[2] + 0.02, z - 0.05]], [0.032, 0.02, 0.002], 0xe8dcc0, { seg: 4, smooth: false }); } } };
-  S.neck = { n: 1, len: 0.26, at: [0, 0.04, 0.78], rr: 4, seg: 8, keys: [[0, 0.2, 0.15, 0], [0.26, 0.16, 0.12, 0]], rest: [0.0], hrest: -0.2, stab: [0.5], look: 0.5 };
+    var big = [0.09, 0.14, 0.2, 0.16, 0.14, 0.12, 0.1, 0.08, 0.07];
+    for (var i = 0; i < 9; i++) { var z = -0.46 + i * 0.125, pr = profAt(K, z), pr2 = profAt(K, z + 0.0625), s;
+      ring(g, pr, z, 7, 0.04, 0.042, 1);
+      for (s = -1; s <= 1; s += 2) {
+        spike(g, s * pr[0] * 0.97, pr[2] + pr[1] * 0.2, z, s * 1, -0.05, -0.15, 0.036, big[i]);
+        if (i < 8) spike(g, s * pr2[0] * 0.95, pr2[2] + pr2[1] * 0.38, z + 0.0625, s * 1, 0.1, -0.2, 0.024, big[i] * 0.55);
+      } } } };
+  S.neck = { n: 1, len: 0.26, at: [0, 0.04, 0.78], rr: 4, seg: 8, keys: [[0, 0.2, 0.15, 0], [0.26, 0.16, 0.12, 0]], rest: [0.0], hrest: -0.2, stab: [0.5], look: 0.5,
+    joint: function (g) { for (var i = 0; i < 2; i++) { var s = 0.07 + i * 0.1; ring(g, profAt(S.neck.keys, s), s, 5, 0.035, 0.04, 0); } } };
   S.head = { len: 0.46, scale: 1.0, jaw: [-0.03, 0.07], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.05, 0.14, 0.09, 0], [0.04, 0.17, 0.105, 0], [0.18, 0.125, 0.09, -0.005], [0.32, 0.075, 0.065, -0.015], [0.42, 0.055, 0.052, -0.022], [0.46, 0.03, 0.03, -0.024]],
+    var hk = [[-0.05, 0.14, 0.09, 0], [0.04, 0.17, 0.105, 0], [0.18, 0.125, 0.09, -0.005], [0.32, 0.075, 0.065, -0.015], [0.42, 0.055, 0.052, -0.022], [0.46, 0.03, 0.03, -0.024]];
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, keys: hk,
       jkeys: [[0.03, 0.06, 0.03, -0.075], [0.18, 0.09, 0.03, -0.08], [0.34, 0.052, 0.022, -0.076], [0.44, 0.026, 0.014, -0.072]], eye: [0.145, 0.045, 0.15, 0.02], nos: [0.02, 0.01, 0.43, 0.008],
-      extra: function (gg, k) { var hc = 0xd8c8a0;
-        for (var s = -1; s <= 1; s += 2) { gg.cone(0.045, 0.2, s * 0.15, 0.04, -0.02, hc, { seg: 5, rot: [-1.2, 0, -s * 0.9] }); gg.cone(0.035, 0.12, s * 0.14, -0.04, 0.0, hc, { seg: 5, rot: [-0.9, 0, -s * 1.3] }); gg.sph(0.05, 0.03, 0.05, s * 0.13, 0.095, 0.1 * k, 0xc8aa74, { s: [5, 4] }); }
-        for (var i = 0; i < 3; i++) for (s = -1; s <= 1; s += 2) bump(gg, s * (0.05 + i * 0.03), 0.095, 0.06 + i * 0.07, 0.022, 0xc8aa74); } });
+      extra: function (gg, k, bb, jj) {
+        var kz = function (z) { return z > 0.1 ? 0.1 + (z - 0.1) * k : z; }, hz = zk(hk, k, 0.1), s, i, j;
+        for (s = -1; s <= 1; s += 2) {
+          gg.tube([[s * 0.13, 0.045, 0.02], [s * 0.18, 0.055, -0.04], [s * 0.225, 0.05, -0.12]], [0.052, 0.036, 0.004], sp, { seg: 7, steps: 2, sx: 0.8 });
+          gg.tube([[s * 0.14, -0.035, 0.05], [s * 0.185, -0.055, -0.01], [s * 0.215, -0.085, -0.07]], [0.042, 0.028, 0.004], sp, { seg: 6, steps: 2 });
+          for (i = 0; i < 3; i++) osteo(gg, s * (0.09 + i * 0.012), profAt(hz, kz(0.12 + i * 0.07))[2] + 0.075, kz(0.12 + i * 0.07), s * 0.5, 1, 0, 0.03, 0.025);
+        }
+        for (j = 0; j < 3; j++) for (i = 0; i < 3; i++) osteo(gg, (i - 1) * 0.045 * (1 - j * 0.15), profAt(hz, kz(0.04 + j * 0.075))[2] + 0.092, kz(0.04 + j * 0.075 + (i % 2) * 0.02), 0, 1, 0, 0.026, 0.026);
+        gg.loft([[0.36 * k, 0.06, 0.056, -0.018], [0.42 * k, 0.058, 0.054, -0.022], [0.455 * k, 0.04, 0.042, -0.027], [0.47 * k, 0.012, 0.016, -0.03]], { rings: 7, seg: 9, cap0: true, cap1: true }, function (x, y, z, nx, ny) { return mixHex(0x8a7a5c, 0x4a4030, smooth(-ny, 0.1, 0.8) * 0.5); });
+      } });
   } };
   S.tail = { n: 4, len: 1.75, at: [0.0, -0.8], rr: 5, seg: 9, keys: [[0, 0.1, 0.12, 0], [0.5, 0.11, 0.1, 0], [1.2, 0.06, 0.06, 0], [1.75, 0.04, 0.04, 0]], rest: [-0.02, -0.05, -0.07, -0.08], amp: 0.06, gaitAmp: 0.07, stab: 0.9,
     each: function (g, i, n, seg) {
-      for (var s = -1; s <= 1; s += 2) g.cone(0.03, 0.08, s * (profAt(S.tail.keys, i * seg + seg * 0.5)[0] + 0.0), 0.0, -seg * 0.5, 0xe8dcc0, { seg: 4, rot: [0, 0, -s * 1.3] });
-      if (i === n - 1) { var cc = function (x, y, z, nx, ny) { return ny > 0.4 ? 0xc8aa74 : 0x8a7650; };
-        g.sph(0.2, 0.1, 0.17, 0, 0.0, -seg * 0.85, cc, { s: [9, 6] }); for (s = -1; s <= 1; s += 2) { g.sph(0.07, 0.06, 0.08, s * 0.19, 0.0, -seg * 0.85, cc, { s: [6, 5] }); g.cone(0.05, 0.1, s * 0.22, 0.0, -seg * 0.85, 0xe8dcc0, { seg: 4, rot: [0, 0, -s * 1.4] }); } } } };
+      var f, s, pr, j;
+      for (f = 0.25; f < 1; f += 0.5) { pr = profAt(S.tail.keys, i * seg + f * seg); for (s = -1; s <= 1; s += 2) osteo(g, s * pr[0] * 0.45, pr[2] + pr[1] * 0.9, -f * seg, s * 0.4, 1, 0, 0.03 - i * 0.004, 0.06 - i * 0.008); }
+      pr = profAt(S.tail.keys, i * seg + seg * 0.5);
+      for (s = -1; s <= 1; s += 2) spike(g, s * pr[0] * 0.95, pr[2] + pr[1] * 0.15, -seg * 0.5, s, 0, -0.35, 0.032 - i * 0.003, 0.11 - i * 0.015);
+      if (i === n - 1) {
+        var z0 = -seg * 0.45, cl = [[0, 0.05, 0.05, 0], [0.06, 0.07, 0.06, 0], [0.14, 0.15, 0.095, 0], [0.24, 0.22, 0.115, 0], [0.32, 0.2, 0.11, 0], [0.38, 0.13, 0.08, 0], [0.42, 0.05, 0.04, 0], [0.44, 0.005, 0.01, 0]];
+        g.loft(cl, { rings: 14, seg: 14, dir: -1, oz: z0, cap1: true }, function (zc, ca, sa, x, y, z) {
+          var tt = smooth(z0 - z, 0.0, 0.13), h = hash3(Math.floor(x * 22), Math.floor(y * 30), Math.floor(z * 22));
+          return mixHex(shade(S.back, 1.05), shade(mixHex(0x9a8660, 0xc8aa74, h), 1 - 0.14 * (fract(x * 11 + z * 7) < 0.14 ? 1 : 0)), tt);
+        });
+        for (s = -1; s <= 1; s += 2) for (j = 0; j < 3; j++) spike(g, s * (0.15 + j * 0.02), 0, z0 - 0.17 - j * 0.09, s, 0.05, -0.3 - j * 0.15, 0.052 - j * 0.008, 0.1 - j * 0.015);
+        for (j = 0; j < 4; j++) for (s = -1; s <= 1; s += 2) osteo(g, s * (j % 2 ? 0.04 : 0.07), 0.098 - (j % 2) * 0.004, z0 - 0.15 - j * 0.07, s * 0.2, 1, 0, 0.04, 0.045);
+      } } };
   S.legs = { chord: 0.93,
     h: { x: 0.32, y: 0, z: 0, r: [1, 1.0], w: [0.15, 0.1, 0.09], fx: 0.02, bend: 1, foot: padFoot(4, 0.085, 0x3a322c, 0x1f1a16) },
     f: { x: 0.34, y: 0.0, z: 0.45, r: [1, 1], w: [0.14, 0.1, 0.09], fx: 0.02, bend: -1, sw: 0.8, foot: padFoot(4, 0.085, 0x3a322c, 0x1f1a16) } };
@@ -1826,17 +1934,29 @@ reg((function () {
 reg((function () {
   var S = { id: 'diplodocus', kind: 'sauro', H: 3.6, J: 0.8, p0: 0.03, bs: 0.25, bh: 1.35, runAt: 5.0 };
   S.back = 0x6f84a0; S.belly = 0xd3d8d2; S.footc = 0x3e4452; S.legc = 0x647894;
-  S.sk = skin({ back: S.back, belly: S.belly, mid: 0x7a90ac, bAt: -0.05, bW: 0.7, spots: { c: 0x3c4c68, f: 5, k: 4, d: 0.16, a: 0.6 }, bars: { c: 0x4a5c78, f: 3, w: 0.3, k: 0.45, from: -1, to: 4.2, ca0: 0.1 }, mott: 0.07 });
+  var sk0 = skin({ back: S.back, belly: S.belly, mid: 0x7a90ac, bAt: -0.05, bW: 0.7, spots: { c: 0x3c4c68, f: 5, k: 4, d: 0.16, a: 0.6 }, bars: { c: 0x4a5c78, f: 3, w: 0.3, k: 0.45, from: -1, to: 4.2, ca0: 0.1 }, mott: 0.07 });
+  S.sk = function (zc, ca, sa, x, y, z, t) { var c = sk0(zc, ca, sa, x, y, z, t); return ca < 0.4 && fract(zc * 17 + sa * 0.2) < 0.13 ? shade(c, 0.9) : c; };
+  var spine = function (g, y, z, h) { g.tube([[0, y - 0.012, z], [0, y + h * 0.5, z - h * 0.06], [0, y + h, z - h * 0.35]], [0.013, 0.009, 0.002], 0x56688a, { seg: 5, smooth: false, cap0: false }); };
   S.body = { rings: 20, seg: 10, ridge: 0.09, keys: [[-0.7, 0.1, 0.13, 0.06], [-0.5, 0.2, 0.26, 0.04], [-0.2, 0.28, 0.33, 0.02], [0.2, 0.28, 0.32, 0.0], [0.55, 0.22, 0.27, 0.0], [0.82, 0.14, 0.17, 0.04], [0.95, 0.09, 0.1, 0.07]],
     extra: function (g) {
-      for (var i = 0; i < 10; i++) { var z = -0.58 + i * 0.155, pr = profAt(S.body.keys, z); g.cone(0.014, 0.042, 0, pr[2] + pr[1] * 1.03, z, 0x4a5a74, { seg: 4, rot: [-0.25, 0, 0] }); }
+      for (var i = 0; i < 10; i++) { var z = -0.58 + i * 0.155, pr = profAt(S.body.keys, z); spine(g, pr[2] + pr[1] * 1.0, z, 0.05 + 0.04 * Math.sin(PI * i / 9)); }
     } };
-  S.neck = { n: 5, len: 2.0, at: [0, 0.1, 0.86], rr: 4, seg: 8, keys: [[0, 0.14, 0.16, 0], [0.5, 0.105, 0.115, 0], [1.2, 0.065, 0.07, 0], [2.0, 0.036, 0.04, 0]], rest: [0.5, 0.36, 0.26, 0.16, 0.08], hrest: -0.2, stab: [0.5, 0.6, 0.7, 0.8, 0.9], look: 0.8, run: -0.1 };
+  S.neck = { n: 5, len: 2.0, at: [0, 0.1, 0.86], rr: 4, seg: 8, keys: [[0, 0.14, 0.16, 0], [0.5, 0.105, 0.115, 0], [1.2, 0.065, 0.07, 0], [2.0, 0.036, 0.04, 0]], rest: [0.5, 0.36, 0.26, 0.16, 0.08], hrest: -0.2, stab: [0.5, 0.6, 0.7, 0.8, 0.9], look: 0.8, run: -0.1,
+    joint: function (g, i, n, seg, s0) {
+      var K = [], j, s, p;
+      for (j = 0; j <= 4; j++) { s = s0 + seg * 1.07 * j / 4; p = profAt(S.neck.keys, s); K.push([s, p[0] * 0.3, p[1] * 0.2, -p[1] * 0.92]); }
+      g.loft(K, { s0: s0, s1: s0 + seg * 1.07, oz: -s0, rings: 3, seg: 6 }, shade(mixHex(S.back, S.belly, 0.5), 0.95));
+      for (j = 0; j < 3; j++) { s = s0 + seg * (0.15 + j / 3); p = profAt(S.neck.keys, s); spine(g, p[2] + p[1], s - s0, 0.045 * (1 - 0.5 * s / 2.0)); }
+    } };
   S.head = { len: 0.36, scale: 1.0, jaw: [-0.03, 0.05], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.04, 0.05, 0], [0.04, 0.056, 0.065, 0], [0.14, 0.05, 0.05, -0.008], [0.26, 0.042, 0.034, -0.02], [0.34, 0.046, 0.028, -0.026], [0.365, 0.034, 0.02, -0.027]],
-      jkeys: [[0.03, 0.03, 0.02, -0.06], [0.14, 0.04, 0.02, -0.064], [0.28, 0.034, 0.014, -0.064], [0.35, 0.03, 0.01, -0.064]], eye: [0.052, 0.035, 0.09, 0.015], nos: [0.014, 0.06, 0.1, 0.008], iris: 0x302018 });
+    var hsk = fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, skin: hsk, keys: [[-0.03, 0.04, 0.05, 0], [0.04, 0.056, 0.07, 0.008], [0.12, 0.05, 0.06, 0.0], [0.26, 0.044, 0.034, -0.014], [0.34, 0.05, 0.028, -0.022], [0.365, 0.048, 0.024, -0.024], [0.375, 0.03, 0.016, -0.025]],
+      jkeys: [[0.03, 0.03, 0.02, -0.06], [0.14, 0.04, 0.02, -0.064], [0.28, 0.034, 0.014, -0.064], [0.35, 0.03, 0.01, -0.064]], eye: [0.052, 0.035, 0.09, 0.017], nos: [0.016, 0.066, 0.1, 0.008], iris: 0x302018,
+      teeth: { z0: 0.3, z1: 0.36, n: 4, x: 0.04, y: -0.04, len: 0.024, w: 0.0065, col: 0xd8d0b8 }, jteeth: { z0: 0.3, z1: 0.35, n: 3, x: 0.028, y: -0.054, len: 0.02, w: 0.006, col: 0xd8d0b8 },
+      extra: function (gg, k) { gg.loft([[0.04 * k, 0.006, 0.006, 0.06], [0.07 * k, 0.03, 0.022, 0.068], [0.1 * k, 0.036, 0.028, 0.076], [0.13 * k, 0.03, 0.022, 0.068], [0.16 * k, 0.006, 0.006, 0.058]], { rings: 8, seg: 8, cap0: true, cap1: true }, hsk); } });
   } };
-  S.tail = { n: 5, len: 4.2, at: [0.04, -0.7], rr: 5, seg: 8, keys: [[0, 0.15, 0.19, 0], [1.0, 0.1, 0.125, 0], [2.4, 0.052, 0.062, 0], [3.5, 0.026, 0.03, 0], [4.2, 0.008, 0.01, 0]], rest: [0.04, 0.03, 0.0, -0.04, -0.07], amp: 0.2, gaitAmp: 0.1, stab: 0.92, freq: 0.7 };
+  S.tail = { n: 5, len: 4.2, at: [0.04, -0.7], rr: 5, seg: 8, keys: [[0, 0.15, 0.19, 0], [1.0, 0.1, 0.125, 0], [2.4, 0.05, 0.06, 0], [3.3, 0.022, 0.026, 0], [4.2, 0.004, 0.005, 0]], rest: [0.04, 0.03, 0.0, -0.04, -0.07], amp: 0.2, gaitAmp: 0.1, stab: 0.92, freq: 0.7,
+    each: function (g, i, n, seg) { if (i < 3) for (var j = 0; j < 3; j++) { var s = i * seg + seg * (0.15 + j / 3), p = profAt(S.tail.keys, s); spine(g, p[2] + p[1], -seg * (0.15 + j / 3), 0.07 - s * 0.018); } } };
   S.legs = { f: { x: 0.2, y: -0.03, z: 0.7, w: [0.15, 0.1], sw: 0.9 }, h: { x: 0.2, y: 0, z: 0, w: [0.16, 0.11], sw: 1 } };
   S.gait = { Dw: 1.0, Dr: 1.8, bw: 0.78, br: 0.62, lw: 0.04, lr: 0.08, bob: 0.008, bobR: 0.02, pw: 0.012, roll: 0.02, yaw: 0.015 };
   S.eat = { p: 0.0, crouch: 0.0, gy: 0.05, hp: -1.0, bite: 0.0, curve: 0.2, tree: 0.3, treeY: 1.5, hpT: -0.1 };
@@ -1849,15 +1969,23 @@ reg((function () {
 reg((function () {
   var S = { id: 'brachiosaurus', kind: 'sauro', H: 6.0, J: 0.6, p0: 0.26, bs: 0.22, bh: 1.35, runAt: 5.0 };
   S.back = 0xa8744a; S.belly = 0xe6d8b0; S.footc = 0x4a3828; S.legc = 0x9a6a42;
-  S.sk = skin({ back: S.back, belly: S.belly, mid: 0xb4825a, bAt: -0.05, bW: 0.7, spots: { c: 0x5a3820, f: 5, k: 4, d: 0.18, a: 0.6 }, bars: { c: 0x6a4428, f: 3, w: 0.3, k: 0.4, from: -1, to: 2, ca0: 0.1 }, mott: 0.08 });
+  var sk0 = skin({ back: S.back, belly: S.belly, mid: 0xb4825a, bAt: -0.05, bW: 0.7, spots: { c: 0x5a3820, f: 5, k: 4, d: 0.18, a: 0.6 }, bars: { c: 0x6a4428, f: 3, w: 0.3, k: 0.4, from: -1, to: 2, ca0: 0.1 }, mott: 0.08 });
+  S.sk = function (zc, ca, sa, x, y, z, t) { var c = sk0(zc, ca, sa, x, y, z, t); return ca < 0.4 && fract(zc * 17 + sa * 0.2) < 0.13 ? shade(c, 0.9) : c; };
   S.body = { rings: 20, seg: 10, ridge: 0.08, keys: [[-0.78, 0.09, 0.12, 0.05], [-0.55, 0.18, 0.23, 0.04], [-0.2, 0.25, 0.3, 0.02], [0.2, 0.26, 0.3, 0.0], [0.6, 0.24, 0.29, 0.0], [0.9, 0.18, 0.24, 0.03], [1.04, 0.1, 0.14, 0.07]] };
-  S.neck = { n: 5, len: 1.15, at: [0, 0.18, 0.92], rr: 4, seg: 8, keys: [[0, 0.15, 0.17, 0], [0.4, 0.1, 0.11, 0], [0.8, 0.062, 0.068, 0], [1.15, 0.04, 0.044, 0]], rest: [0.95, 1.15, 1.3, 1.25, 1.0], hrest: -0.5, stab: [0.5, 0.7, 0.8, 0.85, 0.9], look: 0.6, run: -0.1 };
+  S.neck = { n: 5, len: 1.15, at: [0, 0.18, 0.92], rr: 4, seg: 8, keys: [[0, 0.15, 0.17, 0], [0.4, 0.1, 0.11, 0], [0.8, 0.062, 0.068, 0], [1.15, 0.04, 0.044, 0]], rest: [0.95, 1.15, 1.3, 1.25, 1.0], hrest: -0.5, stab: [0.5, 0.7, 0.8, 0.85, 0.9], look: 0.6, run: -0.1,
+    joint: function (g, i, n, seg, s0) {
+      var K = [], j, s, p;
+      for (j = 0; j <= 4; j++) { s = s0 + seg * 1.07 * j / 4; p = profAt(S.neck.keys, s); K.push([s, p[0] * 0.3, p[1] * 0.2, -p[1] * 0.92]); }
+      g.loft(K, { s0: s0, s1: s0 + seg * 1.07, oz: -s0, rings: 3, seg: 6 }, shade(mixHex(S.back, S.belly, 0.5), 0.95));
+    } };
   S.head = { len: 0.3, scale: 1.0, jaw: [-0.035, 0.05], build: function (g, jg, b) {
-    headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.045, 0.055, 0], [0.04, 0.062, 0.075, 0.0], [0.14, 0.055, 0.062, -0.008], [0.23, 0.045, 0.045, -0.018], [0.285, 0.042, 0.034, -0.024], [0.305, 0.03, 0.022, -0.026]],
-      jkeys: [[0.03, 0.034, 0.024, -0.075], [0.14, 0.044, 0.024, -0.08], [0.25, 0.036, 0.016, -0.078], [0.3, 0.026, 0.01, -0.076]], eye: [0.058, 0.04, 0.09, 0.017], nos: [0.014, 0.108, 0.105, 0.009], iris: 0x302018,
+    var hsk = fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
+    headStd(g, jg, b, S, { bk: 0.85, roundPupil: true, skin: hsk, keys: [[-0.03, 0.045, 0.055, 0], [0.04, 0.062, 0.082, 0.014], [0.1, 0.058, 0.104, 0.03], [0.16, 0.052, 0.078, 0.01], [0.23, 0.046, 0.05, -0.006], [0.285, 0.046, 0.04, -0.02], [0.305, 0.034, 0.028, -0.024]],
+      jkeys: [[0.03, 0.034, 0.024, -0.075], [0.14, 0.044, 0.024, -0.08], [0.25, 0.036, 0.016, -0.078], [0.3, 0.026, 0.01, -0.076]], eye: [0.058, 0.04, 0.09, 0.017], nos: [0.016, 0.128, 0.105, 0.009], iris: 0x302018,
+      teeth: { z0: 0.25, z1: 0.3, n: 3, x: 0.04, y: -0.034, len: 0.022, w: 0.007, col: 0xd8d0b8 }, jteeth: { z0: 0.25, z1: 0.29, n: 3, x: 0.03, y: -0.07, len: 0.018, w: 0.006, col: 0xd8d0b8 },
       extra: function (gg, k) {
-        // iconic arched Brachiosaurus nasal crest dome
-        gg.tube([[0, 0.042, 0.015], [0, 0.115, 0.07 * k], [0, 0.118, 0.135 * k], [0, 0.04, 0.2 * k]], [0.028, 0.042, 0.036, 0.022], S.back, { seg: 8, sx: 0.85, sz: 1.15, steps: 2 });
+        // arched nasal dome: broad bony bulge above the eyes; nares open on its crown
+        gg.loft([[0.0, 0.01, 0.01, 0.07], [0.04 * k, 0.04, 0.04, 0.1], [0.09 * k, 0.046, 0.05, 0.12], [0.14 * k, 0.04, 0.04, 0.1], [0.19 * k, 0.012, 0.014, 0.075]], { rings: 9, seg: 10, cap0: true, cap1: true }, hsk);
       } });
   } };
   S.tail = { n: 4, len: 1.4, at: [0.0, -0.75], rr: 5, seg: 8, keys: [[0, 0.13, 0.17, 0], [0.5, 0.09, 0.11, 0], [1.0, 0.045, 0.055, 0], [1.4, 0.01, 0.014, 0]], rest: [-0.05, -0.15, -0.22, -0.28], amp: 0.12, gaitAmp: 0.08, stab: 0.9, freq: 0.7 };
