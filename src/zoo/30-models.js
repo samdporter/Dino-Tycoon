@@ -4318,16 +4318,19 @@ OTHERS.koala = function (opts) {
   if (!P) {
     P = partsCache.koala = {};
     var g = B();
-    var bc = function (x, y, z) { return (z > 0.02 && abs(x) < 0.15) ? WH : GR; };
+    var bc = function (x, y, z) { return plume((z > 0.02 && abs(x) < 0.15) ? WH : GR, x, y, z, 0.1); };
     g.loft([[-0.24, 0.11, 0.1, 0.01], [-0.12, 0.195, 0.175, 0.01], [0.03, 0.215, 0.195, 0], [0.17, 0.19, 0.175, -0.01], [0.28, 0.115, 0.105, -0.015]], { down: true, rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z); });
     P.body = g.build();
 
     // round koala head, big fluffy round ears with white tufts, prominent oval black nose
     g = B();
-    g.sph(0.175, 0.16, 0.155, 0, 0.10, 0.02, function (x, y, z) { return (z > 0.06 && y < 0.07 && abs(x) < 0.09) ? WH : GR; }, { s: [9, 7] });
+    g.sph(0.175, 0.16, 0.155, 0, 0.10, 0.02, function (x, y, z) { return plume((z > 0.06 && y < 0.07 && abs(x) < 0.09) ? WH : GR, x, y, z, 0.1); }, { s: [9, 7] });
     // prominent oval black nose
     g.sph(0.042, 0.058, 0.036, 0, 0.088, 0.165, NOSE, { s: [7, 5] });
-    eyePair(g, 0.074, 0.125, 0.144, 0.020, 0x141214);
+    g.sph(0.05, 0.03, 0.04, 0, 0.055, 0.14, shade(GR, 1.12), { s: [6, 4] });
+    g.tube([[-0.035, 0.035, 0.155], [0, 0.028, 0.17], [0.035, 0.035, 0.155]], 0.005, 0x3a3030, { seg: 4, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.009, 0.006, 0.006, nn * 0.016, 0.112, 0.2, 0x35353a, { s: [4, 3] }); g.sph(0.03, 0.014, 0.02, nn * 0.074, 0.15, 0.13, shade(GR, 0.8), { s: [5, 3] }); }
+    eyes(g, 0.074, 0.125, 0.144, 0.018, 0x141214, shade(GR, 0.7));
     // big fluffy round ears + white inner tufts
     earBall(g, 0.17, 0.17, 0.0, 0.095, GR, WH);
     earBall(g, -0.17, 0.17, 0.0, 0.095, GR, WH);
@@ -4335,27 +4338,19 @@ OTHERS.koala = function (opts) {
     g.sph(0.065, 0.068, 0.032, -0.17, 0.16, 0.024, 0xf7f7f5, { s: [6, 5], rot: [0, 0.45, 0] });
     P.head = g.build();
 
-    // stubby 2-segment arms with curved grasping claws
-    g = B();
-    g.limb(0, 0, 0, 0, -0.115, 0.015, 0.068, 0.056, GR, { seg: 6 });
-    g.sph(0.056, 0.056, 0.056, 0, -0.115, 0.015, GR, { s: [5, 4] });
-    P.armU = g.build();
-    g = B();
-    g.limb(0, 0, 0, 0, -0.11, 0.018, 0.056, 0.048, GR, { seg: 6 });
-    g.sph(0.052, 0.05, 0.055, 0, -0.12, 0.026, GR_DK, { s: [5, 4] });
-    g.sph(0.022, 0.018, 0.032, 0, -0.138, 0.066, CLAW, { s: [4, 3] });
-    P.armL = g.build();
+    // stubby 2-segment arms with grasping hands and hooked claws
+    g = B(); tlimb(g, 0.115, 0.068, 0.056, 0.05, 0.015, GR); g.sph(0.056, 0.056, 0.056, 0, -0.115, 0.015, GR, { s: [5, 4] }); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.11, 0.056, 0.048, 0.05, 0.018, GR);
+      g.sph(0.052, 0.05, 0.055, 0, -0.12, 0.026, GR_DK, { s: [5, 4] });
+      hand(g, 0, -0.12, 0.03, 0.85, hs ? -1 : 1, GR_DK);
+      for (var c = -1; c <= 1; c++) g.cone(0.007, 0.035, c * 0.02, -0.215, 0.07, CLAW, { seg: 4, rot: [PI - 0.7, 0, 0] });
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // stubby legs
-    g = B();
-    g.sph(0.085, 0.09, 0.085, 0, -0.04, 0, GR, { s: [6, 5] });
-    g.limb(0, 0, 0, 0, -0.15, 0, 0.078, 0.055, GR, { seg: 6 });
-    P.thigh = g.build();
-
-    g = B();
-    g.limb(0, 0, 0, 0, -0.14, 0, 0.055, 0.045, GR, { seg: 6 });
-    g.sph(0.052, 0.03, 0.085, 0, -0.15, 0.035, GR_DK, { s: [5, 4] });
-    P.shank = g.build();
+    g = B(); g.sph(0.085, 0.09, 0.085, 0, -0.04, 0, GR, { s: [6, 5] }); tlimb(g, 0.15, 0.078, 0.055, 0.05, 0, GR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.14, 0.055, 0.045, 0.05, 0, GR); g.sph(0.046, 0.04, 0.046, 0, -0.14, 0, GR_DK, { s: [5, 4] }); pfoot(g, 0, -0.158, 0.0, 1.15, 1, GR_DK); P.shank = g.build();
   }
 
   var sc = baby ? 0.54 : 1.0;
@@ -4371,7 +4366,7 @@ OTHERS.koala = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.20, 0.14, 0.03); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.115, 0.015); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.115, 0.015); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.13, -0.16, 0.02); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.15, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
