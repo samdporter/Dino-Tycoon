@@ -1164,13 +1164,14 @@ function earBall(g, x, y, z, r, col, inner) {
       var d = (px - X) * (px - X) + (py - Y) * (py - Y) + (pz - Z) * (pz - Z);
       if (d < d1) { d2 = d1; d1 = d; id = hash3(cx + 1, cy + 2, cz + 3); } else if (d < d2) d2 = d;
     }
-    if (Math.sqrt(d2) - Math.sqrt(d1) < line) return CR;
-    return shade(BR, 0.85 + id * 0.35);
+    return mixHex(CR, shade(BR, 0.85 + id * 0.35), clamp((Math.sqrt(d2) - Math.sqrt(d1) - line * 0.3) / 0.16, 0, 1));
   };
   var pat = function (x, y, z, nx, ny) { return ny < -0.6 ? CR : cells(x, y, z, 2.6, 0.2); };
   QUADS.giraffe = {
     id: 'giraffe', cy: 2.3, hl: 1.0, hh: 0.5, height: 5.1, size: 3.0, walkA: 0.3, runA: 0.5, reach: 0.5, eatY: 0.45, sexed: false, hopH: 1.5, bend: 0.5,
-    body: function (g) { g.torso({ z0: -1.0, z1: 1.0, n: 18, seg: 14, rxA: 0.4, rxB: 0.44, ryA: 0.5, ryB: 0.62, ycA: 2.2, ycB: 2.45 }, pat);
+    body: function (g) {
+      g.loft([[-1.0, 0.04, 0.06, 2.18], [-0.96, 0.12, 0.16, 2.18], [-0.8, 0.3, 0.38, 2.26], [-0.5, 0.36, 0.46, 2.3], [-0.1, 0.34, 0.5, 2.31], [0.35, 0.4, 0.58, 2.4], [0.7, 0.42, 0.64, 2.46], [0.92, 0.3, 0.46, 2.52], [0.98, 0.16, 0.24, 2.56], [1.01, 0.05, 0.08, 2.56]],
+        { rings: 36, seg: 20, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return pat(x, y, z, sa, ca); });
     },
     neck: { y: 2.72, z: 0.78, len: 2.35, up: 1.15, r0: 0.3, r1: 0.15, seg: 8, hs: 8, col: function (x, y, z, nx, ny) { return cells(x * 1.0, y, z * 0.8, 2.6, 0.22); },
       extra: function (g) {
@@ -1178,12 +1179,18 @@ function earBall(g, x, y, z, r, col, inner) {
       } },
     hpitch: 0.55,
     head: function (g) {
-      var hc = function (x, y, z) { return z > 0.4 ? 0xc9a07a : TAN; };
-      g.loft([[-0.08, 0.12, 0.14, 0.02], [0.1, 0.15, 0.16, 0.0], [0.3, 0.105, 0.105, -0.06], [0.47, 0.092, 0.088, -0.08], [0.54, 0.055, 0.055, -0.085]], { rings: 10, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.46 ? 0x7a5a48 : hc(x, y, z); });
-      eyePair(g, 0.125, 0.07, 0.17, 0.035);
-      // ossicones
-      g.limb(0.07, 0.12, 0.02, 0.07, 0.35, -0.03, 0.03, 0.025, TAN, { seg: 5 }); g.limb(-0.07, 0.12, 0.02, -0.07, 0.35, -0.03, 0.03, 0.025, TAN, { seg: 5 });
-      g.sph(0.045, 0.045, 0.045, 0.07, 0.36, -0.03, 0x4a2e12, { s: [6, 4] }); g.sph(0.045, 0.045, 0.045, -0.07, 0.36, -0.03, 0x4a2e12, { s: [6, 4] });
+      var HT = mixHex(TAN, BR, 0.18), hc = function (x, y, z, nx, ny) {
+        if (z > 0.5) return ny < 0.5 ? 0x8a6a58 : 0x7a5a48;
+        if (z > 0.36 && ny < -0.3) return 0xe6c898;
+        return ny < -0.55 ? CR : (y > 0.03 && z < 0.22 && fract(x * 11 + z * 5) < 0.14 ? shade(BR, 1.1) : HT);
+      };
+      g.loft([[-0.1, 0.1, 0.12, 0.03], [0.06, 0.13, 0.155, 0.0], [0.2, 0.1, 0.12, -0.035], [0.34, 0.082, 0.09, -0.07], [0.48, 0.08, 0.078, -0.088], [0.56, 0.072, 0.066, -0.09], [0.6, 0.05, 0.045, -0.09]],
+        { rings: 14, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      eyePair(g, 0.13, 0.07, 0.17, 0.035);
+      for (var s = -1; s <= 1; s += 2) {
+        g.tube([[s * 0.07, 0.1, 0.0], [s * 0.074, 0.22, -0.01], [s * 0.07, 0.33, -0.04], [s * 0.068, 0.4, -0.05]], [0.036, 0.029, 0.026, 0.046, 0.004], function (x, y, z, nx, ny, nz, t) { return t > 0.7 ? 0x3a2410 : TAN; }, { seg: 6, steps: 3 });
+        g.sph(0.016, 0.012, 0.022, s * 0.032, 0.0, 0.575, 0x2a1c18, { s: [4, 3] });
+      }
     },
     earAt: [0, 0.1, -0.02], ears: function (g) {
       var ep = [[0, 0], [0.11, 0.05], [0.22, 0.02], [0.12, -0.045]];
@@ -1243,24 +1250,42 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- TIGER
 (function () {
-  var OR = 0xe5842a, WH = 0xf4efe4, K = 0x1c1614;
+  var OR = 0xe5842a, OL = 0xf0a350, WH = 0xf4efe4, K = 0x1c1614;
   var bc = function (x, y, z, nx, ny) {
     if (ny < -0.45) return WH;
-    var v = (z * 6.5 + sin(y * 5 + x * 2) * 0.45 + (x > 0 ? 0 : 0.3)); return fract(v) < 0.3 ? K : OR;
+    var yy = y - 0.84, side = x > 0 ? 1 : -1;
+    var v = z * 6.5 - yy * 1.0 + sin(yy * 6 + z * 3 + side) * 0.18;
+    var th = clamp(0.4 + yy * 0.35, 0.12, 0.42) * (0.65 + hash3(Math.floor(v), side, 1) * 0.7);
+    var base = ny < -0.15 ? mixHex(OR, WH, 0.5) : (yy < -0.12 ? OL : OR);
+    return fract(v) < th ? K : base;
   };
   QUADS.tiger = {
     id: 'tiger', cy: 0.82, hl: 0.9, hh: 0.33, height: 1.4, size: 1.0, walkA: 0.45, runA: 0.8, bend: 0.9,
-    body: function (g) { g.torso({ z0: -1.0, z1: 0.92, n: 20, seg: 14, rxA: 0.29, rxB: 0.33, ryA: 0.34, ryB: 0.38, ycA: 0.8, ycB: 0.86 }, bc); },
-    neck: { y: 0.96, z: 0.66, len: 0.28, up: 0.45, r0: 0.21, r1: 0.19, hs: 3, col: function (x, y, z) { return fract(z * 12 + x * 3) < 0.3 ? K : OR; } },
+    body: function (g) {
+      g.loft([[-1.0, 0.03, 0.04, 0.8], [-0.95, 0.1, 0.13, 0.8], [-0.82, 0.24, 0.29, 0.83], [-0.55, 0.31, 0.35, 0.85], [-0.1, 0.26, 0.31, 0.8], [0.3, 0.29, 0.36, 0.84], [0.62, 0.31, 0.39, 0.88], [0.84, 0.24, 0.3, 0.88], [0.93, 0.14, 0.18, 0.89], [0.97, 0.03, 0.04, 0.89]],
+        { rings: 30, seg: 18, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+    },
+    neck: { y: 0.96, z: 0.66, len: 0.28, up: 0.45, r0: 0.21, r1: 0.19, hs: 3, col: function (x, y, z, nx, ny) { return ny < -0.4 ? WH : (fract(z * 12 + x * 3) < 0.3 ? K : OR); } },
     hpitch: 0.3, eatY: 0.2,
     head: function (g) {
-      var hc = function (x, y, z, nx, ny) { if (z > 0.18 && ny < 0.3) return WH; if (y > 0.07 && z < 0.12 && z > -0.02) return fract(x * 14) < 0.35 ? K : OR; return fract(z * 16 + abs(x) * 6) < 0.25 ? K : OR; };
-      g.sph(0.17, 0.155, 0.19, 0, 0, 0.1, hc, { s: [9, 6] }); g.sph(0.1, 0.075, 0.12, 0, -0.06, 0.27, WH, { s: [7, 5] });
-      g.sph(0.2, 0.09, 0.1, 0, -0.05, 0.12, function (x, y, z, nx, ny) { return ny < 0.2 ? WH : OR; }, { s: [8, 5] });
-      g.sph(0.042, 0.032, 0.03, 0, -0.025, 0.385, 0xd68a8a, { s: [5, 4] });
-      eyePair(g, 0.095, 0.06, 0.21, 0.025, 0x3a2208);
+      var hc = function (x, y, z, nx, ny) {
+        var ax = abs(x);
+        if (z > 0.3) return (ny < 0.4 || y < -0.03) ? WH : (fract(ax * 30) < 0.2 ? K : OR);
+        if (y < -0.045 && z > 0.08) return WH;
+        if (z > 0.17 && ax > 0.05 && y > 0.0) return mixHex(OR, WH, 0.35);
+        if (y > 0.04 && z < 0.2) return fract(ax * 17 + z * 2) < 0.3 ? K : OR;
+        return fract(z * 15 + ax * 5 + y * 3) < 0.28 ? K : (y < 0 ? OL : OR);
+      };
+      g.loft([[-0.12, 0.14, 0.14, 0.02], [0.02, 0.2, 0.18, 0.0], [0.14, 0.21, 0.175, -0.01], [0.23, 0.15, 0.115, -0.04], [0.3, 0.12, 0.09, -0.055], [0.36, 0.1, 0.075, -0.06], [0.4, 0.07, 0.055, -0.058]],
+        { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.048, 0.03, 0.026, 0, -0.025, 0.4, 0xd68a8a, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) {
+        for (var r = 0; r < 3; r++) g.cone(0.065 - r * 0.012, 0.2 - r * 0.03, s * 0.15, -0.065 - r * 0.025, 0.06 - r * 0.045, WH, { seg: 5, rot: [0.2, 0, -s * (1.25 + r * 0.12)] });
+        g.sph(0.012, 0.008, 0.008, s * 0.03, 0.0, 0.365, K, { s: [3, 3] });
+      }
+      eyePair(g, 0.125, 0.055, 0.19, 0.026, 0xc8a020);
     },
-    earAt: [0, 0.1, 0.0], ears: function (g) { earBall(g, 0.12, 0.17, 0.0, 0.06, OR, K); earBall(g, -0.12, 0.17, 0.0, 0.06, OR, K); },
+    earAt: [0, 0.1, 0.0], ears: function (g) { earBall(g, 0.13, 0.19, -0.01, 0.07, K, 0xe8d8c8); earBall(g, -0.13, 0.19, -0.01, 0.07, K, 0xe8d8c8); },
     legs: { hs: 4, fx: 0.13, fy: 0.62, fz: 0.47, hy: 0.6, hz: -0.58, hx: 0.14, fLen: 0.62, hLen: 0.6, fr: [0.095, 0.07, 0.06], hr: [0.11, 0.07, 0.06], haunch: [0.13, 0.17, 0.2],
       col: function (y, ny) { return y < -0.5 ? WH : (fract(y * 10) < 0.3 ? K : OR); }, foot: { type: 'paw', col: 0x222222, h: 0.07, pawCol: WH } },
     tail: { y: 0.84, z: -0.82, n: 3, len: 1.0, r0: 0.05, r1: 0.04, hs: 4, col: function (i, x, y, z) { return fract(-z * 9 + i * 0.4) < 0.3 ? K : OR; }, up: -0.6, curl: 0.15, tip: function (g, sl) { tuft(g, -sl, 0.045, 0.08, K); } },
@@ -1270,34 +1295,58 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- ELEPHANT
 (function () {
-  var GR = 0x8e8f9a, GL = 0xa4a5b0, GD = 0x75767f, IV = 0xf3ecd8;
-  var bc = function (x, y, z, nx, ny, nz) { return hash3(Math.floor(x * 6), Math.floor(y * 6), Math.floor(z * 6)) > 0.8 ? GD : GR; };
+  var GR = 0x8e8f9a, GL = 0xa4a5b0, GD = 0x75767f, IV = 0xf3ecd8, PK = 0xb09a9c;
+  var skin = function (x, y, z, ny) {
+    var n = hash3(Math.floor(x * 7), Math.floor(y * 7), Math.floor(z * 7));
+    var c = n > 0.78 ? GD : GR;
+    if (fract(z * 7.5 + sin(y * 3 + x * 2) * 0.35) < 0.1) c = shade(c, 0.86);
+    return ny < -0.5 ? shade(c, 1.07) : c;
+  };
+  var bodyKeys = [[-1.98, 0.06, 0.08, 2.3], [-1.9, 0.3, 0.4, 2.3], [-1.55, 0.78, 0.82, 2.38], [-1.0, 0.98, 1.0, 2.4], [-0.2, 1.0, 1.0, 2.38], [0.6, 1.04, 1.12, 2.5], [1.2, 0.96, 1.1, 2.62], [1.62, 0.62, 0.72, 2.7], [1.8, 0.4, 0.5, 2.72], [1.88, 0.2, 0.25, 2.72]];
+  var keys = [];
+  for (var i = 0; i < 19; i++) {
+    var s = -1.98 + i * 0.215, j = 0;
+    while (j < bodyKeys.length - 2 && bodyKeys[j + 1][0] < s) j++;
+    var a = bodyKeys[j], b = bodyKeys[j + 1], t = clamp((s - a[0]) / (b[0] - a[0]), 0, 1), f = (i > 1 && i < 17) ? 1 + 0.022 * (i % 2 ? -1 : 1) : 1;
+    keys.push([s, lerp(a[1], b[1], t) * f, lerp(a[2], b[2], t) * f, lerp(a[3], b[3], t)]);
+  }
   QUADS.elephant = {
     id: 'elephant', cy: 2.45, hl: 1.9, hh: 1.0, height: 4.0, size: 3.0, walkA: 0.3, runA: 0.45, bend: 0.25, babyScale: 0.42, babyHead: 1.35, hopH: 1.4, eatNA: 0.0, eatTP: 0.0, eatHP: 0.3,
     body: function (g) {
-      g.loft([[-1.92, 0.35, 0.45, 2.25], [-1.35, 0.92, 0.96, 2.38], [-0.45, 1.04, 1.06, 2.46], [0.45, 1.06, 1.14, 2.54], [1.25, 0.94, 1.08, 2.6], [1.75, 0.56, 0.65, 2.7]], { rings: 18, seg: 14, cap0: true, cap1: true, superPow: 0.92 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca, 0); });
+      g.loft(keys, { rings: 30, seg: 16, cap0: true, cap1: true, superPow: 0.92 }, function (zc, ca, sa, x, y, z) { return skin(x, y, z, ca); });
     },
     neck: { y: 2.85, z: 1.45, len: 0.35, up: 0.0, r0: 0.6, r1: 0.55, col: GR },
     hpitch: 0.1, eatY: 0.5,
     head: function (g) {
-      g.loft([[-0.22, 0.45, 0.52, 0.14], [0.18, 0.6, 0.72, 0.16], [0.55, 0.48, 0.56, 0.02], [0.85, 0.35, 0.36, -0.16]], { rings: 10, seg: 12, cap0: true, cap1: true }, GR);
-      g.sph(0.42, 0.36, 0.38, 0, 0.48, 0.18, GR, { s: [8, 6] }); // high cranial dome
-      eyePair(g, 0.45, 0.1, 0.6, 0.05, 0x1a1210);
-      // smooth curved ivory tusks
+      var hc = function (x, y, z, nx, ny) {
+        var c = skin(x, y, z, ny);
+        if (z > 0.3 && z < 0.7 && y > 0.0 && fract(y * 10 + abs(x) * 2) < 0.1) c = GD;
+        return c;
+      };
+      g.loft([[-0.25, 0.4, 0.5, 0.1], [0.0, 0.52, 0.64, 0.24], [0.3, 0.5, 0.62, 0.16], [0.58, 0.4, 0.46, 0.02], [0.8, 0.3, 0.34, -0.1], [0.88, 0.26, 0.28, -0.14]],
+        { rings: 14, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
       for (var s = -1; s <= 1; s += 2) {
-        g.tube([[s * 0.27, -0.28, 0.72], [s * 0.35, -0.68, 1.02], [s * 0.36, -0.78, 1.38], [s * 0.31, -0.62, 1.66]], [0.092, 0.068, 0.042, 0.008], IV, { seg: 8, steps: 3 });
+        g.sph(0.07, 0.05, 0.06, s * 0.36, 0.14, 0.58, GD, { s: [6, 4] });
+        g.tube([[s * 0.26, -0.26, 0.7], [s * 0.35, -0.66, 1.0], [s * 0.37, -0.78, 1.38], [s * 0.32, -0.64, 1.7]], [0.095, 0.075, 0.05, 0.026, 0.006], function (x, y, z, nx, ny, nz, t) { return t < 0.12 ? 0xcfc4a4 : (t > 0.85 ? 0xd8cfb4 : IV); }, { seg: 8, steps: 3 });
       }
+      eyePair(g, 0.4, 0.1, 0.56, 0.04, 0x1a1210);
     },
     trunk: { n: 4, len: 2.2, r0: 0.38, r1: 0.12, at: [0, -0.12, 0.84], col: GR, idle: [0.15, -0.1, -0.3, -0.5], eat: [-1.1, -0.9, -0.7, -0.6], slp: [0.3, 0.1, -0.2, -0.5] },
     earPivot: [0.5, 0.3, 0.08], earFlare: 0.35, earFlap: 0.4,
     earsLR: function (r) {
       var g = B(), s = r ? -1 : 1;
-      // sculpted African-elephant map-shaped curved fan ear
-      var ep = [[0.45, 0.05], [0.56, -0.35], [0.35, -0.82], [-0.15, -1.05], [-0.62, -0.92], [-0.95, -0.55], [-0.72, -0.12], [-0.2, 0.02]];
-      g.extrude(ep, 0.09, s * 0.04, 0.05, -0.05, [0, 0, 0], function (x, y, z, nx) { return (s * nx > 0.25 && y < 0.2 && z < -0.15) ? 0xb09090 : (abs(nx) < 0.4 ? GR : shade(GL, 0.95)); }, { axis: 'x', bev: 0.028, curveX: s * 0.16, curveY: s * 0.1 });
-      return g.build();
+      g.loft([[0.0, 0.4, 0.1, 0.0], [0.1, 0.62, 0.085, 0.01], [0.3, 0.72, 0.065, 0.03], [0.55, 0.63, 0.045, 0.06], [0.78, 0.41, 0.03, 0.1], [0.93, 0.17, 0.02, 0.13], [1.0, 0.02, 0.012, 0.14]],
+        { down: true, ox: s * 0.3, oy: 0.1, rings: 22, seg: 20, cap0: true, cap1: true },
+        function (zc, ca, sa, x, y, z) {
+          var inner = ca < 0;
+          if (inner) return mixHex(PK, GR, clamp(0.85 - zc * 0.5 - fract(z * 7 + y * 4) * 0.2, 0, 1) * (1 - zc * 0.3));
+          return fract(y * 8 + z * 2) < 0.12 ? GD : (zc > 0.85 ? GD : GR);
+        });
+      var geo = g.build();
+      geo.rotateY(s * PI / 2);
+      return geo;
     },
-    legs: { fx: 0.55, fy: 1.5, fz: 1.0, hy: 1.5, hz: -1.15, hx: 0.55, fLen: 1.5, hLen: 1.5, fr: [0.36, 0.31, 0.29], hr: [0.38, 0.31, 0.29], two: true, kf: 0.54, col: GR,
+    legs: { fx: 0.55, fy: 1.5, fz: 1.0, hy: 1.5, hz: -1.15, hx: 0.55, fLen: 1.5, hLen: 1.5, fr: [0.36, 0.31, 0.29], hr: [0.38, 0.31, 0.29], two: true, kf: 0.54, col: function (y, ny, front, x, z) { return skin(x || 0, y, z || 0, ny); },
       foot: { type: 'foot', col: 0xe0dac8, h: 0.14, base: GD } },
     tail: { y: 2.25, z: -1.85, n: 2, len: 1.3, r0: 0.06, r1: 0.04, col: GR, up: -1.3, curl: -0.1, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.04, 0.12, 0x333338); } },
     fold: { fa: -0.5, ha: -0.5, fb: 0, hb: 0, splay: 1.25, hp: 0.7, hy: 0.0, na: 0, lieY: 1.15 }
@@ -1306,25 +1355,33 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- RHINO
 (function () {
-  var GR = 0x8f8c86, GD = 0x74716c, HORN = 0xe8e0c6;
-  var bc = function (x, y, z) { return hash3(Math.floor(x * 5), Math.floor(y * 5), Math.floor(z * 5)) > 0.85 ? GD : GR; };
+  var GR = 0x8f8c86, GD = 0x74716c;
+  var skin = function (x, y, z) {
+    var c = hash3(Math.floor(x * 6), Math.floor(y * 6), Math.floor(z * 6)) > 0.82 ? GD : GR;
+    if (fract(y * 9 + z * 2 + sin(z * 5) * 0.4) < 0.08) c = shade(c, 0.88);
+    return c;
+  };
+  var hornCol = function (x, y, z, nx, ny, nz, t) { return t < 0.18 ? mixHex(0x6e6454, 0xb8ab8a, t / 0.18) : mixHex(0xb8ab8a, 0xe8e0c6, clamp((t - 0.18) / 0.6, 0, 1)); };
   QUADS.rhino = {
     id: 'rhino', cy: 1.3, hl: 1.45, hh: 0.7, height: 1.95, size: 1.7, walkA: 0.35, runA: 0.55, bend: 0.3, babyScale: 0.48, babyHead: 1.4,
     body: function (g) {
-      // sculpted armor-plated rhino barrel with integrated shoulder hump & contoured skin-fold ribs
-      g.loft([[-1.42, 0.25, 0.32, 1.24], [-1.0, 0.66, 0.68, 1.28], [-0.52, 0.72, 0.74, 1.29], [-0.42, 0.68, 0.7, 1.27], [0.0, 0.66, 0.7, 1.28], [0.42, 0.73, 0.79, 1.38], [0.54, 0.7, 0.77, 1.38], [0.95, 0.65, 0.74, 1.36], [1.34, 0.4, 0.46, 1.32]], { rings: 20, seg: 14, cap0: true, cap1: true, superPow: 0.9 }, function (zc, ca, sa, x, y, z) { return (abs(z - 0.48) < 0.055 || abs(z + 0.47) < 0.055) ? GD : bc(x, y, z); });
+      g.loft([[-1.5, 0.05, 0.07, 1.24], [-1.42, 0.25, 0.32, 1.24], [-1.15, 0.58, 0.62, 1.28], [-0.82, 0.68, 0.72, 1.29], [-0.57, 0.72, 0.75, 1.29], [-0.47, 0.66, 0.69, 1.27], [-0.36, 0.69, 0.73, 1.28], [0.0, 0.67, 0.71, 1.28], [0.3, 0.72, 0.78, 1.36], [0.46, 0.74, 0.83, 1.4], [0.57, 0.67, 0.75, 1.37], [0.7, 0.7, 0.77, 1.38], [1.0, 0.64, 0.73, 1.36], [1.34, 0.4, 0.46, 1.32], [1.42, 0.12, 0.14, 1.32]],
+        { rings: 26, seg: 16, cap0: true, cap1: true, superPow: 0.9 },
+        function (zc, ca, sa, x, y, z) { return (abs(z - 0.55) < 0.05 || abs(z + 0.47) < 0.05) ? shade(GD, 0.85) : skin(x, y, z); });
     },
-    neck: { y: 1.3, z: 1.1, len: 0.5, up: -0.05, r0: 0.42, r1: 0.36, col: GR },
+    neck: { y: 1.3, z: 1.1, len: 0.5, up: -0.05, r0: 0.42, r1: 0.36, col: function (x, y, z) { return skin(x, y, z); } },
     hpitch: 0.5, eatY: 0.2, eatHP: 0.9, eatNA: -0.7,
     head: function (g) {
-      g.loft([[-0.12, 0.26, 0.28, 0.04], [0.2, 0.32, 0.34, 0.02], [0.58, 0.25, 0.24, -0.07], [0.88, 0.2, 0.16, -0.14], [0.98, 0.12, 0.1, -0.16]], { rings: 12, seg: 10, cap0: true, cap1: true, superPow: 0.88 }, function (zc, ca, sa, x, y, z) { return z > 0.76 ? GD : GR; });
-      // curved anterior & posterior keratin horns
-      g.tube([[0, 0.04, 0.76], [0, 0.28, 0.88], [0, 0.56, 0.9], [0, 0.72, 0.82]], [0.13, 0.09, 0.045, 0.008], HORN, { seg: 8, steps: 3 });
-      g.tube([[0, 0.15, 0.45], [0, 0.34, 0.48], [0, 0.48, 0.43]], [0.085, 0.05, 0.008], HORN, { seg: 7, steps: 2 });
-      eyePair(g, 0.29, 0.1, 0.34, 0.032);
-      g.sph(0.04, 0.04, 0.03, 0.08, -0.05, 0.98, 0x333333, { s: [4, 3] }); g.sph(0.04, 0.04, 0.03, -0.08, -0.05, 0.98, 0x333333, { s: [4, 3] });
+      var hc = function (x, y, z, nx, ny) { return z > 0.9 ? GD : (z > 0.78 && ny < -0.3 ? shade(GR, 1.1) : skin(x, y, z)); };
+      g.loft([[-0.12, 0.24, 0.27, 0.04], [0.15, 0.3, 0.33, 0.02], [0.4, 0.26, 0.28, -0.04], [0.62, 0.22, 0.22, -0.1], [0.85, 0.19, 0.15, -0.17], [0.97, 0.18, 0.12, -0.19], [1.04, 0.15, 0.09, -0.19], [1.08, 0.08, 0.05, -0.19]],
+        { rings: 14, seg: 12, cap0: true, cap1: true, superPow: 0.88 }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.tube([[0, -0.02, 0.74], [0, 0.18, 0.82], [0, 0.44, 0.84], [0, 0.72, 0.76]], [0.16, 0.12, 0.075, 0.035, 0.006], hornCol, { seg: 10, steps: 3 });
+      g.tube([[0, 0.1, 0.4], [0, 0.26, 0.43], [0, 0.42, 0.4]], [0.1, 0.065, 0.01], hornCol, { seg: 8, steps: 2 });
+      g.tube([[-0.16, -0.14, 1.08], [0, -0.15, 1.1], [0.16, -0.14, 1.08]], 0.012, 0x2e2c2a, { seg: 5, steps: 2 });
+      for (var s = -1; s <= 1; s += 2) g.sph(0.03, 0.02, 0.035, s * 0.09, -0.04, 1.03, 0x2a2826, { s: [4, 3] });
+      eyePair(g, 0.27, 0.1, 0.3, 0.026);
     },
-    earAt: [0, 0.2, 0.0], ears: function (g) { earCone(g, 0.17, 0.3, 0.0, 0.09, 0.26, 0.2, GR, 0xc9a8a0); earCone(g, -0.17, 0.3, 0.0, 0.09, 0.26, 0.2, GR, 0xc9a8a0); },
+    earAt: [0, 0.2, 0.0], ears: function (g) { earCone(g, 0.19, 0.3, 0.0, 0.1, 0.28, 0.35, GR, 0xc9a8a0); earCone(g, -0.19, 0.3, 0.0, 0.1, 0.28, 0.35, GR, 0xc9a8a0); },
     legs: { fx: 0.4, fy: 0.78, fz: 0.62, hy: 0.78, hz: -0.7, hx: 0.42, fLen: 0.78, hLen: 0.78, fr: [0.23, 0.2, 0.19], hr: [0.25, 0.21, 0.19], two: true, kf: 0.52, col: function (y) { return y < -0.55 ? GD : GR; },
       foot: { type: 'toes', col: 0x4a4844, h: 0.09 }, bend: 0.3 },
     tail: { y: 1.25, z: -1.4, n: 2, len: 0.75, r0: 0.05, r1: 0.03, col: GD, up: -1.2, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.035, 0.07, 0x333333); } },
@@ -1334,26 +1391,38 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- HIPPO
 (function () {
-  var GR = 0x8b8094, PK = 0xd9a0a6, GD = 0x70667a;
-  var bc = function (x, y, z, nx, ny) { return ny < -0.55 ? 0xb89aa6 : GR; };
+  var GR = 0x8b8094, PK = 0xd9a0a6, GD = 0x70667a, BP = 0xc29aa4;
+  var skin = function (x, y, z, ny) {
+    var c = mixHex(GR, 0xb89aa6, clamp(0.25 - ny, 0, 1) * 0.8);
+    if (fract(z * 5 + sin(y * 4 + x * 2) * 0.3) < 0.07) c = shade(c, 0.86);
+    return hash3(Math.floor(x * 9), Math.floor(y * 9), Math.floor(z * 9)) > 0.85 ? shade(c, 0.93) : c;
+  };
   QUADS.hippo = {
     id: 'hippo', cy: 1.0, hl: 1.5, hh: 0.75, height: 1.9, size: 1.5, walkA: 0.35, runA: 0.5, bend: 0.3, babyScale: 0.45, babyHead: 1.3, swimDrop: 1.15,
     body: function (g) {
-      g.loft([[-1.48, 0.32, 0.35, 1.02], [-1.0, 0.8, 0.72, 1.0], [0.0, 0.84, 0.75, 0.98], [0.95, 0.78, 0.74, 1.02], [1.4, 0.46, 0.46, 1.05]], { rings: 18, seg: 14, cap0: true, cap1: true, superPow: 0.84, flatBot: 0.32 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-1.55, 0.06, 0.07, 1.02], [-1.46, 0.3, 0.33, 1.02], [-1.2, 0.68, 0.64, 1.0], [-0.6, 0.84, 0.76, 0.98], [0.2, 0.86, 0.78, 0.98], [0.95, 0.8, 0.74, 1.02], [1.3, 0.55, 0.55, 1.04], [1.42, 0.4, 0.42, 1.05], [1.48, 0.12, 0.12, 1.05]],
+        { rings: 26, seg: 18, cap0: true, cap1: true, superPow: 0.84, flatBot: 0.32 }, function (zc, ca, sa, x, y, z) { return skin(x, y, z, ca); });
     },
-    neck: { y: 1.05, z: 1.15, len: 0.25, up: 0.0, r0: 0.55, r1: 0.5, col: GR },
+    neck: { y: 1.05, z: 1.15, len: 0.25, up: 0.0, r0: 0.55, r1: 0.5, col: function (x, y, z, nx, ny) { return skin(x, y, z, ny); } },
     hpitch: 0.12, eatY: 0.2, eatNA: -0.4, eatHP: 0.6,
     head: function (g) {
-      g.loft([[-0.15, 0.42, 0.4, 0.04], [0.22, 0.52, 0.45, 0.02], [0.64, 0.52, 0.29, -0.08], [0.98, 0.46, 0.24, -0.1], [1.1, 0.28, 0.16, -0.11]], { rings: 12, seg: 12, cap0: true, cap1: true, superPow: 0.76 }, function (zc, ca, sa, x, y, z) { return (z > 0.5 && ca < -0.2) ? 0xc29aa4 : GR; });
-      g.loft([[0.32, 0.4, 0.13, -0.28], [0.72, 0.45, 0.15, -0.3], [1.04, 0.36, 0.11, -0.28]], { rings: 8, seg: 10, cap0: true, cap1: true, superPow: 0.78 }, 0xc29aa4);
-      // sculpted recessed mouth crease + curved ivory canine tusks
-      g.tube([[-0.38, -0.18, 0.88], [0, -0.19, 1.02], [0.38, -0.18, 0.88]], 0.024, 0x3b2732, { seg: 6, steps: 2 });
+      var hc = function (x, y, z, nx, ny) {
+        if (z > 0.62 && ny > 0.2 && hash3(Math.floor(x * 22), Math.floor(z * 22), 3) > 0.9) return 0x6a5a68;
+        if (z > 0.55 && ny < -0.1) return BP;
+        return y < -0.2 ? BP : skin(x, y, z, ny);
+      };
+      g.loft([[-0.15, 0.42, 0.4, 0.04], [0.22, 0.52, 0.45, 0.02], [0.64, 0.53, 0.29, -0.08], [0.98, 0.5, 0.25, -0.1], [1.1, 0.4, 0.2, -0.11], [1.16, 0.26, 0.13, -0.11], [1.2, 0.08, 0.04, -0.11]],
+        { rings: 14, seg: 14, cap0: true, cap1: true, superPow: 0.76 }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.loft([[0.32, 0.4, 0.13, -0.28], [0.72, 0.45, 0.15, -0.3], [1.04, 0.4, 0.12, -0.28], [1.12, 0.24, 0.08, -0.28], [1.16, 0.06, 0.03, -0.28]], { rings: 8, seg: 10, cap0: true, cap1: true, superPow: 0.78 }, BP);
+      g.tube([[-0.4, -0.18, 0.86], [0, -0.19, 1.04], [0.4, -0.18, 0.86]], 0.024, 0x3b2732, { seg: 6, steps: 2 });
       for (var s = -1; s <= 1; s += 2) {
-        g.tube([[s * 0.23, -0.26, 0.92], [s * 0.25, -0.16, 0.98], [s * 0.24, -0.08, 0.96]], [0.036, 0.026, 0.008], 0xf0ead8, { seg: 6, steps: 2 });
-        g.sph(0.085, 0.07, 0.085, s * 0.19, 0.16, 0.96, GD, { s: [6, 5] });
-        g.sph(0.11, 0.11, 0.11, s * 0.3, 0.4, 0.3, GR, { s: [6, 5] });
+        g.tube([[s * 0.23, -0.26, 0.92], [s * 0.25, -0.16, 0.98], [s * 0.24, -0.08, 0.96]], [0.04, 0.03, 0.008], 0xf0ead8, { seg: 6, steps: 2 });
+        g.sph(0.085, 0.06, 0.085, s * 0.19, 0.12, 1.0, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 5] });
+        g.sph(0.04, 0.025, 0.05, s * 0.19, 0.15, 1.02, 0x2e2630, { s: [5, 4] });
+        g.sph(0.11, 0.09, 0.11, s * 0.3, 0.37, 0.3, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 5] });
+        g.sph(0.026, 0.018, 0.03, s * 0.3, 0.37, 0.37, 0x5a4a58, { s: [4, 3] });
       }
-      eyePair(g, 0.3, 0.45, 0.36, 0.045, 0x1a1210);
+      eyePair(g, 0.31, 0.43, 0.34, 0.04, 0x1a1210);
     },
     earAt: [0, 0.3, 0.05], ears: function (g) { earBall(g, 0.34, 0.55, 0.05, 0.075, GR, PK); earBall(g, -0.34, 0.55, 0.05, 0.075, GR, PK); },
     legs: { fx: 0.46, fy: 0.55, fz: 0.75, hy: 0.55, hz: -0.8, hx: 0.48, fLen: 0.55, hLen: 0.55, fr: [0.26, 0.23, 0.22], hr: [0.27, 0.23, 0.22], two: true, kf: 0.52, col: function (y) { return y < -0.4 ? GD : GR; },
@@ -1366,19 +1435,30 @@ function earBall(g, x, y, z, r, col, inner) {
 // ---- PANDA
 (function () {
   var W = 0xf6f4ee, K = 0x1a1a1e;
-  var bc = function (x, y, z, nx, ny) { return (z > 0.04 && z < 0.5 && ny > -0.65) ? K : W; };
+  var bc = function (x, y, z, nx, ny) {
+    var zb = z + (y - 0.58) * 0.3;
+    if (zb > 0.06 && zb < 0.5 && ny > -0.7) return K;
+    return (ny < -0.5 && z < 0.06) ? 0xe8e6de : W;
+  };
   QUADS.panda = {
     id: 'panda', cy: 0.58, hl: 0.65, hh: 0.4, height: 1.0, size: 0.8, walkA: 0.4, runA: 0.6, bend: 0.5, babyScale: 0.5, babyHead: 1.35, sitStates: ['idle', 'eat', 'drink', 'play'], hopH: 0.8,
     body: function (g) {
-      g.loft([[-0.68, 0.2, 0.22, 0.56], [-0.36, 0.44, 0.43, 0.58], [0.02, 0.42, 0.42, 0.58], [0.36, 0.42, 0.44, 0.62], [0.64, 0.24, 0.28, 0.68]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-0.74, 0.04, 0.05, 0.56], [-0.68, 0.18, 0.2, 0.56], [-0.45, 0.43, 0.46, 0.58], [-0.05, 0.42, 0.44, 0.58], [0.32, 0.43, 0.5, 0.64], [0.54, 0.34, 0.4, 0.68], [0.66, 0.2, 0.25, 0.68], [0.7, 0.05, 0.06, 0.68]],
+        { rings: 20, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 0.78, z: 0.55, len: 0.18, up: 0.15, r0: 0.28, r1: 0.26, col: W },
     hpitch: 0.35, eatY: 0.1, eatNA: -0.4, eatHP: 0.8,
     head: function (g) {
-      g.sph(0.28, 0.25, 0.26, 0, 0.0, 0.12, W, { s: [9, 7] }); g.sph(0.11, 0.09, 0.13, 0, -0.07, 0.34, W, { s: [7, 5] });
-      g.sph(0.05, 0.035, 0.035, 0, -0.03, 0.46, K, { s: [5, 4] });
-      g.sph(0.07, 0.095, 0.05, 0.12, 0.04, 0.3, K, { s: [6, 5], rot: [0, 0, 0.5] }); g.sph(0.07, 0.095, 0.05, -0.12, 0.04, 0.3, K, { s: [6, 5], rot: [0, 0, -0.5] });
-      eyePair(g, 0.115, 0.04, 0.34, 0.018, 0x333333); g.sph(0.012, 0.012, 0.01, 0.116, 0.045, 0.356, 0xffffff, { s: [3, 3] });
+      var hc = function (x, y, z, nx, ny) {
+        var dx = abs(x) - 0.125, dy = y - 0.03, u = dx * 0.88 + dy * 0.48, v = -dx * 0.48 + dy * 0.88;
+        if (z > 0.14 && u * u / 0.0065 + v * v / 0.0030 < 1) return K;
+        return z > 0.4 && ny > 0.2 ? 0x2a2428 : W;
+      };
+      g.loft([[-0.2, 0.2, 0.2, 0.0], [0.0, 0.285, 0.26, 0.0], [0.18, 0.27, 0.235, -0.02], [0.3, 0.17, 0.13, -0.07], [0.4, 0.13, 0.1, -0.085], [0.46, 0.09, 0.07, -0.085]],
+        { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.05, 0.034, 0.03, 0, -0.03, 0.455, K, { s: [6, 4] });
+      g.tube([[0, -0.05, 0.455], [0, -0.09, 0.44], [0.0, -0.1, 0.4]], 0.006, K, { seg: 4, steps: 2 });
+      eyePair(g, 0.13, 0.05, 0.27, 0.018, 0x333333);
     },
     earAt: [0, 0.2, 0.0], ears: function (g) { earBall(g, 0.2, 0.22, 0.02, 0.095, K); earBall(g, -0.2, 0.22, 0.02, 0.095, K); },
     legs: { fx: 0.27, fy: 0.37, fz: 0.4, hy: 0.37, hz: -0.4, hx: 0.27, fLen: 0.4, hLen: 0.4, fr: [0.13, 0.11, 0.1], hr: [0.15, 0.12, 0.1], col: K, two: true, foot: { type: 'paw', col: K, h: 0.07, pawCol: K } },
@@ -1390,26 +1470,40 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- GORILLA
 (function () {
-  var BL = 0x34343a, SK = 0x4a4a52, SIL = 0xb0b0b8, FC = 0x232328;
+  var BL = 0x34343a, SK = 0x4a4a52, SIL = 0x6a6a74, FC = 0x232328;
   QUADS.gorilla = {
     id: 'gorilla', sexed: true, fScale: 0.82, cy: 1.0, hl: 0.8, hh: 0.55, height: 1.7, size: 1.4, walkA: 0.38, runA: 0.55, bend: 0.4, babyScale: 0.45, babyHead: 1.4, sitStates: ['idle', 'eat', 'drink'], hopH: 0.8,
     body: function (g, sex) {
-      var bc = function (x, y, z, nx, ny) { if (sex !== 'f' && ny > 0.25 && z < 0.5) return SIL; return BL; };
-      g.loft([[-0.82, 0.22, 0.24, 0.78], [-0.42, 0.48, 0.44, 0.84], [0.0, 0.54, 0.54, 1.02], [0.44, 0.6, 0.62, 1.2], [0.84, 0.38, 0.4, 1.26]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
-      g.sph(0.32, 0.22, 0.2, 0, 1.16, 0.8, SK, { s: [7, 5] });
+      var bc = function (x, y, z, nx, ny) {
+        var fur = hash3(Math.floor(x * 16), Math.floor(y * 12), Math.floor(z * 16)) > 0.7 ? shade(BL, 1.18) : BL;
+        if (sex !== 'f' && ny > 0.2 && z < 0.4) return mixHex(fur, SIL, clamp((ny - 0.2) * 1.5, 0, 1) * clamp((0.4 - z) * 6, 0, 1));
+        return (z > 0.45 && ny < 0.1 && ny > -0.6 && abs(x) < 0.4) ? mixHex(fur, SK, 0.7) : fur;
+      };
+      g.loft([[-0.86, 0.06, 0.08, 0.78], [-0.8, 0.2, 0.22, 0.78], [-0.5, 0.42, 0.42, 0.84], [-0.05, 0.5, 0.5, 0.96], [0.38, 0.6, 0.52, 1.08], [0.66, 0.54, 0.5, 1.2], [0.86, 0.3, 0.32, 1.25], [0.92, 0.06, 0.08, 1.25]],
+        { rings: 24, seg: 16, cap0: true, cap1: true, ridge: 0.05 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 1.38, z: 0.62, len: 0.2, up: 0.0, r0: 0.38, r1: 0.34, col: BL },
     hpitch: 0.25, eatY: 0.3, eatNA: -0.5, eatHP: 0.7,
     head: function (g, sex) {
-      g.sph(0.23, 0.25, 0.26, 0, 0.06, 0.1, BL, { s: [8, 6] }); g.sph(0.17, 0.2, 0.2, 0, sex === 'f' ? 0.2 : 0.27, 0.0, sex === 'f' ? BL : 0x4a4a52, { s: [7, 5] });
-      g.sph(0.19, 0.14, 0.12, 0, 0.0, 0.25, SK, { s: [7, 5] }); g.sph(0.14, 0.09, 0.13, 0, -0.09, 0.3, SK, { s: [7, 5] });
-      // sculpted heavy curved brow arch
-      g.tube([[-0.18, 0.095, 0.26], [-0.07, 0.125, 0.33], [0.07, 0.125, 0.33], [0.18, 0.095, 0.26]], [0.028, 0.04, 0.04, 0.028], FC, { seg: 6, steps: 2 });
-      g.sph(0.025, 0.02, 0.02, 0.04, -0.03, 0.4, FC, { s: [4, 3] }); g.sph(0.025, 0.02, 0.02, -0.04, -0.03, 0.4, FC, { s: [4, 3] });
-      eyePair(g, 0.075, 0.07, 0.34, 0.02, 0x3a1e10);
+      var male = sex !== 'f';
+      var hc = function (x, y, z, nx, ny) {
+        if (z > 0.17 && ny < 0.6 && y < 0.1 && y > -0.2) return z > 0.3 && ny < -0.3 ? shade(SK, 0.8) : SK;
+        return hash3(Math.floor(x * 20), Math.floor(y * 20), Math.floor(z * 20)) > 0.75 ? shade(BL, 1.2) : BL;
+      };
+      var cr = function (x, y, z) { return z > 0.0 && male ? 0x3c3230 : hc(x, y, z, 0, 1); };
+      g.loft([[-0.2, 0.21, 0.22, 0.08], [0.0, 0.28, 0.29, 0.08], [0.12, 0.26, 0.26, 0.05], [0.22, 0.22, 0.19, 0.0], [0.3, 0.19, 0.14, -0.05], [0.38, 0.17, 0.115, -0.085], [0.44, 0.12, 0.08, -0.095]],
+        { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.loft([[-0.22, 0.05, 0.09, 0.27], [-0.04, 0.07, 0.13, 0.29], [0.12, 0.055, 0.1, 0.25], [0.26, 0.03, 0.05, 0.14]], { rings: 8, seg: 8, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return cr(x, y, z); });
+      g.sph(0.14, 0.07, 0.12, 0, -0.14, 0.27, SK, { s: [7, 5] });
+      g.tube([[-0.15, 0.1, 0.25], [-0.06, 0.125, 0.3], [0.06, 0.125, 0.3], [0.15, 0.1, 0.25]], [0.026, 0.04, 0.04, 0.026], FC, { seg: 6, steps: 2 });
+      for (var s = -1; s <= 1; s += 2) {
+        g.sph(0.022, 0.014, 0.016, s * 0.04, -0.045, 0.43, FC, { s: [4, 3] });
+        g.tube([[s * 0.03, -0.1, 0.4], [s * 0.1, -0.115, 0.32], [s * 0.14, -0.09, 0.22]], 0.006, FC, { seg: 4, steps: 2 });
+      }
+      eyePair(g, 0.095, 0.06, 0.32, 0.021, 0x3a1e10);
       var ge = [[0, -0.055], [0.055, -0.03], [0.06, 0.045], [0.02, 0.065], [-0.02, 0.035]];
-      g.extrude(ge, 0.028, 0.22, 0.04, 0.05, [0, -0.3, 0], SK, { axis: 'z', bev: 0.008, curveX: -0.3 });
-      g.extrude(ge.map(function (p) { return [-p[0], p[1]]; }), 0.028, -0.22, 0.04, 0.05, [0, 0.3, 0], SK, { axis: 'z', bev: 0.008, curveX: -0.3 });
+      g.extrude(ge, 0.028, 0.23, 0.04, 0.05, [0, -0.3, 0], SK, { axis: 'z', bev: 0.008, curveX: -0.3 });
+      g.extrude(ge.map(function (p) { return [-p[0], p[1]]; }), 0.028, -0.23, 0.04, 0.05, [0, 0.3, 0], SK, { axis: 'z', bev: 0.008, curveX: -0.3 });
     },
     legs: { fx: 0.5, fy: 1.1, fz: 0.42, hy: 0.55, hz: -0.42, hx: 0.3, fLen: 1.1, hLen: 0.55, fr: [0.2, 0.16, 0.14], hr: [0.17, 0.13, 0.11], col: BL, two: true, kf: 0.5,
       shoulder: [0.2, 0.22, 0.2, 0, 0, 0], foot: { type: 'hand', col: FC, h: 0.1 }, haunch: [0.17, 0.2, 0.2] },
@@ -1421,22 +1515,36 @@ function earBall(g, x, y, z, r, col, inner) {
 // ---- RED PANDA
 (function () {
   var RU = 0xc9561f, DK = 0x2e1b16, WH = 0xf7eee2, CR = 0xe9cfae;
-  var bc = function (x, y, z, nx, ny) { return ny < -0.4 ? DK : RU; };
+  var bc = function (x, y, z, nx, ny) {
+    if (ny < -0.35) return DK;
+    return mixHex(RU, 0xe0803a, clamp(ny * 0.5, 0, 0.5) * (hash3(Math.floor(x * 20), Math.floor(y * 20), Math.floor(z * 20)) > 0.6 ? 1 : 0.3));
+  };
   QUADS.red_panda = {
     id: 'red_panda', cy: 0.34, hl: 0.5, hh: 0.2, height: 0.62, size: 0.45, walkA: 0.5, runA: 0.8, bend: 0.8, babyScale: 0.55, babyHead: 1.3, hopH: 0.6,
     body: function (g) {
-      g.loft([[-0.38, 0.1, 0.11, 0.35], [-0.18, 0.2, 0.185, 0.35], [0.02, 0.185, 0.18, 0.34], [0.22, 0.195, 0.19, 0.36], [0.38, 0.11, 0.12, 0.39]], { rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-0.42, 0.03, 0.04, 0.35], [-0.38, 0.1, 0.11, 0.35], [-0.18, 0.2, 0.185, 0.35], [0.02, 0.185, 0.18, 0.34], [0.22, 0.195, 0.19, 0.36], [0.36, 0.13, 0.13, 0.39], [0.42, 0.04, 0.05, 0.39]],
+        { rings: 16, seg: 12, cap0: true, cap1: true, ridge: 0.03 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 0.42, z: 0.34, len: 0.08, up: 0.2, r0: 0.13, r1: 0.12, col: RU },
     hpitch: 0.35, eatY: 0.08, eatNA: -0.3, eatHP: 0.8,
     head: function (g) {
-      var hc = function (x, y, z, nx, ny) { if (z > 0.12 && ny < 0.7) return WH; return RU; };
-      g.sph(0.125, 0.105, 0.11, 0, 0, 0.06, hc, { s: [8, 6] }); g.sph(0.055, 0.045, 0.06, 0, -0.035, 0.15, WH, { s: [6, 5] });
-      g.sph(0.026, 0.02, 0.02, 0, -0.025, 0.2, 0x1a1010, { s: [4, 3] });
-      g.sph(0.015, 0.04, 0.02, 0.06, -0.01, 0.14, DK, { s: [4, 3], rot: [0.3, 0, 0.3] }); g.sph(0.015, 0.04, 0.02, -0.06, -0.01, 0.14, DK, { s: [4, 3], rot: [0.3, 0, -0.3] });
-      eyePair(g, 0.06, 0.04, 0.13, 0.017);
+      var hc = function (x, y, z, nx, ny) {
+        var ax = abs(x);
+        if (z > 0.17) return y > -0.01 && ny > 0.5 ? mixHex(WH, RU, 0.3) : WH;
+        if (ax > 0.045 && ax < 0.065 && y < 0.03 && y > -0.07 && z > 0.07) return DK;
+        if (z > 0.0 && ax > 0.07 && y < 0.035) return WH;
+        return RU;
+      };
+      g.loft([[-0.08, 0.1, 0.09, 0.0], [0.04, 0.14, 0.11, 0.0], [0.12, 0.125, 0.095, -0.01], [0.18, 0.065, 0.055, -0.025], [0.23, 0.05, 0.042, -0.03], [0.26, 0.035, 0.03, -0.03]],
+        { rings: 12, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.026, 0.017, 0.016, 0, -0.026, 0.255, 0x1a1010, { s: [5, 4] });
+      for (var s = -1; s <= 1; s += 2) {
+        for (var r = 0; r < 3; r++) g.cone(0.04 - r * 0.006, 0.1 - r * 0.015, s * 0.12, -0.04 - r * 0.02, 0.02 - r * 0.02, WH, { seg: 5, rot: [0.1, 0, -s * (1.3 + r * 0.1)] });
+        g.sph(0.02, 0.014, 0.02, s * 0.058, 0.022, 0.12, DK, { s: [4, 3] });
+      }
+      eyePair(g, 0.066, 0.04, 0.11, 0.017);
     },
-    earAt: [0, 0.1, 0.02], ears: function (g) { earCone(g, 0.08, 0.1, 0.0, 0.05, 0.1, 0.2, RU, WH); earCone(g, -0.08, 0.1, 0.0, 0.05, 0.1, 0.2, RU, WH); },
+    earAt: [0, 0.1, 0.02], ears: function (g) { earCone(g, 0.085, 0.1, 0.0, 0.065, 0.1, 0.25, RU, WH); earCone(g, -0.085, 0.1, 0.0, 0.065, 0.1, 0.25, RU, WH); },
     legs: { fx: 0.1, fy: 0.22, fz: 0.2, hy: 0.22, hz: -0.2, hx: 0.1, fLen: 0.22, hLen: 0.22, fr: [0.055, 0.045, 0.04], hr: [0.06, 0.047, 0.04], col: DK, foot: { type: 'paw', col: DK, h: 0.04, pawCol: DK } },
     tail: { y: 0.36, z: -0.34, n: 3, len: 0.7, r0: 0.075, r1: 0.085, col: function (i, x, y, z) { return fract(-z * 7 + i * 0.5) < 0.5 ? RU : CR; }, up: -0.35, curl: -0.2, tip: function (g, sl) { tuft(g, -sl * 0.8, 0.085, 0.09, DK); } },
     fold: { roll: 0.0, hp: 0.9, hy: 0.7 }
@@ -1445,23 +1553,38 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- WOLF
 (function () {
-  var GR = 0x8e8f96, LT = 0xd3d0c8, DK = 0x56575f;
-  var bc = function (x, y, z, nx, ny) { if (ny < -0.35) return LT; return (ny > 0.5 ? DK : GR); };
+  var GR = 0x8e8f96, LT = 0xd3d0c8, DK = 0x56575f, BRN = 0x8a7a68;
+  var bc = function (x, y, z, nx, ny) {
+    if (ny < -0.35) return LT;
+    var n = hash3(Math.floor(x * 18), Math.floor(y * 14), Math.floor(z * 18)) > 0.7 ? 1.12 : 1;
+    var saddle = clamp((ny - 0.3) * 2, 0, 1) * clamp((0.5 - z) * 3, 0, 1);
+    return mixHex(shade(GR, n), DK, saddle * 0.8);
+  };
   QUADS.wolf = {
     id: 'wolf', cy: 0.74, hl: 0.8, hh: 0.27, height: 1.2, size: 0.85, walkA: 0.42, runA: 0.75, bend: 0.9, babyScale: 0.5, babyHead: 1.4,
     body: function (g) {
-      g.loft([[-0.68, 0.1, 0.13, 0.74], [-0.36, 0.22, 0.26, 0.73], [-0.04, 0.195, 0.23, 0.72], [0.32, 0.26, 0.31, 0.81], [0.64, 0.18, 0.22, 0.85]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-0.74, 0.03, 0.04, 0.74], [-0.68, 0.1, 0.13, 0.74], [-0.45, 0.2, 0.24, 0.76], [-0.12, 0.17, 0.2, 0.72], [0.15, 0.2, 0.27, 0.76], [0.42, 0.23, 0.3, 0.82], [0.58, 0.19, 0.25, 0.85], [0.66, 0.1, 0.13, 0.85], [0.7, 0.03, 0.04, 0.85]],
+        { rings: 22, seg: 14, cap0: true, cap1: true, ridge: 0.04 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
-    neck: { y: 0.88, z: 0.56, len: 0.3, up: 0.6, r0: 0.17, r1: 0.14, col: function (x, y, z, nx, ny) { return ny < -0.3 ? LT : GR; } },
+    neck: { y: 0.88, z: 0.56, len: 0.3, up: 0.6, r0: 0.17, r1: 0.14, col: function (x, y, z, nx, ny) { return ny < -0.3 ? LT : mixHex(GR, DK, 0.35); } },
     hpitch: 0.5, eatY: 0.15,
     head: function (g) {
-      var hc = function (x, y, z, nx, ny) { return (z > 0.2 && ny < 0.5) ? LT : (ny > 0.55 ? DK : GR); };
-      g.sph(0.14, 0.135, 0.17, 0, 0, 0.1, hc, { s: [8, 6] }); g.sph(0.075, 0.065, 0.18, 0, -0.045, 0.3, hc, { s: [7, 5] });
-      g.sph(0.04, 0.032, 0.03, 0, -0.03, 0.48, 0x151515, { s: [5, 4] });
-      g.sph(0.17, 0.07, 0.1, 0, -0.07, 0.05, LT, { s: [7, 5] });
-      eyePair(g, 0.08, 0.05, 0.2, 0.022, 0xd8a020);
+      var hc = function (x, y, z, nx, ny) {
+        if (z > 0.2 && ny < -0.15) return LT;
+        if (z > 0.2) return mixHex(GR, BRN, 0.4);
+        if (y < -0.04 && z > -0.02) return LT;
+        return ny > 0.55 ? DK : GR;
+      };
+      g.loft([[-0.08, 0.11, 0.12, 0.0], [0.06, 0.155, 0.15, 0.0], [0.17, 0.14, 0.125, 0.0], [0.24, 0.1, 0.085, -0.03], [0.36, 0.08, 0.072, -0.045], [0.44, 0.072, 0.063, -0.05], [0.49, 0.05, 0.042, -0.05]],
+        { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.04, 0.028, 0.026, 0, -0.025, 0.49, 0x151515, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) {
+        for (var r = 0; r < 3; r++) g.cone(0.045 - r * 0.007, 0.12 - r * 0.02, s * 0.1, -0.06 - r * 0.02, 0.0 - r * 0.04, LT, { seg: 5, rot: [0.3, 0, -s * (1.1 + r * 0.12)] });
+        g.tube([[s * 0.01, -0.055, 0.49], [s * 0.045, -0.08, 0.4], [s * 0.075, -0.07, 0.27]], 0.005, 0x2a2a2a, { seg: 4, steps: 2 });
+      }
+      eyePair(g, 0.082, 0.052, 0.175, 0.021, 0xd8a020);
     },
-    earAt: [0, 0.1, 0.0], ears: function (g) { earCone(g, 0.075, 0.19, -0.02, 0.055, 0.17, 0.1, GR, 0xd8b8b0); earCone(g, -0.075, 0.19, -0.02, 0.055, 0.17, 0.1, GR, 0xd8b8b0); },
+    earAt: [0, 0.1, 0.0], ears: function (g) { earCone(g, 0.075, 0.2, -0.02, 0.075, 0.2, 0.12, GR, 0xd8b8b0); earCone(g, -0.075, 0.2, -0.02, 0.075, 0.2, 0.12, GR, 0xd8b8b0); },
     legs: { fx: 0.11, fy: 0.54, fz: 0.4, hy: 0.52, hz: -0.46, hx: 0.12, fLen: 0.54, hLen: 0.52, fr: [0.07, 0.05, 0.042], hr: [0.08, 0.05, 0.042], haunch: [0.1, 0.16, 0.16], col: function (y) { return y < -0.35 ? LT : GR; },
       foot: { type: 'paw', col: 0x222222, h: 0.05, pawCol: LT } },
     tail: { y: 0.78, z: -0.66, n: 2, len: 0.85, r0: 0.05, r1: 0.09, col: function (i, x, y, z, nx, ny) { return ny > 0.4 ? DK : GR; }, up: -0.55, curl: -0.1, tip: function (g, sl) { tuft(g, -sl * 0.7, 0.08, 0.1, 0x2c2d33); } },
@@ -1472,21 +1595,35 @@ function earBall(g, x, y, z, r, col, inner) {
 // ---- BROWN BEAR
 (function () {
   var BR = 0x6d4a2e, LT = 0x8d6a47, DK = 0x4e3320;
-  var bc = function (x, y, z, nx, ny) { return hash3(Math.floor(x * 7), Math.floor(y * 7), Math.floor(z * 7)) > 0.8 ? DK : BR; };
+  var fur = function (x, y, z, ny) {
+    var h = hash3(Math.floor(x * 12), Math.floor(y * 10), Math.floor(z * 12));
+    var c = h > 0.78 ? DK : (h < 0.2 ? shade(BR, 1.12) : BR);
+    return mixHex(c, LT, clamp((ny - 0.35) * 1.2, 0, 0.5) * clamp(z + 0.2, 0, 1));
+  };
   QUADS.brown_bear = {
     id: 'brown_bear', cy: 0.95, hl: 0.9, hh: 0.5, height: 1.65, size: 1.3, walkA: 0.35, runA: 0.55, bend: 0.5, babyScale: 0.45, babyHead: 1.4, sitStates: ['eat'],
     body: function (g) {
-      // grizzly torso with prominent integrated muscular shoulder hump
-      g.loft([[-0.94, 0.24, 0.26, 0.9], [-0.48, 0.52, 0.5, 0.92], [0.0, 0.5, 0.52, 0.95], [0.42, 0.52, 0.68, 1.12], [0.85, 0.4, 0.44, 1.06], [1.0, 0.26, 0.28, 1.08]], { rings: 16, seg: 12, cap0: true, cap1: true, ridge: 0.1 }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-1.0, 0.05, 0.06, 0.9], [-0.94, 0.22, 0.25, 0.9], [-0.6, 0.5, 0.52, 0.92], [-0.15, 0.48, 0.5, 0.92], [0.18, 0.5, 0.58, 1.02], [0.45, 0.52, 0.66, 1.1], [0.72, 0.46, 0.55, 1.08], [0.9, 0.34, 0.4, 1.07], [1.0, 0.2, 0.24, 1.08], [1.05, 0.04, 0.05, 1.08]],
+        { rings: 24, seg: 16, cap0: true, cap1: true, ridge: 0.06 }, function (zc, ca, sa, x, y, z) { return fur(x, y, z, ca); });
     },
-    neck: { y: 1.12, z: 0.85, len: 0.25, up: -0.05, r0: 0.38, r1: 0.34, col: BR },
+    neck: { y: 1.12, z: 0.85, len: 0.25, up: -0.05, r0: 0.38, r1: 0.34, col: function (x, y, z, nx, ny) { return fur(x, y, z, ny); } },
     hpitch: 0.4, eatY: 0.2, eatNA: -0.5, eatHP: 0.8,
     head: function (g) {
-      g.sph(0.27, 0.26, 0.29, 0, 0, 0.1, BR, { s: [9, 7] }); g.sph(0.14, 0.12, 0.19, 0, -0.08, 0.32, LT, { s: [8, 6] });
-      g.sph(0.06, 0.045, 0.04, 0, -0.04, 0.5, 0x1a1210, { s: [5, 4] });
-      eyePair(g, 0.14, 0.08, 0.27, 0.026, 0x1a1008);
+      var hc = function (x, y, z, nx, ny) {
+        if (z > 0.5 && ny > 0.3) return 0x1e1612;
+        if (z > 0.3) return mixHex(BR, LT, 0.6);
+        return fur(x, y, z, ny);
+      };
+      g.loft([[-0.2, 0.2, 0.22, 0.04], [0.0, 0.27, 0.27, 0.04], [0.13, 0.26, 0.25, 0.02], [0.24, 0.17, 0.15, -0.03], [0.32, 0.14, 0.12, -0.07], [0.42, 0.12, 0.1, -0.095], [0.52, 0.105, 0.08, -0.1], [0.57, 0.07, 0.05, -0.1]],
+        { rings: 14, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.06, 0.04, 0.035, 0, -0.04, 0.565, 0x1a1210, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) {
+        for (var r = 0; r < 3; r++) g.cone(0.06 - r * 0.01, 0.15 - r * 0.025, s * 0.22, -0.06 - r * 0.04, 0.0 - r * 0.06, r === 0 ? BR : DK, { seg: 5, rot: [0.3, 0, -s * (1.2 + r * 0.1)] });
+        g.tube([[s * 0.01, -0.075, 0.565], [s * 0.05, -0.1, 0.5], [s * 0.1, -0.1, 0.38]], 0.006, 0x1a1210, { seg: 4, steps: 2 });
+      }
+      eyePair(g, 0.125, 0.085, 0.25, 0.024, 0x1a1008);
     },
-    earAt: [0, 0.2, 0.0], ears: function (g) { earBall(g, 0.19, 0.22, 0.0, 0.075, BR, DK); earBall(g, -0.19, 0.22, 0.0, 0.075, BR, DK); },
+    earAt: [0, 0.2, 0.0], ears: function (g) { earBall(g, 0.18, 0.24, -0.02, 0.075, BR, DK); earBall(g, -0.18, 0.24, -0.02, 0.075, BR, DK); },
     legs: { fx: 0.3, fy: 0.62, fz: 0.5, hy: 0.6, hz: -0.55, hx: 0.3, fLen: 0.62, hLen: 0.6, fr: [0.17, 0.13, 0.12], hr: [0.19, 0.14, 0.12], col: BR, haunch: [0.18, 0.22, 0.22],
       foot: { type: 'paw', col: 0xd8d0c0, h: 0.08, pawCol: DK, claws: true } },
     tail: { y: 0.95, z: -0.95, n: 1, len: 0.14, r0: 0.07, r1: 0.05, col: BR, up: -0.4 },
@@ -1497,23 +1634,29 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- POLAR BEAR
 (function () {
-  var WH = 0xf4f2ea, SH = 0xdedbd0;
-  var bc = function (x, y, z, nx, ny) { return ny < -0.3 ? SH : WH; };
+  var WH = 0xf4f2ea, SH = 0xdedbd0, CRM = 0xeee6cc;
+  var fur = function (x, y, z, ny) {
+    var h = hash3(Math.floor(x * 11), Math.floor(y * 9), Math.floor(z * 11));
+    return mixHex(ny < -0.3 ? SH : WH, CRM, (h > 0.7 ? 0.5 : 0.1) * clamp(ny + 0.6, 0, 1));
+  };
   QUADS.polar_bear = {
     id: 'polar_bear', cy: 0.9, hl: 1.0, hh: 0.5, height: 1.6, size: 1.35, walkA: 0.35, runA: 0.55, bend: 0.5, babyScale: 0.45, babyHead: 1.4, swimDrop: 0.65,
     body: function (g) {
-      // polar bear's sleek sloped shoulders & heavy hindquarters
-      g.loft([[-1.0, 0.24, 0.26, 0.88], [-0.52, 0.52, 0.52, 0.91], [0.0, 0.46, 0.49, 0.93], [0.48, 0.46, 0.51, 0.99], [0.95, 0.32, 0.35, 1.04]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-1.06, 0.05, 0.06, 0.88], [-1.0, 0.22, 0.25, 0.88], [-0.6, 0.5, 0.52, 0.9], [-0.1, 0.46, 0.49, 0.92], [0.4, 0.46, 0.51, 0.97], [0.7, 0.41, 0.46, 1.01], [0.92, 0.32, 0.36, 1.04], [1.0, 0.18, 0.22, 1.05], [1.05, 0.04, 0.05, 1.05]],
+        { rings: 24, seg: 16, cap0: true, cap1: true, ridge: 0.03 }, function (zc, ca, sa, x, y, z) { return fur(x, y, z, ca); });
     },
-    neck: { y: 1.1, z: 0.9, len: 0.4, up: 0.15, r0: 0.3, r1: 0.25, col: WH },
+    neck: { y: 1.1, z: 0.9, len: 0.4, up: 0.15, r0: 0.3, r1: 0.25, col: function (x, y, z, nx, ny) { return fur(x, y, z, ny); } },
     hpitch: 0.4, eatY: 0.2, eatNA: -0.5, eatHP: 0.8,
     head: function (g) {
-      g.sph(0.21, 0.2, 0.24, 0, 0, 0.1, WH, { s: [9, 7] }); g.sph(0.11, 0.1, 0.22, 0, -0.06, 0.33, WH, { s: [8, 6] });
-      g.sph(0.055, 0.04, 0.035, 0, -0.02, 0.54, 0x1a1a1a, { s: [5, 4] });
-      eyePair(g, 0.11, 0.06, 0.25, 0.022, 0x111111);
+      var hc = function (x, y, z, nx, ny) { return z > 0.5 && ny > 0.4 ? 0x2a2a2a : fur(x, y, z, ny); };
+      g.loft([[-0.2, 0.17, 0.18, 0.02], [0.05, 0.21, 0.2, 0.0], [0.2, 0.17, 0.16, -0.03], [0.34, 0.125, 0.115, -0.065], [0.46, 0.105, 0.09, -0.08], [0.55, 0.085, 0.065, -0.075], [0.59, 0.06, 0.045, -0.07]],
+        { rings: 14, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.058, 0.04, 0.035, 0, -0.025, 0.585, 0x1a1a1a, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) g.tube([[s * 0.01, -0.065, 0.585], [s * 0.05, -0.095, 0.5], [s * 0.09, -0.09, 0.38]], 0.005, 0x2a2224, { seg: 4, steps: 2 });
+      eyePair(g, 0.115, 0.06, 0.26, 0.021, 0x111111);
     },
-    earAt: [0, 0.15, 0.0], ears: function (g) { earBall(g, 0.14, 0.17, 0.0, 0.06, WH, 0xe8c8c0); earBall(g, -0.14, 0.17, 0.0, 0.06, WH, 0xe8c8c0); },
-    legs: { fx: 0.28, fy: 0.62, fz: 0.52, hy: 0.6, hz: -0.58, hx: 0.29, fLen: 0.62, hLen: 0.6, fr: [0.17, 0.13, 0.12], hr: [0.18, 0.14, 0.12], col: WH, haunch: [0.16, 0.2, 0.22],
+    earAt: [0, 0.15, 0.0], ears: function (g) { earBall(g, 0.15, 0.18, -0.02, 0.06, WH, 0xe8c8c0); earBall(g, -0.15, 0.18, -0.02, 0.06, WH, 0xe8c8c0); },
+    legs: { fx: 0.28, fy: 0.62, fz: 0.52, hy: 0.6, hz: -0.58, hx: 0.29, fLen: 0.62, hLen: 0.6, fr: [0.17, 0.13, 0.12], hr: [0.18, 0.14, 0.12], col: function (y, ny, front, x, z) { return fur(x || 0, y, z || 0, ny); }, haunch: [0.16, 0.2, 0.22],
       foot: { type: 'paw', col: 0x2a2a2a, h: 0.08, pawCol: SH, claws: true } },
     tail: { y: 0.92, z: -1.0, n: 1, len: 0.1, r0: 0.06, r1: 0.04, col: WH, up: -0.3 },
     fold: { roll: 0.12, hp: 0.8, hy: 0.7 }
@@ -1523,20 +1666,33 @@ function earBall(g, x, y, z, r, col, inner) {
 // ---- CAMEL
 (function () {
   var TN = 0xc9995a, DK = 0x9a7040, LT = 0xdcb67e;
-  var bc = function (x, y, z, nx, ny) { return ny < -0.5 ? LT : TN; };
+  var coat = function (x, y, z, ny) {
+    var c = ny < -0.5 ? LT : (hash3(Math.floor(x * 10), Math.floor(y * 10), Math.floor(z * 10)) > 0.8 ? shade(TN, 0.92) : TN);
+    return mixHex(c, DK, clamp((y - 2.0) * 3, 0, 1) * clamp(ny * 1.2, 0, 0.8));
+  };
   QUADS.camel = {
     id: 'camel', cy: 1.58, hl: 1.2, hh: 0.5, height: 2.7, size: 1.9, walkA: 0.33, runA: 0.5, bend: 0.6, babyScale: 0.5, babyHead: 1.35, reach: 0.25, eatY: 0.3,
     body: function (g) {
-      // sculpted camel body with integrated tall hump & deep chest
-      g.loft([[-1.06, 0.2, 0.26, 1.56], [-0.62, 0.41, 0.48, 1.6], [-0.08, 0.42, 0.72, 1.82], [0.48, 0.41, 0.52, 1.62], [0.94, 0.28, 0.36, 1.68]], { rings: 18, seg: 14, cap0: true, cap1: true, ridge: 0.18 }, function (zc, ca, sa, x, y, z) { return (y > 2.15 && abs(z + 0.05) < 0.42) ? DK : bc(x, y, z, sa, ca); });
+      g.loft([[-1.12, 0.05, 0.07, 1.56], [-1.06, 0.2, 0.26, 1.56], [-0.75, 0.38, 0.46, 1.6], [-0.45, 0.4, 0.52, 1.7], [-0.2, 0.3, 0.64, 1.9], [0.05, 0.29, 0.6, 1.93], [0.25, 0.36, 0.5, 1.72], [0.5, 0.41, 0.52, 1.62], [0.8, 0.31, 0.4, 1.64], [0.96, 0.22, 0.3, 1.68], [1.02, 0.05, 0.07, 1.68]],
+        { rings: 26, seg: 16, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return coat(x, y, z, ca); });
     },
-    neck: { y: 1.82, z: 0.8, len: 1.05, up: 0.85, r0: 0.25, r1: 0.14, col: TN },
+    neck: { y: 1.82, z: 0.8, len: 1.05, up: 0.85, r0: 0.25, r1: 0.14, col: function (x, y, z, nx, ny) { return ny < -0.5 ? LT : TN; } },
     hpitch: 0.65, eatY: 0.3,
     head: function (g) {
-      g.sph(0.135, 0.14, 0.2, 0, 0, 0.1, TN, { s: [8, 6] }); g.sph(0.105, 0.095, 0.17, 0, -0.065, 0.3, LT, { s: [7, 5] }); g.sph(0.1, 0.07, 0.06, 0, -0.08, 0.44, 0xb89870, { s: [6, 4] });
-      g.sph(0.02, 0.02, 0.02, 0.04, -0.02, 0.47, 0x333333, { s: [4, 3] }); g.sph(0.02, 0.02, 0.02, -0.04, -0.02, 0.47, 0x333333, { s: [4, 3] });
-      g.sph(0.15, 0.04, 0.05, 0, 0.1, 0.2, DK, { s: [6, 4] });
-      eyePair(g, 0.12, 0.07, 0.18, 0.03, 0x2a1a0a);
+      var hc = function (x, y, z, nx, ny) {
+        if (z > 0.42) return ny < 0.3 ? 0xb89870 : 0xa88860;
+        return z > 0.22 && ny < -0.3 ? LT : (y > 0.07 && z < 0.22 && abs(x) < 0.1 ? DK : TN);
+      };
+      g.loft([[-0.1, 0.12, 0.13, 0.0], [0.07, 0.15, 0.15, 0.0], [0.2, 0.115, 0.115, -0.02], [0.32, 0.085, 0.09, -0.055], [0.46, 0.088, 0.085, -0.085], [0.54, 0.082, 0.072, -0.095], [0.59, 0.055, 0.05, -0.095]],
+        { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.06, 0.03, 0.14, 0, 0.12, 0.18, DK, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) {
+        g.sph(0.045, 0.034, 0.07, s * 0.12, 0.1, 0.14, function (x, y, z) { return hc(x, y, z, 0, 1); }, { s: [6, 4] });
+        g.sph(0.018, 0.012, 0.022, s * 0.032, -0.025, 0.575, 0x2a1c10, { s: [4, 3] });
+      }
+      g.tube([[0, -0.1, 0.59], [0, -0.115, 0.55], [0, -0.1, 0.5]], 0.005, 0x4a3420, { seg: 4, steps: 2 });
+      g.cone(0.04, 0.12, 0, -0.14, 0.14, DK, { seg: 5, rot: [-2.7, 0, 0] });
+      eyePair(g, 0.125, 0.065, 0.18, 0.027, 0x2a1a0a);
     },
     earAt: [0, 0.1, 0.0], ears: function (g) { earBall(g, 0.1, 0.18, -0.03, 0.05, TN, 0xd9a0a0); earBall(g, -0.1, 0.18, -0.03, 0.05, TN, 0xd9a0a0); },
     legs: { fx: 0.2, fy: 1.2, fz: 0.55, hy: 1.2, hz: -0.58, hx: 0.21, fLen: 1.2, hLen: 1.2, fr: [0.12, 0.085, 0.065], hr: [0.14, 0.09, 0.065], haunch: [0.17, 0.28, 0.24],
@@ -1548,22 +1704,33 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- MEERKAT
 (function () {
-  var SD = 0xcaa774, LT = 0xe8d6b0, DK = 0x3b2a20;
-  var bc = function (x, y, z, nx, ny) { if (ny < -0.1 || (ny < 0.3 && z > 0)) return LT; return fract(z * 22 + y * 5) < 0.2 ? 0x9a7c52 : SD; };
+  var SD = 0xcaa774, LT = 0xe8d6b0, DK = 0x3b2a20, BD = 0x7a6a5a;
+  var bc = function (x, y, z, nx, ny) {
+    if (ny < -0.45 && z > -0.05) return BD;
+    if (ny < -0.1 || (ny < 0.3 && z > 0.1)) return LT;
+    return fract(z * 20 + sin(y * 14 + x * 8) * 0.15) < 0.22 && ny > 0.1 ? 0x8a6a46 : SD;
+  };
   QUADS.meerkat = {
     id: 'meerkat', cy: 0.25, hl: 0.35, hh: 0.14, height: 0.55, size: 0.35, walkA: 0.55, runA: 0.9, bend: 1.0, babyScale: 0.6, babyHead: 1.3, sitStates: ['idle', 'eat', 'drink', 'play'], hopH: 0.5,
     body: function (g) {
-      g.loft([[-0.28, 0.06, 0.07, 0.25], [-0.12, 0.125, 0.13, 0.25], [0.02, 0.11, 0.12, 0.255], [0.16, 0.115, 0.128, 0.27], [0.28, 0.075, 0.085, 0.29]], { rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft([[-0.31, 0.02, 0.03, 0.25], [-0.28, 0.06, 0.07, 0.25], [-0.12, 0.125, 0.13, 0.25], [0.02, 0.105, 0.115, 0.255], [0.16, 0.115, 0.128, 0.27], [0.26, 0.08, 0.09, 0.29], [0.31, 0.02, 0.03, 0.29]],
+        { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 0.31, z: 0.22, len: 0.07, up: 0.3, r0: 0.08, r1: 0.075, col: SD },
     hpitch: 0.3, eatY: 0.05, eatNA: -0.3, eatHP: 0.8,
     head: function (g) {
-      g.sph(0.085, 0.075, 0.085, 0, 0, 0.05, SD, { s: [8, 6] }); g.sph(0.04, 0.035, 0.07, 0, -0.025, 0.14, LT, { s: [6, 5] });
-      g.sph(0.018, 0.015, 0.015, 0, -0.01, 0.2, 0x1a1210, { s: [4, 3] });
-      g.sph(0.03, 0.04, 0.02, 0.05, 0.02, 0.1, DK, { s: [5, 4] }); g.sph(0.03, 0.04, 0.02, -0.05, 0.02, 0.1, DK, { s: [5, 4] });
-      eyePair(g, 0.05, 0.025, 0.115, 0.015, 0x050505);
+      var hc = function (x, y, z, nx, ny) {
+        var ax = abs(x), u = (ax - 0.05) * 1.0, v = (y - 0.012) * 1.2;
+        if (z > 0.03 && z < 0.12 && u * u / 0.0014 + v * v / 0.0010 < 1) return DK;
+        if (z > 0.12 && ny > 0.4) return mixHex(SD, DK, 0.35);
+        return z > 0.08 && ny < 0.2 ? LT : (ny > 0.55 && z < 0.06 ? 0xb8935f : SD);
+      };
+      g.loft([[-0.05, 0.08, 0.075, 0.0], [0.04, 0.1, 0.09, 0.0], [0.1, 0.078, 0.067, -0.01], [0.15, 0.048, 0.042, -0.02], [0.19, 0.032, 0.026, -0.024], [0.21, 0.016, 0.013, -0.024]],
+        { rings: 12, seg: 10, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.017, 0.012, 0.012, 0, -0.012, 0.205, 0x1a1210, { s: [4, 3] });
+      eyePair(g, 0.056, 0.024, 0.085, 0.015, 0x050505);
     },
-    earAt: [0, 0.05, 0.0], ears: function (g) { earBall(g, 0.08, 0.04, 0.0, 0.025, DK); earBall(g, -0.08, 0.04, 0.0, 0.025, DK); },
+    earAt: [0, 0.05, 0.0], ears: function (g) { earBall(g, 0.085, 0.04, -0.005, 0.027, DK); earBall(g, -0.085, 0.04, -0.005, 0.027, DK); },
     legs: { fx: 0.075, fy: 0.17, fz: 0.15, hy: 0.17, hz: -0.16, hx: 0.08, fLen: 0.17, hLen: 0.17, fr: [0.04, 0.032, 0.028], hr: [0.05, 0.036, 0.03], col: SD, haunch: [0.06, 0.08, 0.09],
       foot: { type: 'paw', col: 0x3a2a20, h: 0.03, pawCol: SD } },
     tail: { y: 0.2, z: -0.3, n: 2, len: 0.42, r0: 0.04, r1: 0.022, col: SD, up: -0.45, curl: 0.0, tip: function (g, sl) { tuft(g, -sl, 0.024, 0.05, DK); } },
