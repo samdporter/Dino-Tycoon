@@ -2619,6 +2619,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!isFinite(d) || d < 0.3) { a.speed = 0; a.detours = 0; return true; }
       } else { a.speed = 0; a.detours = 0; return true; }
     }
+    // separateAnimals runs after this move and can undo it every frame, so judge progress over a window of frames
+    if (a.progX !== gx || a.progZ !== gz) { a.progX = gx; a.progZ = gz; a.progD = d; a.progT = 0; }
+    a.progT += dt;
+    if (a.progT > 2.5) {
+      if (a.progD - d < spd * a.progT * 0.2) { a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.speed = 0; a.progX = undefined; return true; }
+      a.progD = d; a.progT = 0;
+    }
     var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
     var vx = dx / d * step, vz = dz / d * step;
     var okX = Math.abs(dx) > 1e-4 && canGo(a, ox, oz, ox + vx, oz);
