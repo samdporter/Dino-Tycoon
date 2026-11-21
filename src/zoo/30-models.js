@@ -731,8 +731,8 @@ function monotone(K) { for (var i = 1; i < K.length; i++) if (K[i][0] < K[i - 1]
 // egg-shaped haunch/shoulder muscle that blends from the body into the leg; m = [w, h, d, ox, oy, oz]
 function legMass(g, m, hind, maxS, rEnd, col, seg) {
   var w = m[0], h = m[1], d = m[2], oy = m[4] || (hind ? -h * 0.4 : 0), oz = m[5] || (hind ? -d * 0.3 : 0);
-  var a = -oy - h * 1.3, b = Math.max(a + 0.1, Math.min(-oy + h * 1.2, maxS)), L = b - a;
-  g.loft(monotone([[a, w * 0.2, d * 0.25, oz], [a + L * 0.12, w * 0.5, d * 0.65, oz], [a + L * 0.28, w * 0.8, d * 0.95, oz], [a + L * 0.45, w * 0.9, d, oz], [a + L * 0.68, lerp(w, rEnd, 0.5) * 0.9, lerp(d, rEnd, 0.4), oz * 0.5], [b, rEnd, rEnd, 0]]),
+  var a = -oy - h * 1.3, b = Math.max(a + 0.1, Math.min(-oy + h * 1.7, maxS)), L = b - a;
+  g.loft(monotone([[a, w * 0.2, d * 0.25, oz], [a + L * 0.12, w * 0.42, d * 0.7, oz], [a + L * 0.3, w * 0.65, d, oz], [a + L * 0.5, w * 0.68, d * 0.95, oz * 0.8], [a + L * 0.72, lerp(w, rEnd, 0.5) * 0.7, lerp(d, rEnd, 0.4) * 0.9, oz * 0.4], [b, rEnd, rEnd, 0]]),
     { down: true, ox: m[3] || 0, rings: 7, seg: seg, cap0: true }, col);
 }
 // hoof capsule with coronet band, paw with toes/pad/claws, columnar foot, toes, hand. y0 = ground level, fr = pastern radius
@@ -784,8 +784,8 @@ function legPieces(spec, front) {
     addFoot(gU, ft, -len, r2, fh, colB || 0x888888);
   } else {
     var rm = lerp(r0, r1, 0.35), rn = lerp(r0, r1, 0.7);
-    gU.loft(monotone([[-r0 * 0.6, r0 * 0.7, r0 * 0.75, 0], [0, r0 * 1.05, r0 * 1.1, 0], [up * 0.22, rm * 1.1, rm * 1.18, hind ? r0 * 0.1 : 0], [up * 0.55, rn, rn * 1.05, hind ? -r1 * 0.1 : 0], [up * 0.84, r1 * 0.96, r1 * 0.98, 0],
-      [up * 0.97, r1 * bmp(1.06), r1 * bmp(1.2), kd * r1 * bk], [up + r1 * 0.45, r1 * 0.8, r1 * 0.95, kd * r1 * 0.6 * bk], [up + r1 * 0.8, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk]]),
+    gU.loft(monotone([[-r0 * 0.6, r0 * 0.7, r0 * 0.75, 0], [0, r0 * 1.05, r0 * 1.1, 0], [up * 0.22, rm * 1.1, rm * 1.18, hind ? r0 * 0.1 : 0], [up * 0.55, rn, rn * 1.05, hind ? -r1 * 0.1 : 0], [up * 0.88, r1 * 0.96, r1 * 0.98, 0],
+      [up, r1 * bmp(1.05), r1 * bmp(1.14), kd * r1 * bk], [up + r1 * 0.4, r1 * 0.95, r1 * 1.05, kd * r1 * 0.8 * bk], [up + r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk]]),
       { down: true, rings: rg, seg: seg, cap0: true, cap1: true }, col);
     gL = B();
     if (ft.type === 'boot') {
@@ -797,9 +797,10 @@ function legPieces(spec, front) {
       gL.bevelBox(r2 * 1.1, fh * 0.55, r2 * 0.45, fh * 0.12, 0, -lo + fh * 1.15, r2 * 1.28, gCol);
     } else {
       var fl = Math.max(lo * 0.62, lo - fh);
-      gL.loft(monotone([[-r1 * 0.95, r1 * 0.25, r1 * 0.3, kd * r1 * 0.4 * bk], [-r1 * 0.6, r1 * 0.62, r1 * 0.72, kd * r1 * 0.5 * bk], [0, r1 * bmp(1.05), r1 * bmp(1.22), kd * r1 * bk], [lo * 0.16, r1 * 0.85, r1 * 0.95, kd * r1 * 0.35 * bk], [lo * 0.5, lerp(r1, r2, 0.75) * 0.95, lerp(r1, r2, 0.75) * 0.95, 0],
+      var colL = lg.hipY && typeof lg.col === 'function' ? function (zc, ca, sa, x, y, z) { return lg.col(y - up, 0, front, x, z); } : col;
+      gL.loft(monotone([[-r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk], [-r1 * 0.4, r1 * 0.95, r1 * 1.05, kd * r1 * 0.8 * bk], [0, r1 * bmp(1.05), r1 * bmp(1.14), kd * r1 * bk], [lo * 0.25, lerp(r1, r2, 0.3) * 0.95, lerp(r1, r2, 0.3) * 1.0, kd * r1 * 0.25 * bk], [lo * 0.5, lerp(r1, r2, 0.75) * 0.95, lerp(r1, r2, 0.75) * 0.95, 0],
         [fl - r2 * 1.0, r2 * 0.95, r2 * 0.97, 0], [fl - r2 * 0.35, r2 * fb, r2 * fb * 1.07, -r2 * 0.12 * bk], [fl + fh * 0.1, r2 * 0.98, r2, 0], [Math.max(fl + fh * 0.2, lo - fh * 0.3), r2, r2, 0]]),
-        { down: true, rings: rg, seg: seg, cap0: true, cap1: true }, col);
+        { down: true, rings: rg, seg: seg, cap0: true, cap1: true }, colL);
       addFoot(gL, ft, -lo, r2, fh, colB || 0x888888);
     }
   }
@@ -1153,7 +1154,7 @@ function earBall(g, x, y, z, r, col, inner) {
     },
     earAt: [0, 0.1, 0.0], ears: function (g) { earCone(g, 0.075, 0.2, 0.0, 0.05, 0.17, 0.15, K, 0xf0b8b8); earCone(g, -0.075, 0.2, 0.0, 0.05, 0.17, 0.15, K, 0xf0b8b8); },
     legs: { fx: 0.17, fy: 0.84, fz: 0.5, hy: 0.86, hz: -0.6, hx: 0.18, fLen: 0.84, hLen: 0.86, fr: [0.085, 0.06, 0.045], hr: [0.1, 0.065, 0.045], haunch: [0.15, 0.22, 0.2],
-      hs: 8, col: function (y, ny, front, x, z) { return y > -0.3 ? (fract((z + (front ? 0.5 : -0.6) + 0.35 * (y + 0.3)) * 5.5) < 0.5 ? K : W) : ((y > -0.78 && fract(y * 8) < 0.5) ? K : (y > -0.78 ? W : (y > -0.82 ? W : K))); }, foot: { type: 'hoof', col: 0x2a2a2a, h: 0.07 } },
+      hs: 8, hipY: true, col: function (y, ny, front, x, z) { return y > -0.3 ? (fract((z + (front ? 0.5 : -0.6) + 0.35 * (y + 0.3)) * 5.5) < 0.5 ? K : W) : (y < -0.7 ? K : (fract(y * 9) < 0.55 ? K : W)); }, foot: { type: 'hoof', col: 0x2a2a2a, h: 0.07 } },
     tail: { y: 1.14, z: -0.92, n: 2, len: 0.8, r0: 0.04, r1: 0.03, col: K, up: -1.0, curl: -0.15, tip: function (g, sl) { tuft(g, -sl * 0.9, 0.05, 0.13, K); } },
     fold: { roll: 0.0 }
   };
@@ -1212,25 +1213,25 @@ function earBall(g, x, y, z, r, col, inner) {
       g.loft([[-0.88, 0.12, 0.15, 0.85], [-0.55, 0.3, 0.34, 0.86], [-0.1, 0.27, 0.31, 0.83], [0.35, 0.35, 0.4, 0.92], [0.76, 0.28, 0.33, 0.96], [0.9, 0.15, 0.18, 0.98]], { rings: 16, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
       if (sex !== 'f') {
         var mc0 = function (zc, ca, sa, x, y, z) {
-          var h = hash3(Math.floor(x * 12), Math.floor(y * 12), Math.floor(z * 12)), t = clamp((z - 0.14) / 0.45, 0, 1);
-          return mixHex(TAN, h > 0.55 ? 0x8a5a2a : MANE, t);
+          var h = hash3(Math.floor(x * 12), Math.floor(y * 12), Math.floor(z * 12)), t = clamp((z - 0.28) / 0.6, 0, 1) * clamp((y - 0.6) / 0.3, 0, 1);
+          return mixHex(TAN, h > 0.55 ? 0x8a5a2a : MANE, t * t * (3 - 2 * t));
         };
-        g.loft([[0.14, 0.3, 0.33, 0.89], [0.46, 0.44, 0.47, 0.92], [0.74, 0.4, 0.42, 0.96], [0.88, 0.25, 0.26, 0.98]], { rings: 10, seg: 12, ridge: 0.1, cap0: true, cap1: true }, mc0);
+        g.loft([[0.04, 0.26, 0.3, 0.88], [0.24, 0.31, 0.35, 0.89], [0.36, 0.37, 0.41, 0.91], [0.5, 0.44, 0.47, 0.92], [0.74, 0.4, 0.42, 0.96], [0.88, 0.25, 0.26, 0.98]], { rings: 10, seg: 12, ridge: 0.1, cap0: true, cap1: true }, mc0);
       }
     },
     neck: { y: 1.02, z: 0.62, len: 0.3, up: 0.5, r0: 0.22, r1: 0.19, col: TAN },
     hpitch: 0.25, eatY: 0.2,
     head: function (g, sex) {
       var lion = sex !== 'f';
-      g.loft([[-0.1, 0.17, 0.17, 0.01], [0.0, 0.2, 0.19, 0.0], [0.15, 0.175, 0.15, -0.02], [0.27, 0.15, 0.115, -0.055], [0.36, 0.135, 0.095, -0.068], [0.42, 0.105, 0.08, -0.07]], { rings: 10, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.22 && ca < 0.15 ? LT : TAN; });
-      g.sph(0.07, 0.045, 0.04, 0, -0.01, 0.415, 0x3a2220, { s: [7, 5] }); // big nose pad
-      g.sph(0.06, 0.055, 0.075, 0.058, -0.07, 0.32, LT, { s: [6, 4] }); g.sph(0.06, 0.055, 0.075, -0.058, -0.07, 0.32, LT, { s: [6, 4] }); // whisker pads
-      g.sph(0.085, 0.06, 0.09, 0, -0.12, 0.27, LT, { s: [7, 5] }); // deep chin
-      g.limb(0, -0.045, 0.4, 0, -0.09, 0.34, 0.008, 0.008, 0x3a2220, { seg: 4 });
+      g.loft([[-0.1, 0.17, 0.17, 0.01], [0.0, 0.2, 0.19, 0.0], [0.15, 0.18, 0.155, -0.01], [0.26, 0.16, 0.13, -0.03], [0.34, 0.15, 0.125, -0.045], [0.385, 0.135, 0.115, -0.05], [0.405, 0.1, 0.08, -0.05]], { rings: 10, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.22 && ca < 0.15 ? LT : TAN; });
+      g.sph(0.09, 0.04, 0.03, 0, 0.025, 0.393, 0x3a2220, { s: [7, 5] }); // wide flat nose pad
+      g.sph(0.065, 0.06, 0.07, 0.065, -0.05, 0.3, LT, { s: [6, 4] }); g.sph(0.065, 0.06, 0.07, -0.065, -0.05, 0.3, LT, { s: [6, 4] }); // whisker pads
+      g.sph(0.1, 0.075, 0.085, 0, -0.115, 0.3, LT, { s: [7, 5] }); // deep chin
+      g.limb(0, -0.02, 0.4, 0, -0.08, 0.36, 0.008, 0.008, 0x3a2220, { seg: 4 });
       g.sph(0.045, 0.014, 0.014, 0.06, 0.02, 0.15, 0x5a3a1c, { s: [4, 3] }); g.sph(0.045, 0.014, 0.014, -0.06, 0.02, 0.15, 0x5a3a1c, { s: [4, 3] });
-      eyePair(g, 0.125, 0.06, 0.2, 0.026, 0x4a2a08);
+      eyePair(g, 0.135, 0.06, 0.2, 0.026, 0x4a2a08);
       if (lion) {
-        var mc = function (x, y, z) { var h = hash3(Math.floor(x * 14), Math.floor(y * 14), Math.floor(z * 14)), t = clamp((0.1 - z) / 0.4, 0, 1); return mixHex(h > 0.6 ? 0x8a5a2a : MANE, MANE2, t * 0.12); };
+        var mc = function (x, y, z) { var h = hash3(Math.floor(x * 14), Math.floor(y * 14), Math.floor(z * 14)), t = clamp((0.1 - z) / 0.4, 0, 1); return mixHex(h > 0.6 ? 0x8a5a2a : MANE, TAN, t * 0.5); };
         g.loft([[-0.32, 0.3, 0.32, -0.06], [-0.14, 0.44, 0.46, -0.06], [-0.02, 0.43, 0.45, -0.06], [0.06, 0.37, 0.38, -0.05], [0.12, 0.3, 0.3, -0.05], [0.16, 0.2, 0.19, -0.05], [0.19, 0.14, 0.12, -0.04]], { rings: 10, seg: 14, cap0: true, superPow: 0.9 }, function (zc, ca, sa, x, y, z) { return mc(x, y, z); });
         var ml;
         for (ml = 0; ml < 26; ml++) { // clumped locks in two layers, rounded tips
