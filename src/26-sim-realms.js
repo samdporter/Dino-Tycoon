@@ -361,6 +361,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (kind === 'tank' && enc.filter === 'off') return 'The filtration plant has no power';
     }
     var cmp = C.compatible(enc, sp.id); if (cmp) return cmp;
+    var am = C.animalMetrics(sp);
+    if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am.minSpan) return 'Enclosure is too narrow for ' + nm + ' (needs at least ' + am.minSpan + '×' + am.minSpan + ' open tiles)';
     var cnt = 0, k; for (k = 0; k < enc.animals.length; k++) if (RT().aById.get(enc.animals[k]).species === sp.id) cnt++;
     for (k = 0; k < S().research.eggs.length; k++) { var eg = S().research.eggs[k]; if (eg.species === sp.id && S().tileEnc[eg.i + eg.j * N] === enc.id) cnt++; }
     var roomNeed = rl === 'sea' ? sp.space * n.depth * 0.5 : sp.space * 0.5, have = rl === 'sea' ? (enc.vol || enc.area) / (cnt + 1) : enc.area / (cnt + 1);
@@ -641,6 +643,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (depth < 0.85) iss.push('Needs deeper water (about ' + metres(nd.depth) + ' m, this is ' + metres(enc.depth || 0.5) + ' m)');
       var volPer = (enc.vol || area) / n, room = clamp(volPer / (sp.space * nd.depth), 0, 1);
       if (room < 0.8) iss.push(room < 0.5 ? 'Needs far more water (volume per animal)' : 'Needs more water volume per animal');
+      var am = C.animalMetrics(sp);
+      if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am.minSpan) {
+        room *= clamp(enc.inscribedSpan / am.minSpan, 0.25, 1);
+        iss.push('Enclosure is too narrow (needs at least ' + am.minSpan + '×' + am.minSpan + ' wide)');
+      }
       var water = 1, q = enc.wq === undefined ? 1 : enc.wq;
       if (!enc.salt && !nd.fresh) { water = 0.15; iss.push('Fresh water: needs salt water'); }
       if (enc.kind === 'tank') {
@@ -665,6 +672,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (hs < 0.85) iss.push('The dome is too low (about ' + metres(nd.needH) + ' m wanted)');
       var rm = clamp((area / n) / sp.space, 0, 1);
       if (rm < 0.8) iss.push(rm < 0.5 ? 'Needs a much bigger aviary' : 'Needs a bigger aviary');
+      var am2 = C.animalMetrics(sp);
+      if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am2.minSpan) {
+        rm *= clamp(enc.inscribedSpan / am2.minSpan, 0.25, 1);
+        iss.push('Enclosure is too narrow (needs at least ' + am2.minSpan + '×' + am2.minSpan + ' wide)');
+      }
       var perches = (el.perch ? el.perch.length : 0) + (el.rocks || 0) * 0.8 + (el.trees || 0) * 0.5 + (E.cliffs || 0) * 0.3, needP = Math.max(2, n + 1);
       var perch = clamp(perches / needP, 0, 1); if (perch < 0.7) iss.push('Needs perches: crags, poles, rocks or cliffs');
       var wN = 1, wW = 0;
@@ -698,15 +710,55 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ============================================================ movement of sea and air animals
   function inEnc(enc, x, z) { return S().tileEnc[tileOf(x, z)] === enc.id; }
   function pickTile(enc, a, near) {
-    var tl = enc.tiles, s = S(), k;
-    for (k = 0; k < 8; k++) {
-      var t = tl[Math.floor(rng.next() * tl.length)];
-      if (near) { var dx = C.cxOf(t) - a.x, dz = C.czOf(t) - a.z; if (k < 6 && dx * dx + dz * dz > near * near) continue; }
-      return t;
+    var tl = enc.tiles, rt = RT(), k, n = tl.length;
+    if (!n) return 0;
+    var sp = C.SP()[a.species], m = sp ? C.animalMetrics(sp, a) : null;
+    var needClear = m ? Math.min(m.prefClear, enc.maxWallDist || 0) : 0;
+    var best = -1, bestScore = -1;
+    for (k = 0; k < 12; k++) {
+      var t = tl[Math.floor(rng.next() * n)];
+      var cd = rt.clearDist ? rt.clearDist[t] : 0, wd = rt.wallDist ? rt.wallDist[t] : 0;
+      var score = cd * 2 + wd;
+      if (near && k < 7) {
+        var dx = C.cxOf(t) - a.x, dz = C.czOf(t) - a.z;
+        if (dx * dx + dz * dz > near * near) {
+          if (best < 0 || score > bestScore) { best = t; bestScore = score; }
+          continue;
+        }
+      }
+      if (cd >= needClear) return t;
+      if (k >= 9 && wd >= needClear) return t;
+      if (score > bestScore) { best = t; bestScore = score; }
     }
-    return tl[Math.floor(rng.next() * tl.length)];
+    if (needClear > 0 && best >= 0 && (rt.clearDist ? rt.clearDist[best] : 0) < needClear) {
+      var pool = [], maxC = -1;
+      for (k = 0; k < n; k++) {
+        var qt = tl[k], qd = rt.clearDist ? rt.clearDist[qt] : 0;
+        if (qd >= needClear) pool.push(qt);
+        else if (qd > maxC) maxC = qd;
+      }
+      if (pool.length) return pool[Math.floor(rng.next() * pool.length)];
+      if (maxC > (rt.clearDist ? rt.clearDist[best] : 0)) {
+        var deep = [];
+        for (k = 0; k < n; k++) if ((rt.clearDist ? rt.clearDist[tl[k]] : 0) === maxC) deep.push(tl[k]);
+        if (deep.length) return deep[Math.floor(rng.next() * deep.length)];
+      }
+    }
+    return best >= 0 ? best : tl[Math.floor(rng.next() * n)];
   }
-  function setTarget(a, t, jit) { a.tx = C.cxOf(t) + rng.range(-jit, jit); a.tz = C.czOf(t) + rng.range(-jit, jit); }
+  function setTarget(a, t, jit) {
+    var s = S(), eid = a.enc || s.tileEnc[t], i = t % N, j = (t - i) / N, cx = C.cxOf(t), cz = C.czOf(t);
+    var sp = C.SP()[a.species], m = sp ? C.animalMetrics(sp, a) : null;
+    var pad = m ? clamp(m.bodyRad * 0.45, 0.2, 0.82) : 0.2, half = TILE * 0.5;
+    var bN = j === 0 || s.tileEnc[t - N] !== eid, bS = j === N - 1 || s.tileEnc[t + N] !== eid;
+    var bW = i === 0 || s.tileEnc[t - 1] !== eid, bE = i === N - 1 || s.tileEnc[t + 1] !== eid;
+    var padX = (bW && bE) ? Math.min(pad, 0.35) : pad, padZ = (bN && bS) ? Math.min(pad, 0.35) : pad;
+    var loX = Math.max(-jit, bW ? -(half - padX) : -jit), hiX = Math.min(jit, bE ? (half - padX) : jit);
+    var loZ = Math.max(-jit, bN ? -(half - padZ) : -jit), hiZ = Math.min(jit, bS ? (half - padZ) : jit);
+    if (loX > hiX) { var mx = (loX + hiX) * 0.5; loX = hiX = mx; }
+    if (loZ > hiZ) { var mz = (loZ + hiZ) * 0.5; loZ = hiZ = mz; }
+    a.tx = cx + rng.range(loX, hiX); a.tz = cz + rng.range(loZ, hiZ);
+  }
   function steer(a, dt, spd, enc, free, turnK) {
     if (!isFinite(a.tx) || !isFinite(a.tz)) { a.speed = 0; return 1; }
     var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
@@ -761,6 +813,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     settleY(a, dt, 0.55);
     if (a.y > 0.25 && !(a.bp > 0)) a.y = 0.25;
+    C.pushFromWalls(a, enc, C.animalMetrics(sp, a), dt);
   }
   function decideSea(a, enc, E, sp, n, dep, low) {
     var rl = E.rl || {};
@@ -846,6 +899,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (a.y > 0.6 && (a.state === 'walk' || a.state === 'idle')) { if (a.state === 'walk' || a.speed > 0.1) a.state = 'fly'; }
     if (a.y <= 0.6 && a.state === 'fly' && a.speed > 0.05 && a.ty < 0.6) a.state = 'walk';
     if (a.state === 'fly' && a.y < 0.02 && a.ty === 0 && a.speed < 0.05) { a.state = 'idle'; a.st = rng.range(2, 6); }
+    C.pushFromWalls(a, enc, C.animalMetrics(sp, a), dt);
   }
   function landTile(enc, E) {
     var rl = E.rl, k; if (rl.perch.length && rng.chance(0.6)) return rl.perch[Math.floor(rng.next() * rl.perch.length)];

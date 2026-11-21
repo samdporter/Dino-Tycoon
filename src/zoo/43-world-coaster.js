@@ -31,90 +31,271 @@
   var _pr = { x: 0, y: 0, w: 0, vis: false };
 
   // ---- 1. Hook Z.Models.createBuilding for the 5 custom coaster stations ----
+  var _stArrowGeo = null, _stLaunchMat = null, _stReturnMat = null, _stRailMat = null, _stDarkMat = null;
+  function getStationShared() {
+    if (!_stArrowGeo) {
+      _stArrowGeo = new THREE.ConeGeometry(0.42, 0.75, 4);
+      _stArrowGeo.rotateZ(-Math.PI * 0.5);
+      _stLaunchMat = new THREE.MeshBasicMaterial({ color: 0x38e56b });
+      _stReturnMat = new THREE.MeshBasicMaterial({ color: 0xffb838 });
+      _stRailMat = new THREE.MeshLambertMaterial({ color: 0xd8dfe8 });
+      _stDarkMat = new THREE.MeshLambertMaterial({ color: 0x2a2e33 });
+    }
+    return { arrowGeo: _stArrowGeo, mLaunch: _stLaunchMat, mReturn: _stReturnMat, mRail: _stRailMat, mDark: _stDarkMat };
+  }
+  function makeExtrudeGeo(pts, depth, bev, segs) {
+    var sh = new THREE.Shape();
+    sh.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) sh.lineTo(pts[i][0], pts[i][1]);
+    sh.closePath();
+    var geo = new THREE.ExtrudeGeometry(sh, {
+      depth: depth,
+      bevelEnabled: bev > 0,
+      bevelThickness: bev || 0,
+      bevelSize: bev || 0,
+      bevelSegments: bev > 0 ? 2 : 0,
+      curveSegments: segs || 6
+    });
+    geo.translate(0, 0, -depth * 0.5);
+    return geo;
+  }
+  function makeSideExtrudeGeo(pts, width, bev, segs) {
+    var geo = makeExtrudeGeo(pts, width, bev, segs);
+    geo.rotateY(-Math.PI * 0.5);
+    return geo;
+  }
+
   function makeStationModel(typeId) {
     var td = TYPES[typeId] || TYPES.wooden;
     var col = td.colors;
+    var sh = getStationShared();
     var g = new THREE.Group();
     var mBase = new THREE.MeshLambertMaterial({ color: col.station });
     var mRoof = new THREE.MeshLambertMaterial({ color: col.roof });
     var mAcc = new THREE.MeshLambertMaterial({ color: col.accent });
-    var mRail = new THREE.MeshLambertMaterial({ color: 0xd8dfe8 });
     var mTie = new THREE.MeshLambertMaterial({ color: col.tie });
-    var mDark = new THREE.MeshLambertMaterial({ color: 0x2a2e33 });
-    var mLaunch = new THREE.MeshBasicMaterial({ color: 0x38e56b });
-    var mReturn = new THREE.MeshBasicMaterial({ color: 0xffb838 });
+    var mRail = sh.mRail, mDark = sh.mDark;
     var deckY = CD.stationDeck;
 
     // 4x2 footprint = 8m (x: -4..4) by 4m (z: -2..2). Front entrance faces +z, track runs along z = -1.0 (back row)
-    var base = new THREE.Mesh(new THREE.BoxGeometry(7.6, deckY, 3.6), mBase);
+    var baseGeo = makeExtrudeGeo([[-3.75, -1.75], [3.75, -1.75], [3.75, 1.75], [-3.75, 1.75]], deckY - 0.14, 0.08, 2);
+    baseGeo.rotateX(Math.PI * 0.5);
+    var base = new THREE.Mesh(baseGeo, mBase);
     base.position.set(0, deckY * 0.5, 0);
     base.castShadow = true; base.receiveShadow = true;
     g.add(base);
 
-    // Front ticket booth & entrance stairs (+z side)
-    var booth = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 1.3), mAcc);
-    booth.position.set(-1.8, 1.1, 1.15);
-    booth.castShadow = true;
-    g.add(booth);
-    var awning = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.22, 1.5), mRoof);
-    awning.position.set(-1.8, 2.35, 1.25);
-    awning.rotation.x = 0.18;
-    g.add(awning);
-
+    // Entrance stairs (+z side)
     for (var s = 0; s < 4; s++) {
-      var st = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.28, 0.42), mBase);
-      st.position.set(1.6, 0.14 + s * (deckY / 4), 1.65 - s * 0.32);
+      var st = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.26, 0.42), mBase);
+      st.position.set(1.6, 0.13 + s * (deckY / 4), 1.68 - s * 0.32);
       g.add(st);
     }
 
-    // Station canopy columns & roof over boarding track (z = -0.9)
-    var postGeo = new THREE.BoxGeometry(0.22, 2.5, 0.22);
-    var px = [-3.3, -1.1, 1.1, 3.3], pz = [-1.7, 0.1];
-    for (var i = 0; i < px.length; i++) for (var j = 0; j < pz.length; j++) {
-      var post = new THREE.Mesh(postGeo, mDark);
-      post.position.set(px[i], deckY + 1.25, pz[j]);
-      post.castShadow = true;
-      g.add(post);
+    // Ticket booth (+z side, themed per coaster)
+    if (typeId === 'steel' || typeId === 'hyper') {
+      var kShape = new THREE.Shape();
+      kShape.moveTo(-1.1, -0.55); kShape.lineTo(1.1, -0.55); kShape.quadraticCurveTo(1.3, 0, 1.1, 0.55);
+      kShape.lineTo(-1.1, 0.55); kShape.quadraticCurveTo(-1.3, 0, -1.1, -0.55);
+      var kGeo = new THREE.ExtrudeGeometry(kShape, { depth: 2.1, bevelEnabled: true, bevelThickness: 0.06, bevelSize: 0.06, bevelSegments: 2, curveSegments: 8 });
+      kGeo.rotateX(-Math.PI * 0.5);
+      var boothS = new THREE.Mesh(kGeo, mAcc);
+      boothS.position.set(-1.8, 0.08, 1.15);
+      boothS.castShadow = true;
+      g.add(boothS);
+      var visorGeo = makeSideExtrudeGeo([[-0.65, 0], [0.92, -0.14], [0.92, 0.04], [-0.65, 0.22]], 2.9, 0.04);
+      var visor = new THREE.Mesh(visorGeo, mRoof);
+      visor.position.set(-1.8, 2.25, 1.2);
+      g.add(visor);
+    } else {
+      var boothGeo = makeExtrudeGeo([[-1.25, -0.6], [1.25, -0.6], [1.25, 0.6], [-1.25, 0.6]], 2.1, 0.05, 2);
+      boothGeo.rotateX(-Math.PI * 0.5);
+      var booth = new THREE.Mesh(boothGeo, mAcc);
+      booth.position.set(-1.8, 0.05, 1.15);
+      booth.castShadow = true;
+      g.add(booth);
+      var bRoofGeo = makeSideExtrudeGeo([[-0.78, 0], [0, 0.55], [0.78, 0]], 2.95, 0.04);
+      var bRoof = new THREE.Mesh(bRoofGeo, mRoof);
+      bRoof.position.set(-1.8, 2.22, 1.2);
+      g.add(bRoof);
     }
-    var roof = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.28, 2.5), mRoof);
-    roof.position.set(0, deckY + 2.6, -0.8);
-    roof.castShadow = true;
-    g.add(roof);
 
-    var ridge = new THREE.Mesh(new THREE.BoxGeometry(7.9, 0.22, 0.3), mAcc);
-    ridge.position.set(0, deckY + 2.85, -0.8);
-    g.add(ridge);
-
-    // Prominent twin rails + cross-ties running through station along z = -1.0 (gauge = 0.52)
-    var railGeo = new THREE.BoxGeometry(8.1, 0.14, 0.13);
-    var r1 = new THREE.Mesh(railGeo, mRail); r1.position.set(0, deckY + 0.12, -1.52); g.add(r1);
-    var r2 = new THREE.Mesh(railGeo, mRail); r2.position.set(0, deckY + 0.12, -0.48); g.add(r2);
-    var tieGeo = new THREE.BoxGeometry(0.16, 0.07, 1.32);
-    for (var tx = -3.6; tx <= 3.65; tx += 0.6) {
-      var tie = new THREE.Mesh(tieGeo, mTie);
-      tie.position.set(tx, deckY + 0.04, -1.0);
-      g.add(tie);
+    // Boarding edge safety railing (+z side of boarding platform)
+    var railPostGeo = new THREE.CylinderGeometry(0.045, 0.05, 0.85, 6);
+    var railBar = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.07, 0.07), mTie);
+    railBar.position.set(-1.0, deckY + 0.82, 0.22);
+    g.add(railBar);
+    for (var rx = -3.6; rx <= 1.85; rx += 0.9) {
+      var rp = new THREE.Mesh(railPostGeo, mDark);
+      rp.position.set(rx, deckY + 0.42, 0.22);
+      g.add(rp);
     }
 
-    // Directional Launch (+x, green) and Return (-x, amber) chevron arrows at station track ends
-    var arrowGeo = new THREE.ConeGeometry(0.42, 0.75, 4);
-    arrowGeo.rotateZ(-Math.PI * 0.5);
-    var launchArr = new THREE.Mesh(arrowGeo, mLaunch);
-    launchArr.position.set(4.15, deckY + 0.28, -1.0);
-    g.add(launchArr);
-    var returnArr = new THREE.Mesh(arrowGeo, mReturn);
-    returnArr.position.set(-4.15, deckY + 0.28, -1.0);
-    g.add(returnArr);
-
-    if (typeId === 'hyper') {
+    // Theme-specific station canopy architecture over boarding track (z = -0.8)
+    var px = [-3.35, -1.12, 1.12, 3.35], pz = [-1.72, 0.16];
+    var i, j;
+    if (typeId === 'mine') {
+      // Heavy timber headframe A-trusses + corrugated pitched roof + hanging lanterns + ore chute
+      for (i = 0; i < px.length; i++) for (j = 0; j < pz.length; j++) {
+        var mPost = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.45, 0.22), mTie);
+        mPost.position.set(px[i], deckY + 1.22, pz[j]); mPost.castShadow = true; g.add(mPost);
+      }
+      var pitchGeo = makeSideExtrudeGeo([[-1.45, 0], [0, 1.15], [1.45, 0], [1.30, -0.10], [0, 0.96], [-1.30, -0.10]], 7.8, 0.03);
+      var mRoofMesh = new THREE.Mesh(pitchGeo, mRoof);
+      mRoofMesh.position.set(0, deckY + 2.42, -0.78); mRoofMesh.castShadow = true; g.add(mRoofMesh);
+      var ribGeo = new THREE.BoxGeometry(0.08, 0.08, 2.9);
+      for (var cr = -3.4; cr <= 3.45; cr += 0.85) {
+        var rib = new THREE.Mesh(ribGeo, mDark);
+        rib.position.set(cr, deckY + 2.95, -0.78);
+        g.add(rib);
+      }
+      var aFrameGeo = new THREE.BoxGeometry(0.18, 1.85, 0.18);
+      [-3.1, 0, 3.1].forEach(function (ax) {
+        for (var sgn = -1; sgn <= 1; sgn += 2) {
+          var leg = new THREE.Mesh(aFrameGeo, mTie);
+          leg.position.set(ax, deckY + 3.15, -0.78 + sgn * 0.55);
+          leg.rotation.x = -sgn * 0.58;
+          g.add(leg);
+        }
+      });
+      var wheel = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 14), mAcc);
+      wheel.rotation.y = Math.PI * 0.5;
+      wheel.position.set(0, deckY + 3.92, -0.78);
+      g.add(wheel);
+      var mLant = new THREE.MeshBasicMaterial({ color: 0xffd670 });
+      [-2.2, 0, 2.2].forEach(function (lx) {
+        var cord = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.42, 5), mDark);
+        cord.position.set(lx, deckY + 2.25, 0.12); g.add(cord);
+        var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 5), mLant);
+        bulb.position.set(lx, deckY + 2.02, 0.12); g.add(bulb);
+      });
+      var chute = new THREE.Mesh(makeSideExtrudeGeo([[-0.45, 0], [0.45, 0.45], [0.45, 0.65], [-0.45, 0.22]], 0.72, 0.02), mTie);
+      chute.position.set(-0.15, 0.9, 1.25); g.add(chute);
+    } else if (typeId === 'flume') {
+      // Rustic boathouse timber canopy, arched gable roof, water trough curb & lifebuoy rings
+      var logPost = new THREE.CylinderGeometry(0.12, 0.14, 2.45, 8);
+      for (i = 0; i < px.length; i++) for (j = 0; j < pz.length; j++) {
+        var lp = new THREE.Mesh(logPost, mTie);
+        lp.position.set(px[i], deckY + 1.22, pz[j]); lp.castShadow = true; g.add(lp);
+      }
+      var archRoof = new THREE.Mesh(makeSideExtrudeGeo([
+        [-1.42, 0], [-0.95, 0.72], [0, 1.04], [0.95, 0.72], [1.42, 0],
+        [1.22, -0.08], [0, 0.84], [-1.22, -0.08]
+      ], 7.8, 0.04), mRoof);
+      archRoof.position.set(0, deckY + 2.40, -0.78); archRoof.castShadow = true; g.add(archRoof);
+      var ridgeBeam = new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.16, 0.18), mTie);
+      ridgeBeam.position.set(0, deckY + 3.44, -0.78); g.add(ridgeBeam);
+      var mBuoy = new THREE.MeshLambertMaterial({ color: 0xe85a30 });
+      var buoyGeo = new THREE.TorusGeometry(0.24, 0.07, 6, 12);
+      [-2.2, 2.2].forEach(function (bx) {
+        var buoy = new THREE.Mesh(buoyGeo, mBuoy);
+        buoy.position.set(bx, deckY + 1.25, 0.24);
+        g.add(buoy);
+      });
+    } else if (typeId === 'steel') {
+      // Curved tubular steel arch ribs + translucent curved canopy roof
+      var archGeo = new THREE.TorusGeometry(1.38, 0.08, 8, 18, Math.PI);
+      archGeo.rotateY(Math.PI * 0.5);
+      for (i = 0; i < px.length; i++) {
+        var arch = new THREE.Mesh(archGeo, mDark);
+        arch.position.set(px[i], deckY + 1.65, -0.78);
+        arch.castShadow = true;
+        g.add(arch);
+        for (j = 0; j < pz.length; j++) {
+          var stP = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.095, 1.7, 8), mDark);
+          stP.position.set(px[i], deckY + 0.85, -0.78 + (j === 0 ? -1.38 : 1.38));
+          g.add(stP);
+        }
+      }
+      var canopyGeo = new THREE.CylinderGeometry(1.34, 1.34, 7.6, 16, 1, true, 0, Math.PI);
+      canopyGeo.rotateZ(Math.PI * 0.5);
+      var mGlassRoof = new THREE.MeshLambertMaterial({ color: col.roof, transparent: true, opacity: 0.55, side: THREE.DoubleSide });
+      var canopy = new THREE.Mesh(canopyGeo, mGlassRoof);
+      canopy.position.set(0, deckY + 1.65, -0.78);
+      g.add(canopy);
+      var spine = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 7.8, 8), mAcc);
+      spine.rotation.z = Math.PI * 0.5;
+      spine.position.set(0, deckY + 3.04, -0.78);
+      g.add(spine);
+    } else if (typeId === 'hyper') {
+      // Swept futuristic wing-arch canopy + tapered glowing pylons + sculpted launch gate arch
       var mGlow = new THREE.MeshBasicMaterial({ color: col.accent });
+      var pylonPts = [new THREE.Vector2(0.16, 0), new THREE.Vector2(0.11, 1.4), new THREE.Vector2(0.07, 2.6), new THREE.Vector2(0.13, 2.75)];
+      var pylonGeo = new THREE.LatheGeometry(pylonPts, 8);
+      for (i = 0; i < px.length; i++) for (j = 0; j < pz.length; j++) {
+        var py = new THREE.Mesh(pylonGeo, mDark);
+        py.position.set(px[i], deckY, pz[j]); py.castShadow = true; g.add(py);
+        var strip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2.1, 0.05), mGlow);
+        strip.position.set(px[i], deckY + 1.3, pz[j] + (j === 1 ? 0.11 : -0.11));
+        g.add(strip);
+      }
+      var wingGeo = makeSideExtrudeGeo([
+        [-1.55, 0.12], [-0.55, 0.58], [0, 0.72], [0.55, 0.58], [1.65, 0.88],
+        [1.55, 0.66], [0, 0.44], [-1.45, -0.02]
+      ], 7.8, 0.05);
+      var wingRoof = new THREE.Mesh(wingGeo, mRoof);
+      wingRoof.position.set(0, deckY + 2.48, -0.78); wingRoof.castShadow = true; g.add(wingRoof);
+      var gateGeo = new THREE.TorusGeometry(1.12, 0.11, 8, 18, Math.PI);
+      gateGeo.rotateY(Math.PI * 0.5);
+      var gate = new THREE.Mesh(gateGeo, mAcc);
+      gate.position.set(3.65, deckY + 0.95, -1.0);
+      g.add(gate);
       var cGeo = new THREE.OctahedronGeometry(0.32, 0);
       [-3.5, 3.5].forEach(function (cx) {
         var cr = new THREE.Mesh(cGeo, mGlow);
-        cr.position.set(cx, deckY + 3.1, -0.8);
+        cr.position.set(cx, deckY + 3.45, -0.78);
         g.add(cr);
       });
+    } else {
+      // Wooden (and fallback): peaked timber gable roof with truss beams & round log columns
+      var wPostGeo = new THREE.CylinderGeometry(0.12, 0.15, 2.5, 8);
+      for (i = 0; i < px.length; i++) for (j = 0; j < pz.length; j++) {
+        var wp = new THREE.Mesh(wPostGeo, mTie);
+        wp.position.set(px[i], deckY + 1.25, pz[j]); wp.castShadow = true; g.add(wp);
+      }
+      var gableGeo = makeSideExtrudeGeo([[-1.42, 0], [0, 1.08], [1.42, 0], [1.26, -0.08], [0, 0.88], [-1.26, -0.08]], 7.8, 0.04);
+      var gRoof = new THREE.Mesh(gableGeo, mRoof);
+      gRoof.position.set(0, deckY + 2.44, -0.78); gRoof.castShadow = true; g.add(gRoof);
+      [-3.35, 0, 3.35].forEach(function (tx) {
+        var tieB = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 2.5), mTie);
+        tieB.position.set(tx, deckY + 2.42, -0.78); g.add(tieB);
+        var kingP = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.92, 0.12), mTie);
+        kingP.position.set(tx, deckY + 2.88, -0.78); g.add(kingP);
+      });
+      var wRidge = new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.18, 0.22), mAcc);
+      wRidge.position.set(0, deckY + 3.56, -0.78); g.add(wRidge);
     }
+
+    // Track through station along z = -1.0 (water trough for flume, twin rails + ties for coasters)
+    if (typeId === 'flume') {
+      var troughBot = new THREE.Mesh(new THREE.BoxGeometry(8.1, 0.12, 1.32), mTie);
+      troughBot.position.set(0, deckY + 0.02, -1.0); g.add(troughBot);
+      var waterMat = new THREE.MeshLambertMaterial({ color: 0x45b8e8 });
+      var water = new THREE.Mesh(new THREE.BoxGeometry(8.1, 0.08, 1.02), waterMat);
+      water.position.set(0, deckY + 0.10, -1.0); g.add(water);
+      var curbGeo = new THREE.BoxGeometry(8.1, 0.34, 0.14);
+      var c1 = new THREE.Mesh(curbGeo, mRail); c1.position.set(0, deckY + 0.18, -1.58); g.add(c1);
+      var c2 = new THREE.Mesh(curbGeo, mRail); c2.position.set(0, deckY + 0.18, -0.42); g.add(c2);
+    } else {
+      var railGeo = new THREE.BoxGeometry(8.1, 0.14, 0.13);
+      var r1 = new THREE.Mesh(railGeo, mRail); r1.position.set(0, deckY + 0.12, -1.52); g.add(r1);
+      var r2 = new THREE.Mesh(railGeo, mRail); r2.position.set(0, deckY + 0.12, -0.48); g.add(r2);
+      var tieGeo = new THREE.BoxGeometry(0.16, 0.07, 1.32);
+      for (var tx = -3.6; tx <= 3.65; tx += 0.6) {
+        var tie = new THREE.Mesh(tieGeo, mTie);
+        tie.position.set(tx, deckY + 0.04, -1.0);
+        g.add(tie);
+      }
+    }
+
+    // Directional Launch (+x, green) and Return (-x, amber) chevron arrows at station track ends
+    var launchArr = new THREE.Mesh(sh.arrowGeo, sh.mLaunch);
+    launchArr.position.set(4.15, deckY + 0.28, -1.0);
+    g.add(launchArr);
+    var returnArr = new THREE.Mesh(sh.arrowGeo, sh.mReturn);
+    returnArr.position.set(-4.15, deckY + 0.28, -1.0);
+    g.add(returnArr);
+
     return g;
   }
 
@@ -514,45 +695,187 @@
   }
 
   // ---- 3. 3D Coaster Train Models & Updates ----
-  function makeCarMesh(typeId, isLead) {
+  var _carCommon = null, _carTypeCache = {};
+  function getCarCommon() {
+    if (_carCommon) return _carCommon;
+    var wheelGeo = new THREE.CylinderGeometry(0.115, 0.115, 0.085, 10);
+    wheelGeo.rotateZ(Math.PI * 0.5);
+    var guideGeo = new THREE.BoxGeometry(0.08, 0.10, 0.24);
+    var axleGeo = new THREE.BoxGeometry(1.12, 0.07, 0.10);
+    var cushionGeo = new THREE.BoxGeometry(0.82, 0.09, 0.34);
+    var backGeo = new THREE.BoxGeometry(0.32, 0.38, 0.09);
+    var headrestGeo = new THREE.CylinderGeometry(0.085, 0.105, 0.14, 8);
+    var lapBarGeo = new THREE.TorusGeometry(0.15, 0.024, 6, 10, Math.PI);
+    var otsrGeo = new THREE.TorusGeometry(0.14, 0.026, 6, 12, Math.PI);
+    var headLampGeo = new THREE.CylinderGeometry(0.08, 0.09, 0.08, 10);
+    headLampGeo.rotateX(Math.PI * 0.5);
+    _carCommon = {
+      wheelGeo: wheelGeo, guideGeo: guideGeo, axleGeo: axleGeo,
+      cushionGeo: cushionGeo, backGeo: backGeo, headrestGeo: headrestGeo,
+      lapBarGeo: lapBarGeo, otsrGeo: otsrGeo, headLampGeo: headLampGeo,
+      mDark: new THREE.MeshLambertMaterial({ color: 0x25282e }),
+      mSteel: new THREE.MeshLambertMaterial({ color: 0x8e98a4 }),
+      mSeat: new THREE.MeshLambertMaterial({ color: 0x333840 }),
+      mBrass: new THREE.MeshLambertMaterial({ color: 0xd9a83e }),
+      mLens: new THREE.MeshBasicMaterial({ color: 0xfff0b8 })
+    };
+    return _carCommon;
+  }
+  function getCarTypeRes(typeId) {
+    if (_carTypeCache[typeId]) return _carTypeCache[typeId];
     var td = TYPES[typeId] || TYPES.wooden;
     var col = td.colors;
+    var r = {
+      mBody: new THREE.MeshLambertMaterial({ color: col.car }),
+      mAcc: new THREE.MeshLambertMaterial({ color: col.accent }),
+      mGlow: new THREE.MeshBasicMaterial({ color: col.accent })
+    };
+    if (typeId === 'flume') {
+      var logPts = [
+        new THREE.Vector2(0.01, -0.98), new THREE.Vector2(0.30, -0.92),
+        new THREE.Vector2(0.43, -0.55), new THREE.Vector2(0.47, 0.0),
+        new THREE.Vector2(0.44, 0.55), new THREE.Vector2(0.31, 0.92),
+        new THREE.Vector2(0.01, 0.98)
+      ];
+      r.logGeo = new THREE.LatheGeometry(logPts, 10);
+      r.logGeo.rotateX(Math.PI * 0.5);
+      r.logGeo.scale(1.06, 0.90, 1.0);
+      r.troughGeo = new THREE.BoxGeometry(0.62, 0.24, 1.32);
+      r.bandGeo = new THREE.TorusGeometry(0.45, 0.028, 6, 14);
+      r.bandGeo.scale(1.06, 0.90, 1.0);
+      r.prowGeo = makeSideExtrudeGeo([[0.76, 0.16], [1.14, 0.24], [1.18, 0.44], [0.76, 0.54]], 0.34, 0.03);
+    } else if (typeId === 'mine') {
+      r.hullGeo = makeSideExtrudeGeo([[-0.82, 0.16], [0.82, 0.16], [0.94, 0.62], [-0.92, 0.62]], 0.96, 0.04);
+      r.rimGeo = new THREE.BoxGeometry(1.12, 0.10, 1.92);
+      r.bumperGeo = new THREE.BoxGeometry(1.06, 0.14, 0.16);
+      r.prowGeo = makeSideExtrudeGeo([[0.82, 0.14], [1.18, 0.18], [0.96, 0.58], [0.82, 0.58]], 0.90, 0.03);
+    } else if (typeId === 'steel') {
+      r.hullGeo = makeSideExtrudeGeo([
+        [-0.88, 0.18], [0.88, 0.18], [0.92, 0.44], [0.58, 0.56],
+        [0.02, 0.46], [-0.52, 0.56], [-0.90, 0.64]
+      ], 0.96, 0.05);
+      r.trimGeo = new THREE.BoxGeometry(1.08, 0.09, 1.80);
+      r.noseGeo = makeSideExtrudeGeo([[0.82, 0.18], [1.30, 0.22], [1.22, 0.38], [0.82, 0.54]], 0.84, 0.04);
+    } else if (typeId === 'hyper') {
+      r.hullGeo = makeSideExtrudeGeo([
+        [-0.90, 0.18], [0.90, 0.18], [0.94, 0.42], [0.56, 0.54],
+        [0.0, 0.42], [-0.54, 0.54], [-0.92, 0.62]
+      ], 0.98, 0.05);
+      r.podGeo = new THREE.BoxGeometry(1.14, 0.14, 1.48);
+      var conePts = [
+        new THREE.Vector2(0.45, 0.0), new THREE.Vector2(0.40, 0.18),
+        new THREE.Vector2(0.28, 0.38), new THREE.Vector2(0.12, 0.54),
+        new THREE.Vector2(0.01, 0.60)
+      ];
+      r.noseGeo = new THREE.LatheGeometry(conePts, 12);
+      r.noseGeo.rotateX(Math.PI * 0.5);
+      r.noseGeo.scale(1.12, 0.64, 1.0);
+      r.finGeo = makeSideExtrudeGeo([[0.65, 0.48], [1.08, 0.72], [0.95, 0.82], [0.52, 0.56]], 0.05, 0.015);
+    } else {
+      // Wooden & fallback: sculpted vintage rounded coaster tub
+      r.hullGeo = makeSideExtrudeGeo([
+        [-0.86, 0.18], [0.86, 0.18], [0.90, 0.54], [0.52, 0.58],
+        [0.0, 0.46], [-0.52, 0.58], [-0.88, 0.64]
+      ], 0.96, 0.05);
+      r.trimGeo = new THREE.BoxGeometry(1.08, 0.11, 1.78);
+      r.noseGeo = makeSideExtrudeGeo([[0.82, 0.18], [1.14, 0.22], [1.12, 0.48], [0.82, 0.56]], 0.82, 0.05);
+      r.bumperGeo = new THREE.TorusGeometry(0.42, 0.04, 6, 12, Math.PI);
+      r.bumperGeo.rotateX(Math.PI * 0.5);
+    }
+    _carTypeCache[typeId] = r;
+    return r;
+  }
+
+  function addCarMesh(g, geo, mat, x, y, z, rx, ry, rz, shadow) {
+    var m = new THREE.Mesh(geo, mat);
+    m.position.set(x || 0, y || 0, z || 0);
+    if (rx) m.rotation.x = rx;
+    if (ry) m.rotation.y = ry;
+    if (rz) m.rotation.z = rz;
+    if (shadow) m.castShadow = true;
+    m.userData.shared = true;
+    g.add(m);
+    return m;
+  }
+
+  function makeCarMesh(typeId, isLead) {
+    var C = getCarCommon();
+    var R = getCarTypeRes(typeId);
     var g = new THREE.Group();
-    var mBody = new THREE.MeshLambertMaterial({ color: col.car });
-    var mAcc = new THREE.MeshLambertMaterial({ color: col.accent });
-    var mDark = new THREE.MeshLambertMaterial({ color: 0x25282e });
 
     if (typeId === 'flume') {
-      var log = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.42, 1.85, 8), mBody);
-      log.rotation.x = Math.PI * 0.5;
-      log.position.y = 0.32;
-      log.castShadow = true;
-      g.add(log);
-      var inner = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.25, 1.35), mDark);
-      inner.position.y = 0.44;
-      g.add(inner);
-    } else {
-      var body = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.48, 1.75), mBody);
-      body.position.y = 0.34;
-      body.castShadow = true;
-      g.add(body);
-      var trim = new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.14, 1.82), mAcc);
-      trim.position.y = 0.50;
-      g.add(trim);
-      var seats = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.26, 1.25), mDark);
-      seats.position.y = 0.50;
-      g.add(seats);
+      addCarMesh(g, R.logGeo, R.mBody, 0, 0.34, 0, 0, 0, 0, true);
+      addCarMesh(g, R.troughGeo, C.mDark, 0, 0.48, 0);
+      [-0.60, 0, 0.60].forEach(function (bz) {
+        addCarMesh(g, R.bandGeo, C.mDark, 0, 0.34, bz);
+      });
+      [0.24, -0.34].forEach(function (rz) {
+        addCarMesh(g, C.cushionGeo, C.mSeat, 0, 0.44, rz).scale.set(0.72, 1, 0.85);
+        addCarMesh(g, C.lapBarGeo, R.mAcc, 0, 0.56, rz + 0.16, 0.55, 0, 0);
+      });
       if (isLead) {
-        var nose = new THREE.Mesh(new THREE.BoxGeometry(0.90, 0.36, 0.45), mAcc);
-        nose.position.set(0, 0.32, 1.0);
-        g.add(nose);
-        if (typeId === 'hyper') {
-          var mGlow = new THREE.MeshBasicMaterial({ color: col.accent });
-          var hornL = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 5), mGlow);
-          hornL.position.set(-0.28, 0.74, 0.85); hornL.rotation.x = -0.35; g.add(hornL);
-          var hornR = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 5), mGlow);
-          hornR.position.set(0.28, 0.74, 0.85); hornR.rotation.x = -0.35; g.add(hornR);
+        addCarMesh(g, R.prowGeo, R.mAcc, 0, 0.10, 0, 0, 0, 0, true);
+      }
+      return g;
+    }
+
+    // Rail-hugging wheel bogies (front & rear)
+    [-0.56, 0.56].forEach(function (bz) {
+      addCarMesh(g, C.axleGeo, C.mDark, 0, 0.16, bz);
+      [-0.52, 0.52].forEach(function (wx) {
+        addCarMesh(g, C.wheelGeo, C.mSteel, wx, 0.15, bz);
+        addCarMesh(g, C.guideGeo, C.mDark, wx * 1.12, 0.12, bz);
+      });
+    });
+
+    // Sculpted car chassis/shell
+    addCarMesh(g, R.hullGeo, R.mBody, 0, 0, 0, 0, 0, 0, true);
+    if (typeId === 'mine') {
+      addCarMesh(g, R.rimGeo, R.mAcc, 0, 0.62, 0);
+      addCarMesh(g, R.bumperGeo, C.mDark, 0, 0.24, -0.94);
+      addCarMesh(g, R.bumperGeo, C.mDark, 0, 0.24, 0.94);
+    } else if (typeId === 'hyper') {
+      addCarMesh(g, R.podGeo, R.mAcc, 0, 0.34, -0.05);
+    } else {
+      addCarMesh(g, R.trimGeo, R.mAcc, 0, 0.54, 0);
+    }
+
+    // Two rows of contoured bucket seats, headrests & restraints
+    var useOtsr = (typeId === 'steel' || typeId === 'hyper');
+    [0.24, -0.36].forEach(function (rz) {
+      addCarMesh(g, C.cushionGeo, C.mSeat, 0, 0.34, rz);
+      [-0.22, 0.22].forEach(function (sx) {
+        addCarMesh(g, C.backGeo, C.mSeat, sx, 0.54, rz - 0.14, -0.22, 0, 0);
+        addCarMesh(g, C.headrestGeo, R.mAcc, sx, 0.76, rz - 0.18, -0.22, 0, 0);
+        if (useOtsr) {
+          addCarMesh(g, C.otsrGeo, R.mAcc, sx, 0.66, rz + 0.04, 0.38, 0, 0);
+        } else {
+          addCarMesh(g, C.lapBarGeo, C.mSteel, sx, 0.52, rz + 0.14, 1.05, 0, 0);
         }
+      });
+    });
+
+    // Lead car sculpted nosecone & headlights
+    if (isLead) {
+      if (typeId === 'hyper') {
+        addCarMesh(g, R.noseGeo, R.mBody, 0, 0.34, 0.84, 0, 0, 0, true);
+        addCarMesh(g, C.headLampGeo, R.mGlow, -0.28, 0.36, 1.24);
+        addCarMesh(g, C.headLampGeo, R.mGlow, 0.28, 0.36, 1.24);
+        addCarMesh(g, R.finGeo, R.mGlow, -0.32, 0, 0);
+        addCarMesh(g, R.finGeo, R.mGlow, 0.32, 0, 0);
+      } else if (typeId === 'steel') {
+        addCarMesh(g, R.noseGeo, R.mAcc, 0, 0, 0, 0, 0, 0, true);
+        addCarMesh(g, C.headLampGeo, C.mLens, -0.26, 0.32, 1.24);
+        addCarMesh(g, C.headLampGeo, C.mLens, 0.26, 0.32, 1.24);
+      } else if (typeId === 'mine') {
+        addCarMesh(g, R.prowGeo, C.mDark, 0, 0, 0, 0, 0, 0, true);
+        addCarMesh(g, C.headLampGeo, C.mBrass, 0, 0.72, 0.94);
+        addCarMesh(g, C.headLampGeo, C.mLens, 0, 0.72, 0.96).scale.set(0.75, 0.75, 1.1);
+      } else {
+        addCarMesh(g, R.noseGeo, R.mAcc, 0, 0, 0, 0, 0, 0, true);
+        addCarMesh(g, R.bumperGeo, C.mSteel, 0, 0.24, 0.98);
+        addCarMesh(g, C.headLampGeo, C.mBrass, 0, 0.44, 1.14);
+        addCarMesh(g, C.headLampGeo, C.mLens, 0, 0.44, 1.16).scale.set(0.75, 0.75, 1.1);
       }
     }
     return g;

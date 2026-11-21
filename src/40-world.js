@@ -1363,14 +1363,91 @@ function buildSurroundings() {
   sb.box(jx0, DY - 0.35, jz0, jx1, DY - 0.1, jz1, pw2);
   for (var jp = jx0; jp < jx1; jp += 1.2) sb.box(jp, DY - 0.1, jz0, jp + 1.08, DY, jz1, mul3(pw, 0.9 + 0.2 * h2(jp, 7)), true);
   for (var jq = jx0 + 2; jq <= jx1; jq += 5) { [jz0 + 0.1, jz1 - 0.5].forEach(function (zz) { sb.box(jq - 0.2, -2.4, zz, jq + 0.2, DY + 0.7, zz + 0.4, pw2); }); sb.box(jq - 0.28, DY + 0.7, jz0 - 0.05, jq + 0.28, DY + 0.78, jz0 + 0.55, pw, true); }
-  var fb = new MB(), hull = lin3('#e8e4d6'), hull2 = lin3('#2f5d86'), red = lin3('#c4553a'), glass = lin3('#8fc3dd');
+  // sculpted island ferry moored alongside the timber jetty (uses Z.Models.kit.B when available)
   ferryGrp = new THREE.Group(); ferryGrp.position.set(jx0 + 20, 0, jz1 + 2.3); ferryGrp.rotation.y = 0;
-  fb.box(-6.5, -0.45, -1.4, 6.5, 0.55, 1.4, hull2); fb.box(-6.5, 0.55, -1.4, 6.5, 0.7, 1.4, mul3(hull, 0.95), true);
-  fb.box(7.2, -0.3, -0.7, 8.0, 0.55, 0.7, hull2, true);
-  fb.box(-4.5, 0.7, -1.05, 3.5, 2.1, 1.05, hull); fb.box(-4.4, 1.1, -1.1, 3.4, 1.7, 1.1, glass, true); fb.box(-4.7, 2.1, -1.2, 3.7, 2.25, 1.2, red, true);
-  fb.box(-1.2, 2.25, -0.35, 0.0, 3.5, 0.35, hull); fb.box(-1.25, 3.2, -0.4, 0.05, 3.5, 0.4, red, true);
-  fb.box(4.0, 0.7, -0.3, 4.2, 1.7, 0.3, mul3(hull, 0.9), true);
-  ferryGrp.add(new THREE.Mesh(fb.geometry(), MAT.solid));
+  var kit = M().kit;
+  if (kit && kit.B) {
+    var fb = kit.B();
+    var cHull = 0x2f5d86, cCream = 0xe8e4d6, cWhite = 0xf2efe4, cRed = 0xc4553a, cDeck = 0xb88b58, cGlass = 0x70accb, cDark = 0x2c323b;
+    var hullPoly = [[8.05, 0], [6.8, 0.56], [5.1, 1.15], [3.2, 1.42], [-4.6, 1.42], [-6.35, 1.12], [-6.75, 0.72], [-6.75, -0.72], [-6.35, -1.12], [-4.6, -1.42], [3.2, -1.42], [5.1, -1.15], [6.8, -0.56]];
+    var cabPoly = [[3.55, 0], [3.3, 0.65], [2.65, 1.04], [-4.35, 1.04], [-4.65, 0.72], [-4.65, -0.72], [-4.35, -1.04], [2.65, -1.04], [3.3, -0.65]];
+    // tapered pointed bow & raked stern hull, waterline stripe, flared sheer & teak deck
+    fb.extrude(hullPoly, 1.04, 0, 0.02, 0, null, cHull, { axis: 'y', taper: 0.72, bev: 0.06 });
+    fb.extrude(hullPoly, 0.10, 0, 0.49, 0, null, cRed, { axis: 'y', sx: 1.01, sz: 1.02, taper: 0.98, bev: 0.015 });
+    fb.extrude(hullPoly, 0.22, 0, 0.63, 0, null, cCream, { axis: 'y', sx: 1.02, sz: 1.03, taper: 0.96, bev: 0.03 });
+    fb.extrude(hullPoly, 0.06, 0, 0.75, 0, null, cDeck, { axis: 'y', sx: 0.94, sz: 0.88, bev: 0.01 });
+    // curved white passenger cabin, segmented windows & sun-deck roof overhang
+    fb.extrude(cabPoly, 1.38, 0, 1.46, 0, null, cWhite, { axis: 'y', bev: 0.05 });
+    fb.extrude(cabPoly, 0.50, 0, 1.46, 0, null, cGlass, { axis: 'y', sx: 1.015, sz: 1.025, bev: 0.01 });
+    for (var mx = -3.6; mx <= 2.2; mx += 1.45) fb.bevelBox(0.11, 0.54, 2.12, 0.015, mx, 1.46, 0, cWhite);
+    fb.extrude(cabPoly, 0.14, 0, 2.21, 0, null, cRed, { axis: 'y', sx: 1.06, sz: 1.08, bev: 0.03 });
+    // forward-raked wheelhouse bridge, wrap windows, visor roof & bridge wings
+    fb.extrude([[0.0, 2.28], [2.75, 2.28], [3.08, 3.14], [0.22, 3.14]], 1.62, 0, 0, 0, null, cWhite, { axis: 'z', bev: 0.04 });
+    fb.extrude([[0.32, 2.52], [2.85, 2.52], [3.04, 3.00], [0.40, 3.00]], 1.66, 0, 0, 0, null, cGlass, { axis: 'z', bev: 0.01 });
+    fb.extrude([[-0.12, 3.13], [3.34, 3.13], [3.22, 3.27], [-0.04, 3.27]], 1.84, 0, 0, 0, null, cRed, { axis: 'z', bev: 0.025 });
+    fb.bevelBox(0.58, 0.14, 2.20, 0.03, 1.85, 2.34, 0, cWhite);
+    // twin angled smokestacks with red collars & dark exhaust rims
+    for (var fs = -1; fs <= 1; fs += 2) {
+      var fz = fs * 0.45;
+      fb.cyl(0.18, 0.22, 1.02, -1.66, 2.74, fz, cWhite, { seg: 8, rot: [0, 0, 0.24] });
+      fb.cyl(0.185, 0.195, 0.22, -1.80, 3.32, fz, cRed, { seg: 8, rot: [0, 0, 0.24] });
+      fb.cyl(0.15, 0.17, 0.12, -1.84, 3.48, fz, cDark, { seg: 8, rot: [0, 0, 0.24] });
+    }
+    // sloped radar mast, yardarm & scanner bar
+    fb.tube([[1.36, 3.24, 0], [1.06, 3.92, 0], [0.86, 4.42, 0]], [0.06, 0.044, 0.024], cCream, { seg: 6, steps: 2 });
+    fb.cyl(0.02, 0.02, 1.12, 1.02, 3.96, 0, cCream, { seg: 6, rot: [PI * 0.5, 0, 0] });
+    fb.bevelBox(0.14, 0.08, 0.84, 0.02, 1.10, 4.04, 0, cWhite);
+    // bow, stern & sun-deck railings
+    var bowRail = [[3.4, 1.08, -1.35], [5.15, 1.08, -1.08], [6.68, 1.10, -0.52], [7.62, 1.12, 0], [6.68, 1.10, 0.52], [5.15, 1.08, 1.08], [3.4, 1.08, 1.35]];
+    var sternRail = [[-4.55, 1.08, -1.35], [-6.15, 1.08, -1.04], [-6.58, 1.08, -0.55], [-6.58, 1.08, 0.55], [-6.15, 1.08, 1.04], [-4.55, 1.08, 1.35]];
+    fb.tube(bowRail, 0.026, cWhite, { seg: 5, steps: 1, smooth: false });
+    fb.tube(sternRail, 0.026, cWhite, { seg: 5, steps: 1, smooth: false });
+    for (var ri = 0; ri < bowRail.length; ri++) fb.cyl(0.022, 0.022, 0.36, bowRail[ri][0], 0.90, bowRail[ri][2], cWhite, { seg: 5 });
+    for (var rj = 0; rj < sternRail.length; rj++) fb.cyl(0.022, 0.022, 0.36, sternRail[rj][0], 0.90, sternRail[rj][2], cWhite, { seg: 5 });
+    for (var rs = -1; rs <= 1; rs += 2) {
+      var rz = rs * 1.06;
+      fb.tube([[-4.35, 2.54, rz], [-0.08, 2.54, rz]], 0.024, cWhite, { seg: 5, steps: 1, smooth: false });
+      for (var rx = -4.3; rx <= -0.1; rx += 1.05) fb.cyl(0.02, 0.02, 0.28, rx, 2.40, rz, cWhite, { seg: 5 });
+    }
+    // bow & stern mooring bollards + bow jackstaff
+    for (var bs = -1; bs <= 1; bs += 2) {
+      fb.cyl(0.065, 0.08, 0.26, 5.45, 0.90, bs * 0.55, cDark, { seg: 6 });
+      fb.cyl(0.065, 0.08, 0.26, -5.75, 0.90, bs * 0.80, cDark, { seg: 6 });
+    }
+    fb.cyl(0.026, 0.036, 0.92, 7.25, 1.22, 0, cCream, { seg: 6 });
+    // lifebuoy rings mounted along port & starboard cabin walls
+    var lbPts = [];
+    for (var li = 0; li <= 8; li++) {
+      var la = (li % 8) / 8 * TAU;
+      lbPts.push([Math.cos(la) * 0.17, Math.sin(la) * 0.17, 0]);
+    }
+    for (var lside = -1; lside <= 1; lside += 2) {
+      for (var lx = -2.85; lx <= -0.75; lx += 2.0) {
+        var ring = [];
+        for (var lp = 0; lp < lbPts.length; lp++) ring.push([lx + lbPts[lp][0], 1.52 + lbPts[lp][1], lside * 1.08]);
+        fb.tube(ring, 0.048, function (px) { return Math.abs(px - lx) < 0.07 ? cWhite : 0xe65232; }, { seg: 5, steps: 1, smooth: false, cap0: false, cap1: false });
+      }
+    }
+    // bridge wing navigation light housings
+    fb.bevelBox(0.16, 0.14, 0.14, 0.02, 1.92, 2.94, -0.96, cDark);
+    fb.bevelBox(0.16, 0.14, 0.14, 0.02, 1.92, 2.94, 0.96, cDark);
+    ferryGrp.add(new THREE.Mesh(fb.build(), MAT.solid));
+    // navigation lights (port red, starboard green, masthead & stern white)
+    var nb = new MB(), lgGeo = new THREE.SphereGeometry(0.065, 6, 4);
+    addPartGeo(nb, lgGeo, 1, 1, 1, 1.94, 2.96, -1.03, 0, [1.0, 0.22, 0.18]);
+    addPartGeo(nb, lgGeo, 1, 1, 1, 1.94, 2.96, 1.03, 0, [0.20, 0.95, 0.38]);
+    addPartGeo(nb, lgGeo, 1, 1, 1, 0.85, 4.47, 0, 0, [1.0, 0.96, 0.78]);
+    addPartGeo(nb, lgGeo, 1, 1, 1, -4.62, 2.34, 0, 0, [1.0, 0.96, 0.78]);
+    ferryGrp.add(new THREE.Mesh(nb.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true })));
+  } else {
+    var fbFallback = new MB(), hull = lin3('#e8e4d6'), hull2 = lin3('#2f5d86'), red = lin3('#c4553a'), glass = lin3('#8fc3dd');
+    fbFallback.box(-6.5, -0.45, -1.4, 6.5, 0.55, 1.4, hull2); fbFallback.box(-6.5, 0.55, -1.4, 6.5, 0.7, 1.4, mul3(hull, 0.95), true);
+    fbFallback.box(7.2, -0.3, -0.7, 8.0, 0.55, 0.7, hull2, true);
+    fbFallback.box(-4.5, 0.7, -1.05, 3.5, 2.1, 1.05, hull); fbFallback.box(-4.4, 1.1, -1.1, 3.4, 1.7, 1.1, glass, true); fbFallback.box(-4.7, 2.1, -1.2, 3.7, 2.25, 1.2, red, true);
+    fbFallback.box(-1.2, 2.25, -0.35, 0.0, 3.5, 0.35, hull); fbFallback.box(-1.25, 3.2, -0.4, 0.05, 3.5, 0.4, red, true);
+    fbFallback.box(4.0, 0.7, -0.3, 4.2, 1.7, 0.3, mul3(hull, 0.9), true);
+    ferryGrp.add(new THREE.Mesh(fbFallback.geometry(), MAT.solid));
+  }
   causeGrp.add(ferryGrp);
   causeGrp.add(new THREE.Mesh(sb.geometry(), MAT.solid));
   // plaza planters: four little hedge boxes with flowers, on the quay
@@ -2012,6 +2089,19 @@ function updateLamps(dt) {
 var ents = { animal: new Map(), guest: new Map(), staff: new Map() };
 var entGroup, entShMesh, entShCap = 0, bubbleList = [], MAXB = 12;
 var impG, impH, impA, visList = [], MESH_BUDGET = 2400, IMPOSTORS_ON = false;
+var IMP_CLS = ['quad', 'biped', 'tall', 'aero'];
+var IMP_MAP = {
+  brachiosaurus: 'tall', diplodocus: 'tall',
+  dryosaurus: 'biped', compsognathus: 'biped', leaellynasaura: 'biped', gallimimus: 'biped',
+  pachycephalosaurus: 'biped', therizinosaurus: 'biped', velociraptor: 'biped',
+  dilophosaurus: 'biped', cryolophosaurus: 'biped', baryonyx: 'biped',
+  carnotaurus: 'biped', spinosaurus: 'biped', tyrannosaurus: 'biped',
+  dimorphodon: 'aero', rhamphorhynchus: 'aero', pteranodon: 'aero', quetzalcoatlus: 'aero',
+  seagull: 'aero', heron: 'aero',
+  ichthyosaurus: 'aero', archelon: 'aero', elasmosaurus: 'aero', liopleurodon: 'aero',
+  mosasaurus: 'aero', seal: 'aero', dolphin: 'aero', fish_shoal: 'aero'
+};
+function animalImpCls(sp) { return IMP_MAP[sp] || 'quad'; }
 var KIND_ARR = { animal: 'animals', guest: 'guests', staff: 'staff' };
 function mkImp(geo, mat, cap) {
   var im = new THREE.InstancedMesh(geo, mat, cap);
@@ -2019,8 +2109,8 @@ function mkImp(geo, mat, cap) {
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false;
   im.castShadow = true; im.receiveShadow = true; im.count = 0; root.add(im); return im;
 }
-function addPartGeo(mb, geo, sx, sy, sz, px, py, pz, rx, col) {
-  var m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(rx || 0, 0, 0);
+function addPartGeo(mb, geo, sx, sy, sz, px, py, pz, rx, col, ry, rz) {
+  var m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(rx || 0, ry || 0, rz || 0);
   q.setFromEuler(e); m.compose(new THREE.Vector3(px, py, pz), q, new THREE.Vector3(sx, sy, sz));
   mb.addSmoothGeo(geo, m, col);
 }
@@ -2045,10 +2135,68 @@ function buildGuestImpostorGeo() {
   addPartGeo(mbH, hairGeo, 1, 1, 1, 0, 1.61, -0.01, 0, [0.35, 0.25, 0.18]);
   return { body: mbB.geometry(), head: mbH.geometry() };
 }
-function buildAnimalImpostorGeo() {
+function buildAnimalImpostorGeo(cls) {
   var mb = new MB();
-  var sph = new THREE.SphereGeometry(1, 12, 8), legCyl = new THREE.CylinderGeometry(0.068, 0.044, 0.48, 8);
-  var neckCyl = new THREE.CylinderGeometry(0.10, 0.16, 0.34, 8), tailCyl = new THREE.CylinderGeometry(0.02, 0.075, 0.42, 7);
+  var sph = new THREE.SphereGeometry(1, 9, 6);
+  if (cls === 'biped') {
+    var bLeg = new THREE.CylinderGeometry(0.058, 0.036, 0.36, 6);
+    var bNeck = new THREE.CylinderGeometry(0.075, 0.12, 0.32, 7);
+    var bTailA = new THREE.CylinderGeometry(0.068, 0.13, 0.38, 7), bTailB = new THREE.CylinderGeometry(0.014, 0.065, 0.36, 6);
+    var bArm = new THREE.CylinderGeometry(0.030, 0.020, 0.18, 5);
+    addPartGeo(mb, sph, 0.20, 0.22, 0.30, 0, 0.58, 0.02, 0, [1, 1, 1]);
+    addPartGeo(mb, sph, 0.17, 0.19, 0.18, 0, 0.61, 0.18, 0, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, sph, 0.19, 0.20, 0.18, 0, 0.56, -0.14, 0, [0.94, 0.94, 0.94]);
+    addPartGeo(mb, bNeck, 1, 1, 1, 0, 0.76, 0.27, 0.42, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, sph, 0.10, 0.11, 0.16, 0, 0.92, 0.37, 0, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, sph, 0.07, 0.075, 0.13, 0, 0.89, 0.49, 0, [0.92, 0.92, 0.92]);
+    addPartGeo(mb, sph, 0.095, 0.16, 0.12, 0.14, 0.43, -0.04, -0.25, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, sph, 0.095, 0.16, 0.12, -0.14, 0.43, -0.04, -0.25, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, bLeg, 1, 1, 1, 0.14, 0.19, -0.06, 0.18, [0.82, 0.82, 0.82]);
+    addPartGeo(mb, bLeg, 1, 1, 1, -0.14, 0.19, -0.06, 0.18, [0.82, 0.82, 0.82]);
+    addPartGeo(mb, sph, 0.07, 0.035, 0.11, 0.14, 0.035, 0.02, 0, [0.78, 0.78, 0.78]);
+    addPartGeo(mb, sph, 0.07, 0.035, 0.11, -0.14, 0.035, 0.02, 0, [0.78, 0.78, 0.78]);
+    addPartGeo(mb, bArm, 1, 1, 1, 0.13, 0.50, 0.20, 0.75, [0.86, 0.86, 0.86]);
+    addPartGeo(mb, bArm, 1, 1, 1, -0.13, 0.50, 0.20, 0.75, [0.86, 0.86, 0.86]);
+    addPartGeo(mb, bTailA, 1, 1, 1, 0, 0.57, -0.34, -1.50, [0.90, 0.90, 0.90]);
+    addPartGeo(mb, bTailB, 1, 1, 1, 0, 0.59, -0.64, -1.54, [0.86, 0.86, 0.86]);
+    return mb.geometry();
+  }
+  if (cls === 'tall') {
+    var tLeg = new THREE.CylinderGeometry(0.052, 0.034, 0.38, 6);
+    var tNeckA = new THREE.CylinderGeometry(0.075, 0.115, 0.32, 7), tNeckB = new THREE.CylinderGeometry(0.048, 0.075, 0.34, 7);
+    var tTail = new THREE.CylinderGeometry(0.015, 0.065, 0.40, 6);
+    addPartGeo(mb, sph, 0.20, 0.16, 0.28, 0, 0.38, -0.02, 0, [1, 1, 1]);
+    addPartGeo(mb, sph, 0.18, 0.15, 0.16, 0, 0.40, 0.14, 0, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, tLeg, 1, 1, 1, 0.12, 0.19, 0.14, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, -0.12, 0.19, 0.14, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, 0.12, 0.19, -0.18, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, -0.12, 0.19, -0.18, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tNeckA, 1, 1, 1, 0, 0.55, 0.22, 0.28, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, tNeckB, 1, 1, 1, 0, 0.81, 0.28, 0.12, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, sph, 0.075, 0.068, 0.11, 0, 0.96, 0.33, 0, [0.94, 0.94, 0.94]);
+    addPartGeo(mb, sph, 0.048, 0.045, 0.08, 0, 0.94, 0.42, 0, [0.91, 0.91, 0.91]);
+    addPartGeo(mb, tTail, 1, 1, 1, 0, 0.34, -0.36, -1.25, [0.88, 0.88, 0.88]);
+    return mb.geometry();
+  }
+  if (cls === 'aero') {
+    var aNeck = new THREE.CylinderGeometry(0.055, 0.085, 0.22, 7), aBeak = new THREE.CylinderGeometry(0.012, 0.045, 0.16, 6);
+    var aTail = new THREE.CylinderGeometry(0.02, 0.07, 0.34, 6), aLeg = new THREE.CylinderGeometry(0.032, 0.020, 0.20, 5);
+    addPartGeo(mb, sph, 0.16, 0.14, 0.34, 0, 0.52, 0, 0, [1, 1, 1]);
+    addPartGeo(mb, aNeck, 1, 1, 1, 0, 0.57, 0.28, 1.25, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, sph, 0.075, 0.07, 0.11, 0, 0.60, 0.40, 0, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, aBeak, 1, 1, 1, 0, 0.59, 0.52, 1.57, [0.92, 0.92, 0.92]);
+    addPartGeo(mb, aTail, 1, 1, 1, 0, 0.50, -0.36, -1.52, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, sph, 0.14, 0.022, 0.09, 0, 0.50, -0.50, 0, [0.86, 0.86, 0.86]);
+    addPartGeo(mb, sph, 0.25, 0.032, 0.14, 0.28, 0.55, 0.03, 0, [0.94, 0.94, 0.94], -0.18, 0.10);
+    addPartGeo(mb, sph, 0.25, 0.032, 0.14, -0.28, 0.55, 0.03, 0, [0.94, 0.94, 0.94], 0.18, -0.10);
+    addPartGeo(mb, sph, 0.22, 0.022, 0.09, 0.54, 0.58, -0.06, 0, [0.88, 0.88, 0.88], -0.30, 0.16);
+    addPartGeo(mb, sph, 0.22, 0.022, 0.09, -0.54, 0.58, -0.06, 0, [0.88, 0.88, 0.88], 0.30, -0.16);
+    addPartGeo(mb, aLeg, 1, 1, 1, 0.08, 0.40, -0.18, -0.75, [0.82, 0.82, 0.82]);
+    addPartGeo(mb, aLeg, 1, 1, 1, -0.08, 0.40, -0.18, -0.75, [0.82, 0.82, 0.82]);
+    return mb.geometry();
+  }
+  var legCyl = new THREE.CylinderGeometry(0.068, 0.044, 0.48, 7);
+  var neckCyl = new THREE.CylinderGeometry(0.10, 0.16, 0.34, 7), tailCyl = new THREE.CylinderGeometry(0.02, 0.075, 0.42, 6);
   addPartGeo(mb, sph, 0.25, 0.24, 0.38, 0, 0.56, -0.02, 0, [1, 1, 1]);
   addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.58, 0.18, 0, [0.96, 0.96, 0.96]);
   addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.53, -0.22, 0, [0.95, 0.95, 0.95]);
@@ -2069,10 +2217,11 @@ function buildEntitySystem() {
   entShMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); entShMesh.frustumCulled = false; entShMesh.renderOrder = 1; entShMesh.count = 0;
   root.add(entShMesh);
   // sculpted organic silhouettes for distant impostors (only used if enabled)
-  var gGeo = buildGuestImpostorGeo(), aGeo = buildAnimalImpostorGeo();
+  var gGeo = buildGuestImpostorGeo(), aMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
   impG = mkImp(gGeo.body, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
   impH = mkImp(gGeo.head, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
-  impA = mkImp(aGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 300);
+  impA = {};
+  for (var ci = 0; ci < IMP_CLS.length; ci++) impA[IMP_CLS[ci]] = mkImp(buildAnimalImpostorGeo(IMP_CLS[ci]), aMat, 300);
 }
 function makeVis(kind, e) {
   var v = null;
@@ -2087,16 +2236,28 @@ function makeVis(kind, e) {
   }
   return v;
 }
+var _shBox = new THREE.Box3();
 function addEnt(kind, e) {
   var v = makeVis(kind, e);
   var am = kind === 'animal' ? findIn(D.animals, e.species) : null;
   var ht = (isFin(v.height) && v.height > 0) ? v.height : (kind === 'animal' ? Math.max(0.5, ((am && am.size) || 1) * 1.2) : 1.7);
   var rad = kind === 'animal' ? clamp(0.35 + ((am && am.length) || 2) * 0.13, 0.5, 3.1) * (e.baby ? 0.6 : 1) : kind === 'guest' ? 0.38 : 0.42;
+  var shW = rad, shL = rad, shZ = 0;
+  if (kind === 'animal') {
+    _shBox.setFromObject(v.group);
+    if (!_shBox.isEmpty() && isFin(_shBox.min.x) && isFin(_shBox.max.x) && isFin(_shBox.min.z) && isFin(_shBox.max.z)) {
+      var bw = _shBox.max.x - _shBox.min.x, bl = _shBox.max.z - _shBox.min.z;
+      shW = clamp(bw * 0.44, 0.35, 2.0);
+      shL = clamp(bl * 0.40, 0.42, 5.2);
+      if (shW > Math.max(1.4, shL * 0.95)) shW = Math.max(1.4, shL * 0.95);
+      shZ = clamp((_shBox.min.z + _shBox.max.z) * 0.15, -0.9, 0.9);
+    }
+  }
   var mc = 0; v.group.traverse(function (o) { if (o.isMesh) mc++; });
   var colSeed = kind === 'animal' ? hash32(String(e.species)) : kind === 'guest' ? (e.seed | 0) * 2654435761 : hash32(String(e.type));
   var c = new THREE.Color().setHSL((((colSeed >>> 0) % 360) / 360), kind === 'animal' ? 0.32 : 0.55, kind === 'animal' ? 0.46 : 0.5);
   if (kind === 'animal') { var ac = avgColour(v.group); if (ac) c = ac; }
-  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
+  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, shW: shW, shL: shL, shZ: shZ, impCls: kind === 'animal' ? animalImpCls(e.species) : null, isSea: !!(am && am.realm === 'sea'), bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
   enableShadows(v.group, true, true);
   v.group.position.set(fin(e.x, 0), 0, fin(e.z, 0));
   entGroup.add(v.group);
@@ -2189,7 +2350,7 @@ function updateEntities(dt, dtGame) {
     }
   }
   // pass 2: budget governor - farthest entities become sculpted impostors (only if IMPOSTORS_ON && beyond close threshold)
-  var nG = 0, nA = 0, n = visList.length;
+  var nG = 0, nA = { quad: 0, biped: 0, tall: 0, aero: 0 }, nATot = 0, n = visList.length;
   if (IMPOSTORS_ON && totalMc > MESH_BUDGET) {
     visList.sort(cmpFar);
     for (k = 0; k < n && totalMc > MESH_BUDGET; k++) {
@@ -2199,7 +2360,7 @@ function updateEntities(dt, dtGame) {
     }
   }
   // pass 3: animate real ones, write impostors/shadows
-  var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array, aa = impA.instanceMatrix.array, ac = impA.instanceColor.array;
+  var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array;
   for (k = 0; k < n; k++) {
     rec = visList[k]; e = rec.ent; var g = rec.group, x2 = fin(e.x, 0), z2 = fin(e.z, 0), gy2 = fin(rec.gy, 0);
     if (!isFin(rec.h)) rec.h = 0;
@@ -2207,15 +2368,21 @@ function updateEntities(dt, dtGame) {
       if (dtGame > 0) rec.h = wrapPI(rec.h + dtGame * 14);
       gy2 += Math.abs(Math.sin(G.t * 16 + (e.id | 0))) * (0.28 + rec.sz * 0.12);
     } else if (dtGame > 0) { var dh = wrapPI(fin(e.heading, rec.h) - rec.h); rec.h += dh * Math.min(1, dtGame * 9); }
+    var c = Math.cos(rec.h), sn = Math.sin(rec.h);
     if (rec.imp) {
       g.visible = false;
-      var c = Math.cos(rec.h), sn = Math.sin(rec.h), b;
+      var b;
       if (rec.kind === 'animal') {
-        if (nA < 300) {
-          b = nA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.85 + 0.2, hh = Math.max(rec.ht, sz * 0.85 + 0.15), l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.95 : sz * 1.25) + 0.3;
+        var cls = rec.impCls || 'quad', cntA = nA[cls];
+        if (cntA < 300) {
+          var imA = impA[cls], aa = imA.instanceMatrix.array, ac = imA.instanceColor.array;
+          b = cntA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.85 + 0.2;
+          var hh = (cls === 'aero' && rec.isSea) ? Math.max(rec.ht, sz * 0.45 + 0.15) : Math.max(rec.ht, sz * 0.85 + 0.15);
+          var l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.95 : sz * 1.25) + 0.3;
           aa[b] = c * w; aa[b + 1] = 0; aa[b + 2] = -sn * w; aa[b + 3] = 0; aa[b + 4] = 0; aa[b + 5] = hh; aa[b + 6] = 0; aa[b + 7] = 0;
           aa[b + 8] = sn * l; aa[b + 9] = 0; aa[b + 10] = c * l; aa[b + 11] = 0; aa[b + 12] = x2; aa[b + 13] = gy2; aa[b + 14] = z2; aa[b + 15] = 1;
-          ac[nA * 3] = rec.col.r; ac[nA * 3 + 1] = rec.col.g; ac[nA * 3 + 2] = rec.col.b; nA++;
+          ac[cntA * 3] = rec.col.r; ac[cntA * 3 + 1] = rec.col.g; ac[cntA * 3 + 2] = rec.col.b;
+          nA[cls] = cntA + 1; nATot++;
         }
       } else if (nG < 600) {
         var hs = rec.ht / 1.75; b = nG * 16;
@@ -2240,17 +2407,26 @@ function updateEntities(dt, dtGame) {
       if (rec.kind === 'guest' && e.thoughtT > 0 && e.thought && rec.d2 < 2300 && bubbleList.length < MAXB) bubbleList.push(rec);
     }
     if (nsh < entShCap) {
-      var sr = rec.rad, bs = nsh * 16;
-      sa[bs] = sr; sa[bs + 1] = 0; sa[bs + 2] = 0; sa[bs + 3] = 0; sa[bs + 4] = 0; sa[bs + 5] = 1; sa[bs + 6] = 0; sa[bs + 7] = 0;
-      sa[bs + 8] = 0; sa[bs + 9] = 0; sa[bs + 10] = sr; sa[bs + 11] = 0; sa[bs + 12] = x2; sa[bs + 13] = Math.max(rec.gy0, rec.wl) + 0.06; sa[bs + 14] = z2; sa[bs + 15] = 1;
+      var altK = rec.kind === 'animal' ? Math.max(0.45, 1 - Math.max(0, (e.flyAlt || 0) + (e.y || 0)) * 0.05) : 1;
+      var sw = rec.shW * altK, sl = rec.shL * altK, bs = nsh * 16;
+      var sc = rec.kind === 'animal' ? c : 1, ss = rec.kind === 'animal' ? sn : 0;
+      var sxOff = rec.kind === 'animal' ? ss * rec.shZ * altK : 0;
+      var szOff = rec.kind === 'animal' ? sc * rec.shZ * altK : 0;
+      sa[bs] = sc * sw; sa[bs + 1] = 0; sa[bs + 2] = -ss * sw; sa[bs + 3] = 0; sa[bs + 4] = 0; sa[bs + 5] = 1; sa[bs + 6] = 0; sa[bs + 7] = 0;
+      sa[bs + 8] = ss * sl; sa[bs + 9] = 0; sa[bs + 10] = sc * sl; sa[bs + 11] = 0; sa[bs + 12] = x2 + sxOff; sa[bs + 13] = Math.max(rec.gy0, rec.wl) + 0.06; sa[bs + 14] = z2 + szOff; sa[bs + 15] = 1;
       nsh++;
     }
   }
   entShMesh.count = nsh; entShMesh.instanceMatrix.needsUpdate = true;
-  impG.count = nG; impH.count = nG; impA.count = nA;
-  impG.instanceMatrix.needsUpdate = true; impH.instanceMatrix.needsUpdate = true; impA.instanceMatrix.needsUpdate = true;
-  impG.instanceColor.needsUpdate = true; impA.instanceColor.needsUpdate = true;
-  G.entStats = { visible: n, impostors: nG + nA, meshes: Math.round(totalMc) };
+  impG.count = nG; impH.count = nG;
+  impG.instanceMatrix.needsUpdate = true; impH.instanceMatrix.needsUpdate = true;
+  impG.instanceColor.needsUpdate = true;
+  for (var ci = 0; ci < IMP_CLS.length; ci++) {
+    var ck = IMP_CLS[ci], imC = impA[ck];
+    imC.count = nA[ck];
+    if (nA[ck] > 0) { imC.instanceMatrix.needsUpdate = true; imC.instanceColor.needsUpdate = true; }
+  }
+  G.entStats = { visible: n, impostors: nG + nATot, meshes: Math.round(totalMc) };
 }
 function updateBuildings(dtGame) {
   var t = G.t;

@@ -377,7 +377,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   function forecastFor(species, i, j) {
     var enc = Z.Sim.enclosureAt(i, j); if (!enc) return null;
-    var f = Z.Sim.suitabilityFor(enc.id, species); return f ? { enc: enc, value: f.value, issues: f.issues } : null;
+    var f = Z.Sim.suitabilityFor(enc.id, species); if (!f) return null;
+    var iss = f.issues ? f.issues.slice() : [];
+    iss.sort(function (a, b) { return (/narrow|cramped|bigger/i.test(b) ? 1 : 0) - (/narrow|cramped|bigger/i.test(a) ? 1 : 0); });
+    return { enc: enc, value: f.value, issues: iss };
   }
   PLAN.animal = function (d) {
     var t = UI.tool, gp = d.b || d.a, r = Z.Sim.addAnimal(t.id, gp.i, gp.j, { dry: true }), f = forecastFor(t.id, gp.i, gp.j);
@@ -464,10 +467,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (el.forecast) {
       var f = plan.forecast;
       if (f) {
-        var pct = Math.round(f.value * 100), col = pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)';
+        var sizeErr = !plan.ok && plan.msg && /narrow|cramped/i.test(plan.msg);
+        var pct = Math.round(f.value * 100), col = sizeErr ? 'var(--bad)' : pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)';
         el.forecast.classList.add('on'); el.forecast.firstChild.textContent = pct + '%'; el.forecast.firstChild.style.color = col;
-        el.forecast.lastChild.innerHTML = '<b>' + f.enc.name + '</b> would suit it ' + (pct >= 70 ? 'well' : pct >= 45 ? 'so-so' : 'poorly') + (f.issues.length ? '. ' + f.issues.slice(0, 2).join('. ') + '.' : '. Lovely!');
-      } else { el.forecast.classList.add('on'); el.forecast.firstChild.textContent = '--'; el.forecast.firstChild.style.color = ''; el.forecast.lastChild.textContent = 'Not inside an enclosure. Fence an area first.'; }
+        el.forecast.lastChild.innerHTML = sizeErr
+          ? '<b>' + f.enc.name + '</b>: ' + plan.msg + '.'
+          : '<b>' + f.enc.name + '</b> would suit it ' + (pct >= 70 ? 'well' : pct >= 45 ? 'so-so' : 'poorly') + (f.issues.length ? '. ' + f.issues.slice(0, 2).join('. ') + '.' : '. Lovely!');
+      } else { el.forecast.classList.add('on'); el.forecast.firstChild.textContent = '--'; el.forecast.firstChild.style.color = ''; el.forecast.lastChild.textContent = (!plan.ok && plan.msg && /narrow|cramped/i.test(plan.msg)) ? plan.msg : 'Not inside an enclosure. Fence an area first.'; }
     }
   }
   function refreshPlan() { if (UI.tool && (drag || hover)) applyPlan(planFor(drag || hover), (drag || hover).cx, (drag || hover).cy, (drag || hover).touch); }

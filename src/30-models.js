@@ -241,20 +241,80 @@ function profAt(K, s) {
   return out;
 }
 var _lp = new T.Vector3(), _ln = new T.Vector3(), _l1 = new T.Vector3(), _l2 = new T.Vector3();
-// lofted elliptical tube. o: {s0,s1,rings,seg,dir,down,ox,oy,oz,z0,z1,cap0,cap1,flat}
+// shared grid & triangle emission helpers for loft / tube / lathe / wingMembrane / bevelBox / extrude
+function _pushTriAO(b, ax, ay, az, nax, nay, naz, ca, bx, by, bz, nbx, nby, nbz, cb, cx, cy, cz, ncx, ncy, ncz, cc) {
+  _l1.set(bx - ax, by - ay, bz - az); _l2.set(cx - ax, cy - ay, cz - az); _ln.crossVectors(_l1, _l2);
+  if (_ln.lengthSq() < 1e-14) return;
+  var dn = _ln.x * (nax + nbx + ncx) + _ln.y * (nay + nby + ncy) + _ln.z * (naz + nbz + ncz);
+  if (dn >= 0) {
+    b.p.push(ax, ay, az, bx, by, bz, cx, cy, cz);
+    b.n.push(nax, nay, naz, nbx, nby, nbz, ncx, ncy, ncz);
+    b.c.push(ca[0], ca[1], ca[2], cb[0], cb[1], cb[2], cc[0], cc[1], cc[2]);
+  } else {
+    b.p.push(ax, ay, az, cx, cy, cz, bx, by, bz);
+    b.n.push(nax, nay, naz, ncx, ncy, ncz, nbx, nby, nbz);
+    b.c.push(ca[0], ca[1], ca[2], cc[0], cc[1], cc[2], cb[0], cb[1], cb[2]);
+  }
+}
+function _evalColAO(col, x, y, z, nx, ny, nz, t, v) {
+  var h = typeof col === 'function' ? col(x, y, z, nx, ny, nz, t, v) : col;
+  var ao = clamp(0.92 + 0.10 * ny, 0.80, 1.04);
+  return [(h >> 16 & 255) / 255 * ao, (h >> 8 & 255) / 255 * ao, (h & 255) / 255 * ao];
+}
+function _emitGrid(b, P, N, CC, R, S, wrapS) {
+  var cols = wrapS ? S : S + 1;
+  var ring = function (ii, kk) { return (ii * cols + (wrapS ? ((kk + S) % S) : kk)) * 3; };
+  var pushV = function (q) { b.p.push(P[q], P[q + 1], P[q + 2]); b.n.push(N[q], N[q + 1], N[q + 2]); b.c.push(CC[q], CC[q + 1], CC[q + 2]); };
+  var tri = function (qa, qb, qc) {
+    _l1.set(P[qb] - P[qa], P[qb + 1] - P[qa + 1], P[qb + 2] - P[qa + 2]);
+    _l2.set(P[qc] - P[qa], P[qc + 1] - P[qa + 1], P[qc + 2] - P[qa + 2]);
+    _ln.crossVectors(_l1, _l2);
+    if (_ln.lengthSq() < 1e-14) return;
+    var dn = _ln.x * (N[qa] + N[qb] + N[qc]) + _ln.y * (N[qa + 1] + N[qb + 1] + N[qc + 1]) + _ln.z * (N[qa + 2] + N[qb + 2] + N[qc + 2]);
+    if (dn >= 0) { pushV(qa); pushV(qb); pushV(qc); } else { pushV(qa); pushV(qc); pushV(qb); }
+  };
+  for (var i = 0; i < R; i++) for (var k = 0; k < S; k++) {
+    var q00 = ring(i, k), q01 = ring(i, k + 1), q10 = ring(i + 1, k), q11 = ring(i + 1, k + 1);
+    tri(q00, q10, q11); tri(q00, q11, q01);
+  }
+}
+function _emitQuadFlat(b, p0, p1, p2, p3, nx, ny, nz, col, smoothK, cx, cy, cz, hx, hy, hz) {
+  var pts = [p0, p1, p2, p3], norms = [], cols = [];
+  for (var i = 0; i < 4; i++) {
+    var p = pts[i];
+    if (smoothK > 0) {
+      _na.set((p[0] - cx) / hx, (p[1] - cy) / hy, (p[2] - cz) / hz).normalize();
+      _nb.set(lerp(nx, _na.x, smoothK), lerp(ny, _na.y, smoothK), lerp(nz, _na.z, smoothK)).normalize();
+      norms.push([_nb.x, _nb.y, _nb.z]);
+    } else {
+      norms.push([nx, ny, nz]);
+    }
+    cols.push(_evalColAO(col, p[0], p[1], p[2], norms[i][0], norms[i][1], norms[i][2]));
+  }
+  _pushTriAO(b, p0[0], p0[1], p0[2], norms[0][0], norms[0][1], norms[0][2], cols[0], p1[0], p1[1], p1[2], norms[1][0], norms[1][1], norms[1][2], cols[1], p2[0], p2[1], p2[2], norms[2][0], norms[2][1], norms[2][2], cols[2]);
+  _pushTriAO(b, p0[0], p0[1], p0[2], norms[0][0], norms[0][1], norms[0][2], cols[0], p2[0], p2[1], p2[2], norms[2][0], norms[2][1], norms[2][2], cols[2], p3[0], p3[1], p3[2], norms[3][0], norms[3][1], norms[3][2], cols[3]);
+}
+// lofted elliptical tube. o: {s0,s1,rings,seg,dir,down,ox,oy,oz,z0,z1,cap0,cap1,flatBot,ridge,superPow,bendX,bendY}
 Builder.prototype.loft = function (K, o, col) {
   o = o || {};
   var s0 = o.s0 !== undefined ? o.s0 : K[0][0], s1 = o.s1 !== undefined ? o.s1 : K[K.length - 1][0];
   var R = Math.max(2, Math.round((o.rings || 10) * DETAIL)), S = Math.max(4, Math.round((o.seg || 8) * DETAIL)), dir = o.dir || 1, down = !!o.down, ox = o.ox || 0, oy = o.oy || 0, oz = o.oz || 0;
   var z0 = o.z0 !== undefined ? o.z0 : s0, z1 = o.z1 !== undefined ? o.z1 : s1, fn = typeof col === 'function';
+  var flatBot = o.flatBot || 0, ridge = o.ridge || 0, superPow = o.superPow || 0, bendX = o.bendX || 0, bendY = o.bendY || 0;
   var P = new Float32Array((R + 1) * S * 3), CC = new Float32Array((R + 1) * S * 3), i, k, idx;
   var cr = 0, cg = 0, cb = 0; if (!fn) { cr = (col >> 16 & 255) / 255; cg = (col >> 8 & 255) / 255; cb = (col & 255) / 255; }
-  var ctr = [];
   for (i = 0; i <= R; i++) {
-    var s = lerp(s0, s1, i / R), pr = profAt(K, s), zc = lerp(z0, z1, i / R);
-    ctr.push(pr[2]);
+    var tf = i / R, s = lerp(s0, s1, tf), pr = profAt(K, s), zc = lerp(z0, z1, tf);
+    var arc = 4 * tf * (1 - tf), bxOff = bendX * arc, byOff = bendY * arc;
     for (k = 0; k < S; k++) {
-      var a = k / S * TAU, ca = cos(a), sa = sin(a), u = pr[0] * sa, v = pr[2] + pr[1] * ca, x, y, z;
+      var a = k / S * TAU, ca = cos(a), sa = sin(a), sca = ca, ssa = sa;
+      if (superPow > 0 && superPow !== 1) {
+        sca = (ca < 0 ? -1 : 1) * Math.pow(abs(ca), superPow);
+        ssa = (sa < 0 ? -1 : 1) * Math.pow(abs(sa), superPow);
+      }
+      if (flatBot > 0 && sca < 0) sca *= (1 - flatBot * 0.55);
+      var rAdd = (ridge && ca > 0.55) ? ridge * Math.pow((ca - 0.55) / 0.45, 2) * pr[1] : 0;
+      var u = pr[0] * ssa + bxOff, v = pr[2] + pr[1] * sca + rAdd + byOff, x, y, z;
       if (down) { x = u; y = -s; z = v; } else { x = u; y = v; z = dir * s; }
       x += ox; y += oy; z += oz; idx = (i * S + k) * 3; P[idx] = x; P[idx + 1] = y; P[idx + 2] = z;
       if (fn) { var h = col(zc, ca, sa, x, y, z); CC[idx] = (h >> 16 & 255) / 255; CC[idx + 1] = (h >> 8 & 255) / 255; CC[idx + 2] = (h & 255) / 255; }
@@ -279,17 +339,7 @@ Builder.prototype.loft = function (K, o, col) {
       CC[idx] *= aoL; CC[idx + 1] *= aoL; CC[idx + 2] *= aoL;
     }
   }
-  var pushV = function (q) { this.p.push(P[q], P[q + 1], P[q + 2]); this.n.push(N[q], N[q + 1], N[q + 2]); this.c.push(CC[q], CC[q + 1], CC[q + 2]); }.bind(this);
-  var tri = function (qa, qb, qc) {
-    _l1.set(P[qb] - P[qa], P[qb + 1] - P[qa + 1], P[qb + 2] - P[qa + 2]); _l2.set(P[qc] - P[qa], P[qc + 1] - P[qa + 1], P[qc + 2] - P[qa + 2]); _ln.crossVectors(_l1, _l2);
-    if (_ln.lengthSq() < 1e-14) return;
-    var dn = _ln.x * (N[qa] + N[qb] + N[qc]) + _ln.y * (N[qa + 1] + N[qb + 1] + N[qc + 1]) + _ln.z * (N[qa + 2] + N[qb + 2] + N[qc + 2]);
-    if (dn >= 0) { pushV(qa); pushV(qb); pushV(qc); } else { pushV(qa); pushV(qc); pushV(qb); }
-  };
-  for (i = 0; i < R; i++) for (k = 0; k < S; k++) {
-    var q00 = ring(i, k), q01 = ring(i, k + 1), q10 = ring(i + 1, k), q11 = ring(i + 1, k + 1);
-    tri(q00, q10, q11); tri(q00, q11, q01);
-  }
+  _emitGrid(this, P, N, CC, R, S, true);
   var capf = function (i0, sgn) {
     var cx = 0, cy = 0, cz = 0, r = 0, g = 0, b = 0; for (var kk = 0; kk < S; kk++) { var q = (i0 * S + kk) * 3; cx += P[q]; cy += P[q + 1]; cz += P[q + 2]; r += CC[q]; g += CC[q + 1]; b += CC[q + 2]; }
     cx /= S; cy /= S; cz /= S; r /= S; g /= S; b /= S;
@@ -304,6 +354,364 @@ Builder.prototype.loft = function (K, o, col) {
     }
   }.bind(this);
   if (o.cap0) capf(0, -1); if (o.cap1) capf(R, 1);
+  return this;
+};
+
+// smooth 3D Catmull-Rom swept tube with parallel-transport (Bishop) frames
+Builder.prototype.tube = function (pts, rSpec, col, o) {
+  if (!pts || pts.length < 2) return this;
+  o = o || {};
+  var S = Math.max(4, Math.round((o.seg || 8) * DETAIL)), sx = o.sx || 1, sz = o.sz || 1;
+  var flatBot = o.flatBot || 0, ridge = o.ridge || 0;
+  var cap0 = o.cap0 !== undefined ? o.cap0 : true, cap1 = o.cap1 !== undefined ? o.cap1 : true;
+  var sm = o.smooth !== false && pts.length >= 3;
+  var steps = sm ? Math.max(2, Math.round((o.steps || 3) * DETAIL)) : 1;
+  var spine = [], i, k, j;
+  if (sm) {
+    var m = pts.length;
+    for (i = 0; i < m - 1; i++) {
+      var p0 = pts[i > 0 ? i - 1 : 0], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2 < m ? i + 2 : m - 1];
+      var sub = (i === m - 2) ? steps : steps - 1;
+      for (j = 0; j <= sub; j++) {
+        var u = j / steps, u2 = u * u, u3 = u2 * u;
+        var x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * u + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * u2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * u3);
+        var y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * u + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * u2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * u3);
+        var z = 0.5 * ((2 * p1[2]) + (-p0[2] + p2[2]) * u + (2 * p0[2] - 5 * p1[2] + 4 * p2[2] - p3[2]) * u2 + (-p0[2] + 3 * p1[2] - 3 * p2[2] + p3[2]) * u3);
+        spine.push([x, y, z]);
+      }
+    }
+  } else {
+    for (i = 0; i < pts.length; i++) spine.push([pts[i][0], pts[i][1], pts[i][2]]);
+  }
+  var R = spine.length - 1; if (R < 1) return this;
+  var arc = [0], tot = 0;
+  for (i = 1; i <= R; i++) {
+    var dx = spine[i][0] - spine[i - 1][0], dy = spine[i][1] - spine[i - 1][1], dz = spine[i][2] - spine[i - 1][2];
+    tot += Math.sqrt(dx * dx + dy * dy + dz * dz); arc.push(tot);
+  }
+  if (tot < 1e-6) return this;
+  var rAt = function (t) {
+    if (typeof rSpec === 'function') return max(1e-4, rSpec(t));
+    if (typeof rSpec === 'number') return max(1e-4, rSpec);
+    if (Array.isArray(rSpec)) {
+      if (rSpec.length === 2) return max(1e-4, lerp(rSpec[0], rSpec[1], t));
+      var fi = clamp(t, 0, 1) * (rSpec.length - 1), i0 = Math.floor(fi), i1 = Math.min(rSpec.length - 1, i0 + 1);
+      return max(1e-4, lerp(rSpec[i0], rSpec[i1], fi - i0));
+    }
+    return 0.05;
+  };
+  var Tvecs = [], Nvecs = [], Bvecs = [];
+  for (i = 0; i <= R; i++) {
+    var ia = Math.max(0, i - 1), ib = Math.min(R, i + 1);
+    var tv = new T.Vector3(spine[ib][0] - spine[ia][0], spine[ib][1] - spine[ia][1], spine[ib][2] - spine[ia][2]);
+    if (tv.lengthSq() < 1e-12) tv.set(0, 1, 0); else tv.normalize();
+    Tvecs.push(tv);
+  }
+  var n0 = new T.Vector3();
+  if (abs(Tvecs[0].y) < 0.92) n0.set(0, 1, 0); else n0.set(1, 0, 0);
+  n0.addScaledVector(Tvecs[0], -n0.dot(Tvecs[0])).normalize();
+  Nvecs.push(n0); Bvecs.push(new T.Vector3().crossVectors(Tvecs[0], n0).normalize());
+  var qStep = new T.Quaternion();
+  for (i = 1; i <= R; i++) {
+    var ni = Nvecs[i - 1].clone();
+    if (qStep.setFromUnitVectors && ni.applyQuaternion) {
+      qStep.setFromUnitVectors(Tvecs[i - 1], Tvecs[i]);
+      ni.applyQuaternion(qStep);
+    }
+    ni.addScaledVector(Tvecs[i], -ni.dot(Tvecs[i]));
+    if (ni.lengthSq() < 1e-10) ni.copy(Nvecs[i - 1]); else ni.normalize();
+    Nvecs.push(ni); Bvecs.push(new T.Vector3().crossVectors(Tvecs[i], ni).normalize());
+  }
+  var P = new Float32Array((R + 1) * S * 3), CC = new Float32Array((R + 1) * S * 3), N = new Float32Array((R + 1) * S * 3);
+  var fn = typeof col === 'function', cr = 0, cg = 0, cb = 0;
+  if (!fn) { cr = (col >> 16 & 255) / 255; cg = (col >> 8 & 255) / 255; cb = (col & 255) / 255; }
+  for (i = 0; i <= R; i++) {
+    var tf = arc[i] / tot, rad = rAt(tf), sp = spine[i], nv = Nvecs[i], bv = Bvecs[i];
+    for (k = 0; k < S; k++) {
+      var a = k / S * TAU, ca = cos(a), sa = sin(a), sca = ca;
+      if (flatBot > 0 && sca < 0) sca *= (1 - flatBot * 0.55);
+      var rAdd = (ridge && ca > 0.55) ? ridge * Math.pow((ca - 0.55) / 0.45, 2) * rad : 0;
+      var u = (rad * sz * sca + rAdd), v = rad * sx * sa;
+      var px = sp[0] + nv.x * u + bv.x * v, py = sp[1] + nv.y * u + bv.y * v, pz = sp[2] + nv.z * u + bv.z * v;
+      var idx = (i * S + k) * 3;
+      P[idx] = px; P[idx + 1] = py; P[idx + 2] = pz;
+    }
+  }
+  var ring = function (ii, kk) { return (ii * S + ((kk + S) % S)) * 3; };
+  for (i = 0; i <= R; i++) {
+    var ia2 = Math.max(0, i - 1), ib2 = Math.min(R, i + 1), sp2 = spine[i], tf2 = arc[i] / tot;
+    for (k = 0; k < S; k++) {
+      var idx2 = (i * S + k) * 3;
+      var a1 = ring(ia2, k), b1 = ring(ib2, k), a2 = ring(i, k - 1), b2 = ring(i, k + 1);
+      _l1.set(P[b1] - P[a1], P[b1 + 1] - P[a1 + 1], P[b1 + 2] - P[a1 + 2]);
+      _l2.set(P[b2] - P[a2], P[b2 + 1] - P[a2 + 1], P[b2 + 2] - P[a2 + 2]);
+      _ln.crossVectors(_l1, _l2); var L = _ln.length();
+      _lp.set(P[idx2] - sp2[0], P[idx2 + 1] - sp2[1], P[idx2 + 2] - sp2[2]);
+      if (L < 1e-9) { if (_lp.lengthSq() < 1e-12) _lp.copy(Tvecs[i]).multiplyScalar(i === 0 ? -1 : 1); _ln.copy(_lp).normalize(); }
+      else { _ln.divideScalar(L); if (_lp.lengthSq() > 1e-10 && _ln.dot(_lp) < 0) _ln.negate(); }
+      N[idx2] = _ln.x; N[idx2 + 1] = _ln.y; N[idx2 + 2] = _ln.z;
+      var ao = clamp(0.92 + 0.10 * _ln.y, 0.80, 1.04);
+      if (fn) {
+        var h = col(P[idx2], P[idx2 + 1], P[idx2 + 2], _ln.x, _ln.y, _ln.z, tf2);
+        CC[idx2] = (h >> 16 & 255) / 255 * ao; CC[idx2 + 1] = (h >> 8 & 255) / 255 * ao; CC[idx2 + 2] = (h & 255) / 255 * ao;
+      } else {
+        CC[idx2] = cr * ao; CC[idx2 + 1] = cg * ao; CC[idx2 + 2] = cb * ao;
+      }
+    }
+  }
+  _emitGrid(this, P, N, CC, R, S, true);
+  var capEnd = function (i0, tv, sgn) {
+    var c = spine[i0], r = 0, g = 0, b = 0, kk;
+    for (kk = 0; kk < S; kk++) { var q = (i0 * S + kk) * 3; r += CC[q]; g += CC[q + 1]; b += CC[q + 2]; }
+    r /= S; g /= S; b /= S;
+    var nx = tv.x * sgn, ny = tv.y * sgn, nz = tv.z * sgn;
+    var cCol = [r, g, b];
+    for (kk = 0; kk < S; kk++) {
+      var qa = ring(i0, kk), qb = ring(i0, kk + 1);
+      _pushTriAO(this, c[0], c[1], c[2], nx, ny, nz, cCol, P[qa], P[qa + 1], P[qa + 2], nx, ny, nz, [CC[qa], CC[qa + 1], CC[qa + 2]], P[qb], P[qb + 1], P[qb + 2], nx, ny, nz, [CC[qb], CC[qb + 1], CC[qb + 2]]);
+    }
+  }.bind(this);
+  if (cap0) capEnd(0, Tvecs[0], -1);
+  if (cap1) capEnd(R, Tvecs[R], 1);
+  return this;
+};
+
+// revolved profile around local Y axis: pts = [[r, y], ...]
+Builder.prototype.lathe = function (pts, col, o) {
+  if (!pts || pts.length < 2) return this;
+  o = o || {};
+  var S = Math.max(6, Math.round((o.seg || 12) * DETAIL)), R = pts.length - 1;
+  var phi0 = o.phi0 || 0, phiLen = o.phiLen !== undefined ? o.phiLen : TAU, full = abs(phiLen - TAU) < 1e-4;
+  var ox = o.x || o.tx || 0, oy = o.y || o.ty || 0, oz = o.z || o.tz || 0, sx = o.sx || 1, sy = o.sy || 1, sz = o.sz || 1;
+  var ridgeN = o.ridgeN || 0, ridgeA = o.ridgeA || 0;
+  _ea.set(o.rot ? o.rot[0] : 0, o.rot ? o.rot[1] : 0, o.rot ? o.rot[2] : 0, 'XYZ');
+  _qa.setFromEuler(_ea);
+  _ma.compose(_va.set(ox, oy, oz), _qa, _sa.set(sx, sy, sz));
+  var hasNM = !!(_nm && _nm.getNormalMatrix && _ln.applyMatrix3); if (hasNM) _nm.getNormalMatrix(_ma);
+  var cols = full ? S : S + 1;
+  var P = new Float32Array((R + 1) * cols * 3), N = new Float32Array((R + 1) * cols * 3), CC = new Float32Array((R + 1) * cols * 3);
+  var fn = typeof col === 'function', cr = 0, cg = 0, cb = 0;
+  if (!fn) { cr = (col >> 16 & 255) / 255; cg = (col >> 8 & 255) / 255; cb = (col & 255) / 255; }
+  var i, k, idx;
+  for (i = 0; i <= R; i++) {
+    var rad = max(0, pts[i][0]), py = pts[i][1];
+    for (k = 0; k < cols; k++) {
+      var a = phi0 + (k / S) * phiLen, ca = cos(a), sa = sin(a);
+      var rMod = ridgeN ? rad * (1 + ridgeA * cos(a * ridgeN)) : rad;
+      _a.set(rMod * sa, py, rMod * ca).applyMatrix4(_ma);
+      idx = (i * cols + k) * 3; P[idx] = _a.x; P[idx + 1] = _a.y; P[idx + 2] = _a.z;
+    }
+  }
+  var ring = function (ii, kk) {
+    var ck = full ? ((kk + S) % S) : clamp(kk, 0, S);
+    return (ii * cols + ck) * 3;
+  };
+  for (i = 0; i <= R; i++) {
+    var ia = Math.max(0, i - 1), ib = Math.min(R, i + 1);
+    var dr = pts[ib][0] - pts[ia][0], dy = pts[ib][1] - pts[ia][1];
+    // outward radial normal in (r, y) plane: (dy, -dr) if y increases upward, check sign
+    var nr = dy, nyL = -dr;
+    var nl = Math.sqrt(nr * nr + nyL * nyL);
+    if (nl < 1e-8) { nr = 1; nyL = 0; } else { nr /= nl; nyL /= nl; if (dy < 0) { nr = -nr; nyL = -nyL; } }
+    for (k = 0; k < cols; k++) {
+      var a2 = phi0 + (k / S) * phiLen, ca2 = cos(a2), sa2 = sin(a2);
+      _ln.set(nr * sa2, nyL, nr * ca2);
+      if (hasNM) _ln.applyMatrix3(_nm).normalize(); else if (_ln.applyQuaternion) _ln.applyQuaternion(_qa).normalize();
+      idx = (i * cols + k) * 3;
+      N[idx] = _ln.x; N[idx + 1] = _ln.y; N[idx + 2] = _ln.z;
+      var ao = clamp(0.92 + 0.10 * _ln.y, 0.80, 1.04);
+      if (fn) {
+        var h = col(P[idx], P[idx + 1], P[idx + 2], _ln.x, _ln.y, _ln.z);
+        CC[idx] = (h >> 16 & 255) / 255 * ao; CC[idx + 1] = (h >> 8 & 255) / 255 * ao; CC[idx + 2] = (h & 255) / 255 * ao;
+      } else {
+        CC[idx] = cr * ao; CC[idx + 1] = cg * ao; CC[idx + 2] = cb * ao;
+      }
+    }
+  }
+  _emitGrid(this, P, N, CC, R, S, full);
+  var capLathe = function (i0, sgn) {
+    if (pts[i0][0] < 1e-5) return;
+    _a.set(0, pts[i0][1], 0).applyMatrix4(_ma);
+    _ln.set(0, sgn, 0);
+    if (hasNM) _ln.applyMatrix3(_nm).normalize(); else if (_ln.applyQuaternion) _ln.applyQuaternion(_qa).normalize();
+    var cCol = _evalColAO(col, _a.x, _a.y, _a.z, _ln.x, _ln.y, _ln.z);
+    for (var kk = 0; kk < S; kk++) {
+      var qa = ring(i0, kk), qb = ring(i0, kk + 1);
+      _pushTriAO(this, _a.x, _a.y, _a.z, _ln.x, _ln.y, _ln.z, cCol, P[qa], P[qa + 1], P[qa + 2], _ln.x, _ln.y, _ln.z, [CC[qa], CC[qa + 1], CC[qa + 2]], P[qb], P[qb + 1], P[qb + 2], _ln.x, _ln.y, _ln.z, [CC[qb], CC[qb + 1], CC[qb + 2]]);
+    }
+  }.bind(this);
+  if (o.cap0) capLathe(0, -1);
+  if (o.cap1) capLathe(R, 1);
+  return this;
+};
+
+// 3D chamfered/beveled box (26 faces: 6 main + 12 edge bevels + 8 corner facets)
+Builder.prototype.bevelBox = function (w, h, d, bev, x, y, z, col, o) {
+  o = o || {};
+  var hx = w * 0.5, hy = h * 0.5, hz = d * 0.5;
+  var b = clamp(bev !== undefined ? bev : min(w, h, d) * 0.12, 1e-4, min(hx, hy, hz) * 0.9);
+  var ix = hx - b, iy = hy - b, iz = hz - b, sm = o.smooth ? (typeof o.smooth === 'number' ? o.smooth : 0.45) : 0;
+  _ea.set(o.rot ? o.rot[0] : 0, o.rot ? o.rot[1] : 0, o.rot ? o.rot[2] : 0, 'XYZ');
+  _qa.setFromEuler(_ea);
+  _ma.compose(_va.set(x, y, z), _qa, _sa.set(1, 1, 1));
+  var W = function (px, py, pz) { _a.set(px, py, pz).applyMatrix4(_ma); return [_a.x, _a.y, _a.z]; };
+  var WN = function (nx, ny, nz) { _n.set(nx, ny, nz).normalize(); if (_n.applyQuaternion) _n.applyQuaternion(_qa); return [_n.x, _n.y, _n.z]; };
+  var Q = function (a, b2, c, d2, n) { _emitQuadFlat(this, a, b2, c, d2, n[0], n[1], n[2], col, sm, x, y, z, hx, hy, hz); }.bind(this);
+  // 24 chamfer vertices: 3 per octant (sx,sy,sz in {-1,+1})
+  var V = function (sx, sy, sz, face) {
+    if (face === 0) return W(sx * hx, sy * iy, sz * iz); // X face corner
+    if (face === 1) return W(sx * ix, sy * hy, sz * iz); // Y face corner
+    return W(sx * ix, sy * iy, sz * hz);                 // Z face corner
+  };
+  // 6 main faces
+  Q(V(1, -1, -1, 0), V(1, 1, -1, 0), V(1, 1, 1, 0), V(1, -1, 1, 0), WN(1, 0, 0));
+  Q(V(-1, -1, 1, 0), V(-1, 1, 1, 0), V(-1, 1, -1, 0), V(-1, -1, -1, 0), WN(-1, 0, 0));
+  Q(V(-1, 1, -1, 1), V(-1, 1, 1, 1), V(1, 1, 1, 1), V(1, 1, -1, 1), WN(0, 1, 0));
+  Q(V(-1, -1, 1, 1), V(-1, -1, -1, 1), V(1, -1, -1, 1), V(1, -1, 1, 1), WN(0, -1, 0));
+  Q(V(-1, -1, 1, 2), V(1, -1, 1, 2), V(1, 1, 1, 2), V(-1, 1, 1, 2), WN(0, 0, 1));
+  Q(V(1, -1, -1, 2), V(-1, -1, -1, 2), V(-1, 1, -1, 2), V(1, 1, -1, 2), WN(0, 0, -1));
+  // 12 edge chamfers
+  for (var s1 = -1; s1 <= 1; s1 += 2) for (var s2 = -1; s2 <= 1; s2 += 2) {
+    Q(V(s1, s2, -1, 0), V(s1, s2, 1, 0), V(s1, s2, 1, 1), V(s1, s2, -1, 1), WN(s1, s2, 0)); // XY edges along Z
+    Q(V(s1, -1, s2, 0), V(s1, 1, s2, 0), V(s1, 1, s2, 2), V(s1, -1, s2, 2), WN(s1, 0, s2)); // XZ edges along Y
+    Q(V(-1, s1, s2, 1), V(1, s1, s2, 1), V(1, s1, s2, 2), V(-1, s1, s2, 2), WN(0, s1, s2)); // YZ edges along X
+  }
+  // 8 corner triangles
+  for (var sx = -1; sx <= 1; sx += 2) for (var sy = -1; sy <= 1; sy += 2) for (var sz = -1; sz <= 1; sz += 2) {
+    var p0 = V(sx, sy, sz, 0), p1 = V(sx, sy, sz, 1), p2 = V(sx, sy, sz, 2), cn = WN(sx, sy, sz);
+    var c0 = _evalColAO(col, p0[0], p0[1], p0[2], cn[0], cn[1], cn[2]);
+    var c1 = _evalColAO(col, p1[0], p1[1], p1[2], cn[0], cn[1], cn[2]);
+    var c2 = _evalColAO(col, p2[0], p2[1], p2[2], cn[0], cn[1], cn[2]);
+    _pushTriAO(this, p0[0], p0[1], p0[2], cn[0], cn[1], cn[2], c0, p1[0], p1[1], p1[2], cn[0], cn[1], cn[2], c1, p2[0], p2[1], p2[2], cn[0], cn[1], cn[2], c2);
+  }
+  return this;
+};
+
+// extruded 2D polygon with optional bevel, taper & dish curvature (axis: 'z'|'x'|'y')
+Builder.prototype.extrude = function (poly2d, depth, x, y, z, rot, col, o) {
+  if (!poly2d || poly2d.length < 3) return this;
+  o = o || {};
+  var n = poly2d.length, axis = o.axis || 'z', hd = (depth || 0.05) * 0.5, bev = clamp(o.bev !== undefined ? o.bev : (o.bevel || 0), 0, hd * 0.9);
+  var taper = o.taper !== undefined ? o.taper : 1, cX = o.curveX || 0, cY = o.curveY || 0;
+  var cu = 0, cv = 0, i, area2 = 0;
+  for (i = 0; i < n; i++) { cu += poly2d[i][0]; cv += poly2d[i][1]; var nxt = poly2d[(i + 1) % n]; area2 += poly2d[i][0] * nxt[1] - nxt[0] * poly2d[i][1]; }
+  cu /= n; cv /= n;
+  var pts = area2 < 0 ? poly2d.slice().reverse() : poly2d;
+  _ea.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0, 'XYZ');
+  _qa.setFromEuler(_ea);
+  _ma.compose(_va.set(x, y, z), _qa, _sa.set(o.sx || 1, o.sy || 1, o.sz || 1));
+  var toW = function (u, v, w) {
+    var du = u - cu, dv = v - cv, cw = w + cX * du * du + cY * dv * dv;
+    if (axis === 'x') _a.set(cw, u, v); else if (axis === 'y') _a.set(u, cw, v); else _a.set(u, v, cw);
+    _a.applyMatrix4(_ma); return [_a.x, _a.y, _a.z];
+  };
+  var toN = function (u, v, w) {
+    if (axis === 'x') _n.set(w, u, v); else if (axis === 'y') _n.set(u, w, v); else _n.set(u, v, w);
+    _n.normalize(); if (_n.applyQuaternion) _n.applyQuaternion(_qa); return [_n.x, _n.y, _n.z];
+  };
+  var nf = toN(0, 0, 1), nb = toN(0, 0, -1), ins = bev > 0 ? clamp(1 - bev * 1.4, 0.35, 0.96) : 1;
+  var cf = toW(cu, cv, hd), cb = toW(cu, cv, -hd);
+  var cfc = _evalColAO(col, cf[0], cf[1], cf[2], nf[0], nf[1], nf[2]), cbc = _evalColAO(col, cb[0], cb[1], cb[2], nb[0], nb[1], nb[2]);
+  var rimF = [], rimB = [], outF = [], outB = [];
+  for (i = 0; i < n; i++) {
+    var u = pts[i][0], v = pts[i][1];
+    var ui = cu + (u - cu) * ins, vi = cv + (v - cv) * ins;
+    var ub = cu + (u - cu) * taper, vb = cv + (v - cv) * taper;
+    var uib = cu + (ub - cu) * ins, vib = cv + (vb - cv) * ins;
+    rimF.push(toW(ui, vi, hd)); rimB.push(toW(uib, vib, -hd));
+    outF.push(toW(u, v, hd - bev)); outB.push(toW(ub, vb, -(hd - bev)));
+  }
+  for (i = 0; i < n; i++) {
+    var j = (i + 1) % n;
+    // front & back cap triangles
+    var fa = rimF[i], fb = rimF[j], ba = rimB[i], bb = rimB[j];
+    _pushTriAO(this, cf[0], cf[1], cf[2], nf[0], nf[1], nf[2], cfc, fa[0], fa[1], fa[2], nf[0], nf[1], nf[2], _evalColAO(col, fa[0], fa[1], fa[2], nf[0], nf[1], nf[2]), fb[0], fb[1], fb[2], nf[0], nf[1], nf[2], _evalColAO(col, fb[0], fb[1], fb[2], nf[0], nf[1], nf[2]));
+    _pushTriAO(this, cb[0], cb[1], cb[2], nb[0], nb[1], nb[2], cbc, bb[0], bb[1], bb[2], nb[0], nb[1], nb[2], _evalColAO(col, bb[0], bb[1], bb[2], nb[0], nb[1], nb[2]), ba[0], ba[1], ba[2], nb[0], nb[1], nb[2], _evalColAO(col, ba[0], ba[1], ba[2], nb[0], nb[1], nb[2]));
+    var eu = pts[j][0] - pts[i][0], ev = pts[j][1] - pts[i][1], en = toN(ev, -eu, 0);
+    if (bev > 0) {
+      var nbf = toN(ev, -eu, 0.7), nbb = toN(ev, -eu, -0.7);
+      _emitQuadFlat(this, rimF[i], outF[i], outF[j], rimF[j], nbf[0], nbf[1], nbf[2], col, 0, x, y, z, 1, 1, 1);
+      _emitQuadFlat(this, outB[i], rimB[i], rimB[j], outB[j], nbb[0], nbb[1], nbb[2], col, 0, x, y, z, 1, 1, 1);
+    }
+    _emitQuadFlat(this, outF[i], outB[i], outB[j], outF[j], en[0], en[1], en[2], col, 0, x, y, z, 1, 1, 1);
+  }
+  return this;
+};
+
+// closed, double-walled, cambered 3D wing airfoil/membrane across ordered skeletal spars
+Builder.prototype.wingMembrane = function (spars, thickness, col, o) {
+  if (!spars || spars.length < 2) return this;
+  o = o || {};
+  var U = Math.max(2, Math.round((o.uSteps || 4) * DETAIL)), V = Math.max(2, Math.round((o.vSteps || 3) * DETAIL));
+  var th0 = max(0.002, thickness || 0.025), camber = o.camber !== undefined ? o.camber : 0.06, scallop = o.scallop !== undefined ? o.scallop : 0.14;
+  var nS = spars.length, sampleSpar = function (sp, u) {
+    if (sp.length === 2) return [lerp(sp[0][0], sp[1][0], u), lerp(sp[0][1], sp[1][1], u), lerp(sp[0][2], sp[1][2], u)];
+    var om = 1 - u, p0 = sp[0], p1 = sp[1], p2 = sp[sp.length - 1];
+    return [om * om * p0[0] + 2 * om * u * p1[0] + u * u * p2[0], om * om * p0[1] + 2 * om * u * p1[1] + u * u * p2[1], om * om * p0[2] + 2 * om * u * p1[2] + u * u * p2[2]];
+  };
+  var cols = (nS - 1) * V + 1, rows = U + 1;
+  var topP = new Float32Array(rows * cols * 3), botP = new Float32Array(rows * cols * 3);
+  var topN = new Float32Array(rows * cols * 3), botN = new Float32Array(rows * cols * 3);
+  var topC = new Float32Array(rows * cols * 3), botC = new Float32Array(rows * cols * 3);
+  var i, j, k, cIdx, sIdx;
+  // base surface coordinates
+  var midP = new Float32Array(rows * cols * 3);
+  for (i = 0; i <= U; i++) {
+    var u = i / U;
+    for (sIdx = 0; sIdx < nS - 1; sIdx++) {
+      var a = sampleSpar(spars[sIdx], u), b = sampleSpar(spars[sIdx + 1], u);
+      var a0 = spars[sIdx][0], b0 = spars[sIdx + 1][0];
+      var jMax = (sIdx === nS - 2) ? V : V - 1;
+      for (j = 0; j <= jMax; j++) {
+        var v = j / V, c = sIdx * V + j, arch = 4 * v * (1 - v);
+        var scF = scallop * arch * u * u;
+        var mx = lerp(a[0], b[0], v), my = lerp(a[1], b[1], v), mz = lerp(a[2], b[2], v);
+        var rx = lerp(a0[0], b0[0], v), ry = lerp(a0[1], b0[1], v), rz = lerp(a0[2], b0[2], v);
+        mx = lerp(mx, rx, scF); my = lerp(my, ry, scF); mz = lerp(mz, rz, scF);
+        my += camber * arch * sin(PI * u) * Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[2] - b[2]) * (a[2] - b[2]) + 0.05);
+        var idx = (i * cols + c) * 3;
+        midP[idx] = mx; midP[idx + 1] = my; midP[idx + 2] = mz;
+      }
+    }
+  }
+  // compute surface normals & offset top/bottom shells
+  var idxOf = function (ii, cc) { return (ii * cols + cc) * 3; };
+  for (i = 0; i <= U; i++) {
+    var u2 = i / U, ia = Math.max(0, i - 1), ib = Math.min(U, i + 1);
+    for (cIdx = 0; cIdx < cols; cIdx++) {
+      var ca = Math.max(0, cIdx - 1), cb = Math.min(cols - 1, cIdx + 1);
+      var q = idxOf(i, cIdx), qia = idxOf(ia, cIdx), qib = idxOf(ib, cIdx), qca = idxOf(i, ca), qcb = idxOf(i, cb);
+      _l1.set(midP[qib] - midP[qia], midP[qib + 1] - midP[qia + 1], midP[qib + 2] - midP[qia + 2]);
+      _l2.set(midP[qcb] - midP[qca], midP[qcb + 1] - midP[qca + 1], midP[qcb + 2] - midP[qca + 2]);
+      _ln.crossVectors(_l1, _l2);
+      if (_ln.lengthSq() < 1e-12) _ln.set(0, 1, 0); else { _ln.normalize(); if (_ln.y < 0) _ln.negate(); }
+      var vf = cIdx / max(1, cols - 1);
+      var halfT = th0 * 0.5 * (1 - 0.65 * u2) * (1 - 0.35 * vf);
+      topP[q] = midP[q] + _ln.x * halfT; topP[q + 1] = midP[q + 1] + _ln.y * halfT; topP[q + 2] = midP[q + 2] + _ln.z * halfT;
+      botP[q] = midP[q] - _ln.x * halfT; botP[q + 1] = midP[q + 1] - _ln.y * halfT; botP[q + 2] = midP[q + 2] - _ln.z * halfT;
+      topN[q] = _ln.x; topN[q + 1] = _ln.y; topN[q + 2] = _ln.z;
+      botN[q] = -_ln.x; botN[q + 1] = -_ln.y; botN[q + 2] = -_ln.z;
+      var tc = _evalColAO(col, topP[q], topP[q + 1], topP[q + 2], _ln.x, _ln.y, _ln.z, u2, vf);
+      var bc = _evalColAO(col, botP[q], botP[q + 1], botP[q + 2], -_ln.x, -_ln.y, -_ln.z, u2, vf);
+      topC[q] = tc[0]; topC[q + 1] = tc[1]; topC[q + 2] = tc[2];
+      botC[q] = bc[0]; botC[q + 1] = bc[1]; botC[q + 2] = bc[2];
+    }
+  }
+  _emitGrid(this, topP, topN, topC, U, cols - 1, false);
+  _emitGrid(this, botP, botN, botC, U, cols - 1, false);
+  // stitch perimeter edges
+  var stitch = function (qa, qb) {
+    var paT = [topP[qa], topP[qa + 1], topP[qa + 2]], pbT = [topP[qb], topP[qb + 1], topP[qb + 2]];
+    var paB = [botP[qa], botP[qa + 1], botP[qa + 2]], pbB = [botP[qb], botP[qb + 1], botP[qb + 2]];
+    _l1.set(pbT[0] - paT[0], pbT[1] - paT[1], pbT[2] - paT[2]);
+    _l2.set(paB[0] - paT[0], paB[1] - paT[1], paB[2] - paT[2]);
+    _ln.crossVectors(_l1, _l2); if (_ln.lengthSq() < 1e-14) return; _ln.normalize();
+    var cA = [topC[qa], topC[qa + 1], topC[qa + 2]], cB = [topC[qb], topC[qb + 1], topC[qb + 2]];
+    _pushTriAO(this, paT[0], paT[1], paT[2], _ln.x, _ln.y, _ln.z, cA, pbT[0], pbT[1], pbT[2], _ln.x, _ln.y, _ln.z, cB, pbB[0], pbB[1], pbB[2], _ln.x, _ln.y, _ln.z, cB);
+    _pushTriAO(this, paT[0], paT[1], paT[2], _ln.x, _ln.y, _ln.z, cA, pbB[0], pbB[1], pbB[2], _ln.x, _ln.y, _ln.z, cB, paB[0], paB[1], paB[2], _ln.x, _ln.y, _ln.z, cA);
+  }.bind(this);
+  for (cIdx = 0; cIdx < cols - 1; cIdx++) { stitch(idxOf(U, cIdx), idxOf(U, cIdx + 1)); stitch(idxOf(0, cIdx + 1), idxOf(0, cIdx)); }
+  for (i = 0; i < U; i++) { stitch(idxOf(i, 0), idxOf(i + 1, 0)); stitch(idxOf(i + 1, cols - 1), idxOf(i, cols - 1)); }
   return this;
 };
 // thin extruded polygon in the (y,z) plane (e.g. plates, sails, crests). poly:[[y,z],...] convex-ish; th=half thickness (x). rot=[rx,ry,rz]
@@ -373,7 +781,7 @@ function nostrils(g, x, y, z, r, col) { for (var s = -1; s <= 1; s += 2) g.sph(r
 function teethRow(g, zs, x, y, len, w, up, col, inward) {
   for (var s = -1; s <= 1; s += 2) for (var i = 0; i < zs.length; i++) {
     var l = len * (0.75 + 0.25 * (i % 2)), ww = w * (0.85 + 0.15 * (i % 2));
-    g.cone(ww, l, s * x, y + (up ? l * 0.5 : -l * 0.5), zs[i], col || 0xf0ead6, { seg: 3, rot: [up ? 0 : PI, 0, 0] });
+    g.cone(ww, l, s * x, y + (up ? l * 0.5 : -l * 0.5), zs[i], col || 0xf0ead6, { seg: 5, rot: [up ? -0.1 : PI + 0.1, 0, -s * (inward || 0.12)] });
   }
 }
 function rotP(ph, dy, dz) { return [dy * cos(ph) - dz * sin(ph), dy * sin(ph) + dz * cos(ph)]; }   // pitch (y,z) forward-vector down by ph
@@ -428,10 +836,14 @@ function legGeos(S) {
     ['f', 'h'].forEach(function (k) {
       var q = Lg[k], L = q.L, w = q.w, g = B(), c = legCol(S, 0, L[0] + (L[1] || 0));
       if (S.kind === 'sauro') {
-        g.loft([[0, w[0] * 1.15, w[0] * 1.15, 0], [L[0] * 0.5, w[0], w[0], 0], [L[0] * 0.95, w[1], w[1], 0], [L[0], w[1] * 1.1, w[1] * 1.1, 0]], { down: true, rings: 6, seg: 8 }, c);
-        g.sph(w[1] * 1.45, w[1] * 0.55, w[1] * 1.55, 0, -L[0] + w[1] * 0.4, w[1] * 0.4, S.footc || 0x444444, { s: [7, 4] });
-        for (var i = -1; i <= 1; i++) g.sph(w[1] * 0.35, w[1] * 0.3, w[1] * 0.4, i * w[1] * 0.8, -L[0] + w[1] * 0.22, w[1] * 1.6, 0x2a2420, { s: [4, 3] });
-        G[k] = { up: g.build() };
+        var rMid = (w[0] + w[1]) * 0.52;
+        g.loft([[0, w[0] * 1.18, w[0] * 1.22, 0], [L[0] * 0.45, w[0] * 1.04, w[0] * 1.08, 0], [L[0], rMid * 1.04, rMid * 1.04, 0]], { down: true, rings: 5, seg: 9 }, c);
+        g.sph(rMid * 1.04, rMid * 0.98, rMid * 1.06, 0, -L[0], 0, c(0, 0, 0, 0, -L[0] * 0.9), { s: [7, 5] });
+        var sUp = g.build(); g = B();
+        g.loft([[0, rMid * 1.02, rMid * 1.02, 0], [L[1] * 0.55, w[1] * 0.98, w[1] * 1.0, 0], [L[1] * 0.9, w[1] * 1.08, w[1] * 1.12, 0], [L[1], w[1] * 1.16, w[1] * 1.2, 0]], { down: true, rings: 5, seg: 9 }, c);
+        g.lathe([[w[1] * 1.48, 0], [w[1] * 1.52, w[1] * 0.36], [w[1] * 1.28, w[1] * 0.72], [w[1] * 0.9, w[1] * 0.85]], S.footc || 0x444444, { seg: 10, x: 0, y: -L[1], z: w[1] * 0.25, sx: 1.0, sz: 1.08, cap0: true, cap1: true });
+        for (var i = -1; i <= 1; i++) g.bevelBox(w[1] * 0.52, w[1] * 0.44, w[1] * 0.42, w[1] * 0.14, i * w[1] * 0.78, -L[1] + w[1] * 0.24, w[1] * 1.42 + (i === 0 ? w[1] * 0.14 : 0), 0x2a2420, { smooth: 0.45 });
+        G[k] = { up: sUp, lo: g.build() };
       } else {
         g.loft([[0, w[0] * 1.1, w[0] * 1.2, 0], [L[0] * 0.4, w[0], w[0] * 1.05, 0], [L[0], w[1] * 1.1, w[1] * 1.1, 0]], { down: true, rings: 5, seg: 8 }, c);
         g.sph(w[1] * 1.15, w[1] * 1.1, w[1] * 1.15, 0, -L[0], 0, c(0, 0, 0, 0, -L[0] * 0.9), { s: [6, 4] });
@@ -462,9 +874,11 @@ function dinoPrep(S) {
     ['f', 'h'].forEach(function (k) {
       var q = Lg[k]; q.z = q.z || 0; q.y = q.y || 0; q.tt = q.tt === undefined ? 0.03 : q.tt; q.fx = q.fx || 0.0;
       var yj = J + q.y * cos(S.p0) + q.z * sin(S.p0), ck = S.kind === 'sauro' ? 0.985 : (Lg.chord || 0.93), tot = (yj - q.tt) / ck;
-      if (S.kind === 'sauro') q.L = [tot]; else { var rr = q.r || [1, 1]; q.L = [tot * rr[0] / (rr[0] + rr[1]), tot * rr[1] / (rr[0] + rr[1])]; }
+      var rr = q.r || (S.kind === 'sauro' ? [0.54, 0.46] : [1, 1]);
+      q.L = [tot * rr[0] / (rr[0] + rr[1]), tot * rr[1] / (rr[0] + rr[1])];
       q.yj = yj;
     });
+    if (S.pivotZ === undefined) S.pivotZ = (Lg.f.z + Lg.h.z) * 0.5;
   }
   var g = S.gait; g.Dw = g.Dw || 1.6; g.Dr = g.Dr || 3.2; g.bw = g.bw || 0.6; g.br = g.br || 0.42; g.lw = g.lw || 0.08; g.lr = g.lr || 0.16; g.bob = g.bob === undefined ? 0.02 : g.bob; g.bobR = g.bobR === undefined ? 0.05 : g.bobR;
   S.eat = S.eat || {}; S.sleep = S.sleep || {}; S.neck.stab = S.neck.stab || [0.6, 0.9]; S.call = S.call || null;
@@ -475,7 +889,7 @@ function dinoParts(S, baby) {
   var P = dparts[S.id];
   if (!P) {
     P = dparts[S.id] = {};
-    var g = B(), b = S.body; g.loft(b.keys, { rings: b.rings || 20, seg: b.seg || 10, z0: b.keys[0][0], z1: b.keys[b.keys.length - 1][0], cap0: true, cap1: true }, S.sk);
+    var g = B(), b = S.body; g.loft(b.keys, { rings: b.rings || 20, seg: b.seg || 10, z0: b.keys[0][0], z1: b.keys[b.keys.length - 1][0], cap0: true, cap1: true, ridge: b.ridge || 0, flatBot: b.flatBot || 0, superPow: b.superPow || 0 }, S.sk);
     if (b.extra) b.extra(g, S); P.body = g.build();
     var nk = S.neck, zmN = function (s) { return nk.at[2] + s * 0.8; };
     P.neck = chain(nk.keys, nk.n, nk.len, nk, S.sk, 1, zmN, nk.joint);
@@ -495,6 +909,7 @@ function createDino(S, opts) {
   var baby = !!opts.baby, P = dinoParts(S, baby), hk = baby ? 'b' : 'a';
   var sx = opts.sex === 'f' && S.fScale ? S.fScale : 1, sc = baby ? S.bs : sx;
   var root = grp('animal'), rig = grp('rig'), body = grp('body'); body.rotation.order = 'YXZ'; root.add(rig); rig.add(body); rig.scale.setScalar(S.H * sc);
+  if (S.pivotZ) rig.position.z = -S.pivotZ * S.H * sc;
   var bodyM = mesh(P.body); body.add(bodyM);
   var I = { S: S, root: root, rig: rig, body: body, bodyM: bodyM, sc: sc, baby: baby, t: Math.random() * 100, ph: Math.random(), seed: Math.random() * 6.28, st: 'idle',
     W: { gait: 0, run: 0, sleep: 0, eat: 0, swim: 0, sick: 0, play: 0, call: 0, rear: 0, drink: 0 }, lookY: 0, lookP: 0, lookT: 1 + Math.random() * 2, lookTY: 0, lookTP: 0,
@@ -657,6 +1072,10 @@ function dinoUpdate(I, dt, ent) {
   if (kw > 0.001) { for (i = 0; i < nn; i++) abs[i] = lerp(abs[i], abs[i] - 0.4 - 0.3 * i / nn, kw); hpA = lerp(hpA, hpA - 0.6, kw); jawO += kw * 0.08; }
   if (pw > 0.001) { hpA += pw * 0.25 * sin(t * 6.2 + 0.5); for (i = 0; i < nn; i++) abs[i] += pw * 0.1 * sin(t * 6.2 + i); }
   if (wsw > 0.001) { for (i = 0; i < nn; i++) abs[i] = lerp(abs[i], Math.max(abs[i], S.swimNeck !== undefined ? S.swimNeck : abs[i]), wsw); jawO += wsw * 0.0; }
+  var wallNear = clamp(ent._wallNear || 0, 0, 1);
+  if (sauro && wallNear > 0.01 && ew < 0.5 && sw < 0.5) {
+    for (i = 0; i < nn; i++) abs[i] += wallNear * 0.14 * (1 - i / Math.max(1, nn) * 0.35);
+  }
   var prev = p;
   for (i = 0; i < nn; i++) { I.neck[i].rotation.set(-(abs[i] - prev), yaw[i], 0); prev = abs[i]; }
   I.head.rotation.set(-(hpA - prev), hy, 0.04 * Math.sin(t * 0.7 + I.seed) * (1 - sw));
@@ -669,9 +1088,9 @@ function dinoUpdate(I, dt, ent) {
     var rest = tl.rest[Math.min(j, tl.rest.length - 1)], a = rest - (1 - (tl.stab === undefined ? 0.85 : tl.stab)) * tpd;
     var y = 0, seed = I.seed, k = j / Math.max(1, tn - 1);
     // idle sway + gait counter swing
-    var idleAmp = (tl.amp || 0.1) * (1 - gw * 0.5), spd2 = tl.freq || 1.0;
+    var idleAmp = (tl.amp || 0.1) * (1 - gw * 0.5) * (1 - wallNear * 0.5), spd2 = tl.freq || 1.0;
     y = idleAmp * sin(t * 0.9 * spd2 + seed - j * 0.8) * (j === 0 ? 0.5 : 1);
-    y += gw * (tl.gaitAmp !== undefined ? tl.gaitAmp : 0.12) * sin(2 * PI * ph + 1.2 - j * 0.7) * (1 + 0.6 * rw);
+    y += gw * (tl.gaitAmp !== undefined ? tl.gaitAmp : 0.12) * (1 - wallNear * 0.45) * sin(2 * PI * ph + 1.2 - j * 0.7) * (1 + 0.6 * rw);
     a += 0.025 * sin(t * 1.3 + seed + j) + gw * 0.04 * sin(4 * PI * ph + j * 0.8);
     a += rw * (tl.run !== undefined ? tl.run : 0.08) * gw + ew * (E.tail || 0.0) + cw * (tl.call || 0.05);
     if (pw > 0.001) { y += pw * 0.5 * sin(t * 6.2 + j); a += pw * 0.1; }
@@ -722,9 +1141,12 @@ function dinoUpdate(I, dt, ent) {
     }
     var tx = az - hipZ, ty = ay - hipY;
     if (sauro) {
-      var d = Math.sqrt(tx * tx + ty * ty), psi = Math.atan2(tx, -ty), lscale = clamp(d / L[0], sw > 0.01 ? 0.3 : 0.84, 1.03);
-      if (sw > 0.001) { psi = lerp(psi, (front ? 0.5 : -0.5) * (lg.side > 0 ? 1 : 1), sw * 0.6); lscale = lerp(lscale, 0.6, sw * 0.7); }
-      lg.hip.rotation.set(-(psi - p), 0, lg.side * sw * 0.45); lg.hip.scale.y = lscale; lg.hip.position.y = lg.ly;
+      var rS = ik2(L[0], L[1], tx, ty, front ? -1 : 1);
+      var kBend = lerp(rS[1], rS[0], 0.35 * (1 - sw)); // weighty columnar stride with true knee bend, no foot squash
+      lg.hip.rotation.set(-(rS[0] - p), 0, lg.side * sw * 0.25);
+      lg.hip.scale.y = 1;
+      lg.hip.position.y = lg.ly;
+      if (lg.kn) lg.kn.rotation.x = -(kBend - rS[0]);
     } else {
       var r = ik2(L[0], L[1], tx, ty, biped ? 1 : (q.bend !== undefined ? q.bend : (front ? -1 : 1)));
       lg.hip.rotation.set(-(r[0] - p), 0, lg.side * (sw * 0.18 + ew * 0.04));
@@ -744,6 +1166,13 @@ function headStd(g, jg, b, S, o) {
   var hs = o.skin || fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, mott: 0.05 }), 0.6);
   g.loft(K, { rings: o.rings || 12, seg: o.seg || 9, cap0: true, cap1: true }, hs);
   jg.loft(K2, { rings: o.jrings || 8, seg: 8, cap0: true, cap1: true }, o.jskin || fixZ(skin({ back: shade(S.belly, 0.88), belly: S.belly, bAt: 0.4, bW: 0.6, mott: 0.04 }), 0.5));
+  // subtle rear jaw-muscle cheek gusset so wide roars/bites don't gap behind the hinge
+  if (K2.length >= 2) {
+    var j0 = K2[0], j1 = K2[1], jh = S.head.jaw;
+    for (var sG = -1; sG <= 1; sG += 2) {
+      jg.sph(j0[1] * 0.48, max(0.014, abs(jh[0] - j0[3]) * 0.62), max(0.02, (j1[0] - j0[0]) * 0.65), sG * j0[1] * 0.62, lerp(j0[3], jh[0], 0.48), j0[0] + (j1[0] - j0[0]) * 0.28, shade(S.back, 0.78), { s: [5, 4] });
+    }
+  }
   eye(g, o.eye[0], o.eye[1], o.eye[2] * (o.eye[2] > kf ? k : 1), o.eye[3] * (b ? 1.55 : 1), o.iris);
   if (o.nos) nostrils(g, o.nos[0], o.nos[1], kf + (o.nos[2] - kf) * k, o.nos[3]);
   var tt = o.teeth, zs, i;
@@ -753,9 +1182,12 @@ function headStd(g, jg, b, S, o) {
   if (o.extra) o.extra(g, k, b, jg);
 }
 function feather(g, x, y, z, dx, dy, dz, w, col, flat) {
-  var l = Math.sqrt(dx * dx + dy * dy + dz * dz); _fq.setFromUnitVectors(_fz, _fd.set(dx / l, dy / l, dz / l));
-  if (flat) g.add(unitSph(5, 4), x + dx / 2, y + dy / 2, z + dz / 2, w, 0.006, l / 2, null, col, _fq);
-  else g.add(unitSph(5, 4), x + dx / 2, y + dy / 2, z + dz / 2, 0.006, w, l / 2, null, col, _fq);
+  var l = Math.sqrt(dx * dx + dy * dy + dz * dz); if (l < 1e-5) return;
+  _fq.setFromUnitVectors(_fz, _fd.set(dx / l, dy / l, dz / l));
+  _ea.setFromQuaternion(_fq, 'XYZ');
+  var poly = [[0, -l * 0.5], [w * 0.85, -l * 0.12], [w, l * 0.18], [w * 0.55, l * 0.42], [0, l * 0.52], [-w * 0.55, l * 0.42], [-w, l * 0.18], [-w * 0.85, -l * 0.12]];
+  var th = max(0.004, w * 0.18);
+  g.extrude(poly, th, x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, [_ea.x, _ea.y, _ea.z], col, { axis: flat ? 'y' : 'x', curveX: -0.18 });
 }
 var _fq = new T.Quaternion(), _fz = new T.Vector3(0, 0, 1), _fd = new T.Vector3();
 function clawFan(g, px, py, pz, dy, dz, n, len, r, sp, col) {
@@ -776,9 +1208,9 @@ reg((function () {
   S.body = { rings: 22, seg: 10, keys: [[-0.5, 0.07, 0.1, 0.05], [-0.36, 0.11, 0.15, 0.045], [-0.15, 0.18, 0.225, 0.03], [0.05, 0.21, 0.27, 0.0], [0.28, 0.225, 0.29, -0.01], [0.5, 0.2, 0.26, 0.03], [0.64, 0.14, 0.18, 0.07], [0.74, 0.09, 0.1, 0.1]],
     extra: function (g) {
       for (var s = -1; s <= 1; s += 2) {
-        g.limb(s * 0.17, -0.06, 0.5, s * 0.2, -0.17, 0.6, 0.034, 0.022, 0x6a583a, { seg: 5 });
-        g.limb(s * 0.2, -0.17, 0.6, s * 0.2, -0.22, 0.67, 0.02, 0.012, 0x6a583a, { seg: 4 });
-        g.cone(0.012, 0.04, s * 0.2, -0.235, 0.68, 0x2a2420, { seg: 3, rot: [-1.2, 0, 0] }); g.cone(0.012, 0.04, s * 0.215, -0.23, 0.66, 0x2a2420, { seg: 3, rot: [-1.2, 0, 0] });
+        g.tube([[s * 0.17, -0.06, 0.5], [s * 0.2, -0.15, 0.58], [s * 0.2, -0.22, 0.67]], [0.036, 0.022, 0.013], 0x6a583a, { seg: 6, steps: 2 });
+        g.tube([[s * 0.2, -0.22, 0.67], [s * 0.2, -0.245, 0.695], [s * 0.2, -0.265, 0.68]], [0.011, 0.007, 0.001], 0x2a2420, { seg: 5, steps: 2 });
+        g.tube([[s * 0.215, -0.218, 0.655], [s * 0.218, -0.24, 0.68], [s * 0.215, -0.258, 0.665]], [0.01, 0.006, 0.001], 0x2a2420, { seg: 5, steps: 2 });
       }
     } };
   S.neck = { n: 2, len: 0.5, at: [0, 0.1, 0.6], rr: 5, seg: 9, keys: [[0, 0.14, 0.14, 0], [0.25, 0.12, 0.125, 0], [0.5, 0.095, 0.1, 0]], rest: [0.95, 0.3], hrest: -0.12, stab: [0.5, 0.92], look: 0.55 };
@@ -786,12 +1218,15 @@ reg((function () {
     var k = b ? 0.78 : 1, K = zk([[-0.04, 0.05, 0.06, 0], [0.03, 0.095, 0.115, 0], [0.12, 0.108, 0.125, -0.002], [0.22, 0.078, 0.1, -0.008], [0.3, 0.058, 0.075, -0.018], [0.37, 0.05, 0.06, -0.022], [0.395, 0.03, 0.04, -0.026]], k, 0.1);
     g.loft(K, { rings: 14, seg: 9, cap0: true, cap1: true }, fixZ(skin({ back: S.back, belly: shade(S.belly, 0.95), bAt: -0.35, bW: 0.5, bars: { c: 0x2c2218, f: 9, w: 0.4, k: 0.5, from: -0.1, to: 0.5, ca0: 0.3 } }), 0.6));
     var er = b ? 0.03 : 0.02;
-    eye(g, 0.098, 0.055, 0.14 * k, er); g.sph(0.04, 0.018, 0.05, 0.085, 0.085, 0.15 * k, 0x5a4a30, { s: [6, 4] }); g.sph(0.04, 0.018, 0.05, -0.085, 0.085, 0.15 * k, 0x5a4a30, { s: [6, 4] });
-    g.sph(0.012, 0.03, 0.025, 0.07, 0.115, 0.07 * k, 0x5a4a30, { s: [4, 3] }); g.sph(0.012, 0.03, 0.025, -0.07, 0.115, 0.07 * k, 0x5a4a30, { s: [4, 3] });
+    eye(g, 0.098, 0.055, 0.14 * k, er);
+    for (var sB = -1; sB <= 1; sB += 2) {
+      g.tube([[sB * 0.068, 0.11, 0.08 * k], [sB * 0.092, 0.092, 0.15 * k], [sB * 0.062, 0.078, 0.25 * k]], [0.022, 0.026, 0.014], 0x5a4a30, { seg: 6, steps: 2 });
+    }
     nostrils(g, 0.022, 0.012, 0.39 * k, 0.01);
     var zs = []; for (var i = 0; i < 7; i++) zs.push((0.2 + i * 0.03) * k); teethRow(g, zs, 0.052, -0.098 + 0.0, 0.04, 0.009, false);
     var K2 = zk([[0.02, 0.04, 0.04, -0.12], [0.12, 0.075, 0.045, -0.138], [0.24, 0.056, 0.036, -0.126], [0.34, 0.044, 0.03, -0.12], [0.385, 0.03, 0.022, -0.118]], k, 0.1);
     jg.loft(K2, { rings: 10, seg: 8, cap0: true, cap1: true }, fixZ(skin({ back: shade(S.belly, 0.85), belly: S.belly, bAt: 0.4, bW: 0.6 }), 0.5));
+    for (var sC = -1; sC <= 1; sC += 2) jg.sph(0.032, 0.045, 0.055, sC * 0.05, -0.095, 0.07, 0x5c4c30, { s: [5, 4] });
     var zs2 = []; for (i = 0; i < 6; i++) zs2.push((0.21 + i * 0.027) * k); teethRow(jg, zs2, 0.04, -0.105, 0.032, 0.008, true);
   } };
   S.tail = { n: 4, len: 1.35, at: [0.04, -0.36], rr: 5, seg: 8, keys: [[0, 0.1, 0.13, 0], [0.4, 0.075, 0.1, 0], [0.85, 0.04, 0.052, 0], [1.35, 0.008, 0.012, 0]], rest: [0.03, -0.02, -0.07, -0.14], amp: 0.1, gaitAmp: 0.1, stab: 0.85 };
@@ -830,7 +1265,7 @@ reg((function () {
     for (i = 0; i < 4; i++) feather(g, 0.012, -0.03, -0.03 + i * 0.01, 0.04, -0.02, -0.18, 0.02, 0x4a2c1c, true);
   } };
   S.legs = bipedLegs(0.12, [1, 1.18, 0.95], [0.085, 0.036, 0.028], 0.19, 0.017, { claw: 0.04, thighExtra: function (g) { g.sph(0.1, 0.12, 0.1, 0.0, -0.1, -0.02, 0x5a3220, { s: [6, 4] }); },
-    footExtra: function (g, S) { var L = S.legs.L[2]; g.limb(0.035, -L + 0.012, 0.0, 0.035, -L + 0.06, 0.06, 0.013, 0.009, 0x2a2018, { seg: 5 }); g.limb(0.035, -L + 0.06, 0.06, 0.035, -L + 0.045, 0.125, 0.009, 0.0001, 0xe6dcc0, { seg: 5 }); } });
+    footExtra: function (g, S) { var L = S.legs.L[2]; g.tube([[0.035, -L + 0.012, 0.0], [0.035, -L + 0.068, 0.052], [0.035, -L + 0.064, 0.105], [0.035, -L + 0.022, 0.132]], [0.014, 0.012, 0.008, 0.001], 0xe6dcc0, { seg: 6, steps: 2 }); } });
   S.gait = { Dw: 1.9, Dr: 3.8, bw: 0.58, br: 0.38, lw: 0.1, lr: 0.2, bob: 0.025, bobR: 0.06 };
   S.eat = { p: 0.35, crouch: 0.14, gy: 0.05, hp: -0.9, bite: 0.4, curve: 0.25 }; S.eatTear = true;
   S.sleep = { y: 0.3, fx: 0.0, phi: 0, curl: 1.4, hp: -0.4, hy: 0.7 };
@@ -924,7 +1359,7 @@ reg((function () {
   S.tail = { n: 4, len: 1.55, at: [0.04, -0.42], rr: 5, seg: 8, keys: [[0, 0.09, 0.13, 0], [0.45, 0.07, 0.1, 0], [1.0, 0.04, 0.06, 0], [1.55, 0.012, 0.018, 0]], rest: [0.03, -0.01, -0.07, -0.12], amp: 0.1, gaitAmp: 0.11, stab: 0.85, scull: 1.3 };
   S.arms = { at: [0.15, 0.0, 0.5], rest: 0.45, swing: 0.25, out: 0.15, build: function (g) {
     armChain(g, [[0, 0, 0], [0, -0.1, 0.05], [0, -0.17, 0.16]], [0.04, 0.03, 0.025], 0x4c613a, { n: 2, len: 0.06, r: 0.01, sp: 0.02, down: 0.15 });
-    g.limb(0.03, -0.17, 0.16, 0.04, -0.24, 0.17, 0.015, 0.012, 0xe6dcc0, { seg: 5 }); g.limb(0.04, -0.24, 0.17, 0.035, -0.3, 0.14, 0.012, 0.0001, 0xe6dcc0, { seg: 5 });
+    g.tube([[0.03, -0.17, 0.16], [0.042, -0.23, 0.185], [0.04, -0.29, 0.16], [0.03, -0.325, 0.115]], [0.017, 0.014, 0.009, 0.001], 0xe6dcc0, { seg: 6, steps: 2 });
   } };
   S.legs = bipedLegs(0.15, [1, 1.12, 0.65], [0.11, 0.05, 0.04], 0.22, 0.028, { claw: 0.05 });
   S.gait = { Dw: 1.7, Dr: 3.4, bw: 0.62, br: 0.42, lw: 0.1, lr: 0.2, bob: 0.02, bobR: 0.05 };
@@ -948,7 +1383,7 @@ reg((function () {
     headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.055, 0.07, 0], [0.04, 0.1, 0.12, 0], [0.14, 0.098, 0.115, -0.006], [0.24, 0.075, 0.09, -0.018], [0.32, 0.06, 0.07, -0.03], [0.375, 0.045, 0.052, -0.034], [0.395, 0.026, 0.03, -0.036]],
       jkeys: [[0.03, 0.04, 0.035, -0.115], [0.14, 0.07, 0.042, -0.128], [0.27, 0.052, 0.034, -0.12], [0.36, 0.036, 0.026, -0.116], [0.39, 0.02, 0.016, -0.114]], eye: [0.092, 0.05, 0.12, 0.019], nos: [0.022, 0.0, 0.385, 0.009],
       teeth: { z0: 0.18, z1: 0.37, n: 8, x: 0.048, y: -0.098, len: 0.03, w: 0.007 }, jteeth: { z0: 0.2, z1: 0.36, n: 6, x: 0.036, y: -0.112, len: 0.024, w: 0.007 },
-      extra: function (gg, k) { for (var s = -1; s <= 1; s += 2) { gg.cone(0.032, 0.17, s * 0.095, 0.15, 0.09 * k, 0xece0c4, { seg: 5, rot: [-0.3, 0, -s * 0.85] }); gg.sph(0.045, 0.03, 0.05, s * 0.07, 0.115, 0.1 * k, 0x8a3a24, { s: [6, 4] }); }
+      extra: function (gg, k) { for (var s = -1; s <= 1; s += 2) { gg.tube([[s * 0.068, 0.105, 0.1 * k], [s * 0.125, 0.155, 0.08 * k], [s * 0.175, 0.215, 0.05 * k]], [0.036, 0.022, 0.002], 0xece0c4, { seg: 6, steps: 2 }); gg.sph(0.045, 0.03, 0.05, s * 0.07, 0.115, 0.1 * k, 0x8a3a24, { s: [6, 4] }); }
         gg.sph(0.03, 0.025, 0.05, 0, 0.115, 0.3 * k, 0xd8bc88, { s: [5, 4] }); } });
   } };
   S.tail = { n: 4, len: 1.5, at: [0.04, -0.42], rr: 5, seg: 8, keys: [[0, 0.1, 0.13, 0], [0.4, 0.08, 0.1, 0], [1.0, 0.04, 0.055, 0], [1.5, 0.01, 0.014, 0]], rest: [0.03, -0.01, -0.06, -0.12], amp: 0.1, gaitAmp: 0.11, stab: 0.85 };
@@ -1028,7 +1463,12 @@ reg((function () {
   S.tail = { n: 3, len: 0.9, at: [0.04, -0.36], rr: 4, seg: 8, keys: [[0, 0.085, 0.11, 0], [0.45, 0.06, 0.075, 0], [0.9, 0.012, 0.018, 0]], rest: [-0.2, -0.3, -0.4], amp: 0.06, gaitAmp: 0.08, stab: 0.85,
     each: function (g, i, n, seg) { for (var s = -1; s <= 1; s += 2) feather(g, s * 0.05, 0.02, -seg * 0.2, s * 0.05, -0.05, -0.13, 0.02, i % 2 ? 0xe0c8a0 : 0x6a3424, true); } };
   S.arms = { at: [0.2, 0.05, 0.42], rest: 0.35, swing: 0.2, out: 0.12, ar: 1, build: function (g) {
-    armChain(g, [[0, 0, 0], [0, -0.24, 0.1], [0, -0.45, 0.26]], [0.05, 0.042, 0.035], 0x7a4430, { n: 3, len: 0.42, r: 0.014, sp: 0.04, down: 0.45, col: 0xf0e8d0 });
+    armChain(g, [[0, 0, 0], [0, -0.24, 0.1], [0, -0.45, 0.26]], [0.05, 0.042, 0.035], 0x7a4430, null);
+    // iconic long curved scythe claws
+    for (var ck = -1; ck <= 1; ck++) {
+      var lx = ck * 0.04, cl = 0.46 - Math.abs(ck) * 0.05;
+      g.tube([[lx, -0.45, 0.26], [lx * 1.15, -0.45 - cl * 0.32, 0.26 + cl * 0.56], [lx * 1.25, -0.45 - cl * 0.72, 0.26 + cl * 0.74], [lx * 1.28, -0.45 - cl * 1.02, 0.26 + cl * 0.58]], [0.016, 0.013, 0.008, 0.001], 0xf0e8d0, { seg: 5, sx: 0.65, sz: 1.35, steps: 2 });
+    }
     for (var i = 0; i < 6; i++) feather(g, 0.0, -0.1 - i * 0.05, 0.05 + i * 0.025, 0.0, -0.1, -0.1, 0.03, i % 2 ? 0xe0c8a0 : 0x6a3424, false);
   } };
   S.legs = bipedLegs(0.18, [1, 1.0, 0.6], [0.12, 0.062, 0.05], 0.2, 0.03, { claw: 0.05, toes: 4 });
@@ -1131,9 +1571,8 @@ reg((function () {
     headStd(g, jg, b, S, { bk: 0.8, keys: [[-0.03, 0.05, 0.07, 0], [0.05, 0.08, 0.095, 0], [0.16, 0.066, 0.075, -0.01], [0.27, 0.056, 0.05, -0.026], [0.35, 0.078, 0.034, -0.034], [0.4, 0.074, 0.026, -0.036], [0.415, 0.05, 0.018, -0.036]],
       jkeys: [[0.03, 0.036, 0.03, -0.088], [0.15, 0.055, 0.032, -0.094], [0.28, 0.05, 0.024, -0.092], [0.38, 0.066, 0.016, -0.088], [0.415, 0.04, 0.01, -0.086]], eye: [0.074, 0.05, 0.11, 0.02], nos: [0.02, 0.05, 0.27, 0.008],
       extra: function (gg, k) {
-        var cc = function (zc, ca, sa, x, y, z) { return fract(z * 11 + y * 4) < 0.35 ? 0xe85a30 : 0xf0a040; };
-        var pts = [[0, 0.075, 0.12], [0, 0.17, 0.0], [0, 0.26, -0.15], [0, 0.29, -0.32], [0, 0.26, -0.45]];
-        for (var i = 0; i < pts.length - 1; i++) { var a = pts[i], bb = pts[i + 1], r0 = 0.042 - i * 0.003, r1 = 0.042 - (i + 1) * 0.003; gg.limb(a[0], a[1], a[2], bb[0], bb[1], bb[2], r0, r1, cc, { seg: 7, hs: 2 }); gg.sph(r1, r1, r1, bb[0], bb[1], bb[2], cc, { s: [6, 4] }); }
+        var cc = function (x, y, z) { return fract(z * 11 + y * 4) < 0.35 ? 0xe85a30 : 0xf0a040; };
+        gg.tube([[0, 0.068, 0.14 * k], [0, 0.165, 0.02], [0, 0.26, -0.15], [0, 0.295, -0.33], [0, 0.255, -0.48]], [0.046, 0.042, 0.038, 0.033, 0.026], cc, { seg: 8, sx: 0.72, sz: 1.25, steps: 3 });
         gg.sph(0.05, 0.03, 0.04, 0, 0.065, 0.1, S.back, { s: [6, 4] }); } });
   } };
   S.tail = { n: 4, len: 1.55, at: [0.04, -0.5], rr: 5, seg: 8, keys: [[0, 0.095, 0.13, 0], [0.5, 0.075, 0.115, 0], [1.1, 0.04, 0.065, 0], [1.55, 0.01, 0.02, 0]], rest: [0.03, 0.0, -0.05, -0.1], amp: 0.06, gaitAmp: 0.08, stab: 0.9, run: 0.03 };
@@ -1155,9 +1594,9 @@ reg((function () {
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0x7b8e4f, bAt: -0.05, bW: 0.6, spots: { c: 0x3a4a24, f: 7, k: 4, d: 0.16, a: 0.7 }, bars: { c: 0x445a2a, f: 4, w: 0.3, k: 0.45, from: -0.6, to: 1.5, ca0: 0.1 }, mott: 0.08 });
   var K = [[-0.55, 0.08, 0.11, 0.06], [-0.4, 0.15, 0.2, 0.06], [-0.2, 0.24, 0.29, 0.05], [0.0, 0.27, 0.32, 0.04], [0.25, 0.27, 0.3, 0.0], [0.5, 0.2, 0.23, -0.04], [0.68, 0.11, 0.13, -0.06]];
   S.body = { rings: 20, seg: 10, keys: K, extra: function (g) {
-    var pc = function (y, z) { return y > 0.28 ? 0xf09a3e : (y > 0.1 ? 0xe2702c : 0xb8502a); };
+    var pc = function (x, y, z) { return y > 0.45 ? 0xf09a3e : (y > 0.25 ? 0xe2702c : 0xb8502a); };
     for (var i = 0; i < 9; i++) { var z = -0.34 + i * 0.1, pr = profAt(K, z), top = pr[2] + pr[1] * 0.96, h = 0.16 + 0.26 * Math.sin(PI * (0.12 + 0.76 * i / 8)), sd = i % 2 ? 1 : -1;
-      g.plate([[0, -0.085], [h * 0.45, -0.1], [h, -0.01], [h * 0.45, 0.09], [0, 0.085]], 0.011, sd * 0.045, top - 0.03, z + sd * 0.025, [0, 0, -sd * 0.12], pc); } } };
+      g.extrude([[0, -0.085], [h * 0.46, -0.105], [h, -0.01], [h * 0.48, 0.095], [0, 0.085]], 0.026, sd * 0.045, top - 0.03, z + sd * 0.025, [0, 0, -sd * 0.12], pc, { axis: 'x', bev: 0.008 }); } } };
   S.neck = { n: 1, len: 0.4, at: [0, 0.0, 0.66], rr: 4, seg: 8, keys: [[0, 0.14, 0.15, 0], [0.4, 0.085, 0.09, 0]], rest: [-0.15], hrest: -0.45, stab: [0.5], look: 0.7 };
   S.head = { len: 0.32, scale: 1.0, jaw: [-0.03, 0.05], build: function (g, jg, b) {
     headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.05, 0.06, 0], [0.04, 0.07, 0.08, 0], [0.14, 0.058, 0.06, -0.006], [0.24, 0.042, 0.04, -0.016], [0.3, 0.034, 0.03, -0.02], [0.32, 0.02, 0.02, -0.022]],
@@ -1169,7 +1608,10 @@ reg((function () {
       var pc = function (y, z) { return y > 0.1 ? 0xf09a3e : 0xe2702c; };
       if (i === 0 || i === 1) for (var k = 0; k < 2; k++) { var sd = k ? 1 : -1, pr = profAt(S.tail.keys, i * seg + seg * (0.25 + k * 0.5)); g.plate([[0, -0.06], [0.14, -0.07], [0.22 - i * 0.03, 0], [0.14, 0.06], [0, 0.06]], 0.01, sd * 0.03, pr[1] * 0.9, -seg * (0.25 + k * 0.5), [0, 0, -sd * 0.12], pc);
       }
-      if (i === n - 1) for (var q = 0; q < 2; q++) for (var s = -1; s <= 1; s += 2) { g.cone(0.028, 0.34 - q * 0.04, s * 0.045, 0.02, -seg * (0.35 + q * 0.4), 0xe8dcc0, { seg: 5, rot: [-1.15 + q * 0.2, 0, s * 0.55 - s * q * 0.15] }); } } };
+      if (i === n - 1) for (var q = 0; q < 2; q++) for (var s = -1; s <= 1; s += 2) {
+        var spZ = -seg * (0.35 + q * 0.4), spL = 0.34 - q * 0.04;
+        g.tube([[s * 0.025, 0.02, spZ], [s * (0.025 + spL * 0.46), 0.04 + spL * 0.24, spZ - spL * 0.22], [s * (0.025 + spL * 0.85), 0.05 + spL * 0.44, spZ - spL * 0.42]], [0.028, 0.016, 0.002], 0xe8dcc0, { seg: 6, steps: 2 });
+      } } };
   S.legs = { chord: 0.94,
     h: { x: 0.2, y: 0, z: 0, r: [1, 1.05], w: [0.12, 0.075, 0.07], fx: 0.03, bend: 1, foot: padFoot(3, 0.07, 0x3c4028, 0x2a2a20) },
     f: { x: 0.18, y: -0.17, z: 0.56, r: [1, 1], w: [0.085, 0.06, 0.055], fx: 0.02, bend: -1, sw: 0.7, foot: padFoot(5, 0.055, 0x3c4028, 0x2a2a20) } };
@@ -1191,16 +1633,26 @@ reg((function () {
     headStd(g, jg, b, S, { bk: 0.8, kf: 0.15, keys: [[-0.06, 0.09, 0.11, 0], [0.04, 0.125, 0.15, 0], [0.2, 0.1, 0.125, -0.004], [0.34, 0.08, 0.1, -0.02], [0.46, 0.06, 0.085, -0.04], [0.54, 0.04, 0.07, -0.05], [0.575, 0.02, 0.04, -0.055]],
       jkeys: [[0.04, 0.05, 0.04, -0.125], [0.2, 0.075, 0.04, -0.13], [0.38, 0.05, 0.034, -0.125], [0.5, 0.034, 0.026, -0.12], [0.55, 0.018, 0.016, -0.115]], eye: [0.118, 0.07, 0.17, 0.02], nos: [0.02, 0.05, 0.5, 0.008],
       extra: function (gg, k) {
-        var hc = 0xf0e4bc;
-        for (var s = -1; s <= 1; s += 2) gg.cone(0.034, 0.44 * (k < 1 ? 0.6 : 1), s * 0.105, 0.2 + 0.2 * Math.cos(1.0) * 0.45, 0.23 * k + 0.1, hc, { seg: 6, rot: [1.0, 0, -s * 0.22] }), gg.sph(0.045, 0.03, 0.05, s * 0.1, 0.14, 0.17 * k, 0x5a5238, { s: [6, 4] });
-        gg.cone(0.04, 0.14 * (k < 1 ? 0.6 : 1), 0, 0.14, 0.44 * k, hc, { seg: 6, rot: [0.45, 0, 0] });
-        gg.sph(0.045, 0.045, 0.06, 0, -0.045, 0.53 * k, 0xe0cf98, { s: [6, 4] }); gg.cone(0.03, 0.07, 0, -0.07, 0.56 * k, 0xd8c68a, { seg: 5, rot: [PI + 0.4, 0, 0] });
-        // frill: big disc leaning back, scalloped rim
-        var th = 0.45, cy0 = 0.2, cz0 = -0.12, rx = 0.34, ry = 0.3;
-        gg.sph(rx, ry, 0.022, 0, cy0, cz0, fc, { s: [14, 8], rot: [-th, 0, 0] });
-        for (var i = 0; i < 17; i++) { var a = PI * (i / 16) - 0.0, px = Math.cos(a) * rx * 0.98, py = Math.sin(a) * ry * 0.98, yy = py * cos(th), zz = -py * sin(th);
-          if (i === 0 || i === 16) continue; gg.cone(0.022, 0.06, px, cy0 + yy, cz0 + zz, 0xf0e2b8, { seg: 4, rot: [-th, 0, -Math.cos(a) * 0.9] }); }
-        for (var j = 0; j < 2; j++) for (s = -1; s <= 1; s += 2) gg.sph(0.04, 0.045, 0.02, s * (0.14 + j * 0.1), cy0 + 0.02 + j * 0.06, cz0 - 0.018, 0xe4d2a0, { s: [6, 4], rot: [-th, 0, 0] });
+        var hc = 0xf0e4bc, hSc = k < 1 ? 0.6 : 1;
+        // curved swept brow horns + curved nose horn
+        for (var s = -1; s <= 1; s += 2) {
+          gg.tube([[s * 0.095, 0.14, 0.16 * k], [s * 0.145, 0.23, 0.28 * k + 0.08 * hSc], [s * 0.175, 0.31, 0.36 * k + 0.22 * hSc], [s * 0.165, 0.38, 0.38 * k + 0.34 * hSc]], [0.036, 0.026, 0.014, 0.002], hc, { seg: 7, steps: 2 });
+          gg.sph(0.045, 0.03, 0.05, s * 0.1, 0.14, 0.17 * k, 0x5a5238, { s: [6, 4] });
+        }
+        gg.tube([[0, 0.08, 0.42 * k], [0, 0.145, 0.47 * k], [0, 0.215 * hSc + 0.06, 0.49 * k]], [0.038, 0.024, 0.002], hc, { seg: 6, steps: 2 });
+        // hooked keratin parrot beak
+        gg.tube([[0, -0.02, 0.5 * k], [0, -0.055, 0.56 * k], [0, -0.105, 0.555 * k]], [0.042, 0.03, 0.012], 0xe0cf98, { seg: 6, sx: 0.78, sz: 1.15, steps: 2 });
+        // curved concave dish shield frill with beveled rim & epoccipital bosses
+        var th = 0.46, cy0 = 0.2, cz0 = -0.11, rx = 0.35, ry = 0.31, fPoly = [], fi;
+        for (fi = 0; fi < 16; fi++) {
+          var fa = -0.25 + (PI + 0.5) * (fi / 15), sc = 1 + 0.05 * Math.sin(fi * 3.14159);
+          fPoly.push([Math.cos(fa) * rx * sc, Math.sin(fa) * ry * sc]);
+        }
+        gg.extrude(fPoly, 0.044, 0, cy0, cz0, [-th, 0, 0], fc, { axis: 'z', bev: 0.014, curveX: -0.26, curveY: -0.16 });
+        for (var i = 1; i < 16; i++) { var a = PI * (i / 16), px = Math.cos(a) * rx * 0.99, py = Math.sin(a) * ry * 0.99, dishZ = -0.26 * px * px - 0.16 * py * py;
+          var yy = py * cos(th) + dishZ * sin(th), zz = -py * sin(th) + dishZ * cos(th);
+          gg.cone(0.024, 0.055, px, cy0 + yy, cz0 + zz, 0xf0e2b8, { seg: 5, rot: [-th, 0, -Math.cos(a) * 0.9] }); }
+        for (var j = 0; j < 2; j++) for (s = -1; s <= 1; s += 2) gg.sph(0.04, 0.045, 0.022, s * (0.14 + j * 0.1), cy0 + 0.02 + j * 0.06, cz0 - 0.022, 0xe4d2a0, { s: [6, 4], rot: [-th, 0, 0] });
       } });
   } };
   S.tail = { n: 3, len: 0.95, at: [0.0, -0.58], rr: 5, seg: 8, keys: [[0, 0.14, 0.17, 0], [0.45, 0.09, 0.11, 0], [0.95, 0.012, 0.018, 0]], rest: [-0.05, -0.12, -0.2], amp: 0.06, gaitAmp: 0.08, stab: 0.9 };
@@ -1227,9 +1679,10 @@ reg((function () {
       extra: function (gg, k) {
         gg.sph(0.05, 0.03, 0.06, 0, 0.12, 0.3 * k, 0xc09858, { s: [6, 4] });
         gg.sph(0.04, 0.05, 0.055, 0, -0.04, 0.44 * k, 0xe0cc90, { s: [6, 4] });
-        var th = 0.35, cy0 = 0.17, cz0 = -0.12, rx = 0.3, ry = 0.26;
-        gg.sph(rx, ry, 0.02, 0, cy0, cz0, fc, { s: [14, 8], rot: [-th, 0, 0] });
-        for (var i = 1; i < 16; i++) { var a = PI * (i / 16), px = Math.cos(a) * rx * 0.98, py = Math.sin(a) * ry * 0.98; gg.cone(0.016, 0.04, px, cy0 + py * cos(th), cz0 - py * sin(th), 0xf0dcb0, { seg: 4, rot: [-th, 0, -Math.cos(a) * 0.9] }); }
+        var th = 0.36, cy0 = 0.17, cz0 = -0.11, rx = 0.31, ry = 0.27, pPoly = [], pi;
+        for (pi = 0; pi < 14; pi++) { var pa = -0.2 + (PI + 0.4) * (pi / 13); pPoly.push([Math.cos(pa) * rx, Math.sin(pa) * ry]); }
+        gg.extrude(pPoly, 0.036, 0, cy0, cz0, [-th, 0, 0], fc, { axis: 'z', bev: 0.01, curveX: -0.24, curveY: -0.15 });
+        for (var i = 1; i < 16; i++) { var a = PI * (i / 16), px = Math.cos(a) * rx * 0.98, py = Math.sin(a) * ry * 0.98, dz = -0.24 * px * px - 0.15 * py * py; gg.cone(0.016, 0.04, px, cy0 + py * cos(th) + dz * sin(th), cz0 - py * sin(th) + dz * cos(th), 0xf0dcb0, { seg: 4, rot: [-th, 0, -Math.cos(a) * 0.9] }); }
         for (var s = -1; s <= 1; s += 2) gg.sph(0.07, 0.07, 0.04, s * 0.22, 0.05, 0.0, 0xd8a060, { s: [6, 4] }); } });
   } };
   S.tail = { n: 3, len: 1.1, at: [0.0, -0.5], rr: 4, seg: 7, keys: [[0, 0.1, 0.13, 0], [0.5, 0.06, 0.08, 0], [1.1, 0.01, 0.014, 0]], rest: [-0.02, -0.08, -0.15], amp: 0.1, gaitAmp: 0.1, stab: 0.9, freq: 1.3 };
@@ -1248,12 +1701,13 @@ reg((function () {
   S.back = 0x655a50; S.belly = 0xb4a68a; S.footc = 0x3a322c; S.legc = 0x584e46;
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0x70655a, bAt: -0.05, bW: 0.6, spots: { c: 0x3c342e, f: 7, k: 4, d: 0.14, a: 0.6 }, mott: 0.1 });
   var K = [[-0.72, 0.09, 0.09, 0.06], [-0.55, 0.28, 0.17, 0.06], [-0.3, 0.46, 0.24, 0.05], [0.0, 0.52, 0.27, 0.04], [0.3, 0.5, 0.27, 0.04], [0.55, 0.4, 0.22, 0.04], [0.72, 0.24, 0.15, 0.05], [0.82, 0.1, 0.08, 0.05]];
-  S.body = { rings: 20, seg: 12, keys: K, extra: function (g) {
-    var r = mkrng(7), oc = function (x, y, z, nx, ny) { return ny > 0.3 ? 0xc8aa74 : 0x8a7650; };
-    for (var i = 0; i < 12; i++) { var z = -0.5 + i * 0.1, pr = profAt(K, z);
-      for (var row = 0; row < 5; row++) { var a = (row - 2) * 0.33, x = Math.sin(a) * pr[0] * 0.98, y = pr[2] + Math.cos(a) * pr[1] * 0.98 + 0.0, big = row === 2 ? 0.7 : 1;
-        g.cone(0.045 * big, 0.07 * big + (row % 2) * 0.015, x, y + 0.03, z + (row % 2) * 0.04, oc, { seg: 5, rot: [0, 0, -Math.sin(a) * 0.5] }); }
-      for (var s = -1; s <= 1; s += 2) g.cone(0.035, 0.12, s * (pr[0] + 0.01), pr[2] - 0.0, z, 0xe8dcc0, { seg: 4, rot: [0, 0, -s * 1.25] }); } } };
+  S.body = { rings: 20, seg: 12, keys: K, flatBot: 0.65, extra: function (g) {
+    var oc = function (x, y, z, nx, ny) { return ny > 0.3 ? 0xc8aa74 : 0x8a7650; };
+    for (var i = 0; i < 9; i++) { var z = -0.46 + i * 0.125, pr = profAt(K, z);
+      for (var row = 0; row < 5; row++) { var a = (row - 2) * 0.34, x = Math.sin(a) * pr[0] * 0.96, y = pr[2] + Math.cos(a) * pr[1] * 0.96, big = row === 2 ? 0.78 : 1;
+        g.bevelBox(0.08 * big, 0.042 * big, 0.092 * big, 0.016 * big, x, y + 0.016, z + (row % 2) * 0.03, oc, { rot: [0, 0, -Math.sin(a) * 0.5] });
+        g.cone(0.026 * big, 0.052 * big + (row % 2) * 0.012, x, y + 0.042, z + (row % 2) * 0.03, oc, { seg: 4, rot: [0, 0, -Math.sin(a) * 0.5] }); }
+      for (var s = -1; s <= 1; s += 2) g.tube([[s * (pr[0] - 0.02), pr[2], z], [s * (pr[0] + 0.08), pr[2] + 0.015, z - 0.02], [s * (pr[0] + 0.145), pr[2] + 0.02, z - 0.05]], [0.032, 0.02, 0.002], 0xe8dcc0, { seg: 4, smooth: false }); } } };
   S.neck = { n: 1, len: 0.26, at: [0, 0.04, 0.78], rr: 4, seg: 8, keys: [[0, 0.2, 0.15, 0], [0.26, 0.16, 0.12, 0]], rest: [0.0], hrest: -0.2, stab: [0.5], look: 0.5 };
   S.head = { len: 0.46, scale: 1.0, jaw: [-0.03, 0.07], build: function (g, jg, b) {
     headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.05, 0.14, 0.09, 0], [0.04, 0.17, 0.105, 0], [0.18, 0.125, 0.09, -0.005], [0.32, 0.075, 0.065, -0.015], [0.42, 0.055, 0.052, -0.022], [0.46, 0.03, 0.03, -0.024]],
@@ -1281,7 +1735,10 @@ reg((function () {
   var S = { id: 'diplodocus', kind: 'sauro', H: 3.6, J: 0.8, p0: 0.03, bs: 0.25, bh: 1.35, runAt: 5.0 };
   S.back = 0x6f84a0; S.belly = 0xd3d8d2; S.footc = 0x3e4452; S.legc = 0x647894;
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0x7a90ac, bAt: -0.05, bW: 0.7, spots: { c: 0x3c4c68, f: 5, k: 4, d: 0.16, a: 0.6 }, bars: { c: 0x4a5c78, f: 3, w: 0.3, k: 0.45, from: -1, to: 4.2, ca0: 0.1 }, mott: 0.07 });
-  S.body = { rings: 20, seg: 10, keys: [[-0.7, 0.1, 0.13, 0.06], [-0.5, 0.2, 0.26, 0.04], [-0.2, 0.28, 0.33, 0.02], [0.2, 0.28, 0.32, 0.0], [0.55, 0.22, 0.27, 0.0], [0.82, 0.14, 0.17, 0.04], [0.95, 0.09, 0.1, 0.07]] };
+  S.body = { rings: 20, seg: 10, ridge: 0.09, keys: [[-0.7, 0.1, 0.13, 0.06], [-0.5, 0.2, 0.26, 0.04], [-0.2, 0.28, 0.33, 0.02], [0.2, 0.28, 0.32, 0.0], [0.55, 0.22, 0.27, 0.0], [0.82, 0.14, 0.17, 0.04], [0.95, 0.09, 0.1, 0.07]],
+    extra: function (g) {
+      for (var i = 0; i < 10; i++) { var z = -0.58 + i * 0.155, pr = profAt(S.body.keys, z); g.cone(0.014, 0.042, 0, pr[2] + pr[1] * 1.03, z, 0x4a5a74, { seg: 4, rot: [-0.25, 0, 0] }); }
+    } };
   S.neck = { n: 5, len: 2.0, at: [0, 0.1, 0.86], rr: 4, seg: 8, keys: [[0, 0.14, 0.16, 0], [0.5, 0.105, 0.115, 0], [1.2, 0.065, 0.07, 0], [2.0, 0.036, 0.04, 0]], rest: [0.5, 0.36, 0.26, 0.16, 0.08], hrest: -0.2, stab: [0.5, 0.6, 0.7, 0.8, 0.9], look: 0.8, run: -0.1 };
   S.head = { len: 0.36, scale: 1.0, jaw: [-0.03, 0.05], build: function (g, jg, b) {
     headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.04, 0.05, 0], [0.04, 0.056, 0.065, 0], [0.14, 0.05, 0.05, -0.008], [0.26, 0.042, 0.034, -0.02], [0.34, 0.046, 0.028, -0.026], [0.365, 0.034, 0.02, -0.027]],
@@ -1301,12 +1758,15 @@ reg((function () {
   var S = { id: 'brachiosaurus', kind: 'sauro', H: 6.0, J: 0.6, p0: 0.26, bs: 0.22, bh: 1.35, runAt: 5.0 };
   S.back = 0xa8744a; S.belly = 0xe6d8b0; S.footc = 0x4a3828; S.legc = 0x9a6a42;
   S.sk = skin({ back: S.back, belly: S.belly, mid: 0xb4825a, bAt: -0.05, bW: 0.7, spots: { c: 0x5a3820, f: 5, k: 4, d: 0.18, a: 0.6 }, bars: { c: 0x6a4428, f: 3, w: 0.3, k: 0.4, from: -1, to: 2, ca0: 0.1 }, mott: 0.08 });
-  S.body = { rings: 20, seg: 10, keys: [[-0.78, 0.09, 0.12, 0.05], [-0.55, 0.18, 0.23, 0.04], [-0.2, 0.25, 0.3, 0.02], [0.2, 0.26, 0.3, 0.0], [0.6, 0.24, 0.29, 0.0], [0.9, 0.18, 0.24, 0.03], [1.04, 0.1, 0.14, 0.07]] };
+  S.body = { rings: 20, seg: 10, ridge: 0.08, keys: [[-0.78, 0.09, 0.12, 0.05], [-0.55, 0.18, 0.23, 0.04], [-0.2, 0.25, 0.3, 0.02], [0.2, 0.26, 0.3, 0.0], [0.6, 0.24, 0.29, 0.0], [0.9, 0.18, 0.24, 0.03], [1.04, 0.1, 0.14, 0.07]] };
   S.neck = { n: 5, len: 1.15, at: [0, 0.18, 0.92], rr: 4, seg: 8, keys: [[0, 0.15, 0.17, 0], [0.4, 0.1, 0.11, 0], [0.8, 0.062, 0.068, 0], [1.15, 0.04, 0.044, 0]], rest: [0.95, 1.15, 1.3, 1.25, 1.0], hrest: -0.5, stab: [0.5, 0.7, 0.8, 0.85, 0.9], look: 0.6, run: -0.1 };
   S.head = { len: 0.3, scale: 1.0, jaw: [-0.035, 0.05], build: function (g, jg, b) {
     headStd(g, jg, b, S, { bk: 0.85, keys: [[-0.03, 0.045, 0.055, 0], [0.04, 0.062, 0.075, 0.0], [0.14, 0.055, 0.062, -0.008], [0.23, 0.045, 0.045, -0.018], [0.285, 0.042, 0.034, -0.024], [0.305, 0.03, 0.022, -0.026]],
-      jkeys: [[0.03, 0.034, 0.024, -0.075], [0.14, 0.044, 0.024, -0.08], [0.25, 0.036, 0.016, -0.078], [0.3, 0.026, 0.01, -0.076]], eye: [0.058, 0.04, 0.09, 0.017], nos: [0.014, 0.1, 0.1, 0.008], iris: 0x302018,
-      extra: function (gg, k) { gg.sph(0.042, 0.05, 0.09, 0, 0.085, 0.085 * k, S.back, { s: [7, 5] }); } });
+      jkeys: [[0.03, 0.034, 0.024, -0.075], [0.14, 0.044, 0.024, -0.08], [0.25, 0.036, 0.016, -0.078], [0.3, 0.026, 0.01, -0.076]], eye: [0.058, 0.04, 0.09, 0.017], nos: [0.014, 0.108, 0.105, 0.009], iris: 0x302018,
+      extra: function (gg, k) {
+        // iconic arched Brachiosaurus nasal crest dome
+        gg.tube([[0, 0.042, 0.015], [0, 0.115, 0.07 * k], [0, 0.118, 0.135 * k], [0, 0.04, 0.2 * k]], [0.028, 0.042, 0.036, 0.022], S.back, { seg: 8, sx: 0.85, sz: 1.15, steps: 2 });
+      } });
   } };
   S.tail = { n: 4, len: 1.4, at: [0.0, -0.75], rr: 5, seg: 8, keys: [[0, 0.13, 0.17, 0], [0.5, 0.09, 0.11, 0], [1.0, 0.045, 0.055, 0], [1.4, 0.01, 0.014, 0]], rest: [-0.05, -0.15, -0.22, -0.28], amp: 0.12, gaitAmp: 0.08, stab: 0.9, freq: 0.7 };
   S.legs = { f: { x: 0.21, y: 0.0, z: 0.72, w: [0.12, 0.085], sw: 0.9 }, h: { x: 0.21, y: 0, z: 0, w: [0.12, 0.085], sw: 1 } };
@@ -1560,14 +2020,21 @@ function frond(g, bx, by, bz, az, len, droop1, droop2, w, col) {
 }
 
 SC.pine = { build: function (g) {
-  g.limb(0, 0, 0, 0, 1.5, 0, 0.22, 0.16, 0x5a3e24, { seg: 6 });
-  var L = [[1.55, 1.7, 1.9], [1.3, 1.6, 2.7], [1.02, 1.5, 3.5], [0.72, 1.3, 4.3], [0.4, 1.1, 5.0]];
-  for (var i = 0; i < L.length; i++) g.cone(L[i][0], L[i][1], 0, L[i][2], 0, leaf(shade(0x2f7040, 1 + i * 0.05), 0.3), { seg: 8 });
+  g.lathe([[0.32, 0], [0.22, 0.4], [0.18, 1.5], [0.12, 3.2]], 0x5a3e24, { seg: 8, cap0: true });
+  var L = [[1.58, 1.65, 1.25], [1.34, 1.55, 2.05], [1.06, 1.45, 2.85], [0.76, 1.28, 3.65], [0.44, 1.08, 4.4]];
+  for (var i = 0; i < L.length; i++) {
+    var r = L[i][0], h = L[i][1], y0 = L[i][2];
+    g.lathe([[r * 0.72, y0 - 0.12], [r, y0 + 0.08], [r * 0.62, y0 + h * 0.52], [0.02, y0 + h]], leaf(shade(0x2f7040, 1 + i * 0.05), 0.3), { seg: 12, ridgeN: 7, ridgeA: 0.14, cap0: true });
+  }
 } };
 SC.snow_pine = { build: function (g) {
-  g.limb(0, 0, 0, 0, 1.5, 0, 0.22, 0.16, 0x5a4a3a, { seg: 6 });
-  var L = [[1.55, 1.7, 1.9], [1.3, 1.6, 2.7], [1.02, 1.5, 3.5], [0.72, 1.3, 4.3], [0.4, 1.1, 5.0]];
-  for (var i = 0; i < L.length; i++) { var r = L[i][0], h = L[i][1], y = L[i][2]; g.cone(r, h, 0, y, 0, leaf(0x2a6040, 0.25), { seg: 8 }); g.cone(r * 0.66, h * 0.62, 0, y + h * 0.19, 0, function (px, py, pz) { return hash3(Math.floor(px * 3), 1, Math.floor(pz * 3)) > 0.12 ? 0xf2f7fb : 0xdde8f0; }, { seg: 8 }); }
+  g.lathe([[0.32, 0], [0.22, 0.4], [0.18, 1.5], [0.12, 3.2]], 0x5a4a3a, { seg: 8, cap0: true });
+  var L = [[1.58, 1.65, 1.25], [1.34, 1.55, 2.05], [1.06, 1.45, 2.85], [0.76, 1.28, 3.65], [0.44, 1.08, 4.4]];
+  for (var i = 0; i < L.length; i++) {
+    var r = L[i][0], h = L[i][1], y0 = L[i][2];
+    g.lathe([[r * 0.72, y0 - 0.12], [r, y0 + 0.08], [r * 0.62, y0 + h * 0.52], [0.02, y0 + h]], leaf(0x2a6040, 0.25), { seg: 12, ridgeN: 7, ridgeA: 0.14, cap0: true });
+    g.lathe([[r * 0.84, y0 + h * 0.24], [r * 0.62, y0 + h * 0.55], [0.02, y0 + h + 0.04]], function (px, py, pz) { return hash3(Math.floor(px * 3), 1, Math.floor(pz * 3)) > 0.12 ? 0xf2f7fb : 0xdde8f0; }, { seg: 12, ridgeN: 7, ridgeA: 0.12 });
+  }
 } };
 SC.jungle_tree = { build: function (g) {
   var br = 0x6a5038; g.limb(0, 0, 0, 0, 5.2, 0, 0.4, 0.28, br, { seg: 7 });
@@ -1603,10 +2070,17 @@ SC.heat_rock = { build: function (g) {
   g.sph(0.35, 0.03, 0.3, 0.05, 0.69, 0.0, 0xe8b070, { s: [6, 3] });
 } };
 SC.flower_bed = { build: function (g) {
-  g.box(1.7, 0.18, 0.12, 0, 0.09, 0.8, 0x9a8a78); g.box(1.7, 0.18, 0.12, 0, 0.09, -0.8, 0x9a8a78); g.box(0.12, 0.18, 1.5, 0.8, 0.09, 0, 0x9a8a78); g.box(0.12, 0.18, 1.5, -0.8, 0.09, 0, 0x9a8a78);
+  g.bevelBox(1.74, 0.2, 0.15, 0.03, 0, 0.1, 0.8, 0x9a8a78); g.bevelBox(1.74, 0.2, 0.15, 0.03, 0, 0.1, -0.8, 0x9a8a78);
+  g.bevelBox(0.15, 0.2, 1.5, 0.03, 0.8, 0.1, 0, 0x9a8a78); g.bevelBox(0.15, 0.2, 1.5, 0.03, -0.8, 0.1, 0, 0x9a8a78);
   g.box(1.5, 0.16, 1.5, 0, 0.1, 0, 0x5a3e28);
   var r = mkrng(5), cs = [0xf05a8a, 0xf4d040, 0xff8a3a, 0xffffff, 0xa060e0, 0xe84a4a];
-  for (var i = 0; i < 16; i++) { var x = (r() - 0.5) * 1.3, z = (r() - 0.5) * 1.3, h = 0.25 + r() * 0.2; g.limb(x, 0.15, z, x, 0.15 + h, z, 0.02, 0.02, 0x3f8a3a, { seg: 3 }); g.sph(0.1, 0.07, 0.1, x, 0.18 + h, z, cs[i % 6], { s: [5, 4] }); g.sph(0.14, 0.05, 0.14, x + 0.05, 0.2, z, 0x4a9a40, { s: [4, 3] }); }
+  for (var i = 0; i < 14; i++) {
+    var x = (r() - 0.5) * 1.25, z = (r() - 0.5) * 1.25, h = 0.24 + r() * 0.22;
+    g.tube([[x, 0.15, z], [x + (r() - 0.5) * 0.05, 0.15 + h * 0.6, z + (r() - 0.5) * 0.05], [x, 0.15 + h, z]], [0.02, 0.014], 0x3f8a3a, { seg: 4, steps: 2 });
+    g.lathe([[0.03, 0], [0.12, 0.04], [0.13, 0.08], [0.07, 0.09], [0.02, 0.04]], cs[i % 6], { seg: 6, ridgeN: 5, ridgeA: 0.28, x: x, y: 0.14 + h, z: z });
+    g.sph(0.036, 0.028, 0.036, x, 0.19 + h, z, 0xf6d848, { s: [5, 3] });
+    g.extrude([[0, 0], [0.07, 0.06], [0, 0.16], [-0.07, 0.06]], 0.015, x + 0.03, 0.22, z, [0.5, r() * TAU, 0], 0x4a9a40, { axis: 'y' });
+  }
 } };
 SC.bin = { build: function (g) {
   g.cyl(0.27, 0.21, 0.72, 0, 0.36, 0, 0x3f7a4a, { seg: 8 }); g.cyl(0.3, 0.3, 0.07, 0, 0.75, 0, 0x2a5a34, { seg: 8 }); g.sph(0.27, 0.09, 0.27, 0, 0.78, 0, 0x2a5a34, { s: [8, 4] });
@@ -1628,13 +2102,26 @@ SC.cave_shelter = { build: function (g) {
   rock(g, 0.35, 0.3, 0.3, 1.2, 0.25, 0.85, 0x8d8882, 25);
 } };
 SC.wooden_shelter = { build: function (g) {
-  var P = 0x8a5e36, R = 0xa8774a, F = 0x7a5530;
-  g.box(2.2, 0.08, 1.8, 0, 0.04, 0, F);
-  var px = [[-1.0, -0.8], [1.0, -0.8]]; for (var i = 0; i < 2; i++) { g.limb(px[i][0], 0, px[i][1], px[i][0], 1.9, px[i][1], 0.07, 0.07, P, { seg: 5 }); }
-  g.limb(-1.0, 0, 0.8, -1.0, 1.4, 0.8, 0.07, 0.07, P, { seg: 5 }); g.limb(1.0, 0, 0.8, 1.0, 1.4, 0.8, 0.07, 0.07, P, { seg: 5 });
-  g.box(2.1, 1.9, 0.06, 0, 0.95, -0.9, R, { s: [1, 4, 1] }); g.box(0.06, 1.6, 1.7, -1.05, 0.85, 0, R); g.box(0.06, 1.6, 1.7, 1.05, 0.85, 0, R);
-  g.box(2.6, 0.1, 2.3, 0, 1.78, 0.05, 0x6a4a2a, { rot: [0.17, 0, 0] }); g.box(2.6, 0.06, 2.3, 0, 1.86, 0.05, 0x4f8a3e, { rot: [0.17, 0, 0] });
-  g.box(1.0, 0.2, 0.5, 0, 0.18, -0.4, 0xe0c878); // hay
+  var P = 0x7c5430, R = 0xa8774a, F = 0x6f4d2c;
+  g.bevelBox(2.26, 0.1, 1.86, 0.03, 0, 0.05, 0, F);
+  var ps = [[-1.0, -0.8, 1.75], [1.0, -0.8, 1.75], [-1.0, 0.8, 1.5], [1.0, 0.8, 1.5]];
+  for (var i = 0; i < ps.length; i++) {
+    g.cyl(0.08, 0.095, ps[i][2], ps[i][0], ps[i][2] * 0.5, ps[i][1], P, { seg: 7 });
+    g.limb(ps[i][0], ps[i][2] - 0.35, ps[i][1], ps[i][0] * 0.72, ps[i][2], ps[i][1] * 0.82, 0.045, 0.04, P, { seg: 5 });
+  }
+  // horizontal log rails & planked back/side walls
+  for (var ly = 0.25; ly <= 1.5; ly += 0.24) {
+    g.cyl(0.085, 0.085, 2.08, 0, ly, -0.84, shade(R, 0.92 + (ly % 0.4) * 0.2), { seg: 6, rot: [0, 0, PI / 2] });
+    if (ly < 1.35) {
+      g.cyl(0.075, 0.075, 1.62, -1.02, ly, 0, shade(R, 0.9), { seg: 6, rot: [PI / 2, 0, 0] });
+      g.cyl(0.075, 0.075, 1.62, 1.02, ly, 0, shade(R, 0.9), { seg: 6, rot: [PI / 2, 0, 0] });
+    }
+  }
+  // pitched timber & moss-shingle gable roof with ridge beam
+  gable(g, 2.2, 2.05, 1.55, 0.65, 0x6a4a2a, 0.22);
+  g.cyl(0.065, 0.065, 2.66, 0, 2.22, 0, 0x4f351e, { seg: 6, rot: [0, 0, PI / 2] });
+  g.sph(0.55, 0.22, 0.34, -0.25, 0.2, -0.35, 0xe0c878, { s: [7, 4] });
+  g.sph(0.45, 0.18, 0.3, 0.35, 0.18, -0.4, 0xd4ba68, { s: [6, 4] });
 } };
 SC.lamp = { custom: function (grp0) {
   var g = B(), D = 0x3a3d44;
@@ -1876,18 +2363,22 @@ function windowAt(g, x, y, z, w, h, frame, glass) {
 }
 function stall(g, o) {
   var W = o.w || 1.6, D = o.d || 1.4, H = o.h || 1.2, y0 = 0.12;
-  g.box(W + 0.16, 0.06, D + 0.16, 0, 0.03, 0, 0x7c7972);
-  g.box(W + 0.10, 0.08, D + 0.10, 0, 0.10, 0, 0x949088);
-  g.box(W, H, D, 0, y0 + H / 2, 0, o.wall, { s: [1, o.bands ? 4 : 1, 1] });
-  for (var cx = -1; cx <= 1; cx += 2) for (var cz = -1; cz <= 1; cz += 2) g.box(0.075, H, 0.075, cx * (W / 2 - 0.01), y0 + H / 2, cz * (D / 2 - 0.01), shade(o.trim, 0.9));
-  g.box(W + 0.04, 0.08, D + 0.04, 0, y0 + H * 0.12, 0, o.trim); g.box(W + 0.04, 0.08, D + 0.04, 0, y0 + H, 0, o.trim);
-  g.box(W * 0.72, H * 0.36, 0.05, 0, y0 + H * 0.64, D / 2 + 0.005, 0x2a221e); g.box(W * 0.72 + 0.1, 0.05, 0.06, 0, y0 + H * 0.82 + 0.05, D / 2 + 0.01, o.trim); g.box(W * 0.72 + 0.1, 0.05, 0.06, 0, y0 + H * 0.46 - 0.02, D / 2 + 0.01, o.trim);
-  g.box(W * 0.8, 0.06, 0.3, 0, y0 + H * 0.45, D / 2 + 0.16, o.counter || 0xe8e0d0);
+  g.bevelBox(W + 0.2, 0.08, D + 0.2, 0.025, 0, 0.04, 0, 0x7c7972);
+  g.bevelBox(W + 0.12, 0.08, D + 0.12, 0.02, 0, 0.11, 0, 0x949088);
+  g.bevelBox(W, H, D, 0.04, 0, y0 + H / 2, 0, o.wall);
+  for (var cx = -1; cx <= 1; cx += 2) for (var cz = -1; cz <= 1; cz += 2) g.cyl(0.048, 0.054, H, cx * (W / 2 - 0.01), y0 + H / 2, cz * (D / 2 - 0.01), shade(o.trim, 0.9), { seg: 6 });
+  g.bevelBox(W + 0.05, 0.08, D + 0.05, 0.02, 0, y0 + H * 0.12, 0, o.trim);
+  g.bevelBox(W + 0.06, 0.09, D + 0.06, 0.025, 0, y0 + H, 0, o.trim);
+  g.box(W * 0.72, H * 0.36, 0.05, 0, y0 + H * 0.64, D / 2 + 0.005, 0x2a221e); g.bevelBox(W * 0.72 + 0.12, 0.06, 0.08, 0.015, 0, y0 + H * 0.82 + 0.05, D / 2 + 0.01, o.trim);
+  g.bevelBox(W * 0.82, 0.07, 0.32, 0.02, 0, y0 + H * 0.45, D / 2 + 0.16, o.counter || 0xe8e0d0);
   g.box(0.3, 0.45, 0.04, W / 2 + 0.005, y0 + H * 0.6, 0.1, 0x2a221e); // side hatch
   awning(g, 0, y0 + H * 1.0 + 0.2, D / 2 - 0.02, W + 0.1, 0.65, o.awn1, o.awn2, 8, 0.45);
-  g.box(W + 0.24, 0.06, D + 0.24, 0, y0 + H + 0.03, 0, shade(o.roof, 0.88));
-  g.box(W + 0.18, 0.08, D + 0.18, 0, y0 + H + 0.09, 0, o.roof);
-  for (var s = -1; s <= 1; s += 2) g.limb(s * (W / 2 + 0.02), y0 + H, D / 2 + 0.55, s * (W / 2 + 0.02), y0 + H * 0.45, D / 2 + 0.55, 0.025, 0.025, 0xe8e0d0, { seg: 4 });
+  g.bevelBox(W + 0.26, 0.07, D + 0.26, 0.025, 0, y0 + H + 0.04, 0, shade(o.roof, 0.88));
+  g.bevelBox(W + 0.18, 0.1, D + 0.18, 0.035, 0, y0 + H + 0.11, 0, o.roof);
+  for (var s = -1; s <= 1; s += 2) {
+    g.cyl(0.026, 0.026, H * 0.56, s * (W / 2 + 0.02), y0 + H * 0.72, D / 2 + 0.55, 0xe8e0d0, { seg: 6 });
+    g.limb(s * (W / 2 - 0.02), y0 + H * 0.44, D / 2 + 0.18, s * (W / 2 - 0.02), y0 + H * 0.26, D / 2 + 0.02, 0.025, 0.025, o.trim, { seg: 4 });
+  }
 }
 function addSpin(grp0, geo, y, speed) {
   var p = grp('spin'); p.position.y = y; grp0.add(p); p.add(mesh(geo));
@@ -1960,19 +2451,29 @@ BLD.coffee_cart = function (grp0) {
 };
 BLD.toilets = function (grp0) {
   var g = B();
-  g.box(3.6, 0.1, 1.7, 0, 0.05, 0, 0x8d8a84); g.box(3.4, 2.0, 1.5, 0, 1.1, 0, 0xd8dce0, { s: [1, 3, 1] }); g.box(3.5, 0.14, 1.6, 0, 2.17, 0, 0x5a6672);
-  g.box(3.6, 0.25, 0.04, 0, 1.9, 0.77, 0x6a8aa8);
+  g.bevelBox(3.7, 0.12, 1.82, 0.04, 0, 0.06, 0, 0x8d8a84);
+  g.bevelBox(3.45, 0.55, 1.56, 0.04, 0, 0.38, 0, 0xb4b8bc);
+  g.bevelBox(3.4, 1.52, 1.52, 0.05, 0, 1.38, 0, 0xe0e4e8);
+  for (var sP = -1; sP <= 1; sP += 2) g.cyl(0.08, 0.09, 2.02, sP * 1.66, 1.12, 0.74, 0x6a8aa8, { seg: 8 });
+  gable(g, 3.45, 1.65, 2.08, 0.58, 0x526576, 0.22);
+  g.bevelBox(1.2, 0.26, 0.52, 0.04, 0, 2.55, 0, 0x6c7c8a); // roof clerestory vent
+  g.bevelBox(3.54, 0.22, 0.08, 0.03, 0, 1.94, 0.77, 0x5d82a4);
   var door = function (x, col, fem) {
-    g.box(0.8, 1.5, 0.06, x, 0.9, 0.76, col); g.box(0.9, 1.6, 0.04, x, 0.9, 0.74, 0xf4f4f4); g.sph(0.04, 0.04, 0.04, x + 0.3, 0.85, 0.82, 0xe8c040, { s: [4, 3] });
-    g.sph(0.07, 0.07, 0.03, x, 1.5, 0.8, 0xffffff, { s: [6, 4] }); g.box(fem ? 0.1 : 0.14, 0.22, 0.03, x, 1.32, 0.8, 0xffffff);
-    if (fem) g.cone(0.14, 0.22, x, 1.26, 0.8, 0xffffff, { seg: 3 });
-    else { g.box(0.04, 0.16, 0.03, x - 0.1, 1.3, 0.8, 0xffffff); g.box(0.04, 0.16, 0.03, x + 0.1, 1.3, 0.8, 0xffffff); }
+    g.bevelBox(0.92, 1.62, 0.08, 0.025, x, 0.92, 0.74, 0xf4f4f4);
+    g.bevelBox(0.8, 1.5, 0.07, 0.02, x, 0.9, 0.77, col);
+    g.sph(0.04, 0.04, 0.04, x + 0.3, 0.85, 0.83, 0xe8c040, { s: [5, 4] });
+    g.sph(0.07, 0.07, 0.03, x, 1.5, 0.82, 0xffffff, { s: [6, 4] }); g.box(fem ? 0.1 : 0.14, 0.22, 0.03, x, 1.32, 0.82, 0xffffff);
+    if (fem) g.cone(0.14, 0.22, x, 1.26, 0.82, 0xffffff, { seg: 3 });
+    else { g.box(0.04, 0.16, 0.03, x - 0.1, 1.3, 0.82, 0xffffff); g.box(0.04, 0.16, 0.03, x + 0.1, 1.3, 0.82, 0xffffff); }
   };
   door(-0.9, 0x3b82f6, false); door(0.9, 0xf472b6, true);
-  windowAt(g, 0, 1.45, 0.77, 0.45, 0.35, 0xffffff, 0xaed8f0); g.box(0.55, 0.3, 0.05, 0, 1.0, 0.77, 0x6a8aa8);
-  g.sph(0.2, 0.2, 0.2, 1.5, 0.3, 0.9, 0x3f8a4a, { s: [5, 4] });
+  windowAt(g, 0, 1.48, 0.77, 0.45, 0.35, 0xffffff, 0xaed8f0); g.bevelBox(0.55, 0.3, 0.06, 0.02, 0, 1.0, 0.77, 0x5d82a4);
+  g.lathe([[0.18, 0], [0.22, 0.22], [0.16, 0.24]], 0x9a6a4a, { seg: 8, x: 1.52, y: 0.1, z: 0.92, cap0: true });
+  g.sph(0.22, 0.2, 0.22, 1.52, 0.4, 0.92, 0x3f8a4a, { s: [6, 5] });
+  g.lathe([[0.18, 0], [0.22, 0.22], [0.16, 0.24]], 0x9a6a4a, { seg: 8, x: -1.52, y: 0.1, z: 0.92, cap0: true });
+  g.sph(0.22, 0.2, 0.22, -1.52, 0.4, 0.92, 0x3f8a4a, { s: [6, 5] });
   grp0.add(mesh(g.build()));
-  grp0.add(labelMesh('WC', 0x6a8aa8, 0xffffff, 0.45, 0.25, 0, 1.0, 0.8, 0));
+  grp0.add(labelMesh('WC', 0x5d82a4, 0xffffff, 0.45, 0.25, 0, 1.0, 0.81, 0));
 };
 BLD.balloon_stand = function (grp0) {
   var g = B();
@@ -2268,21 +2769,31 @@ BLD.viewing_platform = function (grp0) { // 4x2 m
 BLD.emergency_bunker = function (grp0) { // 4x4 m
   var g = B(), cn = function (x, y, z) { return hash3(Math.floor(x * 5), Math.floor(y * 4), Math.floor(z * 5)) > 0.7 ? 0x8a8c8a : 0x9a9c9a; };
   var hz = function (x, y, z) { return fract((x + y) * 3.2) < 0.5 ? 0xf2c030 : 0x2a2a2a; };
-  g.box(3.9, 0.12, 3.9, 0, 0.06, 0, 0x7a7c7a);
-  g.box(3.2, 1.8, 2.6, 0, 1.0, -0.4, cn, { s: [1, 2, 1] }); g.box(3.4, 0.25, 2.8, 0, 2.0, -0.4, 0x7a7c7a);
-  g.box(3.0, 0.2, 2.4, 0, 2.25, -0.4, 0x5a5c5a, { rot: [0.0, 0, 0] });
-  g.box(3.3, 0.3, 0.06, 0, 0.35, 0.92, hz, { s: [24, 1, 1] }); g.box(3.3, 0.3, 0.06, 0, 1.75, 0.92, hz, { s: [24, 1, 1] });
-  g.box(1.5, 1.4, 0.2, 0, 0.8, 0.95, 0x4a5058); g.box(1.3, 1.2, 0.1, 0, 0.8, 1.05, 0x6a7078); g.box(1.4, 0.06, 0.1, 0, 0.8, 1.12, 0x2a2e34);
-  g.cyl(0.14, 0.14, 0.05, 0.0, 1.1, 1.12, 0xc83a2a, { seg: 8, rot: [PI / 2, 0, 0] });
-  g.box(0.8, 0.3, 0.05, -1.1, 1.3, 0.93, 0xf4ead0); g.box(0.3, 0.3, 0.06, 1.2, 1.1, 0.93, 0xd8322e); g.box(0.08, 0.2, 0.07, 1.2, 1.1, 0.93, 0xffffff); g.box(0.2, 0.08, 0.07, 1.2, 1.1, 0.93, 0xffffff);
-  g.box(0.7, 0.45, 0.04, 1.0, 1.4, 0.93, 0x2a3038);
-  for (var i = 0; i < 5; i++) g.box(1.4 - i * 0.04, 0.06, 0.3, 0, 0.1 + i * 0.0, 1.2 + 0.0, 0x8a8c8a);
-  g.cyl(0.35, 0.35, 0.5, 0.9, 2.6, -1.0, 0x6a6c6a, { seg: 8 }); g.cyl(0.4, 0.4, 0.05, 0.9, 2.85, -1.0, 0x4a4c4a, { seg: 8 });
-  post(g, -1.2, -1.2, 2.35, 3.6, 0x555a60, 0.04); g.limb(-1.2, 3.4, -1.2, -0.7, 3.7, -1.2, 0.02, 0.02, 0x555a60, { seg: 3 }); g.box(0.35, 0.22, 0.04, -1.38, 3.45, -1.2, 0xe0a030);
-  for (i = 0; i < 4; i++) g.box(0.3, 0.3, 0.3, -1.5 + i * 0.0, 0.25 + i * 0.0, 1.6 + (i % 2) * 0.0, 0x4a6a3a, { rot: [0, 0.2 * i, 0] });
-  g.cyl(0.1, 0.1, 0.9, 1.7, 0.45, 1.5, 0xd8322e, { seg: 6 });
+  g.bevelBox(3.92, 0.14, 3.92, 0.05, 0, 0.07, 0, 0x7a7c7a);
+  // sloped/chamfered reinforced concrete bunker hull + buttresses
+  g.bevelBox(3.35, 1.85, 2.7, 0.28, 0, 1.05, -0.4, cn);
+  g.bevelBox(3.45, 0.26, 2.8, 0.1, 0, 2.02, -0.4, 0x767a78);
+  g.bevelBox(2.95, 0.24, 2.35, 0.1, 0, 2.26, -0.4, 0x5c605e);
+  for (var sb = -1; sb <= 1; sb += 2) {
+    g.extrude([[-0.18, 0], [0.22, 0], [0.06, 1.6], [-0.18, 1.6]], 0.22, sb * 1.68, 0.12, -0.4, [0, sb > 0 ? 0 : PI, 0], 0x7e8280, { axis: 'z', bev: 0.03 });
+  }
+  g.box(3.15, 0.26, 0.06, 0, 0.35, 0.96, hz, { s: [24, 1, 1] }); g.box(3.15, 0.26, 0.06, 0, 1.74, 0.96, hz, { s: [24, 1, 1] });
+  // recessed armored blast door & locking wheel
+  g.bevelBox(1.56, 1.46, 0.26, 0.08, 0, 0.84, 0.98, 0x454c54);
+  g.bevelBox(1.3, 1.22, 0.12, 0.04, 0, 0.84, 1.09, 0x6a727c);
+  g.box(1.32, 0.06, 0.12, 0, 0.84, 1.14, 0x2a2e34);
+  g.lathe([[0.06, 0], [0.18, 0.02], [0.18, 0.06], [0.11, 0.07], [0.05, 0.04]], 0xc83a2a, { seg: 10, x: 0, y: 1.08, z: 1.14, rot: [PI / 2, 0, 0] });
+  g.bevelBox(0.8, 0.3, 0.06, 0.02, -1.1, 1.3, 0.96, 0xf4ead0); g.bevelBox(0.32, 0.32, 0.06, 0.02, 1.2, 1.1, 0.96, 0xd8322e); g.box(0.08, 0.2, 0.07, 1.2, 1.1, 0.97, 0xffffff); g.box(0.2, 0.08, 0.07, 1.2, 1.1, 0.97, 0xffffff);
+  g.bevelBox(0.7, 0.45, 0.05, 0.02, 1.0, 1.42, 0.96, 0x2a3038);
+  g.bevelBox(1.5, 0.1, 0.52, 0.03, 0, 0.12, 1.24, 0x8a8c8a);
+  // curved ventilator cupola + comms mast
+  g.lathe([[0.38, 0], [0.36, 0.42], [0.46, 0.48], [0.3, 0.64], [0.02, 0.7]], 0x6a6e6c, { seg: 10, x: 0.9, y: 2.35, z: -1.0, cap0: true });
+  post(g, -1.2, -1.2, 2.35, 3.65, 0x555a60, 0.045); g.limb(-1.2, 3.4, -1.2, -0.7, 3.7, -1.2, 0.02, 0.02, 0x555a60, { seg: 4 });
+  g.lathe([[0.04, 0], [0.22, 0.08], [0.26, 0.14]], 0xdce0e4, { seg: 10, x: -1.18, y: 3.35, z: -1.12, rot: [0.9, 0.4, 0] }); // satellite dish
+  g.bevelBox(0.55, 0.36, 0.42, 0.04, -1.5, 0.3, 1.55, 0x4a6a3a); // supply crate
+  g.cyl(0.11, 0.11, 0.9, 1.7, 0.45, 1.5, 0xd8322e, { seg: 8 }); g.sph(0.11, 0.07, 0.11, 1.7, 0.9, 1.5, 0xf2c030, { s: [6, 4] });
   grp0.add(mesh(g.build()));
-  grp0.add(labelMesh('EMERGENCY', 0xc83a2a, 0xffffff, 1.4, 0.26, -0.5, 1.9, 0.98, 0));
+  grp0.add(labelMesh('EMERGENCY', 0xc83a2a, 0xffffff, 1.4, 0.26, -0.5, 1.9, 1.0, 0));
   var bk = new T.Mesh(unit('ebeacon', function () { return new T.SphereGeometry(0.22, 8, 6); }), pulseMat(0xff3a2a, 0xff1a0a)); bk.position.set(0, 3.45, -0.4);
   var rot = grp(); rot.position.set(0, 2.45, -0.4); var bb = B(); bb.cyl(0.3, 0.3, 0.2, 0, 0.1, 0, 0x4a4c4a, { seg: 8 }); bb.sph(0.3, 0.3, 0.3, 0, 0.45, 0, 0xff3a2a, { s: [8, 5] }); grp0.add(mesh(bb.build()));
   var rb = B(); rb.box(1.1, 0.05, 0.12, 0, 0.45, 0, 0xffe0c0); rot.add(mesh(rb.build())); grp0.add(rot);
@@ -2401,7 +2912,7 @@ API.setDetail = function (d) {
 };
 API.getDetail = function () { return DETAIL; };
 // helper kit for sibling model modules (31-models-extra.js builds the sea/air/modern creatures from these)
-API.kit = { T: T, B: B, mesh: mesh, grp: grp, VC: VC, mat: mat, skin: skin, profAt: profAt, clamp: clamp, lerp: lerp, damp: damp, smooth: smooth, mixHex: mixHex, shade: shade, hash3: hash3, fract: fract, eye: eye, fixZ: fixZ };
+API.kit = { T: T, B: B, mesh: mesh, grp: grp, VC: VC, mat: mat, skin: skin, profAt: profAt, clamp: clamp, lerp: lerp, damp: damp, smooth: smooth, mixHex: mixHex, shade: shade, hash3: hash3, fract: fract, eye: eye, fixZ: fixZ, detail: function () { return DETAIL; } };
 return API;
 })();
 

@@ -2016,6 +2016,15 @@ function updateLamps(dt) {
 var ents = { animal: new Map(), guest: new Map(), staff: new Map() };
 var entGroup, entShMesh, entShCap = 0, bubbleList = [], MAXB = 12;
 var impG, impH, impA, visList = [], MESH_BUDGET = 2400, IMPOSTORS_ON = false;
+var IMP_CLS = ['quad', 'biped', 'tall', 'aero'];
+var IMP_MAP = {
+  giraffe: 'tall', flamingo: 'tall', ostrich: 'tall', nessie: 'tall',
+  gorilla: 'biped', chimpanzee: 'biped', orangutan: 'biped', sasquatch: 'biped',
+  kangaroo: 'biped', penguin: 'biped', meerkat: 'biped', puss_in_boots: 'biped', peacock: 'biped',
+  phoenix: 'aero', griffin: 'aero', winged_monkey: 'aero',
+  purple_dragon: 'aero', pugon: 'aero', drassy: 'aero'
+};
+function animalImpCls(sp) { return IMP_MAP[sp] || 'quad'; }
 var KIND_ARR = { animal: 'animals', guest: 'guests', staff: 'staff' };
 function mkImp(geo, mat, cap) {
   var im = new THREE.InstancedMesh(geo, mat, cap);
@@ -2023,8 +2032,8 @@ function mkImp(geo, mat, cap) {
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false;
   im.castShadow = true; im.receiveShadow = true; im.count = 0; root.add(im); return im;
 }
-function addPartGeo(mb, geo, sx, sy, sz, px, py, pz, rx, col) {
-  var m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(rx || 0, 0, 0);
+function addPartGeo(mb, geo, sx, sy, sz, px, py, pz, rx, col, ry, rz) {
+  var m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(rx || 0, ry || 0, rz || 0);
   q.setFromEuler(e); m.compose(new THREE.Vector3(px, py, pz), q, new THREE.Vector3(sx, sy, sz));
   mb.addSmoothGeo(geo, m, col);
 }
@@ -2049,10 +2058,64 @@ function buildGuestImpostorGeo() {
   addPartGeo(mbH, hairGeo, 1, 1, 1, 0, 1.61, -0.01, 0, [0.35, 0.25, 0.18]);
   return { body: mbB.geometry(), head: mbH.geometry() };
 }
-function buildAnimalImpostorGeo() {
+function buildAnimalImpostorGeo(cls) {
   var mb = new MB();
-  var sph = new THREE.SphereGeometry(1, 12, 8), legCyl = new THREE.CylinderGeometry(0.068, 0.044, 0.48, 8);
-  var neckCyl = new THREE.CylinderGeometry(0.10, 0.16, 0.34, 8), tailCyl = new THREE.CylinderGeometry(0.02, 0.075, 0.42, 7);
+  var sph = new THREE.SphereGeometry(1, 9, 6);
+  if (cls === 'biped') {
+    var bLeg = new THREE.CylinderGeometry(0.068, 0.048, 0.38, 6);
+    var bNeck = new THREE.CylinderGeometry(0.08, 0.11, 0.14, 6);
+    var bArm = new THREE.CylinderGeometry(0.052, 0.036, 0.36, 6);
+    var bTail = new THREE.CylinderGeometry(0.022, 0.065, 0.30, 6);
+    addPartGeo(mb, sph, 0.20, 0.28, 0.17, 0, 0.56, 0, 0.18, [1, 1, 1]);
+    addPartGeo(mb, sph, 0.21, 0.16, 0.16, 0, 0.70, 0.04, 0, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, bNeck, 1, 1, 1, 0, 0.84, 0.06, 0.15, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, sph, 0.115, 0.12, 0.13, 0, 0.93, 0.08, 0, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, sph, 0.065, 0.06, 0.09, 0, 0.90, 0.18, 0, [0.91, 0.91, 0.91]);
+    addPartGeo(mb, bLeg, 1, 1, 1, 0.11, 0.19, 0, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, bLeg, 1, 1, 1, -0.11, 0.19, 0, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, sph, 0.065, 0.035, 0.10, 0.11, 0.035, 0.05, 0, [0.80, 0.80, 0.80]);
+    addPartGeo(mb, sph, 0.065, 0.035, 0.10, -0.11, 0.035, 0.05, 0, [0.80, 0.80, 0.80]);
+    addPartGeo(mb, bArm, 1, 1, 1, 0.22, 0.56, 0.06, 0.32, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, bArm, 1, 1, 1, -0.22, 0.56, 0.06, 0.32, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, bTail, 1, 1, 1, 0, 0.34, -0.18, -1.05, [0.86, 0.86, 0.86]);
+    return mb.geometry();
+  }
+  if (cls === 'tall') {
+    var tLeg = new THREE.CylinderGeometry(0.052, 0.034, 0.38, 6);
+    var tNeckA = new THREE.CylinderGeometry(0.075, 0.115, 0.32, 7), tNeckB = new THREE.CylinderGeometry(0.048, 0.075, 0.34, 7);
+    var tTail = new THREE.CylinderGeometry(0.015, 0.065, 0.40, 6);
+    addPartGeo(mb, sph, 0.20, 0.16, 0.28, 0, 0.38, -0.02, 0, [1, 1, 1]);
+    addPartGeo(mb, sph, 0.18, 0.15, 0.16, 0, 0.40, 0.14, 0, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, tLeg, 1, 1, 1, 0.12, 0.19, 0.14, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, -0.12, 0.19, 0.14, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, 0.12, 0.19, -0.18, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tLeg, 1, 1, 1, -0.12, 0.19, -0.18, 0, [0.84, 0.84, 0.84]);
+    addPartGeo(mb, tNeckA, 1, 1, 1, 0, 0.55, 0.22, 0.28, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, tNeckB, 1, 1, 1, 0, 0.81, 0.28, 0.12, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, sph, 0.075, 0.068, 0.11, 0, 0.96, 0.33, 0, [0.94, 0.94, 0.94]);
+    addPartGeo(mb, sph, 0.048, 0.045, 0.08, 0, 0.94, 0.42, 0, [0.91, 0.91, 0.91]);
+    addPartGeo(mb, tTail, 1, 1, 1, 0, 0.34, -0.36, -1.25, [0.88, 0.88, 0.88]);
+    return mb.geometry();
+  }
+  if (cls === 'aero') {
+    var aNeck = new THREE.CylinderGeometry(0.055, 0.085, 0.22, 7), aBeak = new THREE.CylinderGeometry(0.012, 0.045, 0.16, 6);
+    var aTail = new THREE.CylinderGeometry(0.02, 0.07, 0.34, 6), aLeg = new THREE.CylinderGeometry(0.032, 0.020, 0.24, 5);
+    addPartGeo(mb, sph, 0.17, 0.15, 0.34, 0, 0.52, 0, 0, [1, 1, 1]);
+    addPartGeo(mb, aNeck, 1, 1, 1, 0, 0.58, 0.28, 1.15, [0.96, 0.96, 0.96]);
+    addPartGeo(mb, sph, 0.08, 0.075, 0.11, 0, 0.62, 0.40, 0, [0.95, 0.95, 0.95]);
+    addPartGeo(mb, aBeak, 1, 1, 1, 0, 0.61, 0.52, 1.57, [0.92, 0.92, 0.92]);
+    addPartGeo(mb, aTail, 1, 1, 1, 0, 0.50, -0.36, -1.48, [0.88, 0.88, 0.88]);
+    addPartGeo(mb, sph, 0.14, 0.022, 0.09, 0, 0.50, -0.50, 0, [0.86, 0.86, 0.86]);
+    addPartGeo(mb, sph, 0.25, 0.032, 0.14, 0.28, 0.56, 0.03, 0, [0.94, 0.94, 0.94], -0.18, 0.10);
+    addPartGeo(mb, sph, 0.25, 0.032, 0.14, -0.28, 0.56, 0.03, 0, [0.94, 0.94, 0.94], 0.18, -0.10);
+    addPartGeo(mb, sph, 0.22, 0.022, 0.09, 0.54, 0.59, -0.06, 0, [0.88, 0.88, 0.88], -0.30, 0.16);
+    addPartGeo(mb, sph, 0.22, 0.022, 0.09, -0.54, 0.59, -0.06, 0, [0.88, 0.88, 0.88], 0.30, -0.16);
+    addPartGeo(mb, aLeg, 1, 1, 1, 0.10, 0.30, 0.08, 0, [0.82, 0.82, 0.82]);
+    addPartGeo(mb, aLeg, 1, 1, 1, -0.10, 0.30, 0.08, 0, [0.82, 0.82, 0.82]);
+    return mb.geometry();
+  }
+  var legCyl = new THREE.CylinderGeometry(0.068, 0.044, 0.48, 7);
+  var neckCyl = new THREE.CylinderGeometry(0.10, 0.16, 0.34, 7), tailCyl = new THREE.CylinderGeometry(0.02, 0.075, 0.42, 6);
   addPartGeo(mb, sph, 0.25, 0.24, 0.38, 0, 0.56, -0.02, 0, [1, 1, 1]);
   addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.58, 0.18, 0, [0.96, 0.96, 0.96]);
   addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.53, -0.22, 0, [0.95, 0.95, 0.95]);
@@ -2073,10 +2136,11 @@ function buildEntitySystem() {
   entShMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); entShMesh.frustumCulled = false; entShMesh.renderOrder = 1; entShMesh.count = 0;
   root.add(entShMesh);
   // sculpted organic silhouettes for distant impostors (only used if enabled)
-  var gGeo = buildGuestImpostorGeo(), aGeo = buildAnimalImpostorGeo();
+  var gGeo = buildGuestImpostorGeo(), aMat = new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true });
   impG = mkImp(gGeo.body, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
   impH = mkImp(gGeo.head, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
-  impA = mkImp(aGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 300);
+  impA = {};
+  for (var ci = 0; ci < IMP_CLS.length; ci++) impA[IMP_CLS[ci]] = mkImp(buildAnimalImpostorGeo(IMP_CLS[ci]), aMat, 300);
 }
 function makeVis(kind, e) {
   var v = null;
@@ -2091,16 +2155,28 @@ function makeVis(kind, e) {
   }
   return v;
 }
+var _shBox = new THREE.Box3();
 function addEnt(kind, e) {
   var v = makeVis(kind, e);
   var am = kind === 'animal' ? findIn(D.animals, e.species) : null;
   var ht = (isFin(v.height) && v.height > 0) ? v.height : (kind === 'animal' ? Math.max(0.5, ((am && am.size) || 1) * 1.2) : 1.7);
   var rad = kind === 'animal' ? clamp(0.4 + ((am && am.size) || 1) * 0.55, 0.55, 2.4) * (e.baby ? 0.6 : 1) : kind === 'guest' ? 0.38 : 0.42;
+  var shW = rad, shL = rad, shZ = 0;
+  if (kind === 'animal') {
+    _shBox.setFromObject(v.group);
+    if (!_shBox.isEmpty() && isFin(_shBox.min.x) && isFin(_shBox.max.x) && isFin(_shBox.min.z) && isFin(_shBox.max.z)) {
+      var bw = _shBox.max.x - _shBox.min.x, bl = _shBox.max.z - _shBox.min.z;
+      shW = clamp(bw * 0.44, 0.35, 2.0);
+      shL = clamp(bl * 0.40, 0.42, 4.6);
+      if (shW > Math.max(1.4, shL * 0.95)) shW = Math.max(1.4, shL * 0.95);
+      shZ = clamp((_shBox.min.z + _shBox.max.z) * 0.15, -0.9, 0.9);
+    }
+  }
   var mc = 0; v.group.traverse(function (o) { if (o.isMesh) mc++; });
   var colSeed = kind === 'animal' ? hash32(String(e.species)) : kind === 'guest' ? (e.seed | 0) * 2654435761 : hash32(String(e.type));
   var c = new THREE.Color().setHSL((((colSeed >>> 0) % 360) / 360), kind === 'animal' ? 0.32 : 0.55, kind === 'animal' ? 0.46 : 0.5);
   if (kind === 'animal') { var ac = avgColour(v.group); if (ac) c = ac; }
-  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
+  var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, shW: shW, shL: shL, shZ: shZ, impCls: kind === 'animal' ? animalImpCls(e.species) : null, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
   enableShadows(v.group, true, true);
   v.group.position.set(fin(e.x, 0), 0, fin(e.z, 0));
   entGroup.add(v.group);
@@ -2179,7 +2255,7 @@ function updateEntities(dt, dtGame) {
     }
   }
   // pass 2: budget governor - farthest entities become sculpted impostors (only if IMPOSTORS_ON && beyond close threshold)
-  var nG = 0, nA = 0, n = visList.length;
+  var nG = 0, nA = { quad: 0, biped: 0, tall: 0, aero: 0 }, nATot = 0, n = visList.length;
   if (IMPOSTORS_ON && totalMc > MESH_BUDGET) {
     visList.sort(cmpFar);
     for (k = 0; k < n && totalMc > MESH_BUDGET; k++) {
@@ -2189,7 +2265,7 @@ function updateEntities(dt, dtGame) {
     }
   }
   // pass 3: animate real ones, write impostors/shadows
-  var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array, aa = impA.instanceMatrix.array, ac = impA.instanceColor.array;
+  var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array;
   for (k = 0; k < n; k++) {
     rec = visList[k]; e = rec.ent; var g = rec.group, x2 = fin(e.x, 0), z2 = fin(e.z, 0), gy2 = fin(rec.gy, 0);
     if (!isFin(rec.h)) rec.h = 0;
@@ -2204,15 +2280,19 @@ function updateEntities(dt, dtGame) {
       gy2 += Math.abs(Math.sin(fph)) * 0.32;
       fightRock = Math.sin(fph * 1.15) * 0.35;
     }
+    var c = Math.cos(rec.h), sn = Math.sin(rec.h);
     if (rec.imp) {
       g.visible = false;
-      var c = Math.cos(rec.h), sn = Math.sin(rec.h), b;
+      var b;
       if (rec.kind === 'animal') {
-        if (nA < 300) {
-          b = nA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.85 + 0.2, hh = Math.max(rec.ht, sz * 0.85 + 0.15), l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.95 : sz * 1.25) + 0.3;
+        var cls = rec.impCls || 'quad', cntA = nA[cls];
+        if (cntA < 300) {
+          var imA = impA[cls], aa = imA.instanceMatrix.array, ac = imA.instanceColor.array;
+          b = cntA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.85 + 0.2, hh = Math.max(rec.ht, sz * 0.85 + 0.15), l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.95 : sz * 1.25) + 0.3;
           aa[b] = c * w; aa[b + 1] = 0; aa[b + 2] = -sn * w; aa[b + 3] = 0; aa[b + 4] = 0; aa[b + 5] = hh; aa[b + 6] = 0; aa[b + 7] = 0;
           aa[b + 8] = sn * l; aa[b + 9] = 0; aa[b + 10] = c * l; aa[b + 11] = 0; aa[b + 12] = x2; aa[b + 13] = gy2; aa[b + 14] = z2; aa[b + 15] = 1;
-          ac[nA * 3] = rec.col.r; ac[nA * 3 + 1] = rec.col.g; ac[nA * 3 + 2] = rec.col.b; nA++;
+          ac[cntA * 3] = rec.col.r; ac[cntA * 3 + 1] = rec.col.g; ac[cntA * 3 + 2] = rec.col.b;
+          nA[cls] = cntA + 1; nATot++;
         }
       } else if (nG < 600) {
         var hs = rec.ht / 1.75; b = nG * 16;
@@ -2236,17 +2316,26 @@ function updateEntities(dt, dtGame) {
       if (rec.kind === 'guest' && e.thoughtT > 0 && e.thought && rec.d2 < 2300 && bubbleList.length < MAXB) bubbleList.push(rec);
     }
     if (nsh < entShCap) {
-      var sr = rec.rad * Math.max(0.45, 1 - (e.flyAlt || 0) * 0.05), bs = nsh * 16;
-      sa[bs] = sr; sa[bs + 1] = 0; sa[bs + 2] = 0; sa[bs + 3] = 0; sa[bs + 4] = 0; sa[bs + 5] = 1; sa[bs + 6] = 0; sa[bs + 7] = 0;
-      sa[bs + 8] = 0; sa[bs + 9] = 0; sa[bs + 10] = sr; sa[bs + 11] = 0; sa[bs + 12] = x2; sa[bs + 13] = Math.max(rec.gy0, rec.wl) + 0.06; sa[bs + 14] = z2; sa[bs + 15] = 1;
+      var altK = rec.kind === 'animal' ? Math.max(0.45, 1 - Math.max(0, (e.flyAlt || 0) + (e.y || 0)) * 0.05) : 1;
+      var sw = rec.shW * altK, sl = rec.shL * altK, bs = nsh * 16;
+      var sc = rec.kind === 'animal' ? c : 1, ss = rec.kind === 'animal' ? sn : 0;
+      var sxOff = rec.kind === 'animal' ? ss * rec.shZ * altK : 0;
+      var szOff = rec.kind === 'animal' ? sc * rec.shZ * altK : 0;
+      sa[bs] = sc * sw; sa[bs + 1] = 0; sa[bs + 2] = -ss * sw; sa[bs + 3] = 0; sa[bs + 4] = 0; sa[bs + 5] = 1; sa[bs + 6] = 0; sa[bs + 7] = 0;
+      sa[bs + 8] = ss * sl; sa[bs + 9] = 0; sa[bs + 10] = sc * sl; sa[bs + 11] = 0; sa[bs + 12] = x2 + sxOff; sa[bs + 13] = Math.max(rec.gy0, rec.wl) + 0.06; sa[bs + 14] = z2 + szOff; sa[bs + 15] = 1;
       nsh++;
     }
   }
   entShMesh.count = nsh; entShMesh.instanceMatrix.needsUpdate = true;
-  impG.count = nG; impH.count = nG; impA.count = nA;
-  impG.instanceMatrix.needsUpdate = true; impH.instanceMatrix.needsUpdate = true; impA.instanceMatrix.needsUpdate = true;
-  impG.instanceColor.needsUpdate = true; impA.instanceColor.needsUpdate = true;
-  G.entStats = { visible: n, impostors: nG + nA, meshes: Math.round(totalMc) };
+  impG.count = nG; impH.count = nG;
+  impG.instanceMatrix.needsUpdate = true; impH.instanceMatrix.needsUpdate = true;
+  impG.instanceColor.needsUpdate = true;
+  for (var ci = 0; ci < IMP_CLS.length; ci++) {
+    var ck = IMP_CLS[ci], imC = impA[ck];
+    imC.count = nA[ck];
+    if (nA[ck] > 0) { imC.instanceMatrix.needsUpdate = true; imC.instanceColor.needsUpdate = true; }
+  }
+  G.entStats = { visible: n, impostors: nG + nATot, meshes: Math.round(totalMc) };
 }
 function updateBuildings(dtGame) {
   var t = G.t;

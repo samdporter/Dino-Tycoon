@@ -1974,5 +1974,114 @@ test('suitability reports largest terrain deficit instead of always reporting to
   assert.equal(suit.issues.includes('Prefers rock terrain'), false);
 });
 
+test('large dinosaurs enforce minimum enclosure width, separate cleanly, and keep clearance from perimeter fences', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 4242, map: 'fern_meadow', difficulty: 'easy', money: 500000 });
+  z.state.unlocked.star = 5;
+  z.state.research.genomes.brachiosaurus = 100;
+  setupFlatZone(z, 8, 8, 36, 28);
+
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  // Narrow 3x16 corridor (area 48, inscribedSpan 3) must reject Brachiosaurus (minSpan 6)
+  fenceBox(10, 10, 12, 25, 'reinforced');
+  const narrowEnc = z.Sim.enclosureAt(11, 15);
+  assert.ok(narrowEnc);
+  assert.equal(narrowEnc.inscribedSpan, 3);
+  const mBrach = z.Sim.animalMetrics(z.DATA.animals.find((x) => x.id === 'brachiosaurus'));
+  assert.ok(mBrach.minSpan >= 6);
+  const spotNarrow = z.Sim.addAnimal('brachiosaurus', 11, 15);
+  assert.equal(spotNarrow.ok, false, 'narrow 3-tile enclosure must reject Brachiosaurus');
+  assert.match(String(spotNarrow.msg || spotNarrow.why || ''), /wide|narrow|tiles/i);
+  const suitNarrow = z.Sim.suitabilityFor(narrowEnc.id, 'brachiosaurus');
+  assert.ok(suitNarrow.issues.some((s) => /narrow|wide/i.test(s)), `Expected narrow enclosure issue, got: ${suitNarrow.issues.join('; ')}`);
+
+  // Spacious 8x8 enclosure (area 64, inscribedSpan 8) accepts Brachiosaurus
+  fenceBox(18, 10, 25, 17, 'reinforced');
+  const wideEnc = z.Sim.enclosureAt(21, 13);
+  assert.ok(wideEnc);
+  assert.equal(wideEnc.inscribedSpan, 8);
+  assert.equal(z.Sim.addAnimal('brachiosaurus', 21, 13, { dry: true }).ok, true);
+  const a1 = z.Sim.spawnAnimal('brachiosaurus', 21, 13);
+  const a2 = z.Sim.spawnAnimal('brachiosaurus', 21, 13);
+  assert.ok(a1 && a2);
+  // Attempting to move Brachiosaurus into the narrow 3x16 enclosure must fail
+  const mv = z.Sim.moveAnimal(a1.id, 11, 15);
+  assert.equal(mv.ok, false, 'moveAnimal must reject moving Brachiosaurus into too-narrow enclosure');
+
+  // Place both adults directly on the same spot and tick: deterministic separation must push them apart
+  a1.x = 21.5 * z.TILE; a1.z = 13.5 * z.TILE;
+  a2.x = 21.5 * z.TILE; a2.z = 13.5 * z.TILE;
+  for (let k = 0; k < 50; k++) z.Sim.tick(0.1);
+  const sep = Math.hypot(a1.x - a2.x, a1.z - a2.z);
+  assert.ok(sep >= 2.8, `Two Brachiosaurus must separate instead of stacking (dist=${sep.toFixed(2)})`);
+
+  // Both must stay strictly inside enclosure bounds and cushioned away from outer fences
+  const minX = 18 * z.TILE, maxX = 26 * z.TILE, minZ = 10 * z.TILE, maxZ = 18 * z.TILE;
+  for (const a of [a1, a2]) {
+    assert.ok(a.x > minX + 1.0 && a.x < maxX - 1.0, `Brachiosaurus x=${a.x.toFixed(2)} must keep fence clearance within [${minX}, ${maxX}]`);
+    assert.ok(a.z > minZ + 1.0 && a.z < maxZ - 1.0, `Brachiosaurus z=${a.z.toFixed(2)} must keep fence clearance within [${minZ}, ${maxZ}]`);
+  }
+});
+
+test('all Dino species, scenery, and buildings build valid finite 3D geometry', () => {
+  const ctx = {
+    THREE: require(path.join(root, 'vendor/three.r128.min.js')),
+    console, Math, Array, Object, Number, String, Boolean, RegExp, Date, JSON,
+    Float32Array, Uint16Array, Uint32Array, Int32Array,
+    document: { createElement: () => ({ width: 256, height: 64, getContext: () => ({ fillStyle: '', strokeStyle: '', lineWidth: 0, font: '', textAlign: '', textBaseline: '', fillRect() {}, strokeRect() {}, fillText() {} }) }) },
+    Z: {}
+  };
+  ctx.window = ctx; ctx.self = ctx;
+  vm.createContext(ctx);
+  const files = fs.readdirSync(path.join(root, 'src')).filter((f) => /^(0\d|3\d)-.*\.js$/.test(f)).sort();
+  for (const f of files) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+
+  const checkObj = (obj, label) => {
+    let verts = 0;
+    obj.traverse((ch) => {
+      if (ch.isMesh && ch.geometry) {
+        const pos = ch.geometry.attributes.position;
+        assert.ok(pos && pos.count > 0, `${label}: empty geometry`);
+        for (let i = 0; i < pos.array.length; i++) assert.ok(Number.isFinite(pos.array[i]), `${label}: non-finite vertex`);
+        const norm = ch.geometry.attributes.normal;
+        if (norm) for (let i = 0; i < norm.array.length; i++) assert.ok(Number.isFinite(norm.array[i]), `${label}: non-finite normal`);
+        verts += pos.count;
+      }
+    });
+    assert.ok(verts > 0, `${label}: zero vertices`);
+  };
+
+  const M = ctx.Z.Models, D = ctx.Z.DATA;
+  const idsOf = (v) => Array.isArray(v) ? v.map((x) => x.id) : Object.keys(v || {});
+  const sps = idsOf(D.animals);
+  assert.ok(sps.length >= 30, `expected >=30 Dino species, got ${sps.length}`);
+  for (const id of sps) {
+    for (const baby of [false, true]) {
+      const a = M.createAnimal(id, { sex: 'm', baby });
+      assert.ok(a && a.group, `missing Dino model for ${id}`);
+      checkObj(a.group, `dino:${id}${baby ? ':baby' : ''}`);
+      a.update(0.05, { state: 'walk', speed: 1.5, _wallNear: 0.5 });
+      a.update(0.05, { state: 'eat', speed: 0, _wallNear: 0 });
+    }
+  }
+  for (const id of idsOf(D.scenery)) {
+    const m = M.createScenery(id);
+    if (m) checkObj(m, `dino:scenery:${id}`);
+  }
+  for (const id of idsOf(D.buildings)) {
+    const m = M.createBuilding(id);
+    if (m) checkObj(m, `dino:building:${id}`);
+  }
+});
 
 

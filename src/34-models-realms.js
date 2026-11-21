@@ -22,32 +22,63 @@
     b.cyl(0.3, 0.3, 0.6, 0.6, 0.45, 1.2, 0x4a6ea0, { seg: 10 }); b.box(0.5, 0.35, 0.5, -0.4, 0.33, 1.2, dark);
     g.add(mesh(b.build()));
   };
-  MODELS.underwater_gallery = function (g) {   // 6 x 4 m: low hall, big window onto the water on the -z side, blue light
-    var b = B();
-    b.box(5.8, 0.14, 3.8, 0, 0.07, 0, 0x8d9aa3);
-    b.box(5.4, 2.2, 0.35, 0, 1.2, 1.5, 0x6d7d88);   // back wall (front side, the entrance)
-    b.box(0.35, 2.2, 3.2, -2.55, 1.2, 0, 0x6d7d88); b.box(0.35, 2.2, 3.2, 2.55, 1.2, 0, 0x6d7d88);
-    b.box(5.6, 0.2, 3.7, 0, 2.4, 0, 0x364955);
-    b.box(3.6, 0.12, 0.9, 0, 2.58, 0.9, 0x4a6272);
-    b.box(0.5, 1.5, 0.06, 0, 0.9, 1.72, 0x22303a);
-    for (var k = -1; k <= 1; k += 2) b.box(0.18, 0.6, 0.18, k * 2.2, 0.5, -1.6, 0xc9a24a);
-    g.add(mesh(b.build()));
-    var gl = B();
-    gl.box(4.6, 1.7, 0.1, 0, 1.2, -1.62, 0x66c3e0); gl.box(4.7, 0.1, 0.16, 0, 2.08, -1.62, 0x2a3a44); gl.box(4.7, 0.1, 0.16, 0, 0.36, -1.62, 0x2a3a44);
-    for (var j = -2; j <= 2; j++) gl.box(0.1, 1.8, 0.16, j * 1.1, 1.2, -1.62, 0x2a3a44);
-    var m = mesh(gl.build()); m.material = m.material.clone ? m.material.clone() : m.material; m.material.transparent = true; m.material.opacity = 0.22; m.material.depthWrite = false; g.add(m);   // QA: see-through acrylic, so the view into the tank shows
-  };
-  MODELS.feeding_grandstand = function (g) {   // 8 x 4 m: raked seating facing -z, striped awning
-    var b = B(), seat = 0xc8473a, seat2 = 0xe4b24a;
-    b.box(7.8, 0.14, 3.8, 0, 0.07, 0, 0x8f8f86);
-    for (var r = 0; r < 4; r++) {
-      var y = 0.3 + r * 0.42, z = -1.2 + r * 0.8;
-      b.box(7.4, y, 0.7, 0, y * 0.5, z, 0x9a958b);
-      for (var s = -3; s <= 3; s++) b.box(0.9, 0.12, 0.5, s * 1.0, y + 0.08, z, (s + r) & 1 ? seat : seat2);
+  MODELS.underwater_gallery = function (g) {   // 6 x 4 m: curved arched acrylic observation vault & chamfered concrete retaining wings
+    var b = B(), wall = 0x6d7d88, trim = 0x364955;
+    b.bevelBox(5.8, 0.16, 3.8, 0.04, 0, 0.08, 0, 0x8d9aa3);
+    // chamfered concrete retaining wing buttresses tapering down toward the -z tank edge
+    for (var s = -1; s <= 1; s += 2) {
+      b.extrude([[1.75, 0.14], [1.75, 2.35], [-0.45, 2.35], [-1.85, 0.85], [-1.85, 0.14]], 0.42, s * 2.58, 0, 0, [0, 0, 0], wall, { axis: 'x', bev: 0.05 });
+      b.bevelBox(0.24, 0.56, 0.24, 0.03, s * 2.15, 0.46, -1.62, 0xc9a24a);
     }
-    for (var p = -1; p <= 1; p += 2) { b.cyl(0.08, 0.08, 3.6, p * 3.8, 1.8, 1.7, 0x4a4f55, { seg: 6 }); b.cyl(0.08, 0.08, 3.0, p * 3.8, 1.5, -1.7, 0x4a4f55, { seg: 6 }); }
-    for (var a = -3; a <= 3; a++) b.box(1.0, 0.08, 4.0, a * 1.07, 3.4 - Math.abs(a) * 0.02, 0, a & 1 ? 0x2d8fb0 : 0xf2f2ee, { rot: [-0.2, 0, 0] });   // QA: rises towards the back posts (was tilted the other way, front edge poking above the front posts)
-    b.box(7.4, 0.5, 0.06, 0, 0.7, -1.9, 0x2c8fa6);
+    // beveled rear entrance hall (+z) with glazed vestibule
+    b.bevelBox(5.2, 2.15, 0.42, 0.05, 0, 1.22, 1.48, wall);
+    b.bevelBox(1.5, 1.75, 0.36, 0.04, 0, 1.02, 1.66, trim);
+    b.box(0.8, 1.5, 0.08, 0, 0.92, 1.85, 0x22303a);
+    b.bevelBox(5.4, 0.18, 0.65, 0.03, 0, 2.34, 1.45, trim);
+    // lower retaining curb along -z
+    b.bevelBox(4.8, 0.36, 0.28, 0.04, 0, 0.32, -1.66, 0x2a3a44);
+    // arched steel rib frames spanning over the curved acrylic vault
+    for (var j = -2; j <= 2; j++) {
+      var rx = j * 1.12;
+      b.tube([[rx, 0.38, -1.68], [rx, 1.55, -1.35], [rx, 2.22, -0.25], [rx, 2.32, 1.28]], 0.065, 0x2a3a44, { seg: 8, steps: 3 });
+    }
+    g.add(mesh(b.build()));
+    // curved transparent acrylic observation vault
+    var gl = B();
+    gl.lathe([[1.62, -2.24], [1.62, 2.24]], 0x66c3e0, { x: 0, y: 0.42, z: -0.10, phi0: 0, phiLen: PI, rot: [0, 0, PI / 2], seg: 16 });
+    var m = mesh(gl.build());
+    m.material = m.material.clone ? m.material.clone() : m.material;
+    m.material.transparent = true; m.material.opacity = 0.24; m.material.depthWrite = false; m.material.side = K.T.DoubleSide;
+    g.add(m);
+  };
+  MODELS.feeding_grandstand = function (g) {   // 8 x 4 m: tiered beveled seating under a cantilevered curved rib canopy
+    var b = B(), seat = 0xc8473a, seat2 = 0xe4b24a;
+    b.bevelBox(7.8, 0.16, 3.8, 0.04, 0, 0.08, 0, 0x8f8f86);
+    for (var r = 0; r < 4; r++) {
+      var y = 0.32 + r * 0.42, z = -1.15 + r * 0.80;
+      b.bevelBox(7.4, y, 0.76, 0.03, 0, y * 0.5 + 0.06, z, 0x9a958b);
+      for (var s = -3; s <= 3; s++) {
+        var colS = (s + r) & 1 ? seat : seat2;
+        b.bevelBox(0.84, 0.11, 0.44, 0.02, s * 1.0, y + 0.11, z - 0.04, colS);
+        b.bevelBox(0.84, 0.28, 0.10, 0.02, s * 1.0, y + 0.25, z + 0.17, shade(colS, 0.88), { rot: [-0.15, 0, 0] });
+      }
+    }
+    // rear support masts & cantilevered sculpted rib trusses
+    for (var p = -1; p <= 1; p++) {
+      var mx = p * 3.55;
+      b.cyl(0.09, 0.11, 3.35, mx, 1.75, 1.65, 0x4a4f55, { seg: 8 });
+      b.extrude([
+        [1.75, 2.85], [1.75, 3.38], [0.20, 3.68], [-1.95, 3.22],
+        [-1.95, 3.06], [0.15, 3.44], [1.45, 2.75]
+      ], 0.10, mx, 0, 0, [0, 0, 0], 0x3b4248, { axis: 'x', bev: 0.015 });
+    }
+    // curved alternating striped canopy panels along the cantilever
+    for (var a = -3; a <= 3; a++) {
+      var colA = a & 1 ? 0x2d8fb0 : 0xf2f2ee;
+      b.bevelBox(1.04, 0.08, 2.05, 0.02, a * 1.07, 3.55 - Math.abs(a) * 0.02, 0.85, colA, { rot: [0.14, 0, 0] });
+      b.bevelBox(1.04, 0.08, 2.05, 0.02, a * 1.07, 3.38 - Math.abs(a) * 0.02, -1.05, colA, { rot: [-0.22, 0, 0] });
+    }
+    b.bevelBox(7.4, 0.48, 0.08, 0.02, 0, 0.68, -1.86, 0x2c8fa6);
     g.add(mesh(b.build()));
   };
   MODELS.canopy_tower = function (g) {   // 4 x 4 m: tall timber and steel tower with a gallery under a small roof
@@ -76,27 +107,73 @@
     var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0x3ee07a, { s: [6, 4] }); lamp.add(mesh(lb.build())); lamp.position.set(0, 7.45, -0.5); g.add(lamp);
     spin(g, function (dt) { rot.rotation.y += dt * 1.6; });
   };
-  MODELS.boathouse = function (g) {   // 6 x 4 m: boat shed with a slip door and an orange rescue boat on a trailer
-    var b = B();
-    b.box(5.8, 0.14, 3.8, 0, 0.07, 0, 0x9a968c);
-    b.box(5.0, 1.9, 0.2, 0, 1.0, -1.2, 0xe8e4d8); b.box(0.2, 1.9, 2.6, -2.4, 1.0, 0.1, 0xe8e4d8); b.box(0.2, 1.9, 2.6, 2.4, 1.0, 0.1, 0xe8e4d8);
-    b.box(5.4, 0.16, 3.2, 0, 2.05, 0.1, 0x2c6f93, { rot: [0.12, 0, 0] });
-    b.box(2.0, 0.5, 0.9, 0, 0.5, 0.6, orange); b.box(1.1, 0.5, 0.7, -0.2, 0.9, 0.55, white); b.cyl(0.18, 0.18, 0.5, 1.05, 0.6, 0.6, dark, { seg: 8 });
-    b.box(2.4, 0.08, 0.5, 0, 0.2, 0.6, steel);
-    for (var w = -1; w <= 1; w += 2) b.cyl(0.22, 0.22, 0.12, w * 0.9, 0.22, 1.05, dark, { seg: 8, rot: [0, 0, PI / 2] });
+  MODELS.boathouse = function (g) {   // 6 x 4 m: gabled timber boat shed & sleek-hull rescue boat on trailer
+    var b = B(), wall = 0xe8e4d8, roof = 0x2c6f93, timber = 0x7a5233;
+    b.bevelBox(5.8, 0.16, 3.8, 0.04, 0, 0.08, 0, 0x9a968c);
+    b.bevelBox(5.0, 1.9, 0.24, 0.04, 0, 1.05, -1.2, wall);
+    b.bevelBox(0.24, 1.9, 2.6, 0.04, -2.4, 1.05, 0.1, wall);
+    b.bevelBox(0.24, 1.9, 2.6, 0.04, 2.4, 1.05, 0.1, wall);
+    // corner timber pilasters & gable eaves
+    for (var s = -1; s <= 1; s += 2) {
+      b.bevelBox(0.18, 1.95, 0.18, 0.02, s * 2.42, 1.05, 1.38, timber);
+      b.bevelBox(0.18, 1.95, 0.18, 0.02, s * 2.42, 1.05, -1.20, timber);
+    }
+    // pitched gabled timber roof (axis:'x' => u=Y, v=Z)
+    b.bevelBox(5.36, 0.14, 3.16, 0.03, 0, 2.02, 0.1, shade(roof, 0.85));
+    b.extrude([[0, -1.62], [0, 1.62], [0.95, 0]], 5.44, 0, 2.08, 0.1, [0, 0, 0], roof, { axis: 'x', bev: 0.04 });
+    b.bevelBox(5.52, 0.10, 0.16, 0.02, 0, 3.04, 0.1, shade(timber, 0.85));
+    // lifebuoy ring on side wall
+    b.lathe([[0.15, -0.04], [0.24, -0.04], [0.24, 0.04], [0.15, 0.04], [0.15, -0.04]], orange, { x: -2.54, y: 1.35, z: 0.4, rot: [0, 0, PI / 2], seg: 12 });
+    // sleek flared V-hull rescue boat on wheeled trailer
+    b.extrude([
+      [-1.28, 0.0], [-0.72, 0.44], [0.22, 0.50], [1.02, 0.44],
+      [1.02, -0.44], [0.22, -0.50], [-0.72, -0.44]
+    ], 0.48, 0, 0.54, 0.65, [0, 0, 0], orange, { axis: 'y', bev: 0.04, taper: 0.68 });
+    b.bevelBox(1.55, 0.10, 0.78, 0.02, 0.05, 0.78, 0.65, shade(white, 0.94));
+    b.bevelBox(0.95, 0.46, 0.68, 0.05, -0.18, 1.02, 0.65, white);
+    b.bevelBox(0.28, 0.24, 0.64, 0.02, -0.58, 1.06, 0.65, 0x263844, { rot: [0, 0, 0.28] });
+    b.bevelBox(0.32, 0.48, 0.34, 0.04, 1.12, 0.76, 0.65, dark);
+    b.limb(1.16, 0.55, 0.65, 1.20, 0.25, 0.65, 0.04, 0.02, steel, { seg: 5 });
+    // trailer frame & fenders
+    b.bevelBox(2.4, 0.09, 0.52, 0.02, 0, 0.22, 0.65, steel);
+    for (var w = -1; w <= 1; w += 2) {
+      b.cyl(0.22, 0.22, 0.12, w * 0.85, 0.22, 1.10, dark, { seg: 10, rot: [0, 0, PI / 2] });
+      b.cyl(0.11, 0.11, 0.14, w * 0.85, 0.22, 1.10, steel, { seg: 8, rot: [0, 0, PI / 2] });
+    }
     g.add(mesh(b.build()));
   };
-  MODELS.drone_hangar = function (g) {   // 4 x 4 m: hangar with a landing pad and a quadcopter
+  MODELS.drone_hangar = function (g) {   // 4 x 4 m: ribbed arched hangar, beveled control alcove, shrouded quadcopter
     var b = B();
-    b.box(3.8, 0.14, 3.8, 0, 0.07, 0, 0x8d9aa3);
-    b.box(2.4, 1.6, 1.8, 0, 0.95, -0.8, 0x7e8c96); b.cyl(1.25, 1.25, 1.8, 0, 1.75, -0.8, 0x6d7d88, { seg: 14, rot: [0, 0, PI / 2], s: [1, 1, 1] });
-    b.box(1.5, 1.1, 0.06, 0, 0.7, 0.14, 0x222c33);
-    b.cyl(0.9, 0.9, 0.05, 0.3, 0.17, 1.1, 0x555e66, { seg: 16 }); b.box(0.9, 0.04, 0.12, 0.3, 0.2, 1.1, 0xf2c14a); b.box(0.12, 0.04, 0.9, 0.3, 0.2, 1.1, 0xf2c14a);
+    b.bevelBox(3.8, 0.16, 3.8, 0.04, 0, 0.08, 0, 0x8d9aa3);
+    // arched hangar side walls + barrel-vault shell + external steel arch ribs
+    b.bevelBox(2.2, 1.05, 1.85, 0.04, -0.35, 0.66, -0.78, 0x7e8c96);
+    b.lathe([[1.12, -0.92], [1.12, 0.92]], 0x6d7d88, { x: -0.35, y: 1.15, z: -0.78, phi0: 0, phiLen: PI, rot: [0, 0, PI / 2], seg: 14 });
+    for (var r = 0; r < 4; r++) {
+      var rz = -1.62 + r * 0.56;
+      b.tube([[-1.48, 0.95, rz], [-1.15, 1.98, rz], [-0.35, 2.32, rz], [0.45, 1.98, rz], [0.78, 0.95, rz]], 0.055, 0x3b4248, { seg: 6, steps: 3 });
+    }
+    b.bevelBox(1.55, 1.12, 0.10, 0.02, -0.35, 0.72, 0.14, 0x222c33);
+    // beveled control alcove on +x side with panoramic window & antenna
+    b.bevelBox(1.05, 1.35, 1.25, 0.06, 1.18, 0.82, -0.65, 0x5d6d78);
+    b.bevelBox(0.92, 0.45, 1.02, 0.03, 1.22, 1.12, -0.58, 0x8fd4ea);
+    b.cyl(0.03, 0.03, 0.75, 1.35, 1.85, -0.85, steel, { seg: 4 });
+    // landing pad
+    b.cyl(0.92, 0.96, 0.08, 0.25, 0.18, 1.08, 0x555e66, { seg: 18 });
+    b.box(0.88, 0.04, 0.12, 0.25, 0.23, 1.08, 0xf2c14a); b.box(0.12, 0.04, 0.88, 0.25, 0.23, 1.08, 0xf2c14a);
     g.add(mesh(b.build()));
-    var dr = grp('drone'), db = B(); db.box(0.5, 0.12, 0.5, 0, 0, 0, 0x2a3138);
-    for (var a = 0; a < 4; a++) { var ax = (a & 1 ? 1 : -1) * 0.35, az = (a & 2 ? 1 : -1) * 0.35; db.limb(0, 0, 0, ax, 0, az, 0.03, 0.03, 0x2a3138, { seg: 4 }); db.cyl(0.2, 0.2, 0.02, ax, 0.06, az, 0xcfd6db, { seg: 8 }); }
-    db.box(0.12, 0.1, 0.3, 0, -0.1, 0.1, orange);
-    dr.add(mesh(db.build())); dr.position.set(0.3, 0.6, 1.1); g.add(dr);
+    // sculpted aerodynamic quadcopter with shrouded rotor rings
+    var dr = grp('drone'), db = B();
+    db.loft([
+      [0, 0.05, 0.03, 0], [0.14, 0.13, 0.08, 0], [0.34, 0.12, 0.07, 0], [0.52, 0.04, 0.03, 0]
+    ], { rings: 8, seg: 10, cap0: true, cap1: true, oz: -0.26 }, 0x2a3138);
+    for (var a = 0; a < 4; a++) {
+      var sx = (a & 1 ? 1 : -1), sz = (a & 2 ? 1 : -1), ax = sx * 0.36, az = sz * 0.36;
+      db.tube([[sx * 0.08, 0.01, sz * 0.08], [ax * 0.6, 0.03, az * 0.6], [ax, 0.04, az]], 0.028, 0x3b4248, { seg: 5, steps: 2 });
+      db.lathe([[0.17, -0.025], [0.20, -0.025], [0.20, 0.025], [0.17, 0.025], [0.17, -0.025]], orange, { x: ax, y: 0.05, z: az, seg: 12 });
+      db.cyl(0.16, 0.16, 0.015, ax, 0.05, az, 0xcfd6db, { seg: 10 });
+    }
+    db.bevelBox(0.12, 0.10, 0.22, 0.02, 0, -0.09, 0.10, orange);
+    dr.add(mesh(db.build())); dr.position.set(0.25, 0.6, 1.08); g.add(dr);
     spin(g, function (dt, t) { dr.position.y = 0.6 + 0.9 * (0.5 + 0.5 * Math.sin(t * 0.8)); dr.rotation.y += dt * 0.7; });
   };
 
@@ -122,8 +199,12 @@
   };
   SCEN.perch_crag = function (g) {
     var b = B(), rock = 0x8c8379;
-    b.sph(0.9, 0.55, 0.8, 0, 0.45, 0, rock, { s: [6, 4] }); b.sph(0.7, 0.8, 0.6, 0.15, 1.0, 0.05, shade(rock, 1.1), { s: [6, 4] }); b.box(0.9, 0.2, 0.8, 0.15, 1.75, 0.05, shade(rock, 1.2), { rot: [0, 0.4, 0.05] });
-    b.sph(0.4, 0.3, 0.35, -0.7, 0.2, 0.4, shade(rock, 0.9), { s: [5, 4] });
+    // multi-tiered jagged faceted rock spire with rugged natural perch crest
+    b.extrude([[0.92, 0.10], [0.58, 0.78], [-0.28, 0.86], [-0.88, 0.35], [-0.74, -0.56], [0.12, -0.84], [0.78, -0.45]], 0.56, 0, 0.28, 0, [0, 0.2, 0], shade(rock, 0.92), { axis: 'y', bev: 0.08, taper: 0.74 });
+    b.extrude([[0.68, 0.08], [0.42, 0.58], [-0.22, 0.64], [-0.66, 0.24], [-0.52, -0.44], [0.15, -0.62], [0.58, -0.32]], 0.66, 0.08, 0.84, 0.04, [0.05, 0.9, -0.04], rock, { axis: 'y', bev: 0.07, taper: 0.72 });
+    b.extrude([[0.48, 0.06], [0.30, 0.42], [-0.18, 0.46], [-0.46, 0.14], [-0.36, -0.32], [0.14, -0.44], [0.42, -0.22]], 0.54, 0.14, 1.38, 0.05, [-0.04, 1.8, 0.06], shade(rock, 1.1), { axis: 'y', bev: 0.06, taper: 0.68 });
+    b.extrude([[0.32, 0.04], [0.18, 0.30], [-0.16, 0.32], [-0.34, 0.06], [-0.24, -0.24], [0.10, -0.30], [0.28, -0.14]], 0.30, 0.16, 1.74, 0.05, [0.04, 0.5, -0.05], shade(rock, 1.2), { axis: 'y', bev: 0.05, taper: 0.78 });
+    b.extrude([[0.42, 0.05], [0.22, 0.36], [-0.28, 0.28], [-0.34, -0.18], [0.16, -0.34]], 0.48, -0.55, 0.24, 0.35, [0.12, 0.4, 0.22], shade(rock, 0.85), { axis: 'y', bev: 0.06, taper: 0.55 });
     g.add(mesh(b.build()));
   };
   SCEN.perch_pole = function (g) {

@@ -3197,3 +3197,121 @@ test('Zoo suitability reports largest terrain deficit instead of always reportin
   assert.equal(suit.issues.includes('Prefers water terrain'), false);
 });
 
+test('Zoo animals enforce minimum enclosure width, separate cleanly, and keep fence clearance', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 4343, map: 'grassland', money: 500000 });
+  z.state.unlocked.star = 5;
+  const N = z.N;
+  for (let j = 8; j <= 28; j++) for (let i = 8; i <= 34; i++) {
+    const t = i + j * N;
+    const oid = z.state.tileObj[t];
+    if (oid) {
+      const o = z.state.objects.find(x => x.id === oid);
+      if (o) z.Sim.bulldoze(o.i, o.j);
+    }
+    z.state.terrain[t] = 0;
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const fenceBox = (i0, j0, i1, j1, kind) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, kind).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, kind).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
+    }
+  };
+
+  // Narrow 2x14 strip (area 28, inscribedSpan 2) must reject Elephant (minSpan 5) and Giraffe (minSpan 4)
+  fenceBox(10, 10, 11, 23, 'reinforced');
+  const narrowEnc = z.Sim.enclosureAt(10, 15);
+  assert.ok(narrowEnc);
+  assert.equal(narrowEnc.inscribedSpan, 2);
+  const addElNarrow = z.Sim.addAnimal('elephant', 10, 15);
+  assert.equal(addElNarrow.ok, false, 'narrow 2-tile enclosure must reject Elephant');
+  assert.match(String(addElNarrow.msg || addElNarrow.why || ''), /wide|narrow|tiles/i);
+  const addGiNarrow = z.Sim.addAnimal('giraffe', 10, 15);
+  assert.equal(addGiNarrow.ok, false, 'narrow 2-tile enclosure must reject Giraffe');
+  const suitNarrow = z.Sim.suitabilityFor(narrowEnc.id, 'elephant');
+  assert.ok(suitNarrow.issues.some((s) => /narrow|wide/i.test(s)), `Expected narrow enclosure issue, got: ${suitNarrow.issues.join('; ')}`);
+
+  // Spacious 8x8 enclosure accepts two Elephants
+  fenceBox(16, 10, 23, 17, 'reinforced');
+  const wideEnc = z.Sim.enclosureAt(19, 13);
+  assert.ok(wideEnc);
+  assert.equal(wideEnc.inscribedSpan, 8);
+  const r1 = z.Sim.addAnimal('elephant', 19, 13);
+  const r2 = z.Sim.addAnimal('elephant', 19, 13);
+  assert.equal(r1.ok && r2.ok, true);
+  const e1 = z.state.animals.find((a) => a.id === r1.id);
+  const e2 = z.state.animals.find((a) => a.id === r2.id);
+
+  // Moving an Elephant into the narrow 2x14 enclosure must be rejected
+  assert.equal(z.Sim.moveAnimal(e1.id, 10, 15).ok, false);
+
+  // Place both adults on the exact same spot and tick: deterministic separation must push them apart
+  e1.x = 19.5 * z.TILE; e1.z = 13.5 * z.TILE;
+  e2.x = 19.5 * z.TILE; e2.z = 13.5 * z.TILE;
+  for (let k = 0; k < 50; k++) z.Sim.tick(0.1);
+  const sep = Math.hypot(e1.x - e2.x, e1.z - e2.z);
+  assert.ok(sep >= 2.0, `Two Elephants must separate instead of stacking (dist=${sep.toFixed(2)})`);
+
+  // Both must stay inside enclosure bounds and keep clearance from perimeter fences
+  const minX = 16 * z.TILE, maxX = 24 * z.TILE, minZ = 10 * z.TILE, maxZ = 18 * z.TILE;
+  for (const a of [e1, e2]) {
+    assert.ok(a.x > minX + 0.8 && a.x < maxX - 0.8, `Elephant x=${a.x.toFixed(2)} must keep fence clearance`);
+    assert.ok(a.z > minZ + 0.8 && a.z < maxZ - 0.8, `Elephant z=${a.z.toFixed(2)} must keep fence clearance`);
+  }
+});
+
+test('all Zoo species, scenery, and buildings build valid finite 3D geometry', () => {
+  const root = path.join(__dirname, '..');
+  const ctx = {
+    THREE: require(path.join(root, 'vendor/three.r128.min.js')),
+    console, Math, Array, Object, Number, String, Boolean, RegExp, Date, JSON,
+    Float32Array, Uint16Array, Uint32Array, Int32Array,
+    document: { createElement: () => ({ width: 256, height: 64, getContext: () => ({ fillStyle: '', strokeStyle: '', lineWidth: 0, font: '', textAlign: '', textBaseline: '', fillRect() {}, strokeRect() {}, fillText() {} }) }) },
+    Z: {}
+  };
+  ctx.window = ctx; ctx.self = ctx;
+  vm.createContext(ctx);
+  for (const f of ['src/zoo/00-data.js', 'src/zoo/30-models.js']) {
+    vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
+  }
+  const checkObj = (obj, label) => {
+    let verts = 0;
+    obj.traverse((ch) => {
+      if (ch.isMesh && ch.geometry) {
+        const pos = ch.geometry.attributes.position;
+        assert.ok(pos && pos.count > 0, `${label}: empty geometry`);
+        for (let i = 0; i < pos.array.length; i++) assert.ok(Number.isFinite(pos.array[i]), `${label}: non-finite vertex`);
+        const norm = ch.geometry.attributes.normal;
+        if (norm) for (let i = 0; i < norm.array.length; i++) assert.ok(Number.isFinite(norm.array[i]), `${label}: non-finite normal`);
+        verts += pos.count;
+      }
+    });
+    assert.ok(verts > 0, `${label}: zero vertices`);
+  };
+  const M = ctx.Z.Models, D = ctx.Z.DATA;
+  const idsOf = (v) => Array.isArray(v) ? v.map((x) => x.id) : Object.keys(v || {});
+  const sps = idsOf(D.animals);
+  assert.ok(sps.length >= 45, `expected >=45 Zoo species, got ${sps.length}`);
+  for (const id of sps) {
+    for (const sex of ['m', 'f']) {
+      for (const baby of [false, true]) {
+        const a = M.createAnimal(id, { sex, baby });
+        assert.ok(a && a.group, `missing Zoo model for ${id}`);
+        checkObj(a.group, `zoo:${id}:${sex}${baby ? ':baby' : ''}`);
+        a.update(0.05, { state: 'walk', speed: 1.5 });
+        a.update(0.05, { state: 'play', speed: 0 });
+      }
+    }
+  }
+  for (const id of idsOf(D.scenery)) checkObj(M.createScenery(id), `zoo:scenery:${id}`);
+  for (const id of idsOf(D.buildings)) {
+    const m = M.createBuilding(id);
+    if (m) checkObj(m, `zoo:building:${id}`);
+  }
+});
+

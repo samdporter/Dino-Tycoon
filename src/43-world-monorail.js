@@ -184,21 +184,65 @@
       for (k = -3; k <= 3; k++) D2.box(0.02, 0.9, 0.022, dx + s * 0.02, 1.02, k * 0.125, dark);
       D2.box(0.03, 0.04, 0.86, dx + s * 0.02, 1.0, 0, dark);
     }
-    // end walls and corner posts
+    // end walls and corner posts (inner coach ends only; outer train ends get streamlined bullet noses)
+    var endGl = B(), noseBody = B(), noseGl = B(), noseLt = B();
     for (z = -1; z <= 1; z += 2) {
       body.box(CW * 2, 0.43, 0.06, 0, 0.335, z * (HL - 0.03), lv.body); body.box(CW * 2, 0.1, 0.06, 0, 1.5, z * (HL - 0.03), shade(lv.body, 0.85));
       for (var sx = -1; sx <= 1; sx += 2) body.box(0.08, 0.95, 0.08, sx * 0.72, 1.02, z * (HL - 0.06), shade(lv.body, 0.85));
-      gl.box(CW * 2 - 0.2, 0.88, 0.02, 0, 1.02, z * (HL - 0.02), 0xa8d8ee);
+      endGl.box(CW * 2 - 0.2, 0.88, 0.02, 0, 1.02, z * (HL - 0.02), 0xa8d8ee);
     }
-    // roof
-    body.box(CW * 2 + 0.08, 0.1, CL + 0.04, 0, 1.58, 0, lv.roof); body.box(CW * 2 - 0.3, 0.08, CL - 0.3, 0, 1.66, 0, shade(lv.roof, 0.9)); body.box(0.55, 0.14, 0.8, 0, 1.76, 0.2, 0x8f979d);
+    // roof (beveled aerodynamic roof shell)
+    if (body.bevelBox) {
+      body.bevelBox(CW * 2 + 0.08, 0.12, CL + 0.04, 0.04, 0, 1.58, 0, lv.roof);
+      body.bevelBox(CW * 2 - 0.3, 0.09, CL - 0.3, 0.03, 0, 1.67, 0, shade(lv.roof, 0.9));
+      body.bevelBox(0.55, 0.14, 0.8, 0.03, 0, 1.76, 0.2, 0x8f979d);
+    } else {
+      body.box(CW * 2 + 0.08, 0.1, CL + 0.04, 0, 1.58, 0, lv.roof); body.box(CW * 2 - 0.3, 0.08, CL - 0.3, 0, 1.66, 0, shade(lv.roof, 0.9)); body.box(0.55, 0.14, 0.8, 0, 1.76, 0.2, 0x8f979d);
+    }
+    // aerodynamic bullet nose & raked panoramic windshield (+z; cloned & rotated PI on rear car)
+    if (noseBody.loft) {
+      noseBody.loft([
+        [HL - 0.04, 0.74, 0.36, 0.38],
+        [HL + 0.22, 0.68, 0.32, 0.38],
+        [HL + 0.48, 0.50, 0.24, 0.36],
+        [HL + 0.68, 0.26, 0.14, 0.32],
+        [HL + 0.76, 0.06, 0.04, 0.30]
+      ], { rings: 8, seg: 12, cap1: true, flatBot: 0.65, superPow: 0.65 }, lv.body);
+      noseBody.loft([
+        [HL - 0.04, 0.755, 0.05, 0.50],
+        [HL + 0.22, 0.695, 0.045, 0.48],
+        [HL + 0.48, 0.515, 0.04, 0.43],
+        [HL + 0.66, 0.28, 0.03, 0.36]
+      ], { rings: 6, seg: 10, cap1: true, superPow: 0.65 }, lv.stripe);
+      noseBody.bevelBox(1.16, 0.32, 0.52, 0.06, 0, 0.02, HL + 0.20, shade(lv.body, 0.62));
+      // swept roof visor & raked A-pillars
+      noseBody.extrude([[0, 0], [0.24, -0.02], [0.10, 0.11], [0, 0.11]], 1.48, 0, 1.54, HL - 0.02, [0, 0, 0], lv.roof, { axis: 'x', bev: 0.025 });
+      for (s = -1; s <= 1; s += 2) {
+        noseBody.limb(s * 0.68, 0.66, HL + 0.36, s * 0.68, 1.52, HL - 0.02, 0.045, 0.04, shade(lv.body, 0.75), { seg: 6 });
+        noseBody.cyl(0.09, 0.09, 0.08, s * 0.34, 0.44, HL + 0.56, 0x2c3136, { seg: 8, rot: [PI / 2, 0, 0] });
+      }
+      // raked panoramic glass canopy
+      noseGl.loft([
+        [HL - 0.02, 0.71, 0.42, 1.08],
+        [HL + 0.20, 0.66, 0.28, 0.90],
+        [HL + 0.44, 0.52, 0.14, 0.72]
+      ], { rings: 6, seg: 12, flatBot: 0.80, superPow: 0.65 }, 0xa8d8ee);
+      noseLt.box(0.76, 0.04, 0.03, 0, 1.08, HL + 0.16, 0xffe7a8);
+    } else {
+      noseBody.box(CW * 1.8, 0.5, 0.5, 0, 0.35, HL + 0.25, lv.body);
+      noseGl.box(CW * 1.6, 0.75, 0.04, 0, 1.05, HL + 0.12, 0xa8d8ee, { rot: [-0.35, 0, 0] });
+    }
     // interior light strip, nose lamps
     lt.box(1.0, 0.03, CL - 0.6, 0, 1.5, 0, 0xfff1c9); lt.box(0.04, 0.03, CL - 0.6, 0.65, 1.49, 0, 0xfff1c9); lt.box(0.04, 0.03, CL - 0.6, -0.65, 1.49, 0, 0xfff1c9);
     for (s = -1; s <= 1; s += 2) for (z = -1; z <= 1; z += 2) lt.box(0.02, 0.84, 0.86, s * 0.69, 1.02, z * 0.95, 0xffe7a8);     // lit windows (night)
     for (z = -1; z <= 1; z += 2) lt.box(0.84, 0.02, 0.02, 0, 1.02, z * (HL - 0.12), 0xffe7a8);
-    lp.box(0.2, 0.1, 0.05, -0.4, 0.62, 0, 0xffffff); lp.box(0.2, 0.1, 0.05, 0.4, 0.62, 0, 0xffffff);
-    lq.box(0.2, 0.1, 0.05, -0.4, 0.62, 0, 0xffffff); lq.box(0.2, 0.1, 0.05, 0.4, 0.62, 0, 0xffffff);
-    GEO[li] = { body: body.build(), glass: gl.build(), doorL: dl.build(), doorR: dr.build(), light: lt.build(), lamp: lp.build() };
+    lp.cyl(0.075, 0.075, 0.06, -0.34, 0.44, 0, 0xffffff, { seg: 8, rot: [PI / 2, 0, 0] });
+    lp.cyl(0.075, 0.075, 0.06, 0.34, 0.44, 0, 0xffffff, { seg: 8, rot: [PI / 2, 0, 0] });
+    GEO[li] = {
+      body: body.build(), glass: gl.build(), endGlass: endGl.build(),
+      noseBody: noseBody.build(), noseGlass: noseGl.build(), noseLight: noseLt.build(),
+      doorL: dl.build(), doorR: dr.build(), light: lt.build(), lamp: lp.build()
+    };
     return GEO[li];
   }
   var TRN = {};   // train id -> { group, cars:[{g, dl, dr}], lampF, lampB, n, li }
@@ -215,10 +259,24 @@
       var body = K.mesh(G.body), glass = new THREE.Mesh(G.glass, glassMat()), dl = K.mesh(G.doorL), dr = K.mesh(G.doorR), light = new THREE.Mesh(G.light, lightMat());
       glass.renderOrder = 3; light.renderOrder = 2;
       cg.add(body); cg.add(glass); cg.add(dl); cg.add(dr); cg.add(light);
+      if (k > 0 && k < T.cars - 1) {
+        var eg = new THREE.Mesh(G.endGlass, glassMat()); eg.renderOrder = 3; cg.add(eg);
+      }
+      if (k === T.cars - 1) {
+        var nbF = K.mesh(G.noseBody), ngF = new THREE.Mesh(G.noseGlass, glassMat()), nlF = new THREE.Mesh(G.noseLight, lightMat());
+        ngF.renderOrder = 3; nlF.renderOrder = 2;
+        cg.add(nbF); cg.add(ngF); cg.add(nlF);
+      }
+      if (k === 0) {
+        var nbB = K.mesh(G.noseBody), ngB = new THREE.Mesh(G.noseGlass, glassMat()), nlB = new THREE.Mesh(G.noseLight, lightMat());
+        nbB.rotation.y = PI; ngB.rotation.y = PI; nlB.rotation.y = PI;
+        ngB.renderOrder = 3; nlB.renderOrder = 2;
+        cg.add(nbB); cg.add(ngB); cg.add(nlB);
+      }
       grpT.add(cg); cars.push({ g: cg, dl: dl, dr: dr });
     }
     var lampF = new THREE.Mesh(G.lamp, lm[0]), lampB = new THREE.Mesh(G.lamp, lm[1]);
-    lampF.position.z = HL + 0.01; lampB.position.z = -HL - 0.01; lampB.rotation.y = PI;
+    lampF.position.z = HL + 0.62; lampB.position.z = -HL - 0.62; lampB.rotation.y = PI;
     scene.add(grpT);
     return { group: grpT, cars: cars, lampF: lampF, lampB: lampB, n: T.cars, li: li, lampOn: -1 };
   }
@@ -254,8 +312,8 @@
       if (r.lampOn !== dir) {
         if (r.lampF.parent) r.lampF.parent.remove(r.lampF); if (r.lampB.parent) r.lampB.parent.remove(r.lampB);
         r.cars[leadK].g.add(r.lampF); r.cars[tailK].g.add(r.lampB);
-        r.lampF.position.z = dir > 0 ? HL + 0.01 : -HL - 0.01; r.lampF.rotation.y = dir > 0 ? 0 : PI;
-        r.lampB.position.z = dir > 0 ? -HL - 0.01 : HL + 0.01; r.lampB.rotation.y = dir > 0 ? PI : 0;
+        r.lampF.position.z = dir > 0 ? HL + 0.62 : -HL - 0.62; r.lampF.rotation.y = dir > 0 ? 0 : PI;
+        r.lampB.position.z = dir > 0 ? -HL - 0.62 : HL + 0.62; r.lampB.rotation.y = dir > 0 ? PI : 0;
         r.lampOn = dir;
       }
     }

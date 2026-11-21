@@ -326,7 +326,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     var tp = h('div.chips'); Object.keys(sp.terrainPrefs).sort(function (a, b) { return sp.terrainPrefs[b] - sp.terrainPrefs[a]; }).forEach(function (t) { var td = UI.byId(D.terrain, t); tp.appendChild(h('span.chip', { html: '<i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + td.colour + ';border:1px solid rgba(0,0,0,.4);margin-right:4px"></i>' + td.name + ' ' + Math.round(sp.terrainPrefs[t] * 100) + '%' })); });
     row('Ground', tp);
     var fl = h('div.chips'); sp.foliage.forEach(function (s) { var sd = UI.byId(D.scenery, s); fl.appendChild(h('span.chip', { text: sd ? sd.name : s })); }); row('Plants', fl);
-    row('Space', h('span', { text: sp.space + ' tiles each (' + (sp.space * 4) + ' m²)' }));
+    var spM = Z.Sim.animalMetrics ? Z.Sim.animalMetrics(id, false) : null;
+    row('Space', h('span', { text: sp.space + ' tiles each (' + (sp.space * 4) + ' m²)' + (spM && spM.minSpan >= 4 ? ' · Min width: ' + spM.minSpan + '×' + spM.minSpan : '') }));
     row('Company', h('span', { text: sp.social[0] === sp.social[1] ? 'Lives alone' : 'In groups of ' + sp.social[0] + (sp.social[1] > 20 ? '+' : ' to ' + sp.social[1]) }));
     if (sp.companion) {
       var compSp = UI.sp(sp.companion);

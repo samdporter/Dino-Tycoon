@@ -13,6 +13,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     N = n; NN = n * n; EW = n + 1;
     DT4[0] = -n; DT4[1] = 1; DT4[2] = n; DT4[3] = -1;
     GATE_I0 = Math.floor(n / 2) - 1; GATE_J = n - 1;
+    if (RT) { RT.wallDist = new Uint8Array(NN); RT.clearDist = new Uint8Array(NN); }
     if (Z.moatCtx) Z.moatCtx.N = n;
     if (Z.realmCtx) Z.realmCtx.N = n;
     if (Z.powerCtx) Z.powerCtx.N = n;
@@ -49,6 +50,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function newRT() {
     return {
       fields: {}, pathVer: 1, nb: new Uint8Array(NN), pathTiles: [], block: new Uint8Array(NN), shelter: new Uint8Array(NN),
+      wallDist: new Uint8Array(NN), clearDist: new Uint8Array(NN),
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
       encx: {}, bq: {}, benchOcc: {}, byType: { food: [], drink: [], toilet: [], fun: [], bench: [], bin: [] },
       t1: 0, t2: 0, escAcc: 0, arrAcc: 0, rate: 0.3, arrMul: 1, arrMulT: 0, pendingSpawn: 0,
@@ -374,6 +376,90 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (shelter) RT.shelter[t] = 1;
       }
     }
+    if (!RT.inWorld && S && S.enclosures && S.enclosures.length) computeEncClearance();
+  }
+
+  // Computes wallDist, clearDist, maxWallDist, and inscribedSpan for every enclosure.
+  function computeEncClearance() {
+    if (!RT.wallDist || RT.wallDist.length !== NN) RT.wallDist = new Uint8Array(NN);
+    if (!RT.clearDist || RT.clearDist.length !== NN) RT.clearDist = new Uint8Array(NN);
+    RT.wallDist.fill(0);
+    RT.clearDist.fill(0);
+    var q = RT.queue, stamp = RT.stamp, k, d, t, i, j, ni, nj, nt;
+    for (var ei = 0; ei < S.enclosures.length; ei++) {
+      var e = S.enclosures[ei], tiles = e.tiles;
+      if (!tiles || !tiles.length) { e.maxWallDist = 0; e.inscribedSpan = 0; continue; }
+      var eid = e.id, minI = N, maxI = -1, minJ = N, maxJ = -1;
+      var st1 = ++RT.stampN, qh = 0, qt = 0;
+      for (k = 0; k < tiles.length; k++) {
+        t = tiles[k]; i = t % N; j = (t - i) / N;
+        if (i < minI) minI = i; if (i > maxI) maxI = i;
+        if (j < minJ) minJ = j; if (j > maxJ) maxJ = j;
+        var isZero = cliffT(t) || (S.ditch && S.ditch[t]) || i === 0 || j === 0 || i === N - 1 || j === N - 1;
+        if (!isZero) {
+          for (d = 0; d < 4; d++) {
+            if (fenceAt(i, j, d)) { isZero = true; break; }
+            ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0);
+            nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+            if (S.tileEnc[ni + nj * N] !== eid) { isZero = true; break; }
+          }
+        }
+        if (isZero) { RT.wallDist[t] = 0; stamp[t] = st1; q[qt++] = t; }
+      }
+      var maxWD = 0;
+      while (qh < qt) {
+        t = q[qh++]; i = t % N; j = (t - i) / N;
+        var nd = RT.wallDist[t] < 255 ? RT.wallDist[t] + 1 : 255;
+        for (d = 0; d < 4; d++) {
+          ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0);
+          nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+          if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+          nt = ni + nj * N;
+          if (S.tileEnc[nt] !== eid || stamp[nt] === st1) continue;
+          stamp[nt] = st1; RT.wallDist[nt] = nd;
+          if (nd > maxWD) maxWD = nd;
+          q[qt++] = nt;
+        }
+      }
+      e.maxWallDist = maxWD;
+
+      var st2 = ++RT.stampN; qh = 0; qt = 0;
+      for (k = 0; k < tiles.length; k++) {
+        t = tiles[k];
+        if (RT.wallDist[t] === 0 || RT.block[t]) { RT.clearDist[t] = 0; stamp[t] = st2; q[qt++] = t; }
+      }
+      while (qh < qt) {
+        t = q[qh++]; i = t % N; j = (t - i) / N;
+        var nd2 = RT.clearDist[t] < 255 ? RT.clearDist[t] + 1 : 255;
+        for (d = 0; d < 4; d++) {
+          ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0);
+          nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+          if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
+          nt = ni + nj * N;
+          if (S.tileEnc[nt] !== eid || stamp[nt] === st2) continue;
+          stamp[nt] = st2; RT.clearDist[nt] = nd2;
+          q[qt++] = nt;
+        }
+      }
+
+      var w = maxI - minI + 1, dp = new Uint16Array(w), maxSpan = 0;
+      for (j = minJ; j <= maxJ; j++) {
+        var prevDiag = 0;
+        for (i = minI; i <= maxI; i++) {
+          var col = i - minI, old = dp[col];
+          t = i + j * N;
+          if (S.tileEnc[t] === eid && !cliffT(t) && !(S.ditch && S.ditch[t])) {
+            var v = (col === 0 || j === minJ) ? 1 : 1 + Math.min(dp[col - 1], old, prevDiag);
+            dp[col] = v;
+            if (v > maxSpan) maxSpan = v;
+          } else {
+            dp[col] = 0;
+          }
+          prevDiag = old;
+        }
+      }
+      e.inscribedSpan = maxSpan;
+    }
   }
   function buildingConnected(o) {
     if (!RT.reachComp) refreshReach();
@@ -487,6 +573,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Realms) Z.Realms.defEncs(newEncs, oldById);   // realms package
     S.enclosures = newEncs;
     RT.eMap = {}; for (k = 0; k < newEncs.length; k++) RT.eMap[newEncs[k].id] = newEncs[k];
+    computeEncClearance();
     for (r = 0; r < newEncs.length; r++) buildEncGeom(newEncs[r]);
     // re-home animals
     for (k = 0; k < S.animals.length; k++) {
@@ -641,6 +728,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var out = {}; for (t in sp.terrainPrefs) out[t] = sp.terrainPrefs[t]; for (t in add) out[t] = (out[t] || 0) + add[t];
     return (GT_CACHE[key] = out);
   }
+  function animalMetrics(sp, a) {
+    if (typeof sp === 'string') sp = SP[sp];
+    if (!sp) sp = { size: 1, length: 2.4 };
+    var len = sp.length || sp.size * 2.4;
+    var babySc = (a && a.baby) || a === true ? 0.48 : 1;
+    var bodyRad = clamp(0.28 + sp.size * 0.32 + len * 0.045, 0.32, 3.2) * babySc;
+    var sepRad = clamp(bodyRad * 0.95, 0.38, 3.1);
+    var halfLen = clamp(len * 0.24, bodyRad, 6.2) * babySc;
+    var prefClear = bodyRad < 0.95 ? 0 : (bodyRad < 2.2 ? 1 : 2);
+    var minSpan = (len >= 18 || sp.size >= 4.5) ? 6 : (len >= 9 || sp.size >= 2.4) ? 4 : (len >= 4 || sp.size >= 1.2) ? 3 : 2;
+    return { bodyRad: bodyRad, sepRad: sepRad, halfLen: halfLen, prefClear: prefClear, minSpan: minSpan };
+  }
   function geneFence(trs, nHere) { var d = 0, id; if (trs) for (id in trs) if (trs[id] >= nHere && TR[id] && TR[id].fx && TR[id].fx.fence) d += TR[id].fx.fence; return d; }
   function suitFor(enc, E, spId, n) {
     if (Z.Realms && enc.kind) { var rsu = Z.Realms.suit(enc, E, spId, n); if (rsu) return rsu; }   // realms package: sea and air rules
@@ -668,6 +767,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // space
     var per = Math.max(0, area - E.blocked * 0.5 - (E.cliffs || 0)) / n, space = clamp(per / sp.space, 0, 1);
     if (space < 0.8) iss.push(space < 0.5 ? 'Needs a much bigger enclosure' : 'Needs a bigger enclosure');
+    var m = animalMetrics(sp);
+    if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) {
+      space *= clamp(enc.inscribedSpan / m.minSpan, 0.25, 1);
+      iss.push('Enclosure is too narrow (needs at least ' + m.minSpan + '×' + m.minSpan + ' wide)');
+    }
     // foliage
     var liked = 0; for (k = 0; k < sp.foliage.length; k++) liked += E.fol[sp.foliage[k]] || 0;
     var need = Math.max(2, Math.ceil(area / 16));
@@ -1364,6 +1468,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (cliffT(t)) return 'Too steep for dinosaurs';
     if (S.terrain[t] === WATER && !sp.needsWater) return "That dinosaur can't swim";
     var bad = compatible(enc, sp.id); if (bad) return bad;
+    var m = animalMetrics(sp);
+    if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return 'Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)';
     var n = 0, k; for (k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === sp.id) n++;
     for (k = 0; k < S.research.eggs.length; k++) { var eg = S.research.eggs[k]; if (eg.species === sp.id && S.tileEnc[eg.i + eg.j * N] === enc.id) n++; }
     if (enc.area / (n + 1) < sp.space * 0.5) return 'Too cramped for another ' + lc(sp.name);
@@ -1450,6 +1556,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var extra = {};
     if (rmc === undefined && enc.id !== a.enc) {
       var bad = compatible(enc, a.species); if (bad) return fail(bad);
+      var m = animalMetrics(sp, a);
+      if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return fail('Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)');
       var n = 0; for (var k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === a.species) n++;
       if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped');
       var cwn = compatibleWarn(enc, a.species); if (cwn) extra.warn = cwn;
@@ -2525,8 +2633,129 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var q = 0; q < arr.length; q++) if (aok(a, arr[q])) return arr[q];
     return -1;
   }
+  function wallEdge(a, enc, i, j, d, flying) {
+    var ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0);
+    var nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+    if (ni < 0 || nj < 0 || ni >= N || nj >= N) return true;
+    if (fenceAt(i, j, d)) return true;
+    var nt = ni + nj * N;
+    if (enc) { if (S.tileEnc[nt] !== enc.id) return true; }
+    else if (S.tileEnc[nt]) return true;
+    if (flying) return false;
+    if (cliffT(nt) || (S.ditch && S.ditch[nt]) || RT.block[nt]) return true;
+    var sp = SP[a.species];
+    if (!(enc && enc.kind && enc.realm !== 'land') && S.terrain[nt] === WATER && !swimmer(sp, a)) return true;
+    return false;
+  }
+  function tileSafeBounds(a, t, flying) {
+    var m = animalMetrics(SP[a.species], a);
+    var pad = clamp(m.bodyRad * 0.45, 0.2, 0.82);
+    var i = t % N, j = (t - i) / N, cx = cxOf(t), cz = czOf(t), half = TILE * 0.5;
+    var enc = a.enc ? RT.eMap[a.enc] : null;
+    var bN = wallEdge(a, enc, i, j, 0, flying), bE = wallEdge(a, enc, i, j, 1, flying);
+    var bS = wallEdge(a, enc, i, j, 2, flying), bW = wallEdge(a, enc, i, j, 3, flying);
+    var padX = (bW && bE) ? Math.min(pad, 0.35) : pad;
+    var padZ = (bN && bS) ? Math.min(pad, 0.35) : pad;
+    return {
+      minX: bW ? cx - (half - padX) : cx - half,
+      maxX: bE ? cx + (half - padX) : cx + half,
+      minZ: bN ? cz - (half - padZ) : cz - half,
+      maxZ: bS ? cz + (half - padZ) : cz + half,
+      bN: bN, bE: bE, bS: bS, bW: bW, pad: pad
+    };
+  }
+  function tilePt(a, t, jit) {
+    var cx = cxOf(t), cz = czOf(t), b = tileSafeBounds(a, t, false);
+    var loX = Math.max(-jit, b.minX - cx), hiX = Math.min(jit, b.maxX - cx);
+    var loZ = Math.max(-jit, b.minZ - cz), hiZ = Math.min(jit, b.maxZ - cz);
+    if (loX > hiX) { var mx = (loX + hiX) * 0.5; loX = hiX = mx; }
+    if (loZ > hiZ) { var mz = (loZ + hiZ) * 0.5; loZ = hiZ = mz; }
+    return { x: cx + rng.range(loX, hiX), z: cz + rng.range(loZ, hiZ) };
+  }
+  function pushFromWalls(a, enc, m, dt) {
+    if (!enc || a.bolt || a.state === 'escaped' || a.state === 'fight') return;
+    var t = tileOf(a.x, a.z);
+    if (S.tileEnc[t] !== enc.id) return;
+    var flying = (enc.realm === 'air' && (a.y || 0) > 0.6);
+    var b = tileSafeBounds(a, t, flying);
+    var cx = cxOf(t), cz = czOf(t), half = TILE * 0.5;
+    var nx = a.x, nz = a.z;
+    var blend = Math.min(1, Math.max(0.25, dt * 12));
+    if (b.bW && b.bE) nx += (cx - nx) * Math.min(1, dt * 4);
+    if (b.bN && b.bS) nz += (cz - nz) * Math.min(1, dt * 4);
+    if (nx < b.minX) nx += (b.minX - nx) * blend;
+    else if (nx > b.maxX) nx += (b.maxX - nx) * blend;
+    if (nz < b.minZ) nz += (b.minZ - nz) * blend;
+    else if (nz > b.maxZ) nz += (b.maxZ - nz) * blend;
+    if (!flying) {
+      var i = t % N, j = (t - i) / N, cPad = b.pad * 0.78;
+      for (var sx = -1; sx <= 1; sx += 2) {
+        if ((sx < 0 && b.bW) || (sx > 0 && b.bE)) continue;
+        for (var sz = -1; sz <= 1; sz += 2) {
+          if ((sz < 0 && b.bN) || (sz > 0 && b.bS)) continue;
+          var ci = i + sx, cj = j + sz;
+          if (ci < 0 || cj < 0 || ci >= N || cj >= N) continue;
+          var ct = ci + cj * N;
+          if (S.tileEnc[ct] !== enc.id || cliffT(ct) || (S.ditch && S.ditch[ct]) || RT.block[ct]) {
+            var kx = cx + sx * half, kz = cz + sz * half;
+            var cdx = nx - kx, cdz = nz - kz, cd = Math.sqrt(cdx * cdx + cdz * cdz);
+            if (cd < cPad && cd > 1e-5) {
+              var pushC = (cPad - cd) * blend;
+              nx += (cdx / cd) * pushC; nz += (cdz / cd) * pushC;
+            }
+          }
+        }
+      }
+    }
+    var isLandRule = !enc.kind || (enc.kind === 'virtual' && enc.realm === 'land');
+    if (nx !== a.x || nz !== a.z) {
+      if (isLandRule) {
+        if (canGo(a, a.x, a.z, nx, nz)) { a.x = nx; a.z = nz; }
+        else if (canGo(a, a.x, a.z, nx, a.z)) { a.x = nx; }
+        else if (canGo(a, a.x, a.z, a.x, nz)) { a.z = nz; }
+      } else {
+        if (nx > 0 && nz > 0 && nx < N * TILE && nz < N * TILE && S.tileEnc[tileOf(nx, nz)] === enc.id) { a.x = nx; a.z = nz; }
+      }
+    }
+    var minD = 1e9;
+    if (b.bW) minD = Math.min(minD, a.x - (cx - half));
+    if (b.bE) minD = Math.min(minD, (cx + half) - a.x);
+    if (b.bN) minD = Math.min(minD, a.z - (cz - half));
+    if (b.bS) minD = Math.min(minD, (cz + half) - a.z);
+    a._wallNear = minD < half ? clamp(1 - minD / half, 0, 1) : 0;
+
+    if (m.bodyRad >= 1.2 && a.tg === 'wander' && RT.wallDist[t] === 0 && (enc.maxWallDist || 0) >= 1 && !flying) {
+      var ti = t % N, tj = (t - ti) / N, bestN = -1, bestW = 0, bestC = -1;
+      for (var d = 0; d < 4; d++) {
+        var dni = ti + (d === 1 ? 1 : d === 3 ? -1 : 0), dnj = tj + (d === 2 ? 1 : d === 0 ? -1 : 0);
+        if (dni < 0 || dnj < 0 || dni >= N || dnj >= N) continue;
+        var dnt = dni + dnj * N;
+        if (S.tileEnc[dnt] !== enc.id || fenceAt(ti, tj, d)) continue;
+        if (isLandRule && !aok(a, dnt)) continue;
+        var wd = RT.wallDist[dnt], cd2 = RT.clearDist[dnt];
+        if (wd > bestW || (wd === bestW && cd2 > bestC)) { bestW = wd; bestC = cd2; bestN = dnt; }
+      }
+      if (bestN >= 0 && bestW > 0) {
+        var bx = cxOf(bestN) - a.x, bz = czOf(bestN) - a.z, bd = Math.sqrt(bx * bx + bz * bz);
+        if (bd > 1e-4) {
+          var nudge = Math.min(bd, 0.7 * dt);
+          var gx = a.x + (bx / bd) * nudge, gz = a.z + (bz / bd) * nudge;
+          if (isLandRule) { if (canGo(a, a.x, a.z, gx, gz)) { a.x = gx; a.z = gz; } }
+          else if (S.tileEnc[tileOf(gx, gz)] === enc.id) { a.x = gx; a.z = gz; }
+        }
+        if (isFinite(a.tx) && isFinite(a.tz) && RT.wallDist[tileOf(a.tx, a.tz)] === 0 && !a.aroute) {
+          if (isLandRule) {
+            var inT = randomEncTile(a, enc, 12);
+            if (inT >= 0 && RT.wallDist[inT] > 0) setTargetTile(a, inT);
+          } else {
+            a.tx = cxOf(bestN); a.tz = czOf(bestN);
+          }
+        }
+      }
+    }
+  }
   function steerAnimal(a) {
-    var t0 = tileOf(a.x, a.z), d, nt;
+    var t0 = tileOf(a.x, a.z), d, nt, pt;
     if (a.tg === 'wander' || (a.state === 'escaped' && !a.lg)) {
       var cur = t0, prev = a.prevT >= 0 ? a.prevT : -1, wroute = [];
       for (var s = 0; s < 3; s++) {
@@ -2545,11 +2774,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!wroute.length) return false;
       a.prevT = t0;
       var lastW = wroute[wroute.length - 1];
-      a.tx = cxOf(lastW) + rng.range(-0.4, 0.4);
-      a.tz = czOf(lastW) + rng.range(-0.4, 0.4);
+      pt = tilePt(a, lastW, 0.4); a.tx = pt.x; a.tz = pt.z;
       var firstW = wroute[0];
-      a.wx = cxOf(firstW) + rng.range(-0.35, 0.35);
-      a.wz = czOf(firstW) + rng.range(-0.35, 0.35);
+      pt = tilePt(a, firstW, 0.35); a.wx = pt.x; a.wz = pt.z;
       a.aroute = wroute.length > 1 ? wroute.slice(1) : null;
       return true;
     }
@@ -2579,14 +2806,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     route.reverse();
     a.prevT = t0;
     var first = route[0];
-    a.wx = cxOf(first) + rng.range(-0.35, 0.35);
-    a.wz = czOf(first) + rng.range(-0.35, 0.35);
+    pt = tilePt(a, first, 0.35); a.wx = pt.x; a.wz = pt.z;
     var chasing = a.tg === 'hunt' || (a.state === 'escaped' && a.lg);
     a.aroute = (!chasing && route.length > 1) ? route.slice(1) : null;
     if (!chasing && bestT !== goalT) {
       var last = route[route.length - 1];
-      a.tx = cxOf(last) + rng.range(-0.4, 0.4);
-      a.tz = czOf(last) + rng.range(-0.4, 0.4);
+      pt = tilePt(a, last, 0.4); a.tx = pt.x; a.tz = pt.z;
     }
     return true;
   }
@@ -2601,8 +2826,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (a.wx) {
         if (a.aroute && a.aroute.length) {
           var nt = a.aroute.shift();
-          a.wx = cxOf(nt) + rng.range(-0.35, 0.35);
-          a.wz = czOf(nt) + rng.range(-0.35, 0.35);
+          var wpt = tilePt(a, nt, 0.35);
+          a.wx = wpt.x; a.wz = wpt.z;
         } else { a.wx = 0; a.wz = 0; }
         gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
         dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
@@ -2623,8 +2848,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var sz = oz + (dz > 0 ? 1 : -1) * Math.min(step, Math.abs(dz));
       if (canGo(a, ox, oz, ox, sz)) a.z = sz; else a.z = oz + vz;
     }
+    if (a.enc) { var _enc = RT.eMap[a.enc]; if (_enc) pushFromWalls(a, _enc, animalMetrics(SP[a.species], a), dt); }
     var mx = a.x - ox, mz = a.z - oz, md = Math.sqrt(mx * mx + mz * mz);
-    if (md < step * 0.35 && step > 1e-4) {
+    var prog = d > 1e-5 ? (mx * dx + mz * dz) / d : md;
+    if (prog < step * 0.35 && step > 1e-4) {
       a.stuck += dt;
       if (a.stuck > 0.08) {
         a.stuck = 0;
@@ -2641,11 +2868,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return false;
     }
     a.stuck = 0; a.speed = spd;
-    a.heading = turn(a.heading, Math.atan2(mx, mz), dt * 6);
+    if (md > 1e-4) a.heading = turn(a.heading, Math.atan2(mx, mz), dt * 6);
     return false;
   }
   function setTargetTile(a, t) {
-    a.tx = cxOf(t) + rng.range(-0.6, 0.6); a.tz = czOf(t) + rng.range(-0.6, 0.6);
+    var pt = tilePt(a, t, 0.6);
+    a.tx = pt.x; a.tz = pt.z;
     a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0;
   }
   function relocateAnimal(a, enc) {
@@ -2658,13 +2886,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (best >= 0) { a.x = cxOf(best); a.z = czOf(best); a.tx = a.x; a.tz = a.z; a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; }
   }
   function randomEncTile(a, enc, near) {
-    for (var k = 0; k < 8; k++) {
-      var t = enc.tiles[Math.floor(rng.next() * enc.tiles.length)];
+    if (!enc || !enc.tiles || !enc.tiles.length) return -1;
+    var sp = SP[a.species], m = sp ? animalMetrics(sp, a) : null;
+    var needClear = m ? Math.min(m.prefClear, enc.maxWallDist || 0) : 0;
+    var tl = enc.tiles, n = tl.length, best = -1, bestScore = -1;
+    for (var k = 0; k < 14; k++) {
+      var t = tl[Math.floor(rng.next() * n)];
       if (!aok(a, t)) continue;
-      if (near && k < 5) { var dx = cxOf(t) - a.x, dz = czOf(t) - a.z; if (dx * dx + dz * dz > near * near) continue; }
-      return t;
+      var cd = RT.clearDist[t], wd = RT.wallDist[t], score = cd * 2 + wd;
+      if (near && a.x !== undefined && k < 8) {
+        var dx = cxOf(t) - a.x, dz = czOf(t) - a.z;
+        if (dx * dx + dz * dz > near * near) {
+          if (best < 0 || score > bestScore) { best = t; bestScore = score; }
+          continue;
+        }
+      }
+      if (cd >= needClear) return t;
+      if (k >= 10 && wd >= needClear) return t;
+      if (score > bestScore) { best = t; bestScore = score; }
     }
-    return -1;
+    if (needClear > 0 && best >= 0 && RT.clearDist[best] < needClear) {
+      var pool = [], maxC = -1, q;
+      for (q = 0; q < n; q++) {
+        var qt = tl[q]; if (!aok(a, qt)) continue;
+        var qd = RT.clearDist[qt];
+        if (qd >= needClear) pool.push(qt);
+        else if (qd > maxC) maxC = qd;
+      }
+      if (pool.length) return pool[Math.floor(rng.next() * pool.length)];
+      if (maxC > RT.clearDist[best]) {
+        var deep = [];
+        for (q = 0; q < n; q++) if (aok(a, tl[q]) && RT.clearDist[tl[q]] === maxC) deep.push(tl[q]);
+        if (deep.length) return deep[Math.floor(rng.next() * deep.length)];
+      }
+    }
+    return best;
   }
   function animalBulk(a) {
     var sp = SP[a.species];
@@ -2960,7 +3216,27 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         startChase(a, 'hunt', pry); rallyPack(a, enc, 'hunt', pry); return;
       }
     }
-    if (a.hunger > 55 && enc.foodLevel > 0.02) { a.tg = 'eat'; target = isPredator(sp) && E.carc.length ? pickPassable(a, E.carc) : E.feed; }
+    if (a.hunger > 55 && enc.foodLevel > 0.02) {
+      a.tg = 'eat';
+      if ((a.species === 'brachiosaurus' || a.species === 'diplodocus') && rng.chance(0.35)) {
+        var treeAdj = [];
+        for (var tk = 0; tk < enc.tiles.length; tk++) {
+          var tt = enc.tiles[tk], oid = S.tileObj[tt];
+          if (!oid) continue;
+          var ob = RT.oById.get(oid);
+          if (!ob || ob.kind !== 'scenery' || !SC[ob.type] || SC[ob.type].kind !== 'tree') continue;
+          var ti = tt % N, tj = (tt - ti) / N;
+          for (var td = 0; td < 4; td++) {
+            var ni = ti + (td === 1 ? 1 : td === 3 ? -1 : 0), nj = tj + (td === 2 ? 1 : td === 0 ? -1 : 0);
+            if (ni < 0 || nj < 0 || ni >= N || nj >= N || fenceAt(ti, tj, td)) continue;
+            var nt = ni + nj * N;
+            if (aok(a, nt)) treeAdj.push(nt);
+          }
+        }
+        if (treeAdj.length) target = treeAdj[Math.floor(rng.next() * treeAdj.length)];
+      }
+      if (target < 0) target = isPredator(sp) && E.carc.length ? pickPassable(a, E.carc) : E.feed;
+    }
     else if (a.thirst > 55 && (E.water.length || enc.waterLevel > 0.02)) {
       a.tg = 'drink';
       target = E.drink.length ? pickPassable(a, E.drink) : (E.water.length && swimmer(sp, a) ? pickPassable(a, E.water) : E.feed);
@@ -2969,6 +3245,23 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     else { a.tg = 'wander'; target = randomEncTile(a, enc, 14); }
     if (target < 0 || !aok(a, target)) { a.state = 'idle'; a.st = rng.range(1.5, 4); a.tg = ''; return; }
     setTargetTile(a, target);
+    var mDec = animalMetrics(sp, a);
+    if (mDec.bodyRad >= 1.1 && (a.tg === 'eat' || a.tg === 'drink' || a.tg === 'play' || a.tg === 'sleep')) {
+      var standOff = clamp(mDec.bodyRad * 0.55, 0.45, 1.8);
+      var baseAng = Math.atan2(a.z - czOf(target), a.x - cxOf(target)) + rng.range(-0.9, 0.9);
+      for (var ak = 0; ak < 6; ak++) {
+        var ang = baseAng + (ak === 0 ? 0 : ((ak % 2 ? 1 : -1) * Math.ceil(ak / 2) * (PI / 3)));
+        var px = cxOf(target) + Math.cos(ang) * standOff, pz = czOf(target) + Math.sin(ang) * standOff;
+        if (px < 0 || pz < 0 || px >= N * TILE || pz >= N * TILE) continue;
+        var pt = tileOf(px, pz);
+        if (aok(a, pt)) {
+          var sb = tileSafeBounds(a, pt, false);
+          a.tx = clamp(px, sb.minX, sb.maxX);
+          a.tz = clamp(pz, sb.minZ, sb.maxZ);
+          break;
+        }
+      }
+    }
     a.state = (a.tg === 'wander' && rng.chance(0.06)) || (a.baby && rng.chance(0.15)) ? 'run' : 'walk';
     a.stuck = 0;
   }
@@ -4109,6 +4402,83 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     recomputeWX();
   }
 
+  function canPushTo(u, enc, nx, nz) {
+    if (!isFinite(nx) || !isFinite(nz) || nx < 0 || nz < 0 || nx >= N * TILE || nz >= N * TILE) return false;
+    if (!enc.kind || (enc.kind === 'virtual' && enc.realm === 'land')) return canGo(u, u.x, u.z, nx, nz);
+    return S.tileEnc[tileOf(nx, nz)] === enc.id;
+  }
+  function separateAnimals(dt) {
+    if (!(dt > 0)) return;
+    var encs = S.enclosures;
+    for (var ei = 0; ei < encs.length; ei++) {
+      var enc = encs[ei], list = enc.animals;
+      if (!list || list.length < 2) continue;
+      for (var i = 0; i < list.length; i++) {
+        var a = RT.aById.get(list[i]);
+        if (!a || a.state === 'escaped' || a.bolt) continue;
+        var spA = SP[a.species], ma = animalMetrics(spA, a);
+        var aElong = ma.halfLen > ma.bodyRad * 1.15;
+        var aOff = aElong ? Math.max(0, ma.halfLen - ma.sepRad * 0.65) : 0;
+        var afx = aElong ? Math.sin(a.heading || 0) * aOff : 0, afz = aElong ? Math.cos(a.heading || 0) * aOff : 0;
+        var wA = a.state === 'fight' ? 0 : 1 / Math.max(0.2, animalBulk(a));
+        for (var j = i + 1; j < list.length; j++) {
+          var b = RT.aById.get(list[j]);
+          if (!b || b.state === 'escaped' || b.bolt) continue;
+          if (a.fid && a.fid === b.fid) continue;
+          if (((a.tg === 'hunt' || a.tg === 'fight_rival') && a.hid === b.id) || ((b.tg === 'hunt' || b.tg === 'fight_rival') && b.hid === a.id)) continue;
+          if (Math.abs((a.y || 0) - (b.y || 0)) > 1.8) continue;
+          if (Math.abs(a.x - b.x) > 14 || Math.abs(a.z - b.z) > 14) continue;
+          var wB = b.state === 'fight' ? 0 : 1 / Math.max(0.2, animalBulk(b));
+          var wSum = wA + wB; if (wSum <= 0) continue;
+          var spB = SP[b.species], mb = animalMetrics(spB, b);
+          var req = ma.sepRad + mb.sepRad;
+          var bElong = mb.halfLen > mb.bodyRad * 1.15;
+          var bOff = bElong ? Math.max(0, mb.halfLen - mb.sepRad * 0.65) : 0;
+          var bfx = bElong ? Math.sin(b.heading || 0) * bOff : 0, bfz = bElong ? Math.cos(b.heading || 0) * bOff : 0;
+          var minD2 = 1e9, bestDx = 0, bestDz = 0;
+          var aN = aElong ? 2 : 1, bN = bElong ? 2 : 1;
+          for (var ai = 0; ai < aN; ai++) {
+            var pax = aElong ? (ai === 0 ? a.x + afx : a.x - afx) : a.x;
+            var paz = aElong ? (ai === 0 ? a.z + afz : a.z - afz) : a.z;
+            for (var bi = 0; bi < bN; bi++) {
+              var pbx = bElong ? (bi === 0 ? b.x + bfx : b.x - bfx) : b.x;
+              var pbz = bElong ? (bi === 0 ? b.z + bfz : b.z - bfz) : b.z;
+              var ddx = pbx - pax, ddz = pbz - paz, d2 = ddx * ddx + ddz * ddz;
+              if (d2 < minD2) { minD2 = d2; bestDx = ddx; bestDz = ddz; }
+            }
+          }
+          if (minD2 >= req * req) continue;
+          var dist = Math.sqrt(minD2), nx, nz;
+          if (dist < 1e-5) {
+            var loId = a.id < b.id ? a.id : b.id, hiId = a.id < b.id ? b.id : a.id;
+            var ang = (((loId * 73856093) ^ (hiId * 19349663)) & 1023) * (TAU / 1024);
+            var sgn = a.id < b.id ? -1 : 1;
+            nx = Math.cos(ang) * sgn; nz = Math.sin(ang) * sgn; dist = 0;
+          } else {
+            nx = bestDx / dist; nz = bestDz / dist;
+          }
+          var overlap = req - dist;
+          var push = Math.min(overlap * 0.45, 3.2 * dt);
+          var tx = 0, tz = 0;
+          if ((a.speed || 0) > 0.05 && (b.speed || 0) > 0.05) {
+            var cross = Math.sin(a.heading || 0) * nz - Math.cos(a.heading || 0) * nx;
+            var slideSgn = Math.abs(cross) > 0.05 ? (cross > 0 ? 1 : -1) : (((a.id ^ b.id) & 1) ? 1 : -1);
+            var slide = push * 0.32 * slideSgn;
+            tx = -nz * slide; tz = nx * slide;
+          }
+          var fA = wA / wSum, fB = wB / wSum;
+          if (fA > 0) {
+            var nax = a.x + (-nx * push + tx) * fA, naz = a.z + (-nz * push + tz) * fA;
+            if (canPushTo(a, enc, nax, naz)) { a.x = nax; a.z = naz; }
+          }
+          if (fB > 0) {
+            var nbx = b.x + (nx * push - tx) * fB, nbz = b.z + (nz * push - tz) * fB;
+            if (canPushTo(b, enc, nbx, nbz)) { b.x = nbx; b.z = nbz; }
+          }
+        }
+      }
+    }
+  }
   function step(dt) {
     var k;
     if (!RT.wxInit) ensureInit();
@@ -4143,6 +4513,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
+    separateAnimals(dt);
     stepFights(dt);
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
@@ -4816,7 +5187,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, cliffT: cliffT, entranceTile: entranceTile, seaMask: seaMask, heightAt: heightAt,
     objFootprint: objFootprint, encById: encById, encOfTile: encOfTile, fxOf: fxOf, aDanger: aDanger, aMinFence: aMinFence, tileOf: tileOf, cxOf: cxOf, czOf: czOf, plural: plural, lc: lc,
     WX: function () { return WX; }, isNight: isNight, DAY_SECONDS: DAY_SECONDS, turn: turn, newId: newId, say: say, hurtGuest: hurtGuest, removeAnimal: removeAnimal,
-    recapture: recapture, doEscape: doEscape, onEscape: onEscape, compatible: compatible, refreshEncAnimals: refreshEncAnimals, encStats: encStats
+    recapture: recapture, doEscape: doEscape, onEscape: onEscape, compatible: compatible, refreshEncAnimals: refreshEncAnimals, encStats: encStats,
+    animalMetrics: animalMetrics, pushFromWalls: pushFromWalls
   };
 
   // Context for the power and news packages (src/25-sim-power.js, src/27-sim-news.js). Hooks into this file are marked "power package" / "news package".
@@ -5546,7 +5918,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         id: a.id, name: a.name, emoji: a.emoji, predator: !!a.predator,
         terrain: prefs.map(function (p) { return D.terrain[TI[p[0]]].name + ' ' + Math.round(p[1] / (psum || 1) * 100) + '%'; }).join(', '),
         plants: a.foliage.map(function (f) { return SC[f] ? SC[f].name : f; }), plantIds: a.foliage.slice(),
-        needs: needs, space: a.space, minFence: a.minFence
+        needs: needs, space: a.space, minFence: a.minFence, minSpan: animalMetrics(a).minSpan
       });
     });
     return { weights: JSON.parse(JSON.stringify(HW)), plants: plants, additions: additions, species: species };
@@ -5577,7 +5949,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     isSea: function (i, j) { return Z.inb(i, j) && !!seaMask()[i + j * N]; }, waterKind: waterKind, seaMask: seaMask, shoreDist: shoreDist, previewMap: previewMap,
     resolveSizeN: resolveSizeN, mapBounds: function (mapId, mapSize) { return scaleMapDef(mapDef(mapId), resolveSizeN(mapSize)).bounds; },
     isFresh: function (i, j) { return waterKind(i, j) === 'fresh'; }, isIsland: function () { return !!(S.map && S.map.island); },
-    arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS,
+    arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, animalMetrics: function (speciesId, baby) { return animalMetrics(typeof speciesId === 'string' ? SP[speciesId] : speciesId, baby); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS,
     weatherInfo: function () { return weatherInfo(); }, activeEvents: function () { return S.activeEvents.slice(); }, applyDifficulty: function (id, fresh) { return applyDifficulty(id, fresh); },
     difficultyInfo: function () { return { id: S.difficulty, income: DIFF.income, costs: DIFF.costs, arrivals: DIFF.arrivals, interest: DIFF.interest }; },
     _fireEvent: function (id) { return fireEvent(id); }, _setWeather: function (type, intensity, hours) { setWeather(type, intensity === undefined ? 1 : intensity, hours || 6); }, _wx: function () { return WX; },

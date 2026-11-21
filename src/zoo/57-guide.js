@@ -92,7 +92,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       var g = gSpecies[a.name];
       if (g && g.plants) plantNames = g.plants;
       if (g && g.needs) needs = g.needs;
-      return { name: a.name, emoji: a.emoji, diet: cap(a.diet), prefs: prefs, plants: plantNames, needs: needs, space: a.space, minFence: a.minFence, needsCage: !!(a.needsCage || (g && g.needsCage)) };
+      var minSpan = (g && g.minSpan) || (Z.Sim && Z.Sim.animalMetrics ? Z.Sim.animalMetrics(a.id, false).minSpan : 0);
+      return { name: a.name, emoji: a.emoji, diet: cap(a.diet), prefs: prefs, plants: plantNames, needs: needs, space: a.space, minFence: a.minFence, minSpan: minSpan, needsCage: !!(a.needsCage || (g && g.needsCage)) };
     });
 
     return { plants: plants, additions: adds, species: species };
@@ -128,7 +129,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       label('Favourite terrain:'), s.prefs.length ? dotChips(s.prefs) : h('div.gd-none', { text: 'No preference' }),
       label('Favourite plants:'), none(s.plants, 'Any plant'),
       label('Needs:'), chipList(s.needs),
-      kv('Space per animal', (s.space || 0) + ' tiles'),
+      kv('Space per animal', (s.space || 0) + ' tiles' + (s.minSpan >= 4 ? ' · Min width: ' + s.minSpan + '×' + s.minSpan : '')),
       kv('Minimum fence', String(s.minFence || 1)),
       s.needsCage ? kv('Enclosure', 'Roofed cage (Primate cage)') : null);
   }

@@ -56,14 +56,45 @@
 
   // ------------------------------------------------------------------ protesters at the gate
   var SIGNS = [0xf2e6a0, 0xf0b9a8, 0xbfe0f0, 0xd7f0b0];
-  var gHead, gBody, gSign, gStick;
+  var gHead, gTorso, gShoulder, gNeck, gLeg, gShoe, gArmSeg, gHand, gHair, gCap, gVisor, gSign, gSignBar, gStick;
   function mkProt(k) {
     var g = new THREE.Group(), skin = [0xe3b48c, 0xc58f65, 0x8d5f3d][k % 3], cl = [0xcf4a3a, 0x3a7ec2, 0x5aa04a, 0xd49a2a][k % 4];
-    var body = new THREE.Mesh(gBody, new THREE.MeshLambertMaterial({ color: cl })); body.position.y = 0.55; g.add(body);
-    var head = new THREE.Mesh(gHead, new THREE.MeshLambertMaterial({ color: skin })); head.position.y = 1.2; g.add(head);
-    var arm = new THREE.Group(); arm.position.set(0.18, 1.0, 0);
-    var st = new THREE.Mesh(gStick, new THREE.MeshLambertMaterial({ color: 0x8a6a42 })); st.position.y = 0.45; arm.add(st);
-    var sg = new THREE.Mesh(gSign, new THREE.MeshLambertMaterial({ color: SIGNS[k % SIGNS.length] })); sg.position.y = 1.0; arm.add(sg);
+    var pantCol = [0x2f3b4c, 0x45423d, 0x29343a][k % 3], hairCol = [0x2a1d14, 0x5c3c22, 0x8a6436, 0x1d1f24][k % 4];
+    var mCloth = new THREE.MeshLambertMaterial({ color: cl });
+    var mSkin = new THREE.MeshLambertMaterial({ color: skin });
+    var mPant = new THREE.MeshLambertMaterial({ color: pantCol });
+    var mDark = new THREE.MeshLambertMaterial({ color: 0x24272c });
+    // legs & shoes
+    for (var s = -1; s <= 1; s += 2) {
+      var leg = new THREE.Mesh(gLeg, mPant); leg.position.set(s * 0.085, 0.25, 0); g.add(leg);
+      var shoe = new THREE.Mesh(gShoe, mDark); shoe.position.set(s * 0.085, 0.035, 0.025); g.add(shoe);
+    }
+    // tapered torso, shoulders & neck
+    var torso = new THREE.Mesh(gTorso, mCloth); torso.position.y = 0.72; torso.scale.set(1.12, 1, 0.78); g.add(torso);
+    var sh = new THREE.Mesh(gShoulder, mCloth); sh.position.y = 0.96; sh.scale.set(1.18, 0.44, 0.80); g.add(sh);
+    var neck = new THREE.Mesh(gNeck, mSkin); neck.position.y = 1.03; g.add(neck);
+    // head + hair or baseball cap
+    var head = new THREE.Mesh(gHead, mSkin); head.position.y = 1.18; g.add(head);
+    if (k % 3 === 0) {
+      var capMat = new THREE.MeshLambertMaterial({ color: [0x2d6aa0, 0xb83a2e, 0x3b7a48][k % 3] });
+      var cap = new THREE.Mesh(gCap, capMat); cap.position.set(0, 1.27, 0); g.add(cap);
+      var vis = new THREE.Mesh(gVisor, capMat); vis.position.set(0, 1.23, 0.14); vis.rotation.x = 0.15; g.add(vis);
+    } else {
+      var hair = new THREE.Mesh(gHair, new THREE.MeshLambertMaterial({ color: hairCol }));
+      hair.position.set(0, 1.19, -0.01); hair.rotation.x = -0.18; g.add(hair);
+    }
+    // left arm (pumping fist)
+    var armL = new THREE.Group(); armL.position.set(-0.22, 0.94, 0);
+    var uL = new THREE.Mesh(gArmSeg, mCloth); uL.position.set(-0.02, -0.13, 0.03); uL.rotation.set(-0.4, 0, -0.15); armL.add(uL);
+    var hL = new THREE.Mesh(gHand, mSkin); hL.position.set(-0.05, -0.25, 0.09); armL.add(hL);
+    g.add(armL);
+    // right raised arm holding protest placard
+    var arm = new THREE.Group(); arm.position.set(0.22, 0.94, 0);
+    var uR = new THREE.Mesh(gArmSeg, mCloth); uR.position.set(0.03, 0.14, 0.04); uR.rotation.set(0.25, 0, -0.18); arm.add(uR);
+    var hR = new THREE.Mesh(gHand, mSkin); hR.position.set(0.06, 0.28, 0.08); arm.add(hR);
+    var st = new THREE.Mesh(gStick, new THREE.MeshLambertMaterial({ color: 0x8a6a42 })); st.position.set(0.06, 0.56, 0.08); arm.add(st);
+    var sg = new THREE.Mesh(gSign, new THREE.MeshLambertMaterial({ color: SIGNS[k % SIGNS.length] })); sg.position.set(0.06, 1.08, 0.08); arm.add(sg);
+    var sb = new THREE.Mesh(gSignBar, new THREE.MeshLambertMaterial({ color: cl })); sb.position.set(0.06, 1.16, 0.11); arm.add(sb);
     g.add(arm); g.userData.arm = arm; return g;
   }
   function updProt(dt) {
@@ -72,8 +103,20 @@
       protN = want;
       if (!protGroup) {
         protGroup = new THREE.Group(); scene.add(protGroup);
-        gHead = new THREE.SphereGeometry(0.17, 8, 6); gBody = new THREE.CylinderGeometry(0.17, 0.22, 0.9, 7);
-        gSign = new THREE.BoxGeometry(0.7, 0.5, 0.05); gStick = new THREE.CylinderGeometry(0.025, 0.025, 1.2, 4);
+        gHead = new THREE.SphereGeometry(0.15, 10, 8);
+        gTorso = new THREE.CylinderGeometry(0.175, 0.125, 0.48, 8);
+        gShoulder = new THREE.SphereGeometry(0.165, 8, 5);
+        gNeck = new THREE.CylinderGeometry(0.05, 0.058, 0.10, 6);
+        gLeg = new THREE.CylinderGeometry(0.066, 0.050, 0.46, 6);
+        gShoe = new THREE.BoxGeometry(0.10, 0.07, 0.16);
+        gArmSeg = new THREE.CylinderGeometry(0.048, 0.040, 0.30, 6);
+        gHand = new THREE.SphereGeometry(0.048, 6, 5);
+        gHair = new THREE.SphereGeometry(0.158, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.62);
+        gCap = new THREE.CylinderGeometry(0.135, 0.158, 0.09, 10);
+        gVisor = new THREE.BoxGeometry(0.22, 0.025, 0.15);
+        gSign = new THREE.BoxGeometry(0.72, 0.50, 0.045);
+        gSignBar = new THREE.BoxGeometry(0.56, 0.10, 0.02);
+        gStick = new THREE.CylinderGeometry(0.024, 0.024, 1.18, 5);
       }
       while (prot.length > want) protGroup.remove(prot.pop());
       var curN = Z.N || 56, cx = (Math.floor(curN / 2) - 0.5) * T, cz = (curN - 0.5) * T;
