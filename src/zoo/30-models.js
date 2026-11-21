@@ -2945,7 +2945,10 @@ OTHERS.winged_monkey = function (opts) {
     g.sph(0.085, 0.068, 0.09, 0, 0.06, 0.14, FACE, { s: [7, 5] });
     g.sph(0.024, 0.018, 0.018, 0, 0.08, 0.225, FUR_DK, { s: [4, 3] });
     g.tube([[-0.032, 0.038, 0.21], [0, 0.033, 0.225], [0.032, 0.038, 0.21]], 0.008, FUR_DK, { seg: 4, steps: 2 });
-    eyePair(g, 0.055, 0.145, 0.165, 0.022, 0xd89620);
+    g.tube([[-0.085, 0.172, 0.14], [-0.04, 0.184, 0.16], [0, 0.178, 0.165], [0.04, 0.184, 0.16], [0.085, 0.172, 0.14]], [0.01, 0.014, 0.012, 0.014, 0.01], FUR_DK, { seg: 5, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.007, 0.005, 0.006, nn * 0.01, 0.084, 0.24, 0x0a0a0c, { s: [4, 3] }); g.sph(0.025, 0.02, 0.025, nn * 0.04, 0.052, 0.17, shade(FACE, 1.1), { s: [5, 4] }); }
+    g.sph(0.045, 0.01, 0.02, 0, 0.03, 0.2, shade(FACE, 0.7), { s: [5, 3] });
+    eyes(g, 0.055, 0.145, 0.165, 0.021, 0xd89620, FUR_DK);
     earBall(g, 0.155, 0.13, 0.01, 0.055, FACE, shade(FACE, 0.8));
     earBall(g, -0.155, 0.13, 0.01, 0.055, FACE, shade(FACE, 0.8));
     // iconic tiny round bellhop pillbox cap tilted jauntily
@@ -2955,10 +2958,14 @@ OTHERS.winged_monkey = function (opts) {
     P.head = g.build();
 
     // 2-segment articulated arms (upper + forearm) & legs
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0.01, 0.052, 0.042, FUR, { seg: 6 }); g.sph(0.044, 0.044, 0.044, 0, -0.19, 0.01, FUR, { s: [5, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.19, 0.02, 0.04, 0.034, FUR, { seg: 6 }); g.sph(0.046, 0.052, 0.046, 0, -0.22, 0.03, FACE, { s: [5, 4] }); P.armL = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.22, 0, 0.065, 0.048, FUR, { seg: 6 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.22, 0, 0.046, 0.036, FUR, { seg: 6 }); g.sph(0.048, 0.028, 0.085, 0, -0.23, 0.04, FACE, { s: [5, 4] }); P.shank = g.build();
+    g = B(); tlimb(g, 0.19, 0.052, 0.042, 0.22, 0.01, FUR); g.sph(0.044, 0.044, 0.044, 0, -0.19, 0.01, FUR, { s: [5, 4] }); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.19, 0.04, 0.034, 0.25, 0.02, FUR);
+      hand(g, 0, -0.19, 0.02, 1.05, hs ? -1 : 1, FACE);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
+    g = B(); tlimb(g, 0.22, 0.065, 0.048, 0.3, 0, FUR); P.thigh = g.build();
+    g = B(); tlimb(g, 0.22, 0.046, 0.036, 0.3, 0, FUR); g.sph(0.04, 0.036, 0.04, 0, -0.22, 0, FUR, { s: [5, 4] }); pfoot(g, 0, -0.238, 0.0, 1.15, 1, FACE); P.shank = g.build();
 
     // curled tail segments
     P.tail = [];
@@ -2976,6 +2983,8 @@ OTHERS.winged_monkey = function (opts) {
       gw.tube([sh, wr, t1], [0.034, 0.024, 0.01], STRUT, { seg: 5, steps: 2 });
       gw.tube([wr, t2], [0.02, 0.008], STRUT, { seg: 4 });
       gw.tube([wr, t3], [0.018, 0.008], STRUT, { seg: 4 });
+      gw.tube([wr, [s * 0.82, -0.04, -0.14]], [0.019, 0.008], STRUT, { seg: 4 });
+      gw.limb(wr[0], wr[1], wr[2], wr[0] + s * 0.05, wr[1] + 0.08, wr[2] + 0.05, 0.016, 0.004, 0xcfcfd4, { seg: 4 });
       gw.wingMembrane([[wr, t1], [wr, t2], [wr, t3], [sh, rt]], 0.022, WING, { camber: 0.06, scallop: 0.22, uSteps: 3, vSteps: 2 });
       return gw.build();
     };
@@ -2992,7 +3001,7 @@ OTHERS.winged_monkey = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.21, 0.18, 0.02); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.19, 0.01); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.19, 0.01); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.1, -0.15, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.22, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
     var wg = grp(s ? 'rWing' : 'lWing'); wg.rotation.order = 'YXZ'; wg.position.set(sd * 0.14, 0.17, -0.14);
