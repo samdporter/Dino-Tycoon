@@ -6,8 +6,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   var Main = Z.Main = { playing: false }, UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N;
   Z.bus.on('gridsize', function (n) { N = n; });
   var SAVE_KEY = 'wildacres.save.v1', SET_KEY = 'wildacres.settings.v1';
-  var mem = {}, settings = { sound: true, quality: 'auto' }, titleEl, last = 0, saveT = 0, orbit = 0.4, saveFailed = false;
-  var ema = 0.016, slowT = 0, prCap = 2, budget = 240, QUAL = { low: [1, 140], med: [1.5, 320], high: [2, 600] };
+  var mem = {}, settings = { sound: true, quality: 'auto', shadows: true, impostors: false }, titleEl, last = 0, saveT = 0, orbit = 0.4, saveFailed = false;
+  var ema = 0.016, slowT = 0, prCap = 2, budget = 3200, qOpts = { detail: 1.5, shadows: true, impostors: false, farScale: 1.15 };
+  var QUAL = {
+    low: { pr: 1.0, budget: 600, detail: 1.0, shadows: false, impostors: true, farScale: 0.85 },
+    med: { pr: 1.5, budget: 1800, detail: 1.25, shadows: true, impostors: false, farScale: 1.0 },
+    high: { pr: 2.0, budget: 3600, detail: 1.5, shadows: true, impostors: false, farScale: 1.25 },
+    ultra: { pr: 2.5, budget: 8000, detail: 1.8, shadows: true, impostors: false, farScale: 1.6 }
+  };
+  var QUAL_LABELS = { auto: 'Auto', low: 'Low', med: 'Medium', high: 'High', ultra: 'Ultra' };
 
   // ---------------------------------------------------------------- storage (localStorage may be blocked)
   function sget(k) {
@@ -44,7 +51,18 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   Main.saveSettings = function () { settings.sound = Z.Audio.enabled(); if (UI.PlayTimer && UI.PlayTimer.hudVisible) settings.timerHud = UI.PlayTimer.hudVisible(); sset(SET_KEY, JSON.stringify(settings)); };
   Main.setTimerHud = function (on) { settings.timerHud = !!on; Main.saveSettings(); };
-  function loadSettings() { try { var s = JSON.parse(sget(SET_KEY) || '{}'); if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality; if (s.sound === false) settings.sound = false; if (s.timerHud === false) settings.timerHud = false; else if (s.timerHud === true) settings.timerHud = true; } catch (e) { } Z.Audio.setEnabled(settings.sound); if (settings.timerHud === false && UI.PlayTimer && UI.PlayTimer.setHudVisible) UI.PlayTimer.setHudVisible(false, true); }
+  function loadSettings() {
+    try {
+      var s = JSON.parse(sget(SET_KEY) || '{}');
+      if (QUAL[s.quality] || s.quality === 'auto') settings.quality = s.quality;
+      if (s.sound === false) settings.sound = false;
+      if (typeof s.shadows === 'boolean') settings.shadows = s.shadows;
+      if (typeof s.impostors === 'boolean') settings.impostors = s.impostors;
+      if (s.timerHud === false) settings.timerHud = false; else if (s.timerHud === true) settings.timerHud = true;
+    } catch (e) { }
+    Z.Audio.setEnabled(settings.sound);
+    if (settings.timerHud === false && UI.PlayTimer && UI.PlayTimer.setHudVisible) UI.PlayTimer.setHudVisible(false, true);
+  }
   function saveNotice(ok) {
     if (!ok && !saveFailed) { saveFailed = true; UI.toast('Saving failed. Export a backup in Settings before closing.', 'bad'); }
     if (ok) saveFailed = false;
@@ -84,13 +102,40 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ---------------------------------------------------------------- quality
   Main.getQuality = function () { return settings.quality; };
-  Main.setQuality = function (q) {
-    settings.quality = q; sset(SET_KEY, JSON.stringify(settings)); ema = 0.016; slowT = 0;
-    if (q === 'auto') { var dpr = window.devicePixelRatio || 1; prCap = Math.min(dpr, UI.touch() ? 1.5 : 2); budget = UI.touch() ? 340 : 520; }
-    else { prCap = QUAL[q][0]; budget = QUAL[q][1]; }
+  Main.setQuality = function (q, preserveToggles) {
+    if (!QUAL[q] && q !== 'auto') q = 'auto';
+    settings.quality = q; ema = 0.016; slowT = 0;
+    if (q === 'auto') {
+      var dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      var touch = UI.touch ? UI.touch() : false;
+      prCap = Math.min(dpr, touch ? 1.5 : 2);
+      budget = touch ? 1800 : 3200;
+      if (!preserveToggles) { settings.shadows = true; settings.impostors = false; }
+      qOpts = { detail: touch ? 1.25 : 1.5, shadows: settings.shadows !== false, impostors: !!settings.impostors, farScale: 1.15 };
+    } else {
+      var p = QUAL[q];
+      prCap = p.pr; budget = p.budget;
+      if (!preserveToggles) { settings.shadows = p.shadows; settings.impostors = p.impostors; }
+      qOpts = { detail: p.detail, shadows: settings.shadows !== false, impostors: !!settings.impostors, farScale: p.farScale };
+    }
+    sset(SET_KEY, JSON.stringify(settings));
     applyQuality();
   };
-  function applyQuality() { if (Z.World.setQuality) Z.World.setQuality(prCap, budget); else Z.World.resize(); }
+  Main.getGraphicsSettings = function () {
+    return { quality: settings.quality, shadows: settings.shadows !== false, impostors: !!settings.impostors, detail: qOpts.detail, farScale: qOpts.farScale, budget: budget, prCap: prCap };
+  };
+  Main.setGraphicsSetting = function (key, val) {
+    if (key === 'shadows') { settings.shadows = !!val; qOpts.shadows = settings.shadows; }
+    else if (key === 'impostors') { settings.impostors = !!val; qOpts.impostors = settings.impostors; }
+    else return;
+    sset(SET_KEY, JSON.stringify(settings));
+    applyQuality();
+  };
+  function applyQuality() {
+    if (Z.World.setQuality) Z.World.setQuality(prCap, budget, qOpts);
+    else if (Z.World.resize) Z.World.resize();
+    if (UI.updateGfxBadge) UI.updateGfxBadge();
+  }
 
   // ---------------------------------------------------------------- demo zoo for the title backdrop
   function buildDemo() {
@@ -137,6 +182,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     tb.appendChild(h('button.btn.alt', { html: ic('gear') + 'Park setup', on: { click: function () { UI.snd('unlock'); UI.snd('click'); Main.openSetup(); } } }));
     titleEl.appendChild(tb);
     var backups = h('div.tb');
+    var qOrder = ['auto', 'med', 'high', 'ultra', 'low'];
+    var gfxBtn = h('button.btn.sm.alt', { html: ic('gear') + 'Graphics: ' + (QUAL_LABELS[settings.quality] || 'Auto'), on: { click: function () {
+      UI.snd('click');
+      var idx = qOrder.indexOf(settings.quality);
+      var next = qOrder[(idx + 1) % qOrder.length];
+      Main.setQuality(next);
+      gfxBtn.innerHTML = ic('gear') + 'Graphics: ' + (QUAL_LABELS[next] || 'Auto');
+    } } });
+    backups.appendChild(gfxBtn);
     if (has) backups.appendChild(h('button.btn.sm.alt', { text: 'Export save', on: { click: Main.exportSave } }));
     backups.appendChild(h('button.btn.sm.alt', { text: 'Import save', on: { click: Main.chooseImport } }));
     titleEl.appendChild(backups);
@@ -299,7 +353,18 @@ window.Z = window.Z || {}; var Z = window.Z;
     // adaptive quality
     ema += (Math.min(raw, 0.25) - ema) * 0.05;
     if (settings.quality === 'auto' && Z.World.setQuality) {
-      if (ema > 0.042) { slowT += raw; if (slowT > 2.5) { slowT = 0; if (prCap > 0.7) { prCap = Math.max(0.65, prCap * 0.8); budget = Math.max(140, budget - 40); applyQuality(); ema = 0.03; } } } else slowT = Math.max(0, slowT - raw * 0.5);
+      if (ema > 0.042) {
+        slowT += raw;
+        if (slowT > 2.5) {
+          slowT = 0;
+          if (prCap > 0.85 || budget > 1200) {
+            prCap = Math.max(0.85, prCap * 0.85);
+            budget = Math.max(1200, budget - 200);
+            qOpts.impostors = !!settings.impostors;
+            applyQuality(); ema = 0.03;
+          }
+        }
+      } else slowT = Math.max(0, slowT - raw * 0.5);
     }
   }
 
@@ -311,7 +376,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       Z.World.init(cont);
       UI.init();
       loadSettings();
-      Main.setQuality(settings.quality);
+      Main.setQuality(settings.quality, true);
       Z.bus.emit('reset');
       Main.showTitle();
     } catch (e) { console.error('boot failed', e); var b = document.getElementById('boot'); if (b) b.innerHTML = '<div class="boot-in"><div class="boot-logo">Something went wrong</div><div class="boot-sub">' + String(e && e.message || e) + '</div></div>'; return; }

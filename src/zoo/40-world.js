@@ -108,6 +108,22 @@ MB.prototype.addGeo = function (geo, mat, col, vary) {
     this.i.push(i0, i1, i2);
   }
 };
+MB.prototype.addSmoothGeo = function (geo, mat, col, vary) {
+  var g = geo.index ? geo.toNonIndexed() : geo;
+  var pa = g.attributes.position, na = g.attributes.normal, cnt = pa.count;
+  var nm = new THREE.Matrix3().getNormalMatrix(mat);
+  var v = new THREE.Vector3(), n = new THREE.Vector3();
+  for (var t = 0; t < cnt; t += 3) {
+    var ids = [];
+    for (var k = 0; k < 3; k++) {
+      v.fromBufferAttribute(pa, t + k).applyMatrix4(mat);
+      if (na) n.fromBufferAttribute(na, t + k).applyMatrix3(nm).normalize(); else n.set(0, 1, 0);
+      var vk = vary ? vary(v, n) : clamp(0.90 + 0.12 * n.y, 0.78, 1.04);
+      ids.push(this.vtx(v.x, v.y, v.z, n.x, n.y, n.z, [col[0] * vk, col[1] * vk, col[2] * vk], 0, 0));
+    }
+    this.i.push(ids[0], ids[1], ids[2]);
+  }
+};
 MB.prototype.geometry = function () {
   var g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.p), 3));
@@ -122,7 +138,7 @@ MB.prototype.geometry = function () {
 MB.prototype.empty = function () { return this.i.length === 0; };
 
 /* ------------------------------------------------------------- global state */
-var G = { inited: false, t: 0, frameNo: 0, time: 0.5, daylight: 1, night: 0, sunE: 1, speed: 1 };
+var G = { inited: false, t: 0, frameNo: 0, time: 0.5, daylight: 1, night: 0, sunE: 1, speed: 1, shadows: true, detail: 2, impostors: false };
 var renderer, scene, camera, root;
 var maxAniso = 4;
 var TEX = {};
@@ -279,7 +295,14 @@ function skyAt(t) {
   for (var c = 0; c < 3; c++) { A.zen[c] = lerp(a.z[c], b.z[c], f); A.hor[c] = lerp(a.h[c], b.h[c], f); }
   for (c = 0; c < 3; c++) { A.zenL[c] = SRGB ? s2l(A.zen[c]) : A.zen[c]; A.horL[c] = SRGB ? s2l(A.hor[c]) : A.hor[c]; }
 }
-var _tmpC = new THREE.Color();
+var _tmpC = new THREE.Color(), _zero = new THREE.Vector3();
+function updateSunTarget() {
+  if (!sunL || !sunDir) return;
+  var tx = (typeof view !== 'undefined' && view && isFin(view.x)) ? view.x : W / 2;
+  var tz = (typeof view !== 'undefined' && view && isFin(view.z)) ? view.z : W / 2;
+  if (sunL.target) { sunL.target.position.set(tx, 0, tz); sunL.target.updateMatrixWorld(); }
+  sunL.position.copy(sunDir).multiplyScalar(100).add(sunL.target ? sunL.target.position : _zero);
+}
 function updateAtmosphere() {
   var s = Z.state, t = s && typeof s.time === 'number' ? s.time : 0.5;
   t = t - Math.floor(t);
@@ -304,8 +327,9 @@ function updateAtmosphere() {
   // fog follows horizon
   scene.fog.color.setRGB(A.horL[0] * 0.96, A.horL[1] * 0.96, A.horL[2] * 0.96);
   // sun & moon
-  sunL.position.copy(sunDir).multiplyScalar(100);
-  sunL.intensity = 0.58 * sstep(-0.03, 0.22, e);
+  updateSunTarget();
+  sunL.castShadow = !!G.shadows && e > -0.02;
+  sunL.intensity = (G.shadows ? 0.68 : 0.58) * sstep(-0.03, 0.22, e);
   var sc = mix3([1, 0.62, 0.36], [1, 0.95, 0.84], sstep(0.02, 0.5, e));
   sunL.color.setRGB(SRGB ? s2l(sc[0]) : sc[0], SRGB ? s2l(sc[1]) : sc[1], SRGB ? s2l(sc[2]) : sc[2]);
   moonL.position.copy(moonDir).multiplyScalar(100);
@@ -317,9 +341,9 @@ function updateAtmosphere() {
   hemi.color.setRGB(hc[0], hc[1], hc[2]);
   var gc = mix3([0.18, 0.2, 0.26], [0.52, 0.55, 0.42], dayK);
   hemi.groundColor.setRGB(gc[0], gc[1], gc[2]);
-  hemi.intensity = lerp(0.9, 0.62, dayK);
+  hemi.intensity = lerp(0.9, 0.64, dayK);
   // blob shadow strength
-  MAT.shadow.opacity = 0.18 + 0.5 * sstep(0.0, 0.35, e);
+  MAT.shadow.opacity = (0.18 + 0.5 * sstep(0.0, 0.35, e)) * (G.shadows ? 0.38 : 1.0);
   // water
   if (MAT.water) {
     var w = MAT.water.uniforms;
@@ -557,6 +581,10 @@ function init(container) {
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.outputEncoding = SRGB ? THREE.sRGBEncoding : THREE.LinearEncoding;
   renderer.setClearColor(0x8fb6d8, 1);
+  if (renderer.shadowMap) {
+    renderer.shadowMap.enabled = !!G.shadows;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  }
   maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1);
   var dom = renderer.domElement;
   dom.style.display = 'block'; dom.style.width = '100%'; dom.style.height = '100%'; dom.style.touchAction = 'none';
@@ -569,7 +597,17 @@ function init(container) {
   camera = new THREE.PerspectiveCamera(42, 1, 0.5, 1100);
   root = new THREE.Group(); scene.add(root);
   sunDir = new THREE.Vector3(0, 1, 0); moonDir = new THREE.Vector3(0, -1, 0);
-  sunL = new THREE.DirectionalLight(0xffffff, 1); scene.add(sunL);
+  sunL = new THREE.DirectionalLight(0xffffff, 1);
+  sunL.castShadow = !!G.shadows;
+  if (sunL.shadow) {
+    sunL.shadow.mapSize.width = 2048; sunL.shadow.mapSize.height = 2048;
+    sunL.shadow.camera.near = 10; sunL.shadow.camera.far = 260;
+    var sd = 75;
+    sunL.shadow.camera.left = -sd; sunL.shadow.camera.right = sd; sunL.shadow.camera.top = sd; sunL.shadow.camera.bottom = -sd;
+    sunL.shadow.bias = -0.0008;
+  }
+  scene.add(sunL);
+  scene.add(sunL.target);
   moonL = new THREE.DirectionalLight(0x8fa8ff, 0); scene.add(moonL);
   hemi = new THREE.HemisphereLight(0xaaccff, 0x556644, 0.7); scene.add(hemi);
   buildMaterials();
@@ -666,6 +704,7 @@ function buildTerrain() {
   tGeo.boundingBox = new THREE.Box3(new THREE.Vector3(0, -3, 0), new THREE.Vector3(W, 8, W));
   tMesh = new THREE.Mesh(tGeo, MAT.terrain);
   tMesh.frustumCulled = false;
+  tMesh.receiveShadow = true;
   root.add(tMesh);
   for (b = 0; b < S2; b++) for (a = 0; a < S2; a++) {
     var q = a + b * S2;
@@ -1415,6 +1454,7 @@ function buildPathChunk(ci, cj) {
   }
   if (!any) return;
   var m = new THREE.Mesh(mb.geometry(), MAT.path);
+  m.receiveShadow = true;
   pathMeshes[key] = m; pathGroup.add(m);
 }
 
@@ -1562,9 +1602,9 @@ function buildFenceChunk(ci, cj) {
   }
   if (!any) return;
   var meshes = [];
-  if (!set.solid.empty()) { var m1 = new THREE.Mesh(set.solid.geometry(), MAT.solid); meshes.push(m1); }
-  if (!set.chain.empty()) { var m2 = new THREE.Mesh(set.chain.geometry(), MAT.chain); m2.renderOrder = 3; meshes.push(m2); }
-  if (!set.glass.empty()) { var m3 = new THREE.Mesh(set.glass.geometry(), MAT.glass); m3.renderOrder = 4; meshes.push(m3); }
+  if (!set.solid.empty()) { var m1 = new THREE.Mesh(set.solid.geometry(), MAT.solid); m1.castShadow = true; m1.receiveShadow = true; meshes.push(m1); }
+  if (!set.chain.empty()) { var m2 = new THREE.Mesh(set.chain.geometry(), MAT.chain); m2.renderOrder = 3; m2.receiveShadow = true; meshes.push(m2); }
+  if (!set.glass.empty()) { var m3 = new THREE.Mesh(set.glass.geometry(), MAT.glass); m3.renderOrder = 4; m3.receiveShadow = true; meshes.push(m3); }
   meshes.forEach(function (m) { fenceGroup.add(m); });
   fenceMeshes[key] = meshes;
 }
@@ -1624,11 +1664,13 @@ function rebuildCageRoofs() {
   if (!any) return;
   if (!solidMB.empty()) {
     var bm = new THREE.Mesh(solidMB.geometry(), MAT.solid);
+    bm.castShadow = true; bm.receiveShadow = true;
     cageRoofGroup.add(bm);
   }
   if (!meshMB.empty()) {
     var rm = new THREE.Mesh(meshMB.geometry(), MAT.chainRoof);
     rm.renderOrder = 3;
+    rm.receiveShadow = true;
     cageRoofGroup.add(rm);
   }
 }
@@ -1648,8 +1690,12 @@ function fbCone(g, r, h, hex, x, y, z) {
   m.scale.set(r, h, r); m.position.set(x, y, z); g.add(m); return m;
 }
 function fbBall(g, r, hex, x, y, z) {
-  var m = new THREE.Mesh(fbGeos.ball || (fbGeos.ball = new THREE.IcosahedronGeometry(1, 1)), fbMat(hex));
+  var m = new THREE.Mesh(fbGeos.ball || (fbGeos.ball = new THREE.SphereGeometry(1, 10, 8)), fbMat(hex));
   m.scale.setScalar(r); m.position.set(x, y, z); g.add(m); return m;
+}
+function fbCapsule(g, rx, ry, rz, hex, x, y, z) {
+  var m = new THREE.Mesh(fbGeos.ball || (fbGeos.ball = new THREE.SphereGeometry(1, 10, 8)), fbMat(hex));
+  m.scale.set(rx, ry, rz); m.position.set(x, y, z); g.add(m); return m;
 }
 function hashHex(str, l) {
   var h = 0; for (var k = 0; k < str.length; k++) h = (h * 31 + str.charCodeAt(k)) | 0;
@@ -1674,18 +1720,36 @@ function fallbackBuilding(id) {
 }
 function fallbackAnimal(sp, opts) {
   var g = new THREE.Group(), m = findIn(D.animals, sp) || { size: 1 }, s = (m.size || 1) * (opts && opts.baby ? 0.5 : 1), col = hashHex(sp, 0.5);
-  fbBox(g, s * 0.5, s * 0.5, s * 1.1, col, 0, s * 0.8, 0); fbBox(g, s * 0.3, s * 0.3, s * 0.35, col, 0, s * 1.05, s * 0.65);
-  fbBox(g, s * 0.4, s * 0.55, s * 0.9, col, 0, s * 0.28, 0);
+  fbCapsule(g, s * 0.28, s * 0.28, s * 0.54, col, 0, s * 0.72, 0);
+  fbCapsule(g, s * 0.16, s * 0.20, s * 0.16, col, 0, s * 0.96, s * 0.42);
+  fbCapsule(g, s * 0.17, s * 0.16, s * 0.22, col, 0, s * 1.05, s * 0.56);
+  fbCapsule(g, s * 0.11, s * 0.10, s * 0.14, col, 0, s * 1.01, s * 0.72);
+  fbCapsule(g, s * 0.07, s * 0.08, s * 0.34, col, 0, s * 0.68, -s * 0.66);
+  fbCapsule(g, s * 0.09, s * 0.28, s * 0.09, col, s * 0.16, s * 0.28, s * 0.26);
+  fbCapsule(g, s * 0.09, s * 0.28, s * 0.09, col, -s * 0.16, s * 0.28, s * 0.26);
+  fbCapsule(g, s * 0.09, s * 0.28, s * 0.09, col, s * 0.16, s * 0.28, -s * 0.28);
+  fbCapsule(g, s * 0.09, s * 0.28, s * 0.09, col, -s * 0.16, s * 0.28, -s * 0.28);
   return { group: g, update: function () { }, height: s * 1.3 };
 }
 function fallbackGuest(seed) {
   var g = new THREE.Group(), col = hashHex('g' + seed, 0.5);
-  fbBox(g, 0.4, 0.7, 0.28, col, 0, 0.85, 0); fbBox(g, 0.3, 0.7, 0.24, '#33384a', 0, 0.35, 0); fbBall(g, 0.16, '#e8b88a', 0, 1.4, 0);
-  return { group: g, update: function () { }, height: 1.6 };
+  fbCapsule(g, 0.21, 0.32, 0.13, col, 0, 1.06, 0);
+  fbCapsule(g, 0.08, 0.36, 0.09, '#33384a', 0.09, 0.38, 0);
+  fbCapsule(g, 0.08, 0.36, 0.09, '#33384a', -0.09, 0.38, 0);
+  fbCapsule(g, 0.05, 0.26, 0.05, col, 0.25, 1.08, 0);
+  fbCapsule(g, 0.05, 0.26, 0.05, col, -0.25, 1.08, 0);
+  fbBall(g, 0.16, '#e8b88a', 0, 1.54, 0);
+  return { group: g, update: function () { }, height: 1.7 };
 }
 function fallbackStaff(type) {
   var g = new THREE.Group(), col = hashHex('s' + type, 0.4);
-  fbBox(g, 0.45, 0.75, 0.3, col, 0, 0.9, 0); fbBox(g, 0.32, 0.7, 0.26, '#33384a', 0, 0.35, 0); fbBall(g, 0.17, '#e8b88a', 0, 1.5, 0);
+  fbCapsule(g, 0.22, 0.34, 0.14, col, 0, 1.08, 0);
+  fbCapsule(g, 0.085, 0.37, 0.095, '#33384a', 0.095, 0.38, 0);
+  fbCapsule(g, 0.085, 0.37, 0.095, '#33384a', -0.095, 0.38, 0);
+  fbCapsule(g, 0.055, 0.27, 0.055, col, 0.26, 1.10, 0);
+  fbCapsule(g, 0.055, 0.27, 0.055, col, -0.26, 1.10, 0);
+  fbBall(g, 0.17, '#e8b88a', 0, 1.56, 0);
+  fbCapsule(g, 0.24, 0.04, 0.24, col, 0, 1.70, 0);
   return { group: g, update: function () { }, height: 1.75 };
 }
 function M() { return Z.Models || {}; }
@@ -1762,6 +1826,15 @@ function removeRec(rec) {
 }
 // buildings stand on the highest corner of their (nearly flat) footprint, with a stone foundation filling the gap
 var skirtMat = null, skirtGeo = null;
+function enableShadows(obj, cast, recv) {
+  if (!obj) return;
+  obj.traverse(function (o) {
+    if (o.isMesh) {
+      if (cast !== undefined) o.castShadow = cast;
+      if (recv !== undefined) o.receiveShadow = recv;
+    }
+  });
+}
 function placeBuilding(rec) {
   var o = rec.obj, base = footBase(o.i, o.j, rec.w, rec.h), low = footLow(o.i, o.j, rec.w, rec.h);
   rec.y = base; rec.group.position.y = base;
@@ -1770,6 +1843,7 @@ function placeBuilding(rec) {
     if (!skirtGeo) { skirtGeo = new THREE.BoxGeometry(1, 1, 1); skirtMat = new THREE.MeshLambertMaterial({ color: tcol('#8e877a') }); }
     var hgt = base - low + 0.35, m = new THREE.Mesh(skirtGeo, skirtMat);
     m.scale.set(rec.w * T + 0.12, hgt, rec.h * T + 0.12); m.position.set(rec.x, base - hgt / 2 - 0.01, rec.z);
+    m.castShadow = true; m.receiveShadow = true;
     objGroup.add(m); rec.skirt = m;
   }
 }
@@ -1806,6 +1880,7 @@ function syncObjects() {
       rec.w = w; rec.h = h;
       rec.x = (o.i + w / 2) * T; rec.z = (o.j + h / 2) * T; rec.y = 0;
       var g = makeBuildingGroup(o.type);
+      enableShadows(g, true, true);
       g.position.set(rec.x, 0, rec.z); g.rotation.y = rot * PI / 2;
       objGroup.add(g); rec.group = g;
       placeBuilding(rec);
@@ -1828,6 +1903,7 @@ function syncObjects() {
       if (inst) { rec.inst = inst; poolsDirty = true; }
       else {
         var g2 = makeSceneryGroup(o.type);
+        enableShadows(g2, !(o.type === 'flower_bed' || o.type === 'tall_grass'), true);
         g2.position.set(rec.x, rec.y, rec.z); g2.rotation.y = rec.rot; g2.scale.multiplyScalar(rec.sc);
         objGroup.add(g2); rec.group = g2;
         if (g2.userData && typeof g2.userData.update === 'function') rec.upd = g2.userData.update;
@@ -1871,6 +1947,7 @@ function rebuildPools() {
       var mesh = new THREE.InstancedMesh(inst.geometry, inst.material, cap);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.setColorAt(0, new THREE.Color(1, 1, 1));
       mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      mesh.castShadow = true; mesh.receiveShadow = true;
       mesh.frustumCulled = false; root.add(mesh);
       p = pools[type] = { mesh: mesh, cap: cap, count: 0 };
     }
@@ -1938,12 +2015,56 @@ function updateLamps(dt) {
 /* ----------------------------------------------------------- entity system */
 var ents = { animal: new Map(), guest: new Map(), staff: new Map() };
 var entGroup, entShMesh, entShCap = 0, bubbleList = [], MAXB = 12;
-var impG, impH, impA, visList = [], MESH_BUDGET = 200;
+var impG, impH, impA, visList = [], MESH_BUDGET = 2400, IMPOSTORS_ON = false;
 var KIND_ARR = { animal: 'animals', guest: 'guests', staff: 'staff' };
 function mkImp(geo, mat, cap) {
   var im = new THREE.InstancedMesh(geo, mat, cap);
   im.setColorAt(0, new THREE.Color(1, 1, 1));
-  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false; im.count = 0; root.add(im); return im;
+  im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); im.frustumCulled = false;
+  im.castShadow = true; im.receiveShadow = true; im.count = 0; root.add(im); return im;
+}
+function addPartGeo(mb, geo, sx, sy, sz, px, py, pz, rx, col) {
+  var m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(rx || 0, 0, 0);
+  q.setFromEuler(e); m.compose(new THREE.Vector3(px, py, pz), q, new THREE.Vector3(sx, sy, sz));
+  mb.addSmoothGeo(geo, m, col);
+}
+function buildGuestImpostorGeo() {
+  var mbB = new MB(), mbH = new MB();
+  var legC = [0.58, 0.58, 0.62], shoeC = [0.32, 0.32, 0.36], torsoC = [1, 1, 1], neckC = [0.92, 0.84, 0.78];
+  var sph = new THREE.SphereGeometry(1, 10, 7);
+  var legCyl = new THREE.CylinderGeometry(0.085, 0.062, 0.74, 8), torCyl = new THREE.CylinderGeometry(0.21, 0.17, 0.56, 10);
+  var armCyl = new THREE.CylinderGeometry(0.056, 0.04, 0.54, 8), neckCyl = new THREE.CylinderGeometry(0.056, 0.068, 0.12, 8);
+  addPartGeo(mbB, sph, 0.075, 0.048, 0.125, 0.10, 0.048, 0.04, 0, shoeC);
+  addPartGeo(mbB, sph, 0.075, 0.048, 0.125, -0.10, 0.048, 0.04, 0, shoeC);
+  addPartGeo(mbB, legCyl, 1, 1, 1, 0.10, 0.41, 0, 0, legC);
+  addPartGeo(mbB, legCyl, 1, 1, 1, -0.10, 0.41, 0, 0, legC);
+  addPartGeo(mbB, sph, 0.21, 0.12, 0.14, 0, 0.78, 0, 0, [0.65, 0.65, 0.68]);
+  addPartGeo(mbB, torCyl, 1.05, 1.0, 0.66, 0, 1.08, 0, 0, torsoC);
+  addPartGeo(mbB, sph, 0.25, 0.10, 0.14, 0, 1.34, 0, 0, torsoC);
+  addPartGeo(mbB, armCyl, 1, 1, 1, 0.26, 1.08, 0, 0, [0.95, 0.95, 0.95]);
+  addPartGeo(mbB, armCyl, 1, 1, 1, -0.26, 1.08, 0, 0, [0.95, 0.95, 0.95]);
+  addPartGeo(mbB, neckCyl, 1, 1, 1, 0, 1.43, 0, 0, neckC);
+  var hairGeo = new THREE.SphereGeometry(0.174, 10, 6, 0, TAU, 0, PI * 0.56);
+  addPartGeo(mbH, sph, 0.158, 0.172, 0.16, 0, 1.59, 0, 0, [0.92, 0.74, 0.58]);
+  addPartGeo(mbH, hairGeo, 1, 1, 1, 0, 1.61, -0.01, 0, [0.35, 0.25, 0.18]);
+  return { body: mbB.geometry(), head: mbH.geometry() };
+}
+function buildAnimalImpostorGeo() {
+  var mb = new MB();
+  var sph = new THREE.SphereGeometry(1, 12, 8), legCyl = new THREE.CylinderGeometry(0.068, 0.044, 0.48, 8);
+  var neckCyl = new THREE.CylinderGeometry(0.10, 0.16, 0.34, 8), tailCyl = new THREE.CylinderGeometry(0.02, 0.075, 0.42, 7);
+  addPartGeo(mb, sph, 0.25, 0.24, 0.38, 0, 0.56, -0.02, 0, [1, 1, 1]);
+  addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.58, 0.18, 0, [0.96, 0.96, 0.96]);
+  addPartGeo(mb, sph, 0.22, 0.22, 0.20, 0, 0.53, -0.22, 0, [0.95, 0.95, 0.95]);
+  addPartGeo(mb, neckCyl, 1, 1, 1, 0, 0.72, 0.31, 0.65, [0.96, 0.96, 0.96]);
+  addPartGeo(mb, sph, 0.12, 0.12, 0.16, 0, 0.87, 0.43, 0, [0.95, 0.95, 0.95]);
+  addPartGeo(mb, sph, 0.08, 0.08, 0.11, 0, 0.83, 0.54, 0, [0.92, 0.92, 0.92]);
+  addPartGeo(mb, legCyl, 1, 1, 1, 0.14, 0.24, 0.18, 0, [0.84, 0.84, 0.84]);
+  addPartGeo(mb, legCyl, 1, 1, 1, -0.14, 0.24, 0.18, 0, [0.84, 0.84, 0.84]);
+  addPartGeo(mb, legCyl, 1, 1, 1, 0.14, 0.24, -0.22, 0, [0.84, 0.84, 0.84]);
+  addPartGeo(mb, legCyl, 1, 1, 1, -0.14, 0.24, -0.22, 0, [0.84, 0.84, 0.84]);
+  addPartGeo(mb, tailCyl, 1, 1, 1, 0, 0.52, -0.46, -1.05, [0.88, 0.88, 0.88]);
+  return mb.geometry();
 }
 function buildEntitySystem() {
   entGroup = new THREE.Group(); root.add(entGroup);
@@ -1951,13 +2072,11 @@ function buildEntitySystem() {
   entShMesh = new THREE.InstancedMesh(G.shGeo, MAT.shadow, entShCap);
   entShMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); entShMesh.frustumCulled = false; entShMesh.renderOrder = 1; entShMesh.count = 0;
   root.add(entShMesh);
-  // cheap far-away impostors (keep draw calls bounded in a busy zoo)
-  var bg = new THREE.CylinderGeometry(0.2, 0.26, 1, 6); bg.translate(0, 0.5, 0);
-  var hg = new THREE.IcosahedronGeometry(0.17, 0); hg.translate(0, 1, 0);
-  var ag = new THREE.BoxGeometry(1, 1, 1); ag.translate(0, 0.5, 0);
-  impG = mkImp(bg, new THREE.MeshLambertMaterial({ color: 0xffffff }), 600);
-  impH = mkImp(hg, new THREE.MeshLambertMaterial({ color: tcol('#e3b48c') }), 600);
-  impA = mkImp(ag, new THREE.MeshLambertMaterial({ color: 0xffffff }), 300);
+  // sculpted organic silhouettes for distant impostors (only used if enabled)
+  var gGeo = buildGuestImpostorGeo(), aGeo = buildAnimalImpostorGeo();
+  impG = mkImp(gGeo.body, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
+  impH = mkImp(gGeo.head, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 600);
+  impA = mkImp(aGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), 300);
 }
 function makeVis(kind, e) {
   var v = null;
@@ -1982,6 +2101,7 @@ function addEnt(kind, e) {
   var c = new THREE.Color().setHSL((((colSeed >>> 0) % 360) / 360), kind === 'animal' ? 0.32 : 0.55, kind === 'animal' ? 0.46 : 0.5);
   if (kind === 'animal') { var ac = avgColour(v.group); if (ac) c = ac; }
   var rec = { kind: kind, id: e.id, ent: e, vis: v, group: v.group, h: fin(e.heading, 0), baby: !!e.baby, acc: 0, phase: (e.id | 0) % 3, ht: ht, rad: rad, bad: false, fresh: true, stamp: 0, thought: null, cat: 'happy', mc: Math.max(1, mc), sz: (am && am.size) || 1, len: (am && am.length) || 0, col: c, imp: false, d2: 0, gy: 0 };
+  enableShadows(v.group, true, true);
   v.group.position.set(fin(e.x, 0), 0, fin(e.z, 0));
   entGroup.add(v.group);
   ents[kind].set(e.id, rec);
@@ -2011,7 +2131,7 @@ function removeEnt(kind, id) {
 function clearEnts() { ['animal', 'guest', 'staff'].forEach(function (k) { ents[k].forEach(function (r) { entGroup.remove(r.group); }); ents[k].clear(); }); }
 
 var _sph = new THREE.Sphere(), _fr = new THREE.Frustum(), _vp = new THREE.Matrix4();
-var FAR = { animal: 260, guest: 130, staff: 170 }, UPD_FAR = { animal: 110, guest: 70, staff: 80 };
+var FAR = { animal: 340, guest: 200, staff: 240 }, UPD_FAR = { animal: 130, guest: 85, staff: 95 };
 function cmpFar(a, b) { return b.score - a.score; }
 function updateEntities(dt, dtGame) {
   var s = Z.state; if (!s) return;
@@ -2049,7 +2169,7 @@ function updateEntities(dt, dtGame) {
         rec.gy = gy + alt; rec.gy0 = gy;
       }
       rec.wl = wl;
-      rec.score = kind === 'animal' ? d2 * 0.35 : d2;
+      rec.score = kind === 'animal' ? d2 * 0.15 : d2;
       visList.push(rec); totalMc += rec.mc;
     }
     if (map.size > arr.length || (G.frameNo % 30) === 0) {
@@ -2058,11 +2178,15 @@ function updateEntities(dt, dtGame) {
       if (stale) for (var q = 0; q < stale.length; q++) removeEnt(kind, stale[q]);
     }
   }
-  // pass 2: budget governor - farthest entities become cheap impostors
+  // pass 2: budget governor - farthest entities become sculpted impostors (only if IMPOSTORS_ON && beyond close threshold)
   var nG = 0, nA = 0, n = visList.length;
-  if (totalMc > MESH_BUDGET) {
+  if (IMPOSTORS_ON && totalMc > MESH_BUDGET) {
     visList.sort(cmpFar);
-    for (k = 0; k < n && totalMc > MESH_BUDGET; k++) { visList[k].imp = true; totalMc -= visList[k].mc - 0.02; }
+    for (k = 0; k < n && totalMc > MESH_BUDGET; k++) {
+      var vr = visList[k];
+      if (vr.d2 < (vr.kind === 'animal' ? 140 * 140 : 85 * 85)) continue;
+      vr.imp = true; totalMc -= vr.mc - 0.02;
+    }
   }
   // pass 3: animate real ones, write impostors/shadows
   var nsh = 0, ga = impG.instanceMatrix.array, gc = impG.instanceColor.array, ha = impH.instanceMatrix.array, aa = impA.instanceMatrix.array, ac = impA.instanceColor.array;
@@ -2085,17 +2209,16 @@ function updateEntities(dt, dtGame) {
       var c = Math.cos(rec.h), sn = Math.sin(rec.h), b;
       if (rec.kind === 'animal') {
         if (nA < 300) {
-          b = nA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.55 + 0.15, hh = sz * 0.75 + 0.1, l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.85 : sz * 1.15) + 0.3;
+          b = nA * 16; var sz = rec.sz * (e.baby ? 0.55 : 1), w = sz * 0.85 + 0.2, hh = Math.max(rec.ht, sz * 0.85 + 0.15), l = (rec.len ? rec.len * (e.baby ? 0.55 : 1) * 0.95 : sz * 1.25) + 0.3;
           aa[b] = c * w; aa[b + 1] = 0; aa[b + 2] = -sn * w; aa[b + 3] = 0; aa[b + 4] = 0; aa[b + 5] = hh; aa[b + 6] = 0; aa[b + 7] = 0;
-          aa[b + 8] = sn * l; aa[b + 9] = 0; aa[b + 10] = c * l; aa[b + 11] = 0; aa[b + 12] = x2; aa[b + 13] = gy2 + sz * 0.3; aa[b + 14] = z2; aa[b + 15] = 1;
+          aa[b + 8] = sn * l; aa[b + 9] = 0; aa[b + 10] = c * l; aa[b + 11] = 0; aa[b + 12] = x2; aa[b + 13] = gy2; aa[b + 14] = z2; aa[b + 15] = 1;
           ac[nA * 3] = rec.col.r; ac[nA * 3 + 1] = rec.col.g; ac[nA * 3 + 2] = rec.col.b; nA++;
         }
       } else if (nG < 600) {
-        var hs = rec.ht / 1.7; b = nG * 16;
-        ga[b] = hs; ga[b + 1] = 0; ga[b + 2] = 0; ga[b + 3] = 0; ga[b + 4] = 0; ga[b + 5] = 1.1 * hs; ga[b + 6] = 0; ga[b + 7] = 0;
-        ga[b + 8] = 0; ga[b + 9] = 0; ga[b + 10] = hs; ga[b + 11] = 0; ga[b + 12] = x2; ga[b + 13] = gy2; ga[b + 14] = z2; ga[b + 15] = 1;
-        ha[b] = hs; ha[b + 1] = 0; ha[b + 2] = 0; ha[b + 3] = 0; ha[b + 4] = 0; ha[b + 5] = 1.1 * hs; ha[b + 6] = 0; ha[b + 7] = 0;
-        ha[b + 8] = 0; ha[b + 9] = 0; ha[b + 10] = hs; ha[b + 11] = 0; ha[b + 12] = x2; ha[b + 13] = gy2 + 0.15 * hs; ha[b + 14] = z2; ha[b + 15] = 1;
+        var hs = rec.ht / 1.75; b = nG * 16;
+        ga[b] = c * hs; ga[b + 1] = 0; ga[b + 2] = -sn * hs; ga[b + 3] = 0; ga[b + 4] = 0; ga[b + 5] = hs; ga[b + 6] = 0; ga[b + 7] = 0;
+        ga[b + 8] = sn * hs; ga[b + 9] = 0; ga[b + 10] = c * hs; ga[b + 11] = 0; ga[b + 12] = x2; ga[b + 13] = gy2; ga[b + 14] = z2; ga[b + 15] = 1;
+        for (var hi = 0; hi < 16; hi++) ha[b + hi] = ga[b + hi];
         gc[nG * 3] = rec.col.r; gc[nG * 3 + 1] = rec.col.g; gc[nG * 3 + 2] = rec.col.b; nG++;
       }
     } else {
@@ -3143,6 +3266,7 @@ function frame(dtReal) {
   var s = Z.state, speed = s && typeof s.speed === 'number' ? s.speed : 1, dtGame = dtReal * speed;
   G.speed = speed;
   updateCamera(dtReal);
+  if (G.shadows) updateSunTarget();
   updateWeather(dtReal);
   // atmosphere
   var tm = s && typeof s.time === 'number' ? s.time : 0.5;
@@ -3205,7 +3329,29 @@ World.info = function () { return { calls: renderer.info.render.calls, tris: ren
 World.snapCamera = function () { clampCam(); view.x = cam.target.x; view.z = cam.target.z; view.dist = cam.dist; view.yaw = cam.yaw; view.pitch = cam.pitch; };
 World._G = G;
 World.renderer = function () { return renderer; };
-World.setQuality = function (pr, budget) { if (pr) G.prCap = pr; if (budget) MESH_BUDGET = budget; resize(); };
+World.setQuality = function (pr, budget, opts) {
+  if (pr) G.prCap = pr;
+  if (budget) MESH_BUDGET = budget;
+  if (opts) {
+    if (opts.impostors !== undefined) { IMPOSTORS_ON = !!opts.impostors; G.impostors = IMPOSTORS_ON; }
+    if (opts.shadows !== undefined) {
+      G.shadows = !!opts.shadows;
+      if (renderer && renderer.shadowMap) { renderer.shadowMap.enabled = G.shadows; renderer.shadowMap.needsUpdate = true; }
+      if (sunL) sunL.castShadow = G.shadows && (G.sunE > -0.02);
+      if (MAT.shadow) updateAtmosphere();
+    }
+    if (opts.farScale) {
+      FAR.animal = Math.round(280 * opts.farScale); FAR.guest = Math.round(160 * opts.farScale); FAR.staff = Math.round(190 * opts.farScale);
+      UPD_FAR.animal = Math.round(130 * opts.farScale); UPD_FAR.guest = Math.round(85 * opts.farScale); UPD_FAR.staff = Math.round(95 * opts.farScale);
+    }
+    if (opts.detail !== undefined) {
+      if (G.detail !== opts.detail) instCache = {};
+      G.detail = opts.detail;
+      if (Z.Models && Z.Models.setDetail) Z.Models.setDetail(opts.detail);
+    }
+  }
+  resize();
+};
 World.scene = function () { return scene; };
 World.root = function () { return root; };
 World.camera = function () { return camera; };

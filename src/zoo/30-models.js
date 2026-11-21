@@ -23,21 +23,31 @@ function shade(a, f) { // f>1 lighten, <1 darken
 }
 function pick(arr, r) { return arr[Math.floor(r * arr.length) % arr.length]; }
 
-// ---------------------------------------------------------------- geometry builder (flat shaded, vertex coloured, merged)
-var _ma = new T.Matrix4(), _qa = new T.Quaternion(), _ea = new T.Euler(), _va = new T.Vector3(), _sa = new T.Vector3();
+// ---------------------------------------------------------------- geometry builder (smooth/flat shaded, vertex coloured, merged)
+var DETAIL = 1.5;
+var _ma = new T.Matrix4(), _qa = new T.Quaternion(), _ea = new T.Euler(), _va = new T.Vector3(), _sa = new T.Vector3(), _nm = T.Matrix3 ? new T.Matrix3() : null;
 var _a = new T.Vector3(), _b = new T.Vector3(), _c = new T.Vector3(), _n = new T.Vector3(), _e1 = new T.Vector3(), _e2 = new T.Vector3();
+var _na = new T.Vector3(), _nb = new T.Vector3(), _nc = new T.Vector3();
 var _up = new T.Vector3(0, 1, 0), _dir = new T.Vector3();
 var unitCache = {};
 function unit(key, fn) { return unitCache[key] || (unitCache[key] = fn()); }
-function unitSph(ws, hs) { return unit('s' + ws + 'x' + hs, function () { return new T.SphereGeometry(1, ws, hs).toNonIndexed(); }); }
+function unitSph(ws, hs) {
+  ws = Math.max(4, Math.round(ws * DETAIL)); hs = Math.max(3, Math.round(hs * DETAIL));
+  return unit('s' + ws + 'x' + hs, function () { var g = new T.SphereGeometry(1, ws, hs).toNonIndexed(); if (g.userData) g.userData._smooth = true; return g; });
+}
 function unitBox(a, b, c) { return unit('b' + a + b + c, function () { return new T.BoxGeometry(1, 1, 1, a, b, c).toNonIndexed(); }); }
-function unitCyl(seg, ratio, hs) { return unit('c' + seg + '_' + ratio + '_' + hs, function () { return new T.CylinderGeometry(ratio, 1, 1, seg, hs || 1).toNonIndexed(); }); }
+function unitCyl(seg, ratio, hs) {
+  if (seg >= 5) seg = Math.round(seg * DETAIL);
+  return unit('c' + seg + '_' + ratio + '_' + hs, function () { var g = new T.CylinderGeometry(ratio, 1, 1, seg, hs || 1).toNonIndexed(); if (g.userData) g.userData._smooth = seg >= 5; return g; });
+}
 
 function Builder() { this.p = []; this.n = []; this.c = []; }
 Builder.prototype.add = function (geo, x, y, z, sx, sy, sz, rot, col, quat) {
   if (quat) _qa.copy(quat); else { _ea.set(rot ? rot[0] : 0, rot ? rot[1] : 0, rot ? rot[2] : 0, 'XYZ'); _qa.setFromEuler(_ea); }
   _ma.compose(_va.set(x, y, z), _qa, _sa.set(sx, sy, sz));
   var pa = geo.attributes.position.array, flip = sx * sy * sz < 0, fn = typeof col === 'function', r = 0, g = 0, b = 0;
+  var smooth = !!(_nm && geo.userData && geo.userData._smooth && geo.attributes.normal && _na.applyMatrix3), normArr = smooth ? geo.attributes.normal.array : null;
+  if (smooth) _nm.getNormalMatrix(_ma);
   if (!fn) { r = (col >> 16 & 255) / 255; g = (col >> 8 & 255) / 255; b = (col & 255) / 255; }
   for (var i = 0; i < pa.length; i += 9) {
     _a.set(pa[i], pa[i + 1], pa[i + 2]).applyMatrix4(_ma);
@@ -46,13 +56,35 @@ Builder.prototype.add = function (geo, x, y, z, sx, sy, sz, rot, col, quat) {
     if (flip) { _n.copy(_b); _b.copy(_c); _c.copy(_n); }
     _e1.subVectors(_b, _a); _e2.subVectors(_c, _a); _n.crossVectors(_e1, _e2);
     var l = _n.length(); if (l < 1e-9) continue; _n.divideScalar(l);
-    if (fn) {
-      var h = col((_a.x + _b.x + _c.x) / 3, (_a.y + _b.y + _c.y) / 3, (_a.z + _b.z + _c.z) / 3, _n.x, _n.y, _n.z);
-      r = (h >> 16 & 255) / 255; g = (h >> 8 & 255) / 255; b = (h & 255) / 255;
+    if (smooth) {
+      _na.set(normArr[i], normArr[i + 1], normArr[i + 2]).applyMatrix3(_nm).normalize();
+      _nb.set(normArr[i + 3], normArr[i + 4], normArr[i + 5]).applyMatrix3(_nm).normalize();
+      _nc.set(normArr[i + 6], normArr[i + 7], normArr[i + 8]).applyMatrix3(_nm).normalize();
+      if (flip) { _e1.copy(_nb); _nb.copy(_nc); _nc.copy(_e1); }
+    } else {
+      _na.copy(_n); _nb.copy(_n); _nc.copy(_n);
     }
+    var aoA = clamp(0.92 + 0.10 * _na.y, 0.80, 1.04), aoB = clamp(0.92 + 0.10 * _nb.y, 0.80, 1.04), aoC = clamp(0.92 + 0.10 * _nc.y, 0.80, 1.04);
     this.p.push(_a.x, _a.y, _a.z, _b.x, _b.y, _b.z, _c.x, _c.y, _c.z);
-    this.n.push(_n.x, _n.y, _n.z, _n.x, _n.y, _n.z, _n.x, _n.y, _n.z);
-    this.c.push(r, g, b, r, g, b, r, g, b);
+    this.n.push(_na.x, _na.y, _na.z, _nb.x, _nb.y, _nb.z, _nc.x, _nc.y, _nc.z);
+    if (fn) {
+      if (smooth) {
+        var ha = col(_a.x, _a.y, _a.z, _na.x, _na.y, _na.z);
+        var hb = col(_b.x, _b.y, _b.z, _nb.x, _nb.y, _nb.z);
+        var hc = col(_c.x, _c.y, _c.z, _nc.x, _nc.y, _nc.z);
+        this.c.push(
+          (ha >> 16 & 255) / 255 * aoA, (ha >> 8 & 255) / 255 * aoA, (ha & 255) / 255 * aoA,
+          (hb >> 16 & 255) / 255 * aoB, (hb >> 8 & 255) / 255 * aoB, (hb & 255) / 255 * aoB,
+          (hc >> 16 & 255) / 255 * aoC, (hc >> 8 & 255) / 255 * aoC, (hc & 255) / 255 * aoC
+        );
+      } else {
+        var h = col((_a.x + _b.x + _c.x) / 3, (_a.y + _b.y + _c.y) / 3, (_a.z + _b.z + _c.z) / 3, _n.x, _n.y, _n.z);
+        r = (h >> 16 & 255) / 255 * aoA; g = (h >> 8 & 255) / 255 * aoA; b = (h & 255) / 255 * aoA;
+        this.c.push(r, g, b, r, g, b, r, g, b);
+      }
+    } else {
+      this.c.push(r * aoA, g * aoA, b * aoA, r * aoB, g * aoB, b * aoB, r * aoC, g * aoC, b * aoC);
+    }
   }
   return this;
 };
@@ -77,34 +109,139 @@ Builder.prototype.limb = function (x1, y1, z1, x2, y2, z2, r1, r2, col, o) {
   o = o || {}; _dir.set(x2 - x1, y2 - y1, z2 - z1); var len = _dir.length(); if (len < 1e-6) return this;
   _dir.divideScalar(len); var q = new T.Quaternion().setFromUnitVectors(_up, _dir);
   var rm = max(r1, r2, 1e-4), ratio = r2 / rm, seg = o.seg || 6, hs = o.hs || 1;
+  if (seg >= 5) seg = Math.round(seg * DETAIL);
   // cylinder: top = +y (r2 end), bottom = -y (r1 end); when ratio<1 top narrower
   var geo = unit('l' + seg + '_' + hs + '_' + Math.round(ratio * 1000) / 1000 + '_' + Math.round(r1 / rm * 1000) / 1000, function () {
-    return new T.CylinderGeometry(ratio, r1 / rm, 1, seg, hs).toNonIndexed();
+    var g = new T.CylinderGeometry(ratio, r1 / rm, 1, seg, hs).toNonIndexed(); if (g.userData) g.userData._smooth = seg >= 5; return g;
   });
   return this.add(geo, (x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2, rm * (o.sx || 1), len, rm * (o.sz || 1), null, col, q);
 };
 
 // lathe-style body along z. o: {z0,z1,n,seg, rxA,rxB, ryA,ryB, ycA,ycB, pw, belly}
 Builder.prototype.torso = function (o, col) {
-  var n = o.n || 16, seg = o.seg || 12, rings = [], i, k, pw = o.pw || 0.55;
+  var n = Math.max(4, Math.round((o.n || 16) * DETAIL)), seg = Math.max(6, Math.round((o.seg || 12) * DETAIL)), rings = [], i, k, pw = o.pw || 0.55;
   for (i = 0; i <= n; i++) {
     var t = i / n, e = Math.pow(Math.sqrt(max(0, 1 - (2 * t - 1) * (2 * t - 1))), pw);
-    rings.push({ z: lerp(o.z0, o.z1, t), rx: lerp(o.rxA, o.rxB, t) * e, ry: lerp(o.ryA, o.ryB, t) * e, yc: lerp(o.ycA, o.ycB, t) - (o.belly || 0) * Math.sin(PI * t) * 0 });
+    rings.push({ z: lerp(o.z0, o.z1, t), rx: lerp(o.rxA, o.rxB, t) * e, ry: lerp(o.ryA, o.ryB, t) * e, yc: lerp(o.ycA, o.ycB, t) - (o.belly || 0) * Math.sin(PI * t) });
   }
-  var fn = typeof col === 'function', P = function (r, a) { return [r.rx * Math.sin(a), r.yc + r.ry * Math.cos(a), r.z]; };
-  for (i = 0; i < n; i++) for (k = 0; k < seg; k++) {
-    var a0 = k / seg * TAU, a1 = (k + 1) / seg * TAU, p00 = P(rings[i], a0), p01 = P(rings[i], a1), p10 = P(rings[i + 1], a0), p11 = P(rings[i + 1], a1);
-    var cx = (p00[0] + p01[0] + p10[0] + p11[0]) / 4, cy = (p00[1] + p01[1] + p10[1] + p11[1]) / 4, cz = (p00[2] + p01[2] + p10[2] + p11[2]) / 4;
-    var am = (a0 + a1) / 2, nx = Math.sin(am), ny = Math.cos(am), h = fn ? col(cx, cy, cz, nx, ny, 0) : col, r = (h >> 16 & 255) / 255, g = (h >> 8 & 255) / 255, b = (h & 255) / 255;
-    var tris = [[p00, p10, p11], [p00, p11, p01]];
-    for (var q = 0; q < 2; q++) {
-      var A = tris[q][0], Bq = tris[q][1], C = tris[q][2];
-      _a.set(A[0], A[1], A[2]); _b.set(Bq[0], Bq[1], Bq[2]); _c.set(C[0], C[1], C[2]);
-      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a); _n.crossVectors(_e1, _e2); var l = _n.length(); if (l < 1e-9) continue; _n.divideScalar(l);
-      if (_n.x * nx + _n.y * ny < 0) { _n.negate(); this.p.push(A[0], A[1], A[2], C[0], C[1], C[2], Bq[0], Bq[1], Bq[2]); } else this.p.push(A[0], A[1], A[2], Bq[0], Bq[1], Bq[2], C[0], C[1], C[2]);
-      this.n.push(_n.x, _n.y, _n.z, _n.x, _n.y, _n.z, _n.x, _n.y, _n.z); this.c.push(r, g, b, r, g, b, r, g, b);
+  var fn = typeof col === 'function', P = new Float32Array((n + 1) * seg * 3), CC = new Float32Array((n + 1) * seg * 3), N = new Float32Array((n + 1) * seg * 3);
+  var cr = 0, cg = 0, cb = 0; if (!fn) { cr = (col >> 16 & 255) / 255; cg = (col >> 8 & 255) / 255; cb = (col & 255) / 255; }
+  for (i = 0; i <= n; i++) for (k = 0; k < seg; k++) {
+    var a = k / seg * TAU, sa = Math.sin(a), ca = Math.cos(a), rg = rings[i], idx = (i * seg + k) * 3;
+    P[idx] = rg.rx * sa; P[idx + 1] = rg.yc + rg.ry * ca; P[idx + 2] = rg.z;
+  }
+  var ring = function (ii, kk) { return ((ii * seg) + ((kk + seg) % seg)) * 3; };
+  for (i = 0; i <= n; i++) {
+    var ia = Math.max(0, i - 1), ib = Math.min(n, i + 1), rg2 = rings[i];
+    for (k = 0; k < seg; k++) {
+      var idx2 = (i * seg + k) * 3;
+      var a1 = ring(ia, k), b1 = ring(ib, k), a2 = ring(i, k - 1), b2 = ring(i, k + 1);
+      _e1.set(P[b1] - P[a1], P[b1 + 1] - P[a1 + 1], P[b1 + 2] - P[a1 + 2]);
+      _e2.set(P[b2] - P[a2], P[b2 + 1] - P[a2 + 1], P[b2 + 2] - P[a2 + 2]);
+      _n.crossVectors(_e1, _e2); var L = _n.length();
+      _a.set(P[idx2], P[idx2 + 1] - rg2.yc, 0);
+      if (L < 1e-9) { if (_a.lengthSq() < 1e-12) _n.set(0, 0, i === 0 ? -1 : 1); else _n.copy(_a).normalize(); }
+      else { _n.divideScalar(L); if (_a.lengthSq() > 1e-10 && _n.dot(_a) < 0) _n.negate(); }
+      N[idx2] = _n.x; N[idx2 + 1] = _n.y; N[idx2 + 2] = _n.z;
+      var ao = clamp(0.92 + 0.10 * _n.y, 0.80, 1.04);
+      if (fn) {
+        var h = col(P[idx2], P[idx2 + 1], P[idx2 + 2], _n.x, _n.y, _n.z);
+        CC[idx2] = (h >> 16 & 255) / 255 * ao; CC[idx2 + 1] = (h >> 8 & 255) / 255 * ao; CC[idx2 + 2] = (h & 255) / 255 * ao;
+      } else {
+        CC[idx2] = cr * ao; CC[idx2 + 1] = cg * ao; CC[idx2 + 2] = cb * ao;
+      }
     }
   }
+  var pushV = function (q) { this.p.push(P[q], P[q + 1], P[q + 2]); this.n.push(N[q], N[q + 1], N[q + 2]); this.c.push(CC[q], CC[q + 1], CC[q + 2]); }.bind(this);
+  var tri = function (qa, qb, qc) {
+    _e1.set(P[qb] - P[qa], P[qb + 1] - P[qa + 1], P[qb + 2] - P[qa + 2]);
+    _e2.set(P[qc] - P[qa], P[qc + 1] - P[qa + 1], P[qc + 2] - P[qa + 2]);
+    _n.crossVectors(_e1, _e2); if (_n.lengthSq() < 1e-14) return;
+    var dn = _n.x * (N[qa] + N[qb] + N[qc]) + _n.y * (N[qa + 1] + N[qb + 1] + N[qc + 1]) + _n.z * (N[qa + 2] + N[qb + 2] + N[qc + 2]);
+    if (dn >= 0) { pushV(qa); pushV(qb); pushV(qc); } else { pushV(qa); pushV(qc); pushV(qb); }
+  };
+  for (i = 0; i < n; i++) for (k = 0; k < seg; k++) {
+    var q00 = ring(i, k), q01 = ring(i, k + 1), q10 = ring(i + 1, k), q11 = ring(i + 1, k + 1);
+    tri(q00, q10, q11); tri(q00, q11, q01);
+  }
+  return this;
+};
+function profAt(K, s) {
+  var n = K.length;
+  if (s <= K[0][0]) return [K[0][1], K[0][2], K[0][3]];
+  if (s >= K[n - 1][0]) return [K[n - 1][1], K[n - 1][2], K[n - 1][3]];
+  var i = 0; while (i < n - 2 && s > K[i + 1][0]) i++;
+  var a = K[i], b = K[i + 1], h = b[0] - a[0], t = (s - a[0]) / h, p0 = K[i > 0 ? i - 1 : 0], p3 = K[i + 2 < n ? i + 2 : n - 1];
+  var t2 = t * t, t3 = t2 * t, h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2, out = [0, 0, 0];
+  for (var c = 1; c <= 3; c++) {
+    var m1 = 0, m2 = 0, d0 = a[c] - p0[c], d1 = b[c] - a[c], d2 = p3[c] - b[c];
+    if (i > 0 && d0 * d1 > 0) m1 = (b[c] - p0[c]) / (b[0] - p0[0]) * h;
+    if (i + 2 < n && d1 * d2 > 0) m2 = (p3[c] - a[c]) / (p3[0] - a[0]) * h;
+    out[c - 1] = h00 * a[c] + h10 * m1 + h01 * b[c] + h11 * m2;
+  }
+  if (out[0] < 0) out[0] = 0; if (out[1] < 0) out[1] = 0;
+  return out;
+}
+var _lp = new T.Vector3(), _ln = new T.Vector3(), _l1 = new T.Vector3(), _l2 = new T.Vector3();
+Builder.prototype.loft = function (K, o, col) {
+  o = o || {};
+  var s0 = o.s0 !== undefined ? o.s0 : K[0][0], s1 = o.s1 !== undefined ? o.s1 : K[K.length - 1][0];
+  var R = Math.max(2, Math.round((o.rings || 10) * DETAIL)), S = Math.max(4, Math.round((o.seg || 8) * DETAIL)), dir = o.dir || 1, down = !!o.down, ox = o.ox || 0, oy = o.oy || 0, oz = o.oz || 0;
+  var z0 = o.z0 !== undefined ? o.z0 : s0, z1 = o.z1 !== undefined ? o.z1 : s1, fn = typeof col === 'function';
+  var P = new Float32Array((R + 1) * S * 3), CC = new Float32Array((R + 1) * S * 3), i, k, idx;
+  var cr = 0, cg = 0, cb = 0; if (!fn) { cr = (col >> 16 & 255) / 255; cg = (col >> 8 & 255) / 255; cb = (col & 255) / 255; }
+  for (i = 0; i <= R; i++) {
+    var s = lerp(s0, s1, i / R), pr = profAt(K, s), zc = lerp(z0, z1, i / R);
+    for (k = 0; k < S; k++) {
+      var a = k / S * TAU, ca = cos(a), sa = sin(a), u = pr[0] * sa, v = pr[2] + pr[1] * ca, x, y, z;
+      if (down) { x = u; y = -s; z = v; } else { x = u; y = v; z = dir * s; }
+      x += ox; y += oy; z += oz; idx = (i * S + k) * 3; P[idx] = x; P[idx + 1] = y; P[idx + 2] = z;
+      if (fn) { var h = col(zc, ca, sa, x, y, z); CC[idx] = (h >> 16 & 255) / 255; CC[idx + 1] = (h >> 8 & 255) / 255; CC[idx + 2] = (h & 255) / 255; }
+      else { CC[idx] = cr; CC[idx + 1] = cg; CC[idx + 2] = cb; }
+    }
+  }
+  var N = new Float32Array(P.length), ring = function (ii, kk) { return ((ii * S) + ((kk + S) % S)) * 3; };
+  for (i = 0; i <= R; i++) {
+    var ia = Math.max(0, i - 1), ib = Math.min(R, i + 1);
+    var cx = 0, cy = 0, cz = 0; for (k = 0; k < S; k++) { idx = (i * S + k) * 3; cx += P[idx]; cy += P[idx + 1]; cz += P[idx + 2]; } cx /= S; cy /= S; cz /= S;
+    for (k = 0; k < S; k++) {
+      idx = (i * S + k) * 3;
+      var a1 = ring(ia, k), b1 = ring(ib, k), a2 = ring(i, k - 1), b2 = ring(i, k + 1);
+      _l1.set(P[b1] - P[a1], P[b1 + 1] - P[a1 + 1], P[b1 + 2] - P[a1 + 2]); _l2.set(P[b2] - P[a2], P[b2 + 1] - P[a2 + 1], P[b2 + 2] - P[a2 + 2]);
+      _ln.crossVectors(_l1, _l2); var L = _ln.length();
+      _lp.set(P[idx] - cx, P[idx + 1] - cy, P[idx + 2] - cz);
+      if (L < 1e-9) { if (_lp.lengthSq() < 1e-12) _lp.set(0, 0, i === 0 ? -1 : 1); _ln.copy(_lp).normalize(); }
+      else { _ln.divideScalar(L); var rl = _lp.length(); if (rl > 1e-6 && _ln.dot(_lp) < 0) _ln.negate(); else if (rl <= 1e-6) { _ln.set(0, 0, (i === 0 ? -1 : 1) * (_ln.z < 0 ? -1 : 1)); } }
+      N[idx] = _ln.x; N[idx + 1] = _ln.y; N[idx + 2] = _ln.z;
+      var aoL = clamp(0.92 + 0.10 * _ln.y, 0.80, 1.04);
+      CC[idx] *= aoL; CC[idx + 1] *= aoL; CC[idx + 2] *= aoL;
+    }
+  }
+  var pushV = function (q) { this.p.push(P[q], P[q + 1], P[q + 2]); this.n.push(N[q], N[q + 1], N[q + 2]); this.c.push(CC[q], CC[q + 1], CC[q + 2]); }.bind(this);
+  var tri = function (qa, qb, qc) {
+    _l1.set(P[qb] - P[qa], P[qb + 1] - P[qa + 1], P[qb + 2] - P[qa + 2]); _l2.set(P[qc] - P[qa], P[qc + 1] - P[qa + 1], P[qc + 2] - P[qa + 2]); _ln.crossVectors(_l1, _l2);
+    if (_ln.lengthSq() < 1e-14) return;
+    var dn = _ln.x * (N[qa] + N[qb] + N[qc]) + _ln.y * (N[qa + 1] + N[qb + 1] + N[qc + 1]) + _ln.z * (N[qa + 2] + N[qb + 2] + N[qc + 2]);
+    if (dn >= 0) { pushV(qa); pushV(qb); pushV(qc); } else { pushV(qa); pushV(qc); pushV(qb); }
+  };
+  for (i = 0; i < R; i++) for (k = 0; k < S; k++) {
+    var q00 = ring(i, k), q01 = ring(i, k + 1), q10 = ring(i + 1, k), q11 = ring(i + 1, k + 1);
+    tri(q00, q10, q11); tri(q00, q11, q01);
+  }
+  var capf = function (i0, sgn) {
+    var cx = 0, cy = 0, cz = 0, r = 0, g = 0, b = 0; for (var kk = 0; kk < S; kk++) { var q = (i0 * S + kk) * 3; cx += P[q]; cy += P[q + 1]; cz += P[q + 2]; r += CC[q]; g += CC[q + 1]; b += CC[q + 2]; }
+    cx /= S; cy /= S; cz /= S; r /= S; g /= S; b /= S;
+    var nz = down ? 0 : dir * sgn, ny = down ? -sgn : 0;
+    for (var kk2 = 0; kk2 < S; kk2++) {
+      var qa = ring(i0, kk2), qb = ring(i0, kk2 + 1);
+      _l1.set(P[qa] - cx, P[qa + 1] - cy, P[qa + 2] - cz); _l2.set(P[qb] - cx, P[qb + 1] - cy, P[qb + 2] - cz); _ln.crossVectors(_l1, _l2);
+      var fl = (_ln.y * ny + _ln.z * nz) < 0;
+      var A = [cx, cy, cz], Bv = [P[qa], P[qa + 1], P[qa + 2]], Cv = [P[qb], P[qb + 1], P[qb + 2]]; if (fl) { var tmp = Bv; Bv = Cv; Cv = tmp; }
+      this.p.push(A[0], A[1], A[2], Bv[0], Bv[1], Bv[2], Cv[0], Cv[1], Cv[2]);
+      for (var m = 0; m < 3; m++) { this.n.push(0, ny, nz); this.c.push(r, g, b); }
+    }
+  }.bind(this);
+  if (o.cap0) capf(0, -1); if (o.cap1) capf(R, 1);
   return this;
 };
 Builder.prototype.tri = function (a, b, c, col, hx, hy, hz) {
@@ -3634,31 +3771,56 @@ var HIP = 0.78, SHO = 1.36;
 
 function headParts(g, k) {
   var ks = k.kid ? 1.22 : 1.0, hy = 1.58 + (k.kid ? 0.03 : 0), r = 0.16 * ks, sk = k.skin, hc = k.hair, st = k.style;
-  g.cyl(0.055, 0.065, 0.1, 0, 1.43, 0, shade(sk, 0.92), { seg: 6 });
-  g.sph(r, r * 1.04, r, 0, hy, 0, sk, { s: [9, 7] });
-  g.sph(0.022, 0.022, 0.018, 0.058 * ks, hy + 0.015, r * 0.92, 0x15100c, { s: [4, 3] }); g.sph(0.022, 0.022, 0.018, -0.058 * ks, hy + 0.015, r * 0.92, 0x15100c, { s: [4, 3] });
-  g.sph(0.026, 0.028, 0.03, 0, hy - 0.035, r * 1.0, shade(sk, 0.9), { s: [4, 3] });
-  g.sph(0.04, 0.012, 0.012, 0, hy - 0.08, r * 0.93, shade(sk, 0.7), { s: [4, 3] });
-  if (st === 1) { g.sph(r * 1.06, r * 0.75, r * 1.08, 0, hy + 0.05, -0.012, hc, { s: [8, 5] }); g.box(0.2 * ks, 0.045, 0.05, 0, hy + 0.1, r * 0.8, hc); }
-  else if (st === 2) { g.sph(r * 1.08, r * 0.8, r * 1.1, 0, hy + 0.05, -0.02, hc, { s: [8, 5] }); g.box(0.34 * ks, 0.42, 0.1, 0, hy - 0.2, -r * 0.8, hc); g.box(0.06, 0.3, 0.1, r * 0.95, hy - 0.08, -0.02, hc); g.box(0.06, 0.3, 0.1, -r * 0.95, hy - 0.08, -0.02, hc); }
-  else if (st === 3) { g.sph(r * 1.06, r * 0.8, r * 1.08, 0, hy + 0.05, -0.015, hc, { s: [8, 5] }); g.sph(0.06, 0.06, 0.06, 0, hy + 0.0, -r * 1.1, hc, { s: [5, 4] }); g.limb(0, hy, -r * 1.1, 0, hy - 0.2, -r * 1.2, 0.04, 0.03, hc, { seg: 5 }); }
-  else if (st === 4) { for (var i = 0; i < 9; i++) { var a = i / 9 * TAU; g.sph(0.07, 0.07, 0.07, Math.sin(a) * r * 0.85, hy + 0.07 + (i % 2) * 0.03, Math.cos(a) * r * 0.85, hc, { s: [5, 4] }); } g.sph(0.1, 0.08, 0.1, 0, hy + 0.15, 0, hc, { s: [5, 4] }); }
-  else if (st === 5) { g.sph(r * 1.07, r * 0.8, r * 1.1, 0, hy + 0.045, -0.015, k.hat, { s: [8, 5] }); g.box(0.2 * ks, 0.025, 0.14, 0, hy + 0.05, r * 1.05, shade(k.hat, 0.85)); }
-  else if (st === 6) { g.cyl(0.36 * ks, 0.36 * ks, 0.025, 0, hy + 0.08, 0, shade(k.hat, 1.05), { seg: 10 }); g.cyl(0.17 * ks, 0.2 * ks, 0.12, 0, hy + 0.14, 0, k.hat, { seg: 8 }); }
-  else if (st === 7) { g.sph(r * 1.08, r * 0.95, r * 1.1, 0, hy + 0.06, 0, k.hat, { s: [8, 5] }); g.sph(0.045, 0.045, 0.045, 0, hy + 0.24, 0, shade(k.hat, 1.2), { s: [5, 4] }); }
-  else if (st === 8) { /* peaked cap */ g.cyl(r * 1.08, r * 1.12, 0.1, 0, hy + 0.1, 0, k.hat, { seg: 9 }); g.box(0.22 * ks, 0.02, 0.15, 0, hy + 0.07, r * 1.05, shade(k.hat, 0.7)); g.sph(0.025, 0.025, 0.012, 0, hy + 0.12, r * 1.1, 0xe8c030, { s: [4, 3] }); g.sph(r * 1.05, r * 0.5, r * 1.05, 0, hy + 0.04, 0, hc, { s: [7, 4] }); }
-  else if (st === 9) { /* bush hat */ g.cyl(0.4 * ks, 0.4 * ks, 0.025, 0, hy + 0.09, 0, k.hat, { seg: 10 }); g.cyl(0.16 * ks, 0.2 * ks, 0.12, 0, hy + 0.15, 0, k.hat, { seg: 8 }); g.cyl(0.165 * ks, 0.165 * ks, 0.03, 0, hy + 0.1, 0, shade(k.hat, 0.6), { seg: 8 }); }
+  g.cyl(0.056, 0.068, 0.11, 0, 1.43, 0, shade(sk, 0.92), { seg: 8 });
+  g.sph(r, r * 1.06, r * 1.0, 0, hy, 0, sk, { s: [10, 8] });
+  g.sph(0.024 * ks, 0.036 * ks, 0.018 * ks, r * 0.96, hy - 0.005, -0.005, shade(sk, 0.92), { s: [5, 4] });
+  g.sph(0.024 * ks, 0.036 * ks, 0.018 * ks, -r * 0.96, hy - 0.005, -0.005, shade(sk, 0.92), { s: [5, 4] });
+  g.sph(0.025, 0.022, 0.014, 0.056 * ks, hy + 0.016, r * 0.90, 0xfafafa, { s: [5, 4] });
+  g.sph(0.025, 0.022, 0.014, -0.056 * ks, hy + 0.016, r * 0.90, 0xfafafa, { s: [5, 4] });
+  g.sph(0.015, 0.016, 0.014, 0.056 * ks, hy + 0.016, r * 0.945, 0x15100c, { s: [5, 4] });
+  g.sph(0.015, 0.016, 0.014, -0.056 * ks, hy + 0.016, r * 0.945, 0x15100c, { s: [5, 4] });
+  g.limb(0.032 * ks, hy + 0.048 * ks, r * 0.93, 0.078 * ks, hy + 0.044 * ks, r * 0.88, 0.009, 0.007, shade(hc, 0.85), { seg: 4 });
+  g.limb(-0.032 * ks, hy + 0.048 * ks, r * 0.93, -0.078 * ks, hy + 0.044 * ks, r * 0.88, 0.009, 0.007, shade(hc, 0.85), { seg: 4 });
+  g.sph(0.022 * ks, 0.026 * ks, 0.028 * ks, 0, hy - 0.028 * ks, r * 1.01, shade(sk, 0.91), { s: [5, 4] });
+  g.sph(0.036 * ks, 0.011 * ks, 0.012 * ks, 0, hy - 0.075 * ks, r * 0.94, shade(sk, 0.68), { s: [5, 4] });
+  if (st === 1) { g.sph(r * 1.07, r * 0.78, r * 1.09, 0, hy + 0.052, -0.014, hc, { s: [9, 6] }); g.sph(0.11 * ks, 0.032, 0.045, 0, hy + 0.10 * ks, r * 0.78, hc, { s: [6, 4] }); }
+  else if (st === 2) { g.sph(r * 1.08, r * 0.82, r * 1.1, 0, hy + 0.05, -0.02, hc, { s: [9, 6] }); g.sph(r * 1.06, 0.23 * ks, 0.075, 0, hy - 0.17, -r * 0.76, hc, { s: [8, 5] }); g.limb(r * 0.92, hy + 0.04, -0.02, r * 0.98, hy - 0.22, -0.03, 0.048, 0.034, hc, { seg: 6 }); g.limb(-r * 0.92, hy + 0.04, -0.02, -r * 0.98, hy - 0.22, -0.03, 0.048, 0.034, hc, { seg: 6 }); }
+  else if (st === 3) { g.sph(r * 1.07, r * 0.82, r * 1.09, 0, hy + 0.05, -0.015, hc, { s: [9, 6] }); g.sph(0.06, 0.06, 0.06, 0, hy + 0.0, -r * 1.1, hc, { s: [6, 4] }); g.limb(0, hy, -r * 1.1, 0, hy - 0.21, -r * 1.2, 0.042, 0.028, hc, { seg: 6 }); }
+  else if (st === 4) { for (var i = 0; i < 9; i++) { var a = i / 9 * TAU; g.sph(0.072, 0.072, 0.072, Math.sin(a) * r * 0.85, hy + 0.07 + (i % 2) * 0.03, Math.cos(a) * r * 0.85, hc, { s: [6, 4] }); } g.sph(0.1, 0.085, 0.1, 0, hy + 0.15, 0, hc, { s: [6, 4] }); }
+  else if (st === 5) { g.sph(r * 1.08, r * 0.82, r * 1.1, 0, hy + 0.048, -0.015, k.hat, { s: [9, 6] }); g.cyl(0.11 * ks, 0.125 * ks, 0.022, 0, hy + 0.052, r * 0.98, shade(k.hat, 0.85), { seg: 8, sx: 1.05, sz: 0.72 }); }
+  else if (st === 6) { g.cyl(0.36 * ks, 0.36 * ks, 0.025, 0, hy + 0.08, 0, shade(k.hat, 1.05), { seg: 12 }); g.cyl(0.17 * ks, 0.2 * ks, 0.12, 0, hy + 0.14, 0, k.hat, { seg: 10 }); }
+  else if (st === 7) { g.sph(r * 1.09, r * 0.96, r * 1.1, 0, hy + 0.06, 0, k.hat, { s: [9, 6] }); g.sph(0.048, 0.048, 0.048, 0, hy + 0.24, 0, shade(k.hat, 1.2), { s: [6, 4] }); }
+  else if (st === 8) { /* peaked cap */ g.cyl(r * 1.08, r * 1.12, 0.1, 0, hy + 0.1, 0, k.hat, { seg: 10 }); g.cyl(0.11 * ks, 0.125 * ks, 0.02, 0, hy + 0.07, r * 0.98, shade(k.hat, 0.7), { seg: 8, sx: 1.08, sz: 0.75 }); g.sph(0.025, 0.025, 0.012, 0, hy + 0.12, r * 1.1, 0xe8c030, { s: [5, 4] }); g.sph(r * 1.05, r * 0.5, r * 1.05, 0, hy + 0.04, 0, hc, { s: [8, 5] }); }
+  else if (st === 9) { /* bush hat */ g.cyl(0.4 * ks, 0.4 * ks, 0.025, 0, hy + 0.09, 0, k.hat, { seg: 12 }); g.cyl(0.16 * ks, 0.2 * ks, 0.12, 0, hy + 0.15, 0, k.hat, { seg: 10 }); g.cyl(0.165 * ks, 0.165 * ks, 0.03, 0, hy + 0.1, 0, shade(k.hat, 0.6), { seg: 10 }); }
+  else if (st === 10) { /* hard hat */ g.sph(r * 1.1, r * 0.85, r * 1.12, 0, hy + 0.05, -0.01, k.hat, { s: [9, 6] }); g.cyl(r * 1.35, r * 1.35, 0.02, 0, hy + 0.045, 0, shade(k.hat, 0.9), { seg: 12 }); g.box(0.05, 0.03, 0.3, 0, hy + 0.17, 0, shade(k.hat, 0.8)); }
   // st 0 = bald
 }
 function bodyGeo(k) {
-  var key = [k.shirt, k.skin, k.style, k.hair, k.hat, k.kid ? 1 : 0, k.pack, k.stripe, k.coat ? 1 : 0, k.vest ? 1 : 0].join('|');
+  var key = [k.shirt, k.trouser, k.skin, k.style, k.hair, k.hat, k.kid ? 1 : 0, k.pack, k.stripe, k.coat ? 1 : 0, k.vest ? 1 : 0].join('|');
   if (bodyCache[key]) return bodyCache[key];
-  var g = B(), sc = k.shirt, sf = k.stripe ? function (x, y) { return fract(y * 8) < 0.5 ? sc : shade(sc, 0.82); } : sc;
-  g.box(0.42, 0.62, 0.24, 0, HIP + 0.31, 0, sf, { s: [1, k.stripe ? 6 : 1, 1] });
-  g.box(0.43, 0.06, 0.25, 0, HIP + 0.03, 0, shade(sc, 0.75));
-  if (k.coat) g.box(0.44, 0.34, 0.27, 0, HIP - 0.12, 0, sc);
-  if (k.vest) { g.box(0.435, 0.07, 0.245, 0, HIP + 0.3, 0, 0xf2d43a); g.box(0.435, 0.07, 0.245, 0, HIP + 0.44, 0, 0xf2d43a); }
-  if (k.pack) g.box(0.3, 0.38, 0.14, 0, HIP + 0.36, -0.19, k.pack);
+  var g = B(), sc = k.shirt, sf = k.stripe ? function (zc, ca, sa, x, y) { return fract(y * 8) < 0.5 ? sc : shade(sc, 0.82); } : sc;
+  g.loft([[-1.40, 0.105, 0.075, 0], [-1.34, 0.215, 0.12, 0.005], [-1.18, 0.20, 0.125, 0.01], [-0.96, 0.172, 0.105, 0], [-0.79, 0.195, 0.118, 0], [-0.73, 0.135, 0.088, 0]], { down: true, rings: 8, seg: 10, cap0: true, cap1: true }, sf);
+  g.sph(0.082, 0.074, 0.078, 0.23, SHO - 0.01, 0, sc, { s: [7, 5] });
+  g.sph(0.082, 0.074, 0.078, -0.23, SHO - 0.01, 0, sc, { s: [7, 5] });
+  g.cyl(0.082, 0.105, 0.042, 0, 1.39, 0, shade(sc, 0.86), { seg: 10 });
+  var beltCol = shade(k.trouser || sc, 0.62);
+  g.cyl(0.182, 0.192, 0.055, 0, HIP + 0.03, 0, beltCol, { seg: 12, sx: 1.12, sz: 0.66 });
+  g.box(0.05, 0.04, 0.02, 0, HIP + 0.03, 0.13, 0xd8b848);
+  if (k.coat) {
+    g.cyl(0.195, 0.228, 0.34, 0, HIP - 0.12, 0, sc, { seg: 12, sx: 1.14, sz: 0.68 });
+    g.limb(0.045, SHO - 0.02, 0.105, 0.012, HIP + 0.22, 0.125, 0.028, 0.02, shade(sc, 0.82), { seg: 6 });
+    g.limb(-0.045, SHO - 0.02, 0.105, -0.012, HIP + 0.22, 0.125, 0.028, 0.02, shade(sc, 0.82), { seg: 6 });
+    g.sph(0.013, 0.013, 0.008, 0, HIP + 0.14, 0.128, 0x333333, { s: [4, 3] });
+    g.sph(0.013, 0.013, 0.008, 0, HIP + 0.24, 0.128, 0x333333, { s: [4, 3] });
+  }
+  if (k.vest) {
+    g.cyl(0.196, 0.192, 0.06, 0, HIP + 0.29, 0, 0xf2d43a, { seg: 12, sx: 1.12, sz: 0.66 });
+    g.cyl(0.205, 0.20, 0.06, 0, HIP + 0.43, 0, 0xf2d43a, { seg: 12, sx: 1.12, sz: 0.66 });
+  }
+  if (k.pack) {
+    g.sph(0.15, 0.19, 0.088, 0, HIP + 0.35, -0.17, k.pack, { s: [8, 6] });
+    g.sph(0.14, 0.06, 0.08, 0, HIP + 0.49, -0.165, shade(k.pack, 0.84), { s: [7, 4] });
+  }
   headParts(g, k);
   return (bodyCache[key] = g.build());
 }
@@ -3666,18 +3828,31 @@ function legGeo(trouser, skin, shorts) {
   var key = trouser + '|' + (shorts ? skin : 0) + '|' + (shorts ? 1 : 0);
   if (legCache[key]) return legCache[key];
   var g = B(), L = HIP;
-  if (shorts) { g.box(0.17, 0.3, 0.2, 0, -0.15, 0, trouser); g.box(0.12, 0.42, 0.14, 0, -0.51, 0, skin); }
-  else g.box(0.17, 0.72, 0.2, 0, -0.36, 0, trouser);
-  g.box(0.18, 0.09, 0.3, 0, -L + 0.045, 0.045, 0x2b2b30);
+  g.sph(0.086, 0.086, 0.086, 0, 0, 0, trouser, { s: [7, 5] });
+  if (shorts) {
+    g.limb(0, 0, 0, 0, -0.31, 0, 0.088, 0.076, trouser, { seg: 8 });
+    g.sph(0.066, 0.066, 0.068, 0, -0.35, 0.004, skin, { s: [6, 5] });
+    g.limb(0, -0.34, 0, 0, -0.71, 0, 0.065, 0.048, skin, { seg: 8 });
+  } else {
+    g.limb(0, 0, 0, 0, -0.38, 0, 0.088, 0.072, trouser, { seg: 8 });
+    g.sph(0.07, 0.07, 0.072, 0, -0.38, 0.004, trouser, { s: [6, 5] });
+    g.limb(0, -0.38, 0, 0, -0.71, 0, 0.072, 0.056, trouser, { seg: 8 });
+  }
+  g.cyl(0.06, 0.065, 0.075, 0, -L + 0.046, -0.005, 0x2b2b30, { seg: 8 });
+  g.sph(0.07, 0.046, 0.11, 0, -L + 0.044, 0.072, 0x2b2b30, { s: [7, 5] });
+  g.cyl(0.07, 0.074, 0.022, 0, -L + 0.011, 0.034, 0x45454c, { seg: 8, sx: 1.0, sz: 1.72 });
   return (legCache[key] = g.build());
 }
 function armGeo(shirt, skin, shortSl) {
   var key = shirt + '|' + skin + '|' + (shortSl ? 1 : 0);
   if (armCache[key]) return armCache[key];
   var g = B(), sl = shortSl ? 0.22 : 0.48;
-  g.box(0.11, sl, 0.11, 0, -sl / 2, 0, shirt);
-  g.box(0.09, 0.58 - sl, 0.09, 0, -sl - (0.58 - sl) / 2 + 0.02, 0, skin);
-  g.sph(0.055, 0.06, 0.055, 0, -0.6, 0, skin, { s: [5, 4] });
+  g.sph(0.064, 0.064, 0.064, 0, 0, 0, shirt, { s: [7, 5] });
+  g.limb(0, 0, 0, 0, -sl, 0, 0.060, shortSl ? 0.054 : 0.045, shirt, { seg: 8 });
+  g.cyl(0.056, 0.056, 0.022, 0, -sl, 0, shade(shirt, 0.86), { seg: 8 });
+  g.limb(0, -sl, 0, 0, -0.56, 0, shortSl ? 0.046 : 0.042, 0.035, shortSl ? skin : shirt, { seg: 8 });
+  g.sph(0.044, 0.054, 0.038, 0, -0.6, 0.004, skin, { s: [7, 5] });
+  g.sph(0.018, 0.026, 0.018, 0, -0.585, 0.038, shade(skin, 0.94), { s: [5, 4] });
   return (armCache[key] = g.build());
 }
 function propGeo(name) {
@@ -3793,7 +3968,14 @@ var WATER_MAT = new T.MeshLambertMaterial({ color: 0x4aa8e0, emissive: 0x103050,
 
 function leaf(base, amt) {
   amt = amt || 0.36;
-  return function (x, y, z, nx, ny) { var h = hash3(Math.floor(x * 2.6), Math.floor(y * 2.6), Math.floor(z * 2.6)); var c = shade(base, 1 - amt / 2 + h * amt); if (ny > 0.45) c = shade(c, 1.1); else if (ny < -0.3) c = shade(c, 0.85); return c; };
+  return function (x, y, z, nx, ny) {
+    var h = hash3(Math.floor(x * 2.6), Math.floor(y * 2.6), Math.floor(z * 2.6));
+    var grad = clamp((y - 1.2) * 0.05, -0.06, 0.12);
+    var c = shade(base, 1 - amt / 2 + h * amt + grad);
+    if (ny > 0.35) c = mixHex(shade(c, 1.12), 0x9de052, 0.14);
+    else if (ny < -0.25) c = shade(c, 0.82);
+    return c;
+  };
 }
 function rockGeo(seed) {
   return unit('rock' + seed, function () {
@@ -4461,24 +4643,36 @@ function labelMesh(text, bg, fg, w, h, x, y, z, ry, rx) {
 }
 function awning(g, x, y, z, w, d, c1, c2, n, slope) {
   n = n || 8; slope = slope || 0.4; var sw = w / n, s = d / Math.cos(slope);
+  g.box(w + 0.06, 0.045, 0.05, x, y + 0.025, z + 0.01, shade(c1, 0.7));
   for (var i = 0; i < n; i++) { g.box(sw * 1.01, 0.05, s, x - w / 2 + sw * (i + 0.5), y - Math.sin(slope) * d / 2, z + Math.cos(slope) * d / 2, i % 2 ? c2 : c1, { rot: [slope, 0, 0] }); g.box(sw * 1.01, 0.12, 0.04, x - w / 2 + sw * (i + 0.5), y - Math.sin(slope) * d - 0.04, z + d, i % 2 ? c2 : c1); }
 }
 function gable(g, w, d, y, h, col, over, ridgeAlongX) {
   over = over || 0.15; var half = d / 2, ang = Math.atan2(h, half), s = Math.sqrt(half * half + h * h) + over;
   g.box(w + over * 2, 0.1, s, 0, y + h / 2, half / 2, col, { rot: [ang, 0, 0] }); g.box(w + over * 2, 0.1, s, 0, y + h / 2, -half / 2, shade(col, 0.88), { rot: [-ang, 0, 0] });
+  g.box(w + over * 2 + 0.04, 0.09, 0.14, 0, y + h + 0.03, 0, shade(col, 0.78));
   g.tri([w / 2, y, -half], [w / 2, y, half], [w / 2, y + h, 0], shade(col, 0.8), 1, 0, 0); g.tri([-w / 2, y, -half], [-w / 2, y, half], [-w / 2, y + h, 0], shade(col, 0.8), -1, 0, 0);
 }
-function windowAt(g, x, y, z, w, h, frame, glass) { g.box(w + 0.1, h + 0.1, 0.05, x, y, z, frame); g.box(w, h, 0.07, x, y, z + 0.005, glass || 0x9fd0ec); g.box(0.04, h, 0.08, x, y, z + 0.01, frame); g.box(w, 0.04, 0.08, x, y, z + 0.01, frame); }
+function windowAt(g, x, y, z, w, h, frame, glass) {
+  g.box(w + 0.1, h + 0.1, 0.05, x, y, z, frame);
+  g.box(w, h, 0.07, x, y, z + 0.005, glass || 0x9fd0ec);
+  g.box(0.04, h, 0.08, x, y, z + 0.01, frame);
+  g.box(w, 0.04, 0.08, x, y, z + 0.01, frame);
+  g.box(w + 0.16, 0.055, 0.12, x, y - h / 2 - 0.04, z + 0.025, shade(frame, 0.88));
+  g.box(w + 0.14, 0.045, 0.08, x, y + h / 2 + 0.04, z + 0.012, shade(frame, 0.84));
+}
 function stall(g, o) {
   var W = o.w || 1.6, D = o.d || 1.4, H = o.h || 1.2, y0 = 0.12;
-  g.box(W + 0.12, 0.12, D + 0.12, 0, 0.06, 0, 0x8d8a84);
+  g.box(W + 0.16, 0.06, D + 0.16, 0, 0.03, 0, 0x7c7972);
+  g.box(W + 0.10, 0.08, D + 0.10, 0, 0.10, 0, 0x949088);
   g.box(W, H, D, 0, y0 + H / 2, 0, o.wall, { s: [1, o.bands ? 4 : 1, 1] });
+  for (var cx = -1; cx <= 1; cx += 2) for (var cz = -1; cz <= 1; cz += 2) g.box(0.075, H, 0.075, cx * (W / 2 - 0.01), y0 + H / 2, cz * (D / 2 - 0.01), shade(o.trim, 0.9));
   g.box(W + 0.04, 0.08, D + 0.04, 0, y0 + H * 0.12, 0, o.trim); g.box(W + 0.04, 0.08, D + 0.04, 0, y0 + H, 0, o.trim);
   g.box(W * 0.72, H * 0.36, 0.05, 0, y0 + H * 0.64, D / 2 + 0.005, 0x2a221e); g.box(W * 0.72 + 0.1, 0.05, 0.06, 0, y0 + H * 0.82 + 0.05, D / 2 + 0.01, o.trim); g.box(W * 0.72 + 0.1, 0.05, 0.06, 0, y0 + H * 0.46 - 0.02, D / 2 + 0.01, o.trim);
   g.box(W * 0.8, 0.06, 0.3, 0, y0 + H * 0.45, D / 2 + 0.16, o.counter || 0xe8e0d0);
   g.box(0.3, 0.45, 0.04, W / 2 + 0.005, y0 + H * 0.6, 0.1, 0x2a221e); // side hatch
   awning(g, 0, y0 + H * 1.0 + 0.2, D / 2 - 0.02, W + 0.1, 0.65, o.awn1, o.awn2, 8, 0.45);
-  g.box(W + 0.2, 0.1, D + 0.2, 0, y0 + H + 0.05 + 0.0, 0, o.roof);
+  g.box(W + 0.24, 0.06, D + 0.24, 0, y0 + H + 0.03, 0, shade(o.roof, 0.88));
+  g.box(W + 0.18, 0.08, D + 0.18, 0, y0 + H + 0.09, 0, o.roof);
   for (var s = -1; s <= 1; s += 2) g.limb(s * (W / 2 + 0.02), y0 + H, D / 2 + 0.55, s * (W / 2 + 0.02), y0 + H * 0.45, D / 2 + 0.55, 0.025, 0.025, 0xe8e0d0, { seg: 4 });
 }
 function addSpin(grp0, geo, y, speed) {
@@ -5387,6 +5581,13 @@ API.createScenery = function (id) { return SCENERY_API.scenery(id) || fallbackBo
 API.createBuilding = function (id) { return BUILDING_API.building(id) || fallbackBox(); };
 API.makeBuilding = API.createBuilding;
 API.sceneryInstancing = SCENERY_API.instancing;
+API.setDetail = function (d) {
+  var v = clamp(+d || 1.5, 0.8, 2.2);
+  if (Math.abs(v - DETAIL) < 0.01) return;
+  DETAIL = v;
+  unitCache = {}; bodyCache = {}; legCache = {}; armCache = {}; propCache = {}; sceneryGeoCache = {}; partsCache = {};
+};
+API.getDetail = function () { return DETAIL; };
 API.speciesIds = function () { return Object.keys(QUADS).concat(Object.keys(OTHERS)); };
 return API;
 })();
