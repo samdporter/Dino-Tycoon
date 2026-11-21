@@ -2953,3 +2953,60 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
     assert.ok(dOrangeToB < 1.5, `rot=${rot}: endB should be at orange return arrow (d=${dOrangeToB})`);
   }
 });
+
+test('Zoo paths do not create enclosures, close open fences, or break MAX_ENC_TILES flood fill', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 2026, map: 'grassland', money: 200000 });
+  const N = z.N;
+
+  // Clear and flatten [11..28, 11..22]
+  for (let j = 11; j <= 22; j++) for (let i = 11; i <= 28; i++) {
+    const t = i + j * N;
+    const oid = z.state.tileObj[t];
+    if (oid) {
+      const o = z.state.objects.find(x => x.id === oid);
+      if (o) z.Sim.bulldoze(o.i, o.j);
+    }
+    z.state.terrain[t] = 0;
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+
+  // 1. A closed loop of paths enclosing a 4x4 (16-tile >= 9) empty area must NOT create an enclosure
+  for (let i = 14; i <= 19; i++) {
+    assert.equal(z.Sim.placePath(i, 14, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(i, 19, 'paved').ok, true);
+  }
+  for (let j = 15; j <= 18; j++) {
+    assert.equal(z.Sim.placePath(14, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(19, j, 'paved').ok, true);
+  }
+  assert.equal(z.state.enclosures.length, 0, 'closed path loop must not create an enclosure');
+  assert.equal(z.Sim.enclosureAt(16, 16), null);
+  assert.equal(z.state.tileEnc[16 + 16 * N], 0);
+  assert.equal(z.Sim.placeObject('ice_cream', 16, 16, 0).ok, true, 'buildings must still be placeable inside a path loop');
+  assert.equal(z.Sim.placePath(15, 16, 'paved').ok, true, 'paths must still be placeable inside a path loop');
+
+  // 2. An open 3-sided fence abutting a path on its open 4th side must NOT form an enclosure
+  for (let i = 21; i <= 24; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 15 }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 19 }, 'low_wood').ok, true);
+  }
+  for (let j = 15; j <= 18; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 25, j }, 'low_wood').ok, true);
+  }
+  // Open U-shaped fence (facing west towards path column i=19) must not create an enclosure
+  assert.equal(z.state.enclosures.length, 0, 'open U-shaped fence next to paths must not create an enclosure');
+  assert.equal(z.Sim.enclosureAt(22, 16), null);
+
+  // Place a path right against the open west edge (i=20) — still must NOT close the enclosure
+  for (let j = 15; j <= 18; j++) assert.equal(z.Sim.placePath(20, j, 'paved').ok, true);
+  assert.equal(z.state.enclosures.length, 0, 'path along open fence edge must not close an enclosure');
+
+  // 3. Closing the 4th side with an actual fence creates the enclosure
+  for (let j = 15; j <= 18; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 21, j }, 'low_wood').ok, true);
+  }
+  assert.equal(z.state.enclosures.length, 1);
+  assert.ok(z.Sim.enclosureAt(22, 16));
+  assert.equal(z.Sim.enclosureAt(22, 16).area, 16);
+});

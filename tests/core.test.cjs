@@ -1904,4 +1904,38 @@ test('power cuts, substation outages, and restoration immediately dry out and re
   for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 1);
 });
 
+test('paths do not create enclosures or close open fences in Dino Tycoon', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 2027, money: 200000 });
+  setupFlatZone(z, 12, 12, 27, 22);
+
+  // Closed loop of paths enclosing a 4x4 interior must not create an enclosure
+  for (let i = 14; i <= 19; i++) {
+    assert.equal(z.Sim.placePath(i, 14, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(i, 19, 'paved').ok, true);
+  }
+  for (let j = 15; j <= 18; j++) {
+    assert.equal(z.Sim.placePath(14, j, 'paved').ok, true);
+    assert.equal(z.Sim.placePath(19, j, 'paved').ok, true);
+  }
+  assert.equal(z.state.enclosures.length, 0);
+  assert.equal(z.state.tileEnc[16 + 16 * z.N], 0);
+
+  // Open 3-sided fence next to path column i=20 must not create an enclosure
+  for (let i = 21; i <= 24; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 15 }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 19 }, 'low_wood').ok, true);
+  }
+  for (let j = 15; j <= 18; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 25, j }, 'low_wood').ok, true);
+    assert.equal(z.Sim.placePath(20, j, 'paved').ok, true);
+  }
+  assert.equal(z.state.enclosures.length, 0);
+
+  // Closing the 4th side with fences creates the enclosure
+  for (let j = 15; j <= 18; j++) assert.equal(z.Sim.placeFence({ axis: 'z', i: 21, j }, 'low_wood').ok, true);
+  assert.equal(z.state.enclosures.length, 1);
+  assert.equal(z.state.enclosures[0].area, 16);
+});
+
 

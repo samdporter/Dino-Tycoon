@@ -426,28 +426,27 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var stack = [];
     for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) {
       var start = i + j * N;
-      if (visited[start] || S.path[start]) continue;
+      if (visited[start]) continue;
       // flood fill candidate region bounded by fences
       stack.length = 0; stack.push(start); visited[start] = 1;
       var tiles = [], leaks = false;
       while (stack.length) {
         var t = stack.pop(); tiles.push(t);
-        if (tiles.length > MAX_ENC_TILES) { leaks = true; break; }
         var ti = t % N, tj = (t - ti) / N, n;
         // north (j - 1)
         if (tj === 0) { if (!S.fenceX[t]) leaks = true; }
-        else if (!S.fenceX[t]) { n = t - N; if (!visited[n] && !S.path[n]) { visited[n] = 1; stack.push(n); } }
+        else if (!S.fenceX[t]) { n = t - N; if (!visited[n]) { visited[n] = 1; stack.push(n); } }
         // south (j + 1)
         if (tj === N - 1) { if (!S.fenceX[t + N]) leaks = true; }
-        else if (!S.fenceX[t + N]) { n = t + N; if (!visited[n] && !S.path[n]) { visited[n] = 1; stack.push(n); } }
+        else if (!S.fenceX[t + N]) { n = t + N; if (!visited[n]) { visited[n] = 1; stack.push(n); } }
         // west (i - 1)
         if (ti === 0) { if (!S.fenceZ[ti + tj * (N + 1)]) leaks = true; }
-        else if (!S.fenceZ[ti + tj * (N + 1)]) { n = t - 1; if (!visited[n] && !S.path[n]) { visited[n] = 1; stack.push(n); } }
+        else if (!S.fenceZ[ti + tj * (N + 1)]) { n = t - 1; if (!visited[n]) { visited[n] = 1; stack.push(n); } }
         // east (i + 1)
         if (ti === N - 1) { if (!S.fenceZ[(ti + 1) + tj * (N + 1)]) leaks = true; }
-        else if (!S.fenceZ[(ti + 1) + tj * (N + 1)]) { n = t + 1; if (!visited[n] && !S.path[n]) { visited[n] = 1; stack.push(n); } }
+        else if (!S.fenceZ[(ti + 1) + tj * (N + 1)]) { n = t + 1; if (!visited[n]) { visited[n] = 1; stack.push(n); } }
       }
-      if (leaks || tiles.length < 9) continue;
+      if (leaks || tiles.length < 9 || tiles.length > MAX_ENC_TILES) continue;
       // find existing matching enclosure
       var match = null;
       for (k = 0; k < tiles.length; k++) {
