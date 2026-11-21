@@ -255,15 +255,40 @@ window.Z = window.Z || {}; var Z = window.Z;
   function toggle(label, get, set) {
     var sw = h('span.sw' + (get() ? '.on' : '')), row = h('button.toggle', { 'aria-pressed': String(!!get()), style: 'width:100%' }, h('span', { text: label }), sw);
     row.addEventListener('click', function () { var v = !get(); set(v); sw.classList.toggle('on', v); row.setAttribute('aria-pressed', String(v)); UI.snd('click'); });
+    row._sync = function () { var v = !!get(); sw.classList.toggle('on', v); row.setAttribute('aria-pressed', String(v)); };
     return row;
   }
   function setTab(b) {
     var snd = box('Sound & picture');
     snd.appendChild(toggle('Sound', function () { return Z.Audio && Z.Audio.enabled(); }, function (v) { Z.Audio && Z.Audio.setEnabled(v); Z.Main.saveSettings(); }));
-    var q = h('div.seg', { style: 'align-self:flex-start' }), qv = Z.Main.getQuality();
-    [['auto', 'Auto'], ['low', 'Low'], ['med', 'Medium'], ['high', 'High']].forEach(function (o) { q.appendChild(h('button' + (qv === o[0] ? '.on' : ''), { text: o[1], on: { click: function () { Z.Main.setQuality(o[0]); Array.prototype.forEach.call(q.children, function (c) { c.classList.toggle('on', c.textContent === o[1]); }); UI.snd('click'); } } })); });
-    snd.appendChild(h('div.kv', h('span', { text: 'Graphics quality' }), h('span', { style: 'font-size:12px;color:var(--ink3)', text: 'Lower it if the game feels slow' }))); snd.appendChild(q);
+    var gfx = box('Graphics & Performance');
+    var q = h('div.seg', { style: 'align-self:flex-start;flex-wrap:wrap' }), qv = Z.Main.getQuality();
+    var gfxStatus = h('div', { style: 'font-size:12px;color:var(--ink2);line-height:1.4', role: 'status' });
+    function updateGfxStatus() {
+      var gs = Z.Main.getGraphicsSettings ? Z.Main.getGraphicsSettings() : { quality: Z.Main.getQuality(), shadows: true, impostors: false, detail: 1.5 };
+      var dLbl = gs.detail >= 1.7 ? 'Ultra' : gs.detail >= 1.45 ? 'High' : gs.detail >= 1.2 ? 'Medium' : 'Standard';
+      var parts = [gs.impostors ? 'Distant simplification allowed' : 'Full 3D models active', dLbl + ' detail geometry', gs.shadows ? 'Soft shadows' : 'Shadows off'];
+      var es = Z.World && Z.World._G && Z.World._G.entStats;
+      if (es) parts.push(es.visible + ' entities, ' + es.meshes + ' meshes (' + es.impostors + ' simplified)');
+      gfxStatus.textContent = parts.join(' · ');
+    }
+    var shRow = toggle('Real-time shadows', function () { return Z.Main.getGraphicsSettings ? Z.Main.getGraphicsSettings().shadows : true; }, function (v) { Z.Main.setGraphicsSetting && Z.Main.setGraphicsSetting('shadows', v); updateGfxStatus(); });
+    var fullRow = toggle('Always show full 3D models (never simplify to blocks)', function () { return Z.Main.getGraphicsSettings ? !Z.Main.getGraphicsSettings().impostors : true; }, function (v) { Z.Main.setGraphicsSetting && Z.Main.setGraphicsSetting('impostors', !v); updateGfxStatus(); });
+    [['auto', 'Auto'], ['low', 'Low'], ['med', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']].forEach(function (o) {
+      q.appendChild(h('button' + (qv === o[0] ? '.on' : ''), { text: o[1], on: { click: function () {
+        Z.Main.setQuality(o[0]);
+        Array.prototype.forEach.call(q.children, function (c) { c.classList.toggle('on', c.textContent === o[1]); });
+        shRow._sync(); fullRow._sync(); updateGfxStatus(); UI.snd('click');
+      } } }));
+    });
+    gfx.appendChild(h('div.kv', h('span', { text: 'Graphics quality' }), h('span', { style: 'font-size:12px;color:var(--ink3)', text: 'Higher presets boost detail & shadows' })));
+    gfx.appendChild(q);
+    gfx.appendChild(shRow);
+    gfx.appendChild(fullRow);
+    gfx.appendChild(gfxStatus);
+    updateGfxStatus();
     b.appendChild(snd);
+    b.appendChild(gfx);
     var ptVal = null;
     if (UI.PlayTimer) {
       var ptBox = box('Play timer');
@@ -297,7 +322,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       '<p><b>Mouse:</b> left click uses the tool or pans; right-drag rotates; wheel zooms. <b>Keys:</b> WASD or arrows pan, Q/E rotate, +/- zoom, R rotates the item, B bulldoze, Space pause, 1-2-3 speed, H hides the interface, Esc cancels.</p>' +
       '<p><b>Tip:</b> ' + (D.tips[(Math.random() * D.tips.length) | 0]) + '</p>' }));
     b.appendChild(how);
-    return function () { if (Z.Storage && Z.Storage.status) status.textContent = Z.Storage.status(); if (ptVal && UI.PlayTimer && UI.PlayTimer.formattedLong) ptVal.textContent = UI.PlayTimer.formattedLong(); };
+    return function () { if (Z.Storage && Z.Storage.status) status.textContent = Z.Storage.status(); if (ptVal && UI.PlayTimer && UI.PlayTimer.formattedLong) ptVal.textContent = UI.PlayTimer.formattedLong(); updateGfxStatus(); };
   }
   Screens.buildSettings = setTab;
 })();

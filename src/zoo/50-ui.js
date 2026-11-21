@@ -148,7 +148,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     el.bMove = cb('hand', 'Move the camera instead of using the tool'); el.bMove.style.display = 'none';
     el.bSV = cb('eye', 'Street view'); el.bSV.title = 'Street view - walk through your zoo'; el.bSV.classList.add('svbtn');
     el.bSV.addEventListener('click', function () { UI.snd('click'); if (UI.StreetView && UI.StreetView.toggle) UI.StreetView.toggle(); else if (UI.SV) UI.SV.enter(); });
-    [el.bMove, el.bRotObj, el.bRotL, el.bRotR, el.bZin, el.bZout, el.bTilt, el.bSV].forEach(function (b) { el.side.appendChild(b); });
+    el.bGfx = cb('gear', 'Graphics & settings', 'gfxbtn'); el.bGfx.title = 'Graphics & settings';
+    el.bGfxBadge = h('small', { text: 'AUTO' }); el.bGfx.appendChild(el.bGfxBadge);
+    el.bGfx.addEventListener('click', function () { UI.snd('click'); UI.openModal('set'); });
+    [el.bMove, el.bRotObj, el.bRotL, el.bRotR, el.bZin, el.bZout, el.bTilt, el.bSV, el.bGfx].forEach(function (b) { el.side.appendChild(b); });
     UI.hold(el.bRotL, function (dt) { Z.World.rotate(-1.7 * dt, 0); });
     UI.hold(el.bRotR, function (dt) { Z.World.rotate(1.7 * dt, 0); });
     UI.hold(el.bZin, function (dt) { Z.World.zoom(Math.exp(-1.6 * dt)); });
@@ -239,6 +242,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
 
   UI.hideUI = function (on) { root.classList.toggle('ui-hidden', !!on); if (on) { if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false); UI.toast('Tap the eye to bring the controls back', 'info'); } };
+  UI.updateGfxBadge = function () {
+    if (!el.bGfxBadge || !Z.Main || !Z.Main.getQuality) return;
+    var q = Z.Main.getQuality();
+    var lbl = q === 'med' ? 'MED' : String(q || 'auto').toUpperCase();
+    el.bGfxBadge.textContent = lbl;
+  };
   UI.setSpeed = function (n) { Z.Sim.setSpeed(n); UI.snd('click'); lastHud.speed = -1; };
 
   // ------------------------------------------------------------------ HUD

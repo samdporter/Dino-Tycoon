@@ -760,6 +760,7 @@ function createExtra(id, opts) { var S = SPEC[id]; if (!S) return null; return E
 var origCreate = M.createAnimal, origIds = M.speciesIds;
 M.createAnimal = function (id, opts) { if (SPEC[id]) return createExtra(id, opts); return origCreate(id, opts); };
 M.speciesIds = function () { return origIds().concat(Object.keys(SPEC)); };
+M._onDetail = function () { Object.keys(SPEC).forEach(function (k) { SPEC[k]._geo = null; SPEC[k]._app = null; }); };
 M.poseThumb = function (id, ent, size, az, el, steps) {   // dev/test: render a posed model through the thumbnail renderer
   var r = M.thumbRenderer(); if (!r) return null;
   var a = M.createAnimal(id, { sex: 'm' }), sc = new T.Scene(); sc.add(new T.HemisphereLight(0xffffff, 0x8a9070, 0.85)); var d = new T.DirectionalLight(0xfff2dc, 0.75); d.position.set(-3, 6, 5); sc.add(d);
