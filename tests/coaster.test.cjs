@@ -808,3 +808,72 @@ test('Dino Coasters: overhauled gravity physics — drop acceleration, unpowered
   assert.equal(sawNegativeRollback, true, 'Train stalling on unpowered uphill must roll backward (v < 0) under gravity');
   assert.equal(sawWinchReset, true, 'Stalled train must winch back to station dwell after > 4s');
 });
+
+test('Dino Coasters: Chain Lift engages on elev>=1 hills from station exit, tall hills, and emits status toasts', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 2023, money: 500000 });
+  z.state.unlocked.star = 5;
+  const N = z.N;
+  const tidx = (i, j) => i + j * N;
+  clearFlatArea(z, 10, 20, 42, 42);
+
+  // Capture coasterCtx toast messages
+  const msgs = [];
+  const origMsg = z.coasterCtx.msg;
+  z.coasterCtx.msg = (text, kind) => { msgs.push({ text, kind }); if (origMsg) origMsg(text, kind); };
+
+  const stRes = z.Sim.placeObject('coaster_steel', 18, 25, 0);
+  assert.equal(stRes.ok, true, stRes.msg);
+  // Station occupies (18..21, 25..26); endF is (21,25), endB is (18,25)
+  const route = [
+    tidx(21, 25), tidx(22, 25), tidx(23, 25), tidx(24, 25), tidx(25, 25), tidx(26, 25),
+    tidx(27, 25), tidx(28, 25), tidx(29, 25), tidx(30, 25), tidx(31, 25),
+    tidx(31, 24), tidx(31, 23), tidx(31, 22), tidx(31, 21),
+    tidx(30, 21), tidx(29, 21), tidx(28, 21), tidx(27, 21), tidx(26, 21), tidx(25, 21),
+    tidx(24, 21), tidx(23, 21), tidx(22, 21), tidx(21, 21), tidx(20, 21), tidx(19, 21), tidx(18, 21), tidx(17, 21),
+    tidx(17, 22), tidx(17, 23), tidx(17, 24), tidx(17, 25), tidx(18, 25)
+  ];
+  const bRes = z.Coaster.buildTrack(route);
+  assert.equal(bRes.ok, true, bRes.msg);
+
+  // Raise a tall hill (elev = 8) peaking at (29,25) so auto-ramp reaches right outside station endF at (22,25)
+  msgs.length = 0;
+  for (let lv = 0; lv < 8; lv++) {
+    assert.equal(z.Coaster.changeHeight([tidx(29, 25)], 1).ok, true);
+  }
+  const infoAfterHill = z.Coaster.stationInfo(stRes.id);
+  assert.equal(infoAfterHill.ready, false, 'Unpowered hill must still stall');
+  assert.ok(msgs.some((m) => m.kind === 'bad' && /Chain Lift/i.test(m.text)), 'Raising an unpowered hill must notify the player why it stalls');
+
+  // Stamp Chain Lift ONLY on the first raised tile immediately outside station (22,25)
+  msgs.length = 0;
+  assert.equal(z.Coaster.placeSpecial([tidx(22, 25)], 1).ok, true);
+  const infoAfterLift = z.Coaster.stationInfo(stRes.id);
+  assert.equal(infoAfterLift.ready, true, `Chain Lift on elev>=1 right outside station must engage and carry continuously to crest (reason: ${infoAfterLift.stallReason})`);
+  assert.ok(msgs.some((m) => m.kind === 'good' && /ready/i.test(m.text)), 'Fixing the circuit with Chain Lift must notify the player');
+
+  // Verify train actually dispatches and runs
+  const train = z.state.coaster.trains.find((t) => t.stationId === stRes.id);
+  let dispatched = false;
+  for (let step = 0; step < 80; step++) {
+    z.Sim._step(0.1);
+    if (z.Coaster.trainInfo(train.id).state === 'run') { dispatched = true; break; }
+  }
+  assert.equal(dispatched, true, 'Train must dispatch once Chain Lift is placed');
+
+  // Also test a long flat loop with a lift hill too far on the backstretch -> clear error message
+  const st2Res = z.Sim.placeObject('coaster_wooden', 18, 36, 0);
+  assert.equal(st2Res.ok, true, st2Res.msg);
+  const longRoute = [];
+  for (let i = 21; i <= 38; i++) longRoute.push(tidx(i, 36));
+  for (let j = 35; j >= 31; j--) longRoute.push(tidx(38, j));
+  for (let i = 37; i >= 17; i--) longRoute.push(tidx(i, 31));
+  for (let j = 32; j <= 36; j++) longRoute.push(tidx(17, j));
+  longRoute.push(tidx(18, 36));
+  assert.equal(z.Coaster.buildTrack(longRoute).ok, true);
+  assert.equal(z.Coaster.changeHeight([tidx(28, 31)], 1).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(29, 31)], 1).ok, true);
+  const infoLong = z.Coaster.stationInfo(st2Res.id);
+  assert.equal(infoLong.ready, false);
+  assert.match(infoLong.stallReason || '', /before reaching your Chain Lift/i);
+});

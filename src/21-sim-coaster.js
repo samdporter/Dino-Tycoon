@@ -275,6 +275,8 @@
           reason = 'Train stalls climbing a hill! Stamp a Chain Lift Hill (⛓️) on the uphill slope or make your first lift hill taller.';
         } else if (hasHill) {
           reason = 'Train loses momentum before finishing the circuit! Make your first Chain Lift hill taller or add a Launch Boost.';
+        } else if (seenAnyLift) {
+          reason = 'Train slows to a stop before reaching your Chain Lift! Place the lift hill closer to the station or add a Launch Boost.';
         } else {
           reason = 'Track is too long without a hill or boost — train slows to a stop from friction! Raise a hill with a Chain Lift (⛓️) or add a Launch Boost.';
         }
@@ -368,8 +370,8 @@
       if (x.stAt[nodes[k]] < 0 && spec[nodes[k]] === 1) nodeLift[k] = 1;
     }
     for (k = 0; k < m; k++) {
-      if (spec[nodes[k]] !== 1) continue;
-      for (var step = 1; step <= 3; step++) {
+      if (x.stAt[nodes[k]] >= 0 || spec[nodes[k]] !== 1) continue;
+      for (var step = 1; step < m; step++) {
         if (!loop && k + step >= m) break;
         var nkLift = (k + step) % m;
         var pkLift = (nkLift - 1 + m) % m;
@@ -390,7 +392,10 @@
       if (pts.length) {
         var last = pts[pts.length - 1];
         var dx = pt.x - last.x, dy = pt.y - last.y, dz = pt.z - last.z;
-        if (dx * dx + dy * dy + dz * dz < 1e-5) return;
+        if (dx * dx + dy * dy + dz * dz < 1e-5) {
+          if (pt.lift) last.lift = 1;
+          return;
+        }
       }
       pts.push(pt);
     }
@@ -513,7 +518,7 @@
       pyA[k] = a0.y + (a1.y - a0.y) * f;
       pzA[k] = a0.z + (a1.z - a0.z) * f;
       spA[k] = f < 0.5 ? a0.spec : a1.spec;
-      liftA[k] = (f < 0.5 ? a0.lift : a1.lift) ? 1 : 0;
+      liftA[k] = ((f < 0.5 ? a0.lift : a1.lift) || (a1.lift && a1.y > a0.y + 0.02 && f >= 0.5)) ? 1 : 0;
       if (spA[k] >= 2) liftA[k] = 0;
       stSampleA[k] = (a0.st || a1.st) ? 1 : 0;
       if (a0.hasUp || a1.hasUp) {
@@ -1057,6 +1062,34 @@
   }
 
   // Raise (+1) or Lower (-1) track height on existing track tiles (with smooth hill auto-ramping along connected track!)
+  function snapshotLineReady() {
+    var snap = {};
+    for (var i = 0; i < X.lines.length; i++) {
+      var L = X.lines[i];
+      if (L.station && L.station.obj) snap[L.station.obj.id] = !!L.ready;
+    }
+    return snap;
+  }
+
+  function notifyLineStatusChange(prevReady, touchedTiles) {
+    var touched = {};
+    for (var i = 0; i < touchedTiles.length; i++) {
+      var li = X.lineAt ? X.lineAt[touchedTiles[i]] : -1;
+      if (li >= 0) touched[li] = true;
+    }
+    for (var k = 0; k < X.lines.length; k++) {
+      var L = X.lines[k];
+      if (!L.station || !L.station.obj || !L.loop || L.branch) continue;
+      if (!touched[k]) continue;
+      var wasReady = !!prevReady[L.station.obj.id];
+      if (!wasReady && L.ready) {
+        C.msg(L.typeDef.name + ' is ready! Excitement ' + L.excitement.toFixed(1) + '/10 — train launching!', 'good');
+      } else if (!L.ready && L.stallReason) {
+        C.msg(L.typeDef.name + ': ' + L.stallReason, 'bad');
+      }
+    }
+  }
+
   function changeHeight(tiles, delta, opts) {
     var s = C.getS(); ensureArrays(s);
     var dry = opts && opts.dry;
@@ -1107,6 +1140,7 @@
     var outTiles = changed.map(function (c) { return c.t; });
     if (dry) return C.okr(cost, { tiles: outTiles, peakLv: peakLv });
 
+    var prevReady = snapshotLineReady();
     for (k = 0; k < changed.length; k++) s.coasterElev[changed[k].t] = changed[k].nw;
     if (cost > 0) C.spend(cost, 'construction');
     C.jBegin(delta > 0 ? 'Raise coaster hill' : 'Lower coaster track');
@@ -1120,6 +1154,7 @@
     });
     C.jEnd();
     updateGraph();
+    notifyLineStatusChange(prevReady, outTiles);
     C.afterWorldChange(false);
     C.bus.emit('coasterChanged', X.ver);
     return C.okr(cost, { tiles: outTiles, peakLv: peakLv });
@@ -1154,6 +1189,8 @@
     if (s.money < cost) return C.fail('Not enough money');
     if (dry) return C.okr(cost, { tiles: changed.map(function (c) { return c.t; }) });
 
+    var prevReady = snapshotLineReady();
+    var specTiles = changed.map(function (c) { return c.t; });
     for (k = 0; k < changed.length; k++) s.coasterSpec[changed[k].t] = changed[k].nw;
     C.spend(cost, 'construction');
     C.jBegin('Add ' + sdef.name);
@@ -1167,6 +1204,7 @@
     });
     C.jEnd();
     updateGraph();
+    notifyLineStatusChange(prevReady, specTiles);
     C.afterWorldChange(false);
     C.bus.emit('coasterChanged', X.ver);
     return C.okr(cost, { tiles: changed.map(function (c) { return c.t; }) });
