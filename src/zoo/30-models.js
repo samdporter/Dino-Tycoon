@@ -4132,13 +4132,10 @@ OTHERS.peacock = function (opts) {
     P = partsCache[key] = {};
     var g = B();
     var bodyCol = male ? function (zc, ca, sa, x, y, z) { return ca > 0.25 ? TL : RB; } : function (zc, ca, sa, x, y, z) { return ca < -0.35 ? FM_LT : FM; };
-    g.loft([
-      [0.34, 0.06, 0.075, 0.085, 0],
-      [0.20, 0.03, 0.145, 0.152, 0],
-      [0.02, 0.0, 0.175, 0.168, 0],
-      [-0.14, -0.01, 0.145, 0.135, 0],
-      [-0.29, 0.01, 0.075, 0.07, 0]
-    ], { seg: 10, steps: 2 }, bodyCol);
+    g.loft([[-0.29, 0.075, 0.07, 0.01], [-0.14, 0.145, 0.135, -0.01], [0.02, 0.175, 0.168, 0], [0.2, 0.145, 0.152, 0.03], [0.34, 0.075, 0.085, 0.06]], { rings: 14, seg: 12, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return plume(bodyCol(zc, ca, sa), x, y, z, 0.12); });
+    // breast scallops and rump coverts
+    for (var bf = 0; bf < 6; bf++) { var ba = (bf - 2.5) * 0.4; feather(g, sin(ba) * 0.12, 0.0 - abs(ba) * 0.03, 0.24 - abs(ba) * 0.05, 0.14, 0.04, [-1.2, -ba * 0.5, 0], male ? (bf % 2 ? TL : RB) : FM_LT, 0.012); }
+    for (var rf = 0; rf < 5; rf++) feather(g, (rf - 2) * 0.05, 0.1, -0.24, 0.2, 0.045, [-0.1 - abs(rf - 2) * 0.03, (rf - 2) * 0.1, 0], male ? EM1 : FM, 0.012);
     P.body = g.build();
 
     // lower neck
@@ -4156,7 +4153,9 @@ OTHERS.peacock = function (opts) {
     g.sph(0.022, 0.018, 0.028, 0.038, 0.015, L + 0.04, WH, { s: [5, 4] });
     g.sph(0.022, 0.018, 0.028, -0.038, 0.015, L + 0.04, WH, { s: [5, 4] });
     // pointed beak
-    g.cone(0.023, 0.085, 0, -0.005, L + 0.105, BEAK, { seg: 5, rot: [PI / 2 + 0.1, 0, 0] });
+    g.tube([[0, 0.008, L + 0.05], [0, 0.004, L + 0.1], [0, -0.012, L + 0.15]], [0.024, 0.016, 0.004], function (x, y, z, nx, ny, nz, t) { return t > 0.7 ? shade(BEAK, 0.8) : BEAK; }, { seg: 5, steps: 2 });
+    g.tube([[0, -0.012, L + 0.05], [0, -0.016, L + 0.1], [0, -0.02, L + 0.135]], [0.016, 0.011, 0.004], shade(BEAK, 1.3), { seg: 4, steps: 2 });
+    for (var nn = -1; nn <= 1; nn += 2) g.sph(0.004, 0.003, 0.008, nn * 0.014, 0.012, L + 0.09, 0x151210, { s: [3, 3] });
     // tiny golden head crest
     var crCol = male ? GD : 0x9c8e78, crCh = male ? 0.11 : 0.075;
     for (var ci = -1; ci <= 1; ci++) {
@@ -4164,7 +4163,7 @@ OTHERS.peacock = function (opts) {
       g.limb(cx * 0.4, 0.055, L + 0.01, cx, cy, L - 0.01, 0.005, 0.004, male ? TL : FM, { seg: 4 });
       g.sph(0.014, 0.018, 0.01, cx, cy + 0.008, L - 0.01, crCol, { s: [5, 4] });
     }
-    eyePair(g, 0.043, 0.022, L + 0.046, 0.013, 0x111111);
+    eyes(g, 0.043, 0.022, L + 0.046, 0.011, 0x2a1a0a, WH);
     P.neckB = g.build();
 
     // slender bird legs
@@ -4175,8 +4174,9 @@ OTHERS.peacock = function (opts) {
     P.legU = g.build();
 
     g = B();
-    g.limb(0, 0, 0, 0, -0.24, 0, 0.019, 0.014, LEG, { seg: 5 });
-    for (var ti = -1; ti <= 1; ti++) g.limb(0, -0.235, 0, ti * 0.036, -0.24, 0.09, 0.01, 0.006, LEG, { seg: 4 });
+    g.limb(0, 0, 0, 0, -0.24, 0, 0.019, 0.014, scaly(LEG), { seg: 5 });
+    g.cone(0.006, 0.025, 0, -0.17, -0.02, shade(LEG, 0.8), { seg: 4, rot: [-1.2, 0, 0] });
+    for (var ti = -1; ti <= 1; ti++) { g.limb(0, -0.235, 0, ti * 0.022, -0.238, 0.05, 0.011, 0.008, LEG, { seg: 4 }); g.limb(ti * 0.022, -0.238, 0.05, ti * 0.04, -0.24, 0.1, 0.008, 0.006, LEG, { seg: 4 }); g.cone(0.005, 0.014, ti * 0.043, -0.24, 0.11, 0x2a2420, { seg: 4, rot: [PI / 2, 0, 0] }); }
     g.limb(0, -0.235, 0, 0, -0.24, -0.045, 0.01, 0.006, LEG, { seg: 4 });
     P.legL = g.build();
 
@@ -4184,6 +4184,7 @@ OTHERS.peacock = function (opts) {
     var mkWing = function (r) {
       var wg = B(), s = r ? -1 : 1, wc = male ? WG : shade(FM, 0.85);
       wg.extrude([[0.12, 0.05], [0.02, 0.095], [-0.14, 0.065], [-0.28, 0.005], [-0.24, -0.055], [-0.08, -0.095], [0.08, -0.065]], 0.038, s * 0.022, -0.02, -0.04, [0.08, 0, s * 0.14], function (x, y, z) { return z < -0.14 ? shade(wc, 0.86) : wc; }, { axis: 'x', bevel: 0.012, curveX: s * 0.022 });
+      for (var wi = 0; wi < 3; wi++) for (var wj = 0; wj < 5; wj++) feather(wg, s * (0.02 + wi * 0.004), 0.05 - wi * 0.04, 0.1 - wj * 0.06 - wi * 0.02, 0.13 + wi * 0.04, 0.03, [-0.3 - wi * 0.1, s * 0.06, PI / 2], wi === 0 ? plume(wc, wj, wi, 1, 0.2) : (wi === 1 ? shade(wc, 1.2) : shade(wc, 0.8)), 0.01);
       return wg.build();
     };
     P.wingL = mkWing(false); P.wingR = mkWing(true);
