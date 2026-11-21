@@ -3091,6 +3091,9 @@ OTHERS.sasquatch = function (opts) {
     g.sph(0.14, 0.1, 0.14, 0, 0.02, 0.22, SK, { s: [7, 5] });
     g.tube([[-0.18, 0.22, 0.2], [-0.07, 0.26, 0.27], [0.07, 0.26, 0.27], [0.18, 0.22, 0.2]], [0.036, 0.048, 0.048, 0.036], DK, { seg: 6, steps: 2 });
     g.sph(0.045, 0.035, 0.03, 0, 0.11, 0.31, 0x261814, { s: [5, 4] });
+    for (var nn = -1; nn <= 1; nn += 2) { g.sph(0.012, 0.008, 0.01, nn * 0.02, 0.095, 0.335, 0x0a0604, { s: [4, 3] }); g.sph(0.07, 0.025, 0.05, nn * 0.08, 0.04, 0.26, shade(SK, 1.15), { s: [5, 4] }); g.sph(0.045, 0.1, 0.04, nn * 0.24, 0.12, 0.02, SK, { s: [5, 4] }); }
+    g.tube([[-0.07, 0.0, 0.3], [0, -0.012, 0.325], [0.07, 0.0, 0.3]], 0.011, 0x1a0e0a, { seg: 4, steps: 2 });
+    for (var tf = 0; tf < 7; tf++) feather(g, (tf - 3) * 0.06, 0.4, 0.0 - abs(tf - 3) * 0.02, 0.22, 0.05, [-0.9 - abs(tf - 3) * 0.08, (tf - 3) * -0.06, 0], tf % 2 ? MH : RB, 0.02);
     P.head = g.build();
 
     var eg = B();
@@ -3098,15 +3101,28 @@ OTHERS.sasquatch = function (opts) {
     eg.sph(0.032, 0.026, 0.022, -0.078, 0.185, 0.27, EYE, { s: [5, 4] });
     P.eyes = eg.build();
 
-    // 2-segment articulated long shaggy arms (shoulder + elbow)
-    g = B(); g.sph(0.15, 0.16, 0.15, 0, -0.02, 0, RB, { s: [7, 5] }); g.limb(0, 0, 0, 0, -0.52, 0, 0.13, 0.1, fc, { seg: 7 }); g.sph(0.1, 0.1, 0.1, 0, -0.52, 0, fc, { s: [6, 4] }); P.armU = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.48, 0.06, 0.1, 0.08, fc, { seg: 7 }); g.sph(0.105, 0.12, 0.105, 0, -0.53, 0.08, SK, { s: [6, 5] }); P.armL = g.build();
+    // 2-segment articulated long shaggy arms (shoulder + elbow), matted fur hanging in layers
+    var shag = function (g, len, r, n, col, dy0) {
+      for (var i = 0; i < n; i++) for (var fs = -1; fs <= 1; fs += 2) feather(g, (i % 2 ? 0.3 : -0.3) * r, dy0 - i * len / n, fs * r * 0.85, len * 0.34, r * 0.34, [-PI / 2 - 0.12, (i % 2 ? -0.1 : 0.1), 0], i % 3 ? col : DK, 0.018);
+    };
+    g = B(); tlimb(g, 0.52, 0.13, 0.1, 0.2, 0, fc); g.sph(0.15, 0.16, 0.15, 0, -0.02, 0, RB, { s: [7, 5] }); g.sph(0.1, 0.1, 0.1, 0, -0.52, 0, fc, { s: [6, 4] }); shag(g, 0.4, 0.12, 4, RB, -0.12); P.armU = g.build();
+    for (var hs = 0; hs < 2; hs++) {
+      g = B(); tlimb(g, 0.48, 0.1, 0.08, 0.2, 0.06, fc); shag(g, 0.34, 0.09, 3, MH, -0.1);
+      g.sph(0.07, 0.08, 0.07, 0, -0.48, 0.06, SK, { s: [6, 5] });
+      hand(g, 0, -0.5, 0.07, 3.0, hs ? -1 : 1, SK);
+      P[hs ? 'armLR' : 'armL'] = g.build();
+    }
 
     // heavy legs & sculpted arched bigfoot feet
-    g = B(); g.limb(0, 0, 0, 0, -0.45, 0, 0.17, 0.13, fc, { seg: 7 }); P.thigh = g.build();
-    g = B(); g.limb(0, 0, 0, 0, -0.45, 0, 0.13, 0.1, fc, { seg: 7 });
+    g = B(); tlimb(g, 0.45, 0.17, 0.13, 0.22, 0, fc); shag(g, 0.3, 0.15, 3, MH, -0.1); P.thigh = g.build();
+    g = B(); tlimb(g, 0.45, 0.13, 0.1, 0.25, 0, fc);
     g.loft([[-0.1, 0.08, 0.06, -0.47], [0.06, 0.11, 0.065, -0.465], [0.24, 0.125, 0.055, -0.475], [0.34, 0.095, 0.04, -0.48]], { rings: 8, seg: 8, cap0: true, cap1: true, flatBot: 0.85 }, SK);
-    for (var t2 = -1; t2 <= 1; t2++) g.sph(0.042, 0.035, 0.062, t2 * 0.065, -0.48, 0.34, shade(SK, 0.85), { s: [5, 4] });
+    for (var t2 = -2; t2 <= 2; t2++) {
+      var tx = t2 * 0.05, tl = 0.36 - abs(t2) * 0.012;
+      g.limb(tx * 0.9, -0.485, 0.28, tx, -0.49, tl, 0.034, 0.028, SK, { seg: 4 });
+      g.sph(0.03, 0.026, 0.034, tx, -0.49, tl + 0.02, shade(SK, 0.85), { s: [4, 3] });
+      g.cone(0.014, 0.03, tx, -0.485, tl + 0.05, 0x1a120e, { seg: 4, rot: [PI / 2, 0, 0] });
+    }
     P.shank = g.build();
   }
   var sc = baby ? 0.5 : 1.0;
@@ -3121,7 +3137,7 @@ OTHERS.sasquatch = function (opts) {
   for (var s = 0; s < 2; s++) {
     var sd = s ? -1 : 1;
     var ar = grp('arm'); ar.position.set(sd * 0.52, 0.42, 0.05); tor.add(ar); ar.add(mesh(P.armU)); arms.push(ar);
-    var el = grp('elbow'); el.position.set(0, -0.52, 0); ar.add(el); el.add(mesh(P.armL)); elbows.push(el);
+    var el = grp('elbow'); el.position.set(0, -0.52, 0); ar.add(el); el.add(mesh(s ? P.armLR : P.armL)); elbows.push(el);
     var hp = grp('hip'); hp.position.set(sd * 0.24, -0.44, 0); tor.add(hp); hp.add(mesh(P.thigh)); hips.push(hp);
     var kn = grp('knee'); kn.position.set(0, -0.45, 0); hp.add(kn); kn.add(mesh(P.shank)); knees.push(kn);
   }
