@@ -751,8 +751,8 @@ function addFoot(g, ft, y0, fr, fh, col) { // col: leg colour fn (x,y,z,nx,ny,nz
       if (ft.claws) g.cone(fr * 0.12, fr * 0.55, tx, y0 + fh * 0.3, tz + fr * 0.5, fc, { seg: 4, rot: [PI / 2 + 0.45, 0, 0] });
     }
   } else if (type === 'foot') {
-    g.loft([[0, fr * 1.0, fr * 1.0, 0], [fh * 0.7, fr * 1.12, fr * 1.12, 0], [fh, fr * 1.1, fr * 1.1, 0]], { down: true, oy: y0 + fh, rings: 4, seg: 10, cap1: true },
-      function (zc, ca, sa, x, y, z) { var b = typeof base === 'function' ? base(zc, ca, sa, x, y, z) : base; return zc < fh * 0.3 ? shade(b, 1.1) : (fract(zc * 40) < 0.5 ? b : shade(b, 0.88)); });
+    g.loft([[-fh * 0.5, fr * 0.85, fr * 0.85, 0], [0, fr * 1.0, fr * 1.0, 0], [fh * 0.5, fr * 1.02, fr * 1.02, 0], [fh * 0.9, fr * 1.07, fr * 1.07, 0], [fh, fr * 1.05, fr * 1.05, 0]], { down: true, oy: y0 + fh, rings: 6, seg: 12, cap0: true, cap1: true },
+      function (zc, ca, sa, x, y, z) { var l = typeof lc === 'function' ? lc(zc, ca, sa, x, y, z) : lc; return mixHex(l, typeof base === 'function' ? base(zc, ca, sa, x, y, z) : base, clamp(zc / fh, 0, 1) * 0.7); });
     for (i = -1; i <= 1; i++) { var an = i * 0.6; g.sph(fr * 0.26, fh * 0.2, fr * 0.1, Math.sin(an) * fr * 1.1, y0 + fh * 0.4, Math.cos(an) * fr * 1.12, fc, { s: [6, 4], rot: [0, an, 0] }); }
   } else if (type === 'toes') {
     g.loft([[0, fr * 0.95, fr * 1.0, 0], [fh * 0.6, fr * 1.1, fr * 1.15, fr * 0.1], [fh, fr * 1.15, fr * 1.25, fr * 0.15]], { down: true, oy: y0 + fh, rings: 3, seg: 8, cap1: true }, lc);
@@ -785,7 +785,7 @@ function legPieces(spec, front) {
   } else {
     var rm = lerp(r0, r1, 0.35), rn = lerp(r0, r1, 0.7);
     gU.loft(monotone([[-r0 * 0.6, r0 * 0.7, r0 * 0.75, 0], [0, r0 * 1.05, r0 * 1.1, 0], [up * 0.22, rm * 1.1, rm * 1.18, hind ? r0 * 0.1 : 0], [up * 0.55, rn, rn * 1.05, hind ? -r1 * 0.1 : 0], [up * 0.88, r1 * 0.96, r1 * 0.98, 0],
-      [up, r1 * bmp(1.05), r1 * bmp(1.14), kd * r1 * bk], [up + r1 * 0.4, r1 * 0.95, r1 * 1.05, kd * r1 * 0.8 * bk], [up + r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk]]),
+      [up, r1 * (bk < 1 ? 1 : 1.05), r1 * (bk < 1 ? 1 : 1.14), kd * r1 * bk], [up + r1 * 0.4, r1 * 0.93, r1 * 0.98, kd * r1 * 0.8 * bk], [up + r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk]]),
       { down: true, rings: rg, seg: seg, cap0: true, cap1: true }, col);
     gL = B();
     if (ft.type === 'boot') {
@@ -797,8 +797,9 @@ function legPieces(spec, front) {
       gL.bevelBox(r2 * 1.1, fh * 0.55, r2 * 0.45, fh * 0.12, 0, -lo + fh * 1.15, r2 * 1.28, gCol);
     } else {
       var fl = Math.max(lo * 0.62, lo - fh);
-      var colL = lg.hipY && typeof lg.col === 'function' ? function (zc, ca, sa, x, y, z) { return lg.col(y - up, 0, front, x, z); } : col;
-      gL.loft(monotone([[-r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk], [-r1 * 0.4, r1 * 0.95, r1 * 1.05, kd * r1 * 0.8 * bk], [0, r1 * bmp(1.05), r1 * bmp(1.14), kd * r1 * bk], [lo * 0.25, lerp(r1, r2, 0.3) * 0.95, lerp(r1, r2, 0.3) * 1.0, kd * r1 * 0.25 * bk], [lo * 0.5, lerp(r1, r2, 0.75) * 0.95, lerp(r1, r2, 0.75) * 0.95, 0],
+      var colum = ft.type === 'foot' || ft.type === 'toes';
+      var colL = (lg.hipY || colum) && typeof lg.col === 'function' ? function (zc, ca, sa, x, y, z) { return lg.col(y - up, 0, front, x, z); } : col;
+      gL.loft(colum ? monotone([[-r1 * 0.9, r1 * 0.3, r1 * 0.3, 0], [-r1 * 0.4, r1 * 0.8, r1 * 0.85, 0], [0, r1, r1, kd * r1 * bk], [lo * 0.5, lerp(r1, r2, 0.6), lerp(r1, r2, 0.6), 0], [lo - fh, r2, r2, 0], [Math.max(lo - fh * 0.8, lo - fh), r2, r2, 0]]) : monotone([[-r1 * 0.9, r1 * 0.45, r1 * 0.55, kd * r1 * 0.5 * bk], [-r1 * 0.4, r1 * 0.95, r1 * 1.05, kd * r1 * 0.8 * bk], [0, r1 * bmp(1.05), r1 * bmp(1.14), kd * r1 * bk], [lo * 0.25, lerp(r1, r2, 0.3) * 0.95, lerp(r1, r2, 0.3) * 1.0, kd * r1 * 0.25 * bk], [lo * 0.5, lerp(r1, r2, 0.75) * 0.95, lerp(r1, r2, 0.75) * 0.95, 0],
         [fl - r2 * 1.0, r2 * 0.95, r2 * 0.97, 0], [fl - r2 * 0.35, r2 * fb, r2 * fb * 1.07, -r2 * 0.12 * bk], [fl + fh * 0.1, r2 * 0.98, r2, 0], [Math.max(fl + fh * 0.2, lo - fh * 0.3), r2, r2, 0]]),
         { down: true, rings: rg, seg: seg, cap0: true, cap1: true }, colL);
       addFoot(gL, ft, -lo, r2, fh, colB || 0x888888);
