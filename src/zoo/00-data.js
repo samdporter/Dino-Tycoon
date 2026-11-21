@@ -475,6 +475,12 @@ window.Z.DATA = {
     { id: "statue", name: "Statue", emoji: "🗿", cost: 500, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false },
     { id: "picnic_table", name: "Picnic table", emoji: "🧺", cost: 110, kind: "deco", biome: "grass", aesthetic: 2, inEnclosure: false },
     { id: "sign", name: "Information sign", emoji: "🪧", cost: 45, kind: "deco", biome: "any", aesthetic: 1, inEnclosure: false },
+    { id: "themepark_arch", name: "Midway Welcome Arch", emoji: "🎪", cost: 450, kind: "deco", biome: "any", aesthetic: 5, inEnclosure: false, star: 0, themepark: true, info: "Festive illuminated fairground archway welcoming guests to the midway." },
+    { id: "bunting_poles", name: "Carnival Bunting Flags", emoji: "🎏", cost: 140, kind: "deco", biome: "any", aesthetic: 3, inEnclosure: false, star: 0, themepark: true, info: "Colourful triangular pennant flags strung between striped carnival poles." },
+    { id: "funhouse_mirror", name: "Funhouse Mirrors", emoji: "🪞", cost: 220, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 0, themepark: true, info: "Wavy gilt-framed laughing mirrors that amuse passing guests." },
+    { id: "balloon_arch", name: "Balloon Archway", emoji: "🎈", cost: 280, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 0, themepark: true, info: "Bright rainbow cluster arch of helium carnival balloons." },
+    { id: "circus_lamp", name: "Festoon String Lights", emoji: "🏮", cost: 160, kind: "deco", biome: "any", aesthetic: 3, inEnclosure: false, star: 0, themepark: true, info: "Warm glowing fairground festoon bulbs on a striped pole." },
+    { id: "clown_statue", name: "Jester Mascot Statue", emoji: "🤡", cost: 420, kind: "deco", biome: "any", aesthetic: 4, inEnclosure: false, star: 1, themepark: true, info: "Cheerful golden theme-park mascot statue on a striped plinth." },
     { id: "enchanted_tree", name: "Enchanted tree", emoji: "🌸", cost: 260, kind: "tree", biome: "enchanted", aesthetic: 7, inEnclosure: true, star: 4 },
     { id: "glowing_mushroom", name: "Glowing mushrooms", emoji: "🍄", cost: 140, kind: "bush", biome: "enchanted", aesthetic: 5, inEnclosure: true, star: 4 },
     { id: "crystal_cluster", name: "Crystal cluster", emoji: "💎", cost: 280, kind: "rock", biome: "starlight_sand", aesthetic: 7, inEnclosure: true, star: 4 },
@@ -599,8 +605,8 @@ window.Z.DATA = {
     { id: "coffee_cart", name: "Coffee cart", emoji: "☕", cost: 700, upkeep: 10, type: "drink", price: 4, capacity: 3, w: 1, h: 1, satisfies: { thirst: 0.4, energy: 0.3 }, star: 0 },
     { id: "toilets", name: "Toilets", emoji: "🚻", cost: 400, upkeep: 6, type: "toilet", price: 0, capacity: 6, w: 1, h: 1, satisfies: { bladder: 1 }, star: 0 },
     { id: "gift_shop", name: "Gift shop", emoji: "🎁", cost: 1500, upkeep: 20, type: "shop", price: 12, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 1 },
-    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0 },
-    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 2, h: 2, satisfies: { fun: 0.8 }, star: 2 },
+    { id: "balloon_stand", name: "Balloon stand", emoji: "🎈", cost: 350, upkeep: 5, type: "shop", price: 5, capacity: 2, w: 1, h: 1, satisfies: { fun: 0.2 }, star: 0, themepark: true },
+    { id: "carousel", name: "Carousel", emoji: "🎠", cost: 5000, upkeep: 70, type: "ride", price: 6, capacity: 12, w: 2, h: 2, satisfies: { fun: 0.8 }, star: 2, themepark: true },
     { id: "info_kiosk", name: "Info kiosk", emoji: "ℹ️", cost: 300, upkeep: 4, type: "info", price: 0, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.05 }, star: 0 },
     { id: "viewing_platform", name: "Viewing Tower", icon: "tower", emoji: "🔭", cost: 950, upkeep: 30, type: "info", price: 0, capacity: 20, w: 2, d: 2, h: 2, color: 0x7b6248, roof: 0x4d7c47, appeal: 14, boost: { fun: 20 }, satisfies: { fun: 0.3 }, star: 0, info: "Elevated lookout platform giving guests panoramic views over adjacent enclosures." },
     { id: "restaurant", name: "Restaurant", emoji: "🍽️", cost: 8000, upkeep: 120, type: "food", price: 14, capacity: 30, w: 2, h: 2, satisfies: { hunger: 1, thirst: 0.3, energy: 0.3 }, star: 3 },
@@ -609,7 +615,21 @@ window.Z.DATA = {
     { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 2, h: 2, satisfies: {}, star: 1,
       info: "Veterinary clinic & triage hub: speeds up Vet treatment park-wide and adds a 48-tile full-recovery zone. Entrance must touch a path." },
     { id: "education_centre", name: "Education centre", emoji: "🎓", cost: 5000, upkeep: 60, type: "info", price: 3, capacity: 40, w: 2, h: 2, satisfies: { fun: 0.5 }, star: 2 },
-    { id: "emergency_bunker", name: "Emergency Shelter", icon: "bunker", emoji: "🚨", cost: 850, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, d: 2, h: 2, color: 0x6a7882, roof: 0xd8623b, appeal: 4, satisfies: {}, star: 1, info: "Reinforced guest shelter used during dangerous animal escapes and park lockdowns." }
+    { id: "emergency_bunker", name: "Emergency Shelter", icon: "bunker", emoji: "🚨", cost: 850, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, d: 2, h: 2, color: 0x6a7882, roof: 0xd8623b, appeal: 4, satisfies: {}, star: 1, info: "Reinforced guest shelter used during dangerous animal escapes and park lockdowns." },
+    { id: "wooden_coaster", name: "Wooden Rollercoaster", emoji: "🎢", cost: 7500, upkeep: 95, type: "ride", rideKind: "coaster", thrill: 3, price: 10, capacity: 16, w: 3, h: 3, satisfies: { fun: 0.95 }, star: 2, themepark: true, info: "Classic timber rollercoaster with rattling lift hill, camelback drops and screaming guests." },
+    { id: "loop_coaster", name: "Steel Loop Coaster", emoji: "➿", cost: 11000, upkeep: 140, type: "ride", rideKind: "coaster", thrill: 5, price: 14, capacity: 20, w: 4, h: 3, satisfies: { fun: 1.0 }, star: 3, themepark: true, info: "High-speed steel inversion coaster with a towering vertical loop and banked helix." },
+    { id: "mine_coaster", name: "Runaway Mine Train", emoji: "🛤️", cost: 6200, upkeep: 80, type: "ride", rideKind: "coaster", thrill: 2, price: 8, capacity: 14, w: 3, h: 2, satisfies: { fun: 0.85 }, star: 1, themepark: true, info: "Family rocky canyon mine-cart coaster spiralling around craggy boulders." },
+    { id: "log_flume", name: "Splash Log Flume", emoji: "🪵", cost: 8500, upkeep: 110, type: "ride", rideKind: "coaster", thrill: 3, price: 11, capacity: 16, w: 3, h: 3, satisfies: { fun: 0.92, thirst: 0.1 }, star: 2, themepark: true, info: "Elevated water chute ride ending in a refreshing splashdown drop." },
+    { id: "ferris_wheel", name: "Giant Ferris Wheel", emoji: "🎡", cost: 6800, upkeep: 85, type: "ride", rideKind: "wheel", thrill: 2, price: 9, capacity: 18, w: 2, h: 2, satisfies: { fun: 0.88, energy: 0.1 }, star: 2, themepark: true, info: "Revolving observation wheel giving guests sweeping views over the zoo and theme park." },
+    { id: "rubber_duck_stand", name: "Hook-a-Duck Stall", emoji: "🦆", cost: 900, upkeep: 14, type: "arcade", price: 5, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.45 }, star: 0, themepark: true, info: "Classic fairground rubber-ducking water trough where guests hook floating yellow ducks for prizes." },
+    { id: "air_rifle_stand", name: "Air Rifle Shooting Gallery", emoji: "🎯", cost: 1300, upkeep: 18, type: "arcade", price: 6, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.55 }, star: 1, themepark: true, info: "Cork & tin-can air-rifling gallery with moving mechanical targets and bullseyes." },
+    { id: "ring_toss_stand", name: "Ring Toss Stall", emoji: "⭕", cost: 850, upkeep: 12, type: "arcade", price: 4, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.4 }, star: 0, themepark: true, info: "Carnival bottle ring-toss booth stacked with giant plush prizes." },
+    { id: "whack_a_mole", name: "Whack-a-Critter Arcade", emoji: "🔨", cost: 1100, upkeep: 16, type: "arcade", price: 5, capacity: 4, w: 1, h: 1, satisfies: { fun: 0.5 }, star: 1, themepark: true, info: "Rowdy mallet arcade cabinet where pop-up critters test guests' reflexes." },
+    { id: "high_striker", name: "Strongman High Striker", emoji: "🔔", cost: 950, upkeep: 12, type: "arcade", price: 5, capacity: 3, w: 1, h: 1, satisfies: { fun: 0.48 }, star: 0, themepark: true, info: "Towering carnival bell-ringer where guests swing a heavy mallet to ring the top gong." },
+    { id: "candy_floss", name: "Candy Floss Stand", emoji: "🍭", cost: 750, upkeep: 12, type: "food", price: 5, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.22, fun: 0.25 }, star: 0, themepark: true, info: "Spins clouds of pink and blue spun sugar on a stick." },
+    { id: "popcorn_stand", name: "Popcorn Kiosk", emoji: "🍿", cost: 800, upkeep: 14, type: "food", price: 5, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.25, fun: 0.18 }, star: 0, themepark: true, info: "Buttery kettle-popped corn in classic red-and-white striped tubs." },
+    { id: "hot_dog_stand", name: "Hot Dog Cart", emoji: "🌭", cost: 1100, upkeep: 18, type: "food", price: 6, capacity: 4, w: 1, h: 1, satisfies: { hunger: 0.48, fun: 0.1 }, star: 0, themepark: true, info: "Sizzling fairground frankfurters topped with mustard and ketchup." },
+    { id: "slushie_bar", name: "Slushie & Soda Bar", emoji: "🧊", cost: 850, upkeep: 14, type: "drink", price: 4, capacity: 4, w: 1, h: 1, satisfies: { thirst: 0.65, fun: 0.15 }, star: 1, themepark: true, info: "Brain-freezing neon cherry and blue-raspberry ice slushies." }
   ],
 
   staff: [
@@ -630,7 +650,8 @@ window.Z.DATA = {
     { id: "happiness_70", text: "Get average guest happiness to 70%", type: "happiness", target: 70, reward: 1500 },
     { id: "guests_1000", text: "Welcome 1,000 guests", type: "guests", target: 1000, reward: 2500 },
     { id: "rating_4", text: "Reach a 4-star zoo rating", type: "rating", target: 4, reward: 6000 },
-    { id: "money_100000", text: "Have £100,000 in the bank", type: "money", target: 100000, reward: 8000 }
+    { id: "money_100000", text: "Have £100,000 in the bank", type: "money", target: 100000, reward: 8000 },
+    { id: "themepark_3", text: "Build 3 theme park rides or arcade stalls", type: "themepark", target: 3, reward: 1800 }
   ],
 
   guestNames: [
@@ -781,6 +802,23 @@ window.Z.DATA = {
       "Watch out — winged monkeys overhead!",
       "A flying monkey swooped right past my hat!",
       "Eek! Flying monkeys from the exhibit!"
+    ],
+    coaster: [
+      "Hands up on the rollercoaster!",
+      "That drop on the coaster was wicked!",
+      "My heart is still racing from that ride!",
+      "Best rollercoaster in any zoo!"
+    ],
+    arcade: [
+      "I hooked a rubber duck and won a prize!",
+      "Bullseye at the air rifle gallery!",
+      "The carnival games here are brilliant!",
+      "Nearly rang the bell on the high striker!"
+    ],
+    candyFloss: [
+      "Ooh, pink candy floss!",
+      "Nothing beats fairground popcorn and candy floss.",
+      "Sticky fingers, happy days!"
     ]
   },
 

@@ -73,7 +73,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       objects: [], enclosures: [], animals: [], guests: [], staff: [],
       finance: { today: Z.emptyFinance(), history: [] },
       goals: {},
-      stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0 },
+      stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0, ridesTaken: 0, arcadePlayed: 0 },
       unlocked: { star: 0 }, messages: [], nextId: 1,
       panic: 0,
       difficulty: 'normal',

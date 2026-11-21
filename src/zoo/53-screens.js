@@ -80,6 +80,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your zoo' }));
       var stList = [['Day', S2.day], ['Animals', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Guests in the zoo', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
+      var rt2 = Z.Sim._rt();
+      if ((S2.stats && S2.stats.ridesTaken > 0) || (rt2 && rt2.rides && rt2.rides.length)) stList.push(['Rides taken', (S2.stats && S2.stats.ridesTaken) || 0]);
+      if ((S2.stats && S2.stats.arcadePlayed > 0) || (rt2 && rt2.arcades && rt2.arcades.length)) stList.push(['Arcade games played', (S2.stats && S2.stats.arcadePlayed) || 0]);
       if (UI.PlayTimer && UI.PlayTimer.formatted) stList.push(['Session play time', UI.PlayTimer.formatted()]);
       if (S2.panic > 0) stList.push(['Park panic', Math.round(S2.panic * 100) + '%']);
       if (S2.stats && S2.stats.injuries) stList.push(['Guest injuries', S2.stats.injuries]);
@@ -91,7 +94,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function setBar(b, frac) { var f = UI.clamp(frac, 0, 1); b.className = 'bar' + (f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low'); b.firstChild.style.width = Math.round(f * 100) + '%'; }
 
   // ------------------------------------------------------------------ finances
-  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops & rides', donations: 'Donations', animals: 'Animals bought/sold', construction: 'Construction', upkeep: 'Animal & building upkeep', wages: 'Wages', marketing: 'Marketing', other: 'Loans, hiring & other' };
+  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops, rides & arcade', donations: 'Donations', animals: 'Animals bought/sold', construction: 'Construction', upkeep: 'Animal & building upkeep', wages: 'Wages', marketing: 'Marketing', other: 'Loans, hiring & other' };
   function finTab(b) {
     var S = Z.state;
     var cashBox = h('div.box'), table = h('table.tbl'), chart = h('canvas.chart'), loanBox = h('div.box'), ticketBox = h('div.box'), mkBox = h('div.box');

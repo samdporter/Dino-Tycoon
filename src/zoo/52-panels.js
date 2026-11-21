@@ -219,7 +219,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   function openObject(id) {
     var o = find(Z.state.objects, id); if (!o) return false;
     var isB = o.kind === 'building', def = UI.byId(isB ? D.buildings : D.scenery, o.type);
-    var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, isB ? ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', info: 'Information', staff: 'Staff building' })[def.type] || '' : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || ''), b = f.body;
+    var subTitle = isB ? (def.rideKind === 'coaster' ? 'Rollercoaster' : ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', arcade: 'Arcade & game stall', info: 'Information', staff: 'Staff building' })[def.type] || '') : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || '';
+    var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, subTitle), b = f.body;
     var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tiles = []; if (fp) for (var a = 0; a < fp.w; a++) for (var c = 0; c < fp.h; c++) tiles.push({ i: fp.i0 + a, j: fp.j0 + c });
     if (tiles.length) {
       var pvSpec = { type: 'tiles', tiles: tiles, ok: true };
@@ -258,6 +259,7 @@ window.Z = window.Z || {}; var Z = window.Z;
           if (isB) {
             if (def.type !== 'staff') {
               rows.push(['Visitors served', r.uses]); if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]); rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]);
+              if (def.thrill > 0) rows.push(['Thrill rating', '★'.repeat(def.thrill)]);
             }
             if (q.type === 'keeper_hut' || q.type === 'vet_clinic') {
               var stT = covO ? (q.type === 'vet_clinic' ? covO.vetClinicTiles : covO.stationTiles) : 48;

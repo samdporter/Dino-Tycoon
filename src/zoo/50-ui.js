@@ -105,7 +105,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     lower: 'M12 5v14M5 12l7 7 7-7',
     level: 'M3 12h18M3 8h18M3 16h18',
     smooth: 'M2 15c4-6 8-6 10 0s6 6 10 0',
-    timer: 'M12 7v5l3.5 2M12 22a8.5 8.5 0 100-17 8.5 8.5 0 000 17zM9.5 2h5'
+    timer: 'M12 7v5l3.5 2M12 22a8.5 8.5 0 100-17 8.5 8.5 0 000 17zM9.5 2h5',
+    coaster: 'M3 19h18M5 19V11c2-5 5-5 7 0s5 5 7-2v10M8 15v4M12 11v8M16 14v5'
   };
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
@@ -339,6 +340,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       case 'species': { var s = {}; S.animals.forEach(function (a) { s[a.species] = 1; }); v = Object.keys(s).length; break; }
       case 'babies': v = S.stats.babiesBorn; break;
       case 'happiness': v = S.guests.length >= 10 ? (S.guestHappiness || 0) : 0; break;
+      case 'themepark': v = S.objects.filter(function (o) { var d = o.kind === 'building' && UI.byId(D.buildings, o.type); return d && (d.type === 'ride' || d.type === 'arcade'); }).length; break;
     }
     return { value: v, frac: UI.clamp(v / g.target, 0, 1), text: g.type === 'money' ? fmt(v) + ' / ' + fmt(g.target) : g.type === 'rating' ? v.toFixed(1) + ' / ' + g.target : Math.floor(v) + ' / ' + g.target };
   };
@@ -535,8 +537,8 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   var CATS;
   function defCats() {
-    function sc(ids, kind) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0 }; }); }; }
-    function bd(ids) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0 }; }); }; }
+    function sc(ids, tpCat) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, tpCat: tpCat }; }); }; }
+    function bd(ids, tpCat) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, tpCat: tpCat }; }); }; }
     CATS = [
       { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests only walk on paths.' },
       { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: p.star || 0 }; }).concat(sculptItems()); } },
@@ -545,6 +547,12 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'plants', name: 'Plants & rocks', icon: 'tree', items: sc(['oak', 'pine', 'acacia', 'palm', 'bamboo', 'baobab', 'cactus', 'snow_pine', 'jungle_tree', 'bush', 'fern', 'tall_grass', 'boulder', 'rock_pile', 'ice_floe', 'enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones']) },
       { id: 'encl', name: 'Enclosure', icon: 'tent', items: sc(['wooden_shelter', 'cave_shelter', 'heat_rock', 'log', 'vine_perch', 'climbing_frame', 'tyre_swing', 'ball', 'rainbow_arch', 'wizard_shelter', 'castle']) },
       { id: 'fac', name: 'Facilities', icon: 'cart', items: function () { return bd(['burger_stand', 'pizza_hut', 'ice_cream', 'drinks_stall', 'coffee_cart', 'toilets', 'gift_shop', 'balloon_stand', 'carousel', 'info_kiosk', 'restaurant', 'education_centre'])().concat(sc(['bench', 'bin'])()); } },
+      { id: 'themepark', name: 'Theme Park', icon: 'coaster', items: function () {
+        return bd(['mine_coaster', 'carousel', 'ferris_wheel', 'wooden_coaster', 'log_flume', 'loop_coaster'], 'rides')()
+          .concat(bd(['rubber_duck_stand', 'ring_toss_stand', 'high_striker', 'whack_a_mole', 'air_rifle_stand'], 'arcade')())
+          .concat(bd(['candy_floss', 'popcorn_stand', 'hot_dog_stand', 'slushie_bar', 'balloon_stand', 'ice_cream'], 'food')())
+          .concat(sc(['themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue'], 'scenery')());
+      } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
@@ -597,6 +605,22 @@ window.Z = window.Z || {}; var Z = window.Z;
       cards.appendChild(segMode);
       if (tMode === 'paint') items = items.filter(function (it) { return !it.sculpt; });
       else if (tMode === 'sculpt') items = items.filter(function (it) { return it.sculpt; });
+    } else if (c.id === 'themepark') {
+      var tpSeg = h('div.seg.drawer-mode', { style: 'margin: 0 4px 6px 4px;' });
+      var tpMode = UI.themeparkDrawerMode || 'all';
+      [['all', 'All'], ['rides', 'Rides & Coasters'], ['arcade', 'Arcade & Stands'], ['food', 'Food & Drink'], ['scenery', 'Scenery']].forEach(function (m) {
+        tpSeg.appendChild(h('button' + (tpMode === m[0] ? '.on' : ''), {
+          text: m[1],
+          on: {
+            click: function () {
+              UI.themeparkDrawerMode = m[0];
+              UI.refreshCards();
+            }
+          }
+        }));
+      });
+      cards.appendChild(tpSeg);
+      if (tpMode !== 'all') items = items.filter(function (it) { return it.tpCat === tpMode; });
     }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star;
