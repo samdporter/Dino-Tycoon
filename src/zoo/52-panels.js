@@ -305,11 +305,18 @@ window.Z = window.Z || {}; var Z = window.Z;
   Panel.species = function (id) {
     var sp = UI.sp(id), S = Z.state; if (!sp) return;
     var box = h('div.sbox'), locked = sp.star > S.unlocked.star;
+    var breedOnly = !!sp.breedOnly, ownedCount = 0;
+    if (S.animals) for (var ok = 0; ok < S.animals.length; ok++) if (S.animals[ok].species === id) ownedCount++;
+    var atMax = !!(sp.maxCount && ownedCount >= sp.maxCount);
+    var canBuy = !locked && !breedOnly && !atMax;
+    var priceLabel = breedOnly ? 'Breed Puss in Boots + Purple Dragon' : (fmt(sp.cost) + (atMax ? ' · Owned (Max ' + sp.maxCount + ')' : ''));
+    var subParts = [fmt(sp.upkeep) + ' / day upkeep', sp.diet];
+    if (sp.fixedSex) subParts.push(sp.fixedSex === 'm' ? 'Always male' : 'Always female');
     var top = h('div', { style: 'display:flex;gap:12px;align-items:center' },
       h('div', { style: 'width:104px;height:104px;border-radius:16px;background:radial-gradient(circle at 50% 35%,#fffdf2,var(--paper3));border:2px solid rgba(58,42,26,.25);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:44px' }, thumbBox('animal', id, 192, sp.emoji)),
       h('div', { style: 'flex:1;min-width:0' }, h('h3.serif', { style: 'margin:0;font-size:24px;line-height:1.1', text: sp.name }),
-        h('div', { style: 'font:700 18px var(--serif);color:var(--moss3);margin-top:3px', text: fmt(sp.cost) }),
-        h('div', { style: 'font-size:12px;color:var(--ink2);margin-top:2px', text: fmt(sp.upkeep) + ' / day upkeep · ' + sp.diet })),
+        h('div', { style: 'font:700 18px var(--serif);color:var(--moss3);margin-top:3px', text: priceLabel }),
+        h('div', { style: 'font-size:12px;color:var(--ink2);margin-top:2px', text: subParts.join(' · ') })),
       h('button.x', { html: ic('close'), style: 'align-self:flex-start;width:40px;height:40px;margin:-4px -6px 0 0', 'aria-label': 'Close', on: { click: Panel.closeSheet } }));
     box.appendChild(top);
     box.appendChild(h('div.fact', { text: sp.fact }));
@@ -332,7 +339,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     row('Appeal', h('div', { style: 'display:flex;align-items:center;gap:8px' }, bar(sp.appeal / 60), h('b', { text: sp.appeal })));
     if (sp.diet === 'carnivore') {
       var compSpW = sp.companion ? UI.sp(sp.companion) : null;
-      row('Warning', h('span', { style: 'color:var(--bad);font-weight:700', text: compSpW ? ('Predator. Only shares peacefully with ' + compSpW.name + '.') : 'Predator. Keep it apart from other species.' }));
+      var warnTxt = sp.companionGroup === 'puss_dragon'
+        ? 'Fairytale predator. Shares peacefully with Puss in Boots, Purple Dragon, Pugon & Drassy.'
+        : (compSpW ? ('Predator. Only shares peacefully with ' + compSpW.name + '.') : 'Predator. Keep it apart from other species.');
+      row('Warning', h('span', { style: 'color:var(--bad);font-weight:700', text: warnTxt }));
     }
     else if (sp.danger >= 2) row('Warning', h('span', { style: 'color:#b06a10;font-weight:700', text: 'Dangerous. Use strong fences.' }));
     box.appendChild(needs);
@@ -343,20 +353,29 @@ window.Z = window.Z || {}; var Z = window.Z;
     encs.forEach(function (en) {
       var f = Z.Sim.suitabilityFor(en.id, id), pct = f ? Math.round(f.value * 100) : 0;
       var spot = findSpot(en, id), money = S.money >= sp.cost;
-      var btn = h('button.btn.sm' + (spot.ok && money && !locked ? '' : '.dis'), { text: 'Adopt', on: { click: function () {
+      var btn = h('button.btn.sm' + (spot.ok && money && canBuy ? '' : '.dis'), { text: breedOnly ? 'Breed only' : atMax ? 'Owned' : 'Adopt', on: { click: function () {
+        if (breedOnly) { UI.toast('Breed Puss in Boots + Purple Dragon to get ' + sp.name + '.', 'info'); return; }
+        if (atMax) { UI.toast('You can only have ' + sp.maxCount + ' ' + sp.name + ' in the zoo at a time.', 'bad'); return; }
         var r = Z.Sim.addAnimal(id, spot.i, spot.j);
         if (r.ok) { UI.snd('cash'); UI.snd('call', id); Panel.closeSheet(); var an = Z.state.animals[Z.state.animals.length - 1]; UI.toast((an ? an.name : 'The ' + sp.name.toLowerCase()) + ' has arrived at ' + en.name + '!', 'good'); focusEnc(en, Math.min(Z.World.cam.dist, 45)); }
         else UI.toast(r.msg || 'Cannot adopt here', 'bad');
       } } });
-      var msg = locked ? 'Needs a ' + sp.star + '-star zoo' : !spot.ok ? spot.msg : !money ? 'Not enough money' : (f && f.issues.length ? f.issues[0] : 'A fine home');
+      var msg = locked ? 'Needs a ' + sp.star + '-star zoo' : breedOnly ? 'Breed Puss in Boots + Purple Dragon' : atMax ? 'Owned (Max ' + sp.maxCount + ')' : !spot.ok ? spot.msg : !money ? 'Not enough money' : (f && f.issues.length ? f.issues[0] : 'A fine home');
       list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, h('small', { text: msg })),
         h('div', { style: 'min-width:62px;text-align:center' }, h('div.num', { style: 'font:700 17px var(--serif);color:' + (pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)'), text: pct + '%' }), bar(f ? f.value : 0)), btn));
     });
     box.appendChild(list);
     box.appendChild(h('div.btnrow', { style: 'margin-top:4px' },
-      h('button.btn.alt' + (locked ? '.dis' : ''), { html: ic('hand') + 'Place by tapping', on: { click: function () { Panel.closeSheet(); UI.Tools.start({ kind: 'animal', id: id, name: sp.name, def: sp }); UI.cat = null; } } }),
+      h('button.btn.alt' + (canBuy ? '' : '.dis'), { html: ic('hand') + 'Place by tapping', on: { click: function () {
+        if (locked) { UI.toast('Needs a ' + sp.star + '-star zoo.', 'info'); return; }
+        if (breedOnly) { UI.toast('Breed Puss in Boots + Purple Dragon to get ' + sp.name + '.', 'info'); return; }
+        if (atMax) { UI.toast('You can only have ' + sp.maxCount + ' ' + sp.name + ' in the zoo at a time.', 'bad'); return; }
+        Panel.closeSheet(); UI.Tools.start({ kind: 'animal', id: id, name: sp.name, def: sp }); UI.cat = null;
+      } } }),
       h('button.btn.alt', { text: 'Close', on: { click: Panel.closeSheet } })));
     if (locked) box.insertBefore(h('div.bn.alert', { style: 'padding:6px;margin:0;animation:none', html: ic('lock') + ' Reach a ' + sp.star + '-star zoo to unlock the ' + sp.name.toLowerCase() }), box.children[1]);
+    else if (breedOnly) box.insertBefore(h('div.bn', { style: 'padding:6px;margin:0;animation:none', text: 'Breed Puss in Boots + Purple Dragon in the same enclosure to raise ' + sp.name + '.' }), box.children[1]);
+    else if (atMax) box.insertBefore(h('div.bn.alert', { style: 'padding:6px;margin:0;animation:none', text: 'Owned (Max ' + sp.maxCount + ') — you already have ' + sp.name + ' in your zoo.' }), box.children[1]);
     sheetEl.innerHTML = ''; sheetEl.appendChild(box); sheetEl.classList.add('on'); box.scrollTop = 0;
     UI.snd('call', id);
     if (UI.Tutorial) UI.Tutorial.onSheet && UI.Tutorial.onSheet(id);

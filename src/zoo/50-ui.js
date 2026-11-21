@@ -633,10 +633,19 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star;
+      var breedOnly = it.kind === 'animal' && it.def && !!it.def.breedOnly;
+      var ownedMax = false;
+      if (it.kind === 'animal' && it.def && it.def.maxCount && S.animals) {
+        var oc = 0; for (var ok = 0; ok < S.animals.length; ok++) if (S.animals[ok].species === it.id) oc++;
+        ownedMax = oc >= it.def.maxCount;
+      }
+      var isOff = !!(it.off || breedOnly || ownedMax);
+      var priceHtml = breedOnly ? '<small style="font:700 9.5px var(--sans);color:var(--ink2)">Breed only</small>' : ownedMax ? '<small style="font:700 9.5px var(--sans);color:var(--moss3)">Owned (Max ' + it.def.maxCount + ')</small>' : (it.priceHtml || itemPriceText(it));
+      var cardTitle = breedOnly ? (it.name + ' — Breed Puss in Boots + Purple Dragon') : ownedMax ? (it.name + ' — Owned (Max ' + it.def.maxCount + ')') : (it.tip || (it.def && (it.def.info || it.def.effect)) || it.name);
       if (it.first && (!UI.terrainDrawerMode || UI.terrainDrawerMode === 'all')) cards.appendChild(h('div.cgrp', { html: '<span>Sculpt</span>' }));
-      var card = h('button.card' + (locked ? '.lock' : '') + (it.sculpt ? '.sculpt' : '') + (it.off ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: it.tip || (it.def && (it.def.info || it.def.effect)) || it.name });
+      var card = h('button.card' + (locked ? '.lock' : '') + (it.sculpt ? '.sculpt' : '') + (isOff ? '.off' : ''), { 'data-id': it.id, 'data-kind': it.kind, title: cardTitle });
       var th = h('div.th'); card.appendChild(th);
-      card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: it.priceHtml || itemPriceText(it) }));
+      card.appendChild(h('div.nm', { text: it.name })); card.appendChild(h('div.pr', { html: priceHtml }));
       if (locked) card.appendChild(h('span.lk', { html: ic('lock') + '★' + it.star }));
       else { var spb = cardSpec(it); if (spb) card.appendChild(h('span.spb', { text: spb })); }
       if (it.sculpt) th.innerHTML = sculptIcon(it.id);
@@ -665,7 +674,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function updateAfford() {
     var m = Z.state.money; Array.prototype.forEach.call(el.cards.children, function (c) {
       var id = c.getAttribute('data-id'), k = c.getAttribute('data-kind'), cost = UI.costOf(k, id);
-      c.classList.toggle('poor', cost > m);
+      c.classList.toggle('poor', !c.classList.contains('off') && cost > m);
     });
   }
   UI.costOf = function (k, id) {
@@ -711,6 +720,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.on('gameOver', function () { UI.gameOver(); });
     b.on('undo:change', function () { UI.syncUndo && UI.syncUndo(); });
     b.on('undo', function () { UI.syncUndo && UI.syncUndo(); });
+    b.on('animalAdded', function () { if (UI.cat === 'animals') UI.refreshCards(); });
+    b.on('animalRemoved', function () { if (UI.cat === 'animals') UI.refreshCards(); });
     b.on('lockdown', function (on) {
       var ld = !!on;
       if (lastHud) lastHud.ld = ld;

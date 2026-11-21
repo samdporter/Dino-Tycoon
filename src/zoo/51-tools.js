@@ -135,6 +135,14 @@ window.Z = window.Z || {}; var Z = window.Z;
     cspec: 'Click or drag on straight coaster track to stamp this special piece.'
   };
   Tools.start = function (spec) {
+    if (spec.kind === 'animal' && spec.def) {
+      if (spec.def.breedOnly) { UI.toast('Breed Puss in Boots + Purple Dragon to get ' + spec.name + '.', 'info'); return; }
+      if (spec.def.maxCount && Z.state && Z.state.animals) {
+        var owned = 0;
+        for (var ak = 0; ak < Z.state.animals.length; ak++) if (Z.state.animals[ak].species === spec.id) owned++;
+        if (owned >= spec.def.maxCount) { UI.toast('You can only have ' + spec.def.maxCount + ' ' + spec.name + ' in the zoo at a time.', 'bad'); return; }
+      }
+    }
     var prev = UI.tool;
     UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
     if (UI.tool.kind === 'scenery' || UI.tool.kind === 'building') rerollRot();
@@ -374,7 +382,20 @@ window.Z = window.Z || {}; var Z = window.Z;
   PLAN.animal = function (d) {
     var t = UI.tool, gp = d.b || d.a, r = Z.Sim.addAnimal(t.id, gp.i, gp.j, { dry: true }), f = forecastFor(t.id, gp.i, gp.j);
     return { spec: { type: 'object', kind: 'animal', id: t.id, i: gp.i, j: gp.j, rot: 0, ok: r.ok }, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), forecast: f, label: '',
-      run: function () { var rr = Z.Sim.addAnimal(t.id, gp.i, gp.j); if (rr.ok) UI.toast('Welcome to the zoo, ' + (Z.state.animals[Z.state.animals.length - 1] || {}).name + '!', 'good'); return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 }; } };
+      run: function () {
+        var rr = Z.Sim.addAnimal(t.id, gp.i, gp.j);
+        if (rr.ok) {
+          UI.toast('Welcome to the zoo, ' + (Z.state.animals[Z.state.animals.length - 1] || {}).name + '!', 'good');
+          if (t.def && t.def.maxCount && Z.state && Z.state.animals) {
+            var cnt = 0;
+            for (var ak = 0; ak < Z.state.animals.length; ak++) if (Z.state.animals[ak].species === t.id) cnt++;
+            if (cnt >= t.def.maxCount) setTimeout(Tools.cancel, 30);
+          }
+        } else if (rr.msg) {
+          UI.toast(rr.msg, 'bad');
+        }
+        return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 };
+      } };
   };
   PLAN.animalmove = function (d) {
     var t = UI.tool, gp = d.b || d.a, a = Z.state.animals.filter(function (x) { return x.id === t.aid; })[0];

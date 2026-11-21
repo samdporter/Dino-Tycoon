@@ -495,11 +495,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         continue;
       }
       if (a.state === 'escaped' || !a.enc) {
-        if (ne) { a.enc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; a.wx = 0; a.wz = 0; a.aroute = null; }
+        if (ne) { a.enc = ne; a.homeEnc = ne; a.state = 'idle'; a.tg = ''; a.st = 1; a.wx = 0; a.wz = 0; a.aroute = null; }
       } else if (ne !== a.enc) {
-        if (ne) a.enc = ne;
+        if (ne) { a.enc = ne; a.homeEnc = ne; }
         else {
-          var oldE = a.enc; a.home = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null;
+          var oldE = a.enc; a.home = oldE; a.homeEnc = oldE; a.enc = 0; a.state = 'escaped'; a.esc = 0; a.claim = 0; a.tg = ''; a.wx = 0; a.wz = 0; a.aroute = null;
           S.stats.escapes++; msg('The ' + SP[a.species].name.toLowerCase() + ' ' + a.name + ' has wandered out of its enclosure!', 'bad');
           bus.emit('escape', a);
         }
@@ -605,6 +605,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var t = tileOf(a.x, a.z), eid = (a.flyover && a.enc && RT.eMap[a.enc]) ? a.enc : S.tileEnc[t];
       a.enc = eid;
       if (eid && RT.eMap[eid]) {
+        a.homeEnc = eid;
         var enc = RT.eMap[eid];
         enc.animals.push(a.id);
         if (enc.species.indexOf(a.species) < 0) enc.species.push(a.species);
@@ -1245,7 +1246,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function isCompanionPair(aId, bId) {
     var a = SP[aId], b = SP[bId];
-    return !!(a && b && (a.companion === bId || b.companion === aId));
+    if (!a || !b) return false;
+    if (a.companion === bId || b.companion === aId) return true;
+    if (a.companionGroup && b.companionGroup && a.companionGroup === b.companionGroup) return true;
+    return false;
   }
   function hasRequiredCompanion(E, sp) {
     if (!sp || !sp.companion) return true;
@@ -1270,15 +1274,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function makeAnimal(spId, enc, x, z, baby, sex) {
     var sp = SP[spId];
+    var fixedSex = sp && sp.fixedSex;
     return {
-      id: newId(), species: spId, name: pickAnimalName(), sex: sex || (rng.chance(0.5) ? 'm' : 'f'),
-      age: baby ? 0 : adultAge(sp), baby: !!baby, enc: enc ? enc.id : 0, state: 'idle',
+      id: newId(), species: spId, name: pickAnimalName(), sex: fixedSex || sex || (rng.chance(0.5) ? 'm' : 'f'),
+      age: baby ? 0 : adultAge(sp), baby: !!baby, enc: enc ? enc.id : 0, homeEnc: enc ? enc.id : 0, state: 'idle',
       x: x, z: z, y: 0, heading: rng.range(-PI, PI), speed: 0,
       hunger: rng.range(10, 40), thirst: rng.range(10, 40), energy: rng.range(60, 95), health: 100, happiness: 75,
       stuck: 0, st: rng.range(1, 3), tx: x, tz: z, tg: '', sick: false, injured: false, fid: 0, fightCd: 0,
       pregnant: 0, esc: 0, pt: rng.range(30, 90),
       flyCooldown: sp && sp.canFlyOver ? rng.range(40, 90) : 0, flyover: null, flyAlt: 0
     };
+  }
+  function countSpeciesInZoo(spId) {
+    var n = 0;
+    for (var k = 0; k < S.animals.length; k++) if (S.animals[k].species === spId) n++;
+    return n;
   }
   function insertAnimal(a) {
     S.animals.push(a); RT.aById.set(a.id, a);
@@ -1290,7 +1300,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function addAnimal(speciesId, i, j, opts) {
     opts = opts || {}; var dry = dryOf(arguments);
     var sp = SP[speciesId]; if (!sp) return fail('Unknown animal species');
+    if (sp.breedOnly) return fail(sp.name + ' cannot be adopted — breed Puss in Boots + Purple Dragon instead');
     if (sp.star > S.unlocked.star) return fail('Needs a ' + sp.star + '-star zoo');
+    if (sp.maxCount && countSpeciesInZoo(speciesId) >= sp.maxCount) return fail('You can only have ' + sp.maxCount + ' ' + sp.name + ' in the zoo at a time');
     if (!Z.inb(i, j)) return fail('Outside the zoo');
     var t = i + j * N, enc = encOfTile(t);
     if (!enc) return fail('Place animals inside an enclosure');
@@ -1346,6 +1358,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (dry) return okr(0, warn ? { warn: warn } : undefined);
     stripFromFights(a.id);
     a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z;
+    a.homeEnc = enc.id;
     a.state = 'idle'; a.st = 1; a.tg = ''; a.hid = 0; a.fid = 0; a.esc = 0; a.flyover = null; a.flyAlt = 0;
     refreshEncAnimals();
     for (var k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
@@ -2998,25 +3011,32 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   // ---- escapes ----
   function doEscape(a, enc) {
+    var homeId = (enc && enc.id) || a.enc || a.homeEnc;
+    if (homeId) a.homeEnc = homeId;
     a.state = 'escaped'; a.enc = 0; a.tg = ''; a.esc = 0;
     // place outside enclosure
-    var E = RT.encx[enc.id];
+    var E = enc ? RT.encx[enc.id] : null;
     if (E && E.out.length) {
       var t = E.out[Math.floor(rng.next() * E.out.length)];
       a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z;
     }
     S.stats.escapes++; S.panic = Math.min(2, (S.panic || 0) + 0.5);
-    msg(a.name + ' the ' + SP[a.species].name.toLowerCase() + ' has escaped from ' + enc.name + '! Security guards should recapture it.', 'bad');
+    msg(a.name + ' the ' + SP[a.species].name.toLowerCase() + ' has escaped from ' + (enc ? enc.name : 'its enclosure') + '! Security guards should recapture it.', 'bad');
     bus.emit('escape', a);
   }
   function recapture(a, by) {
     a.state = 'idle'; a.st = 2; a.tg = ''; a.held = 0; a.claim = 0;
     var encs = S.enclosures; if (!encs.length) return;
-    var enc = null;
-    for (var k = 0; k < encs.length; k++) if (encs[k].species.indexOf(a.species) >= 0) { enc = encs[k]; break; }
+    var homeId = a.homeEnc || a.home;
+    var enc = (homeId && RT.eMap[homeId] && RT.eMap[homeId].tiles && RT.eMap[homeId].tiles.length) ? RT.eMap[homeId] : null;
+    if (!enc) {
+      for (var k = 0; k < encs.length; k++) if (encs[k].species.indexOf(a.species) >= 0 && encs[k].tiles && encs[k].tiles.length) { enc = encs[k]; break; }
+    }
     if (!enc) enc = encs[0];
-    var t = enc.tiles[Math.floor(rng.next() * enc.tiles.length)];
-    a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z; a.enc = enc.id;
+    if (!enc || !enc.tiles || !enc.tiles.length) return;
+    var t = randomEncTile(a, enc, 10);
+    if (t < 0) t = enc.tiles[Math.floor(rng.next() * enc.tiles.length)];
+    a.x = cxOf(t); a.z = czOf(t); a.tx = a.x; a.tz = a.z; a.enc = enc.id; a.homeEnc = enc.id;
     a.happiness = Math.max(10, a.happiness - 15);
     refreshEncAnimals(); encStats(enc);
     msg((by || 'Staff') + ' recaptured ' + a.name + ' the ' + SP[a.species].name.toLowerCase() + ' and returned it to ' + enc.name + '.', 'good');
@@ -3907,26 +3927,30 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < births.length; k++) {
       a = births[k]; sp = SP[a.species]; e = RT.eMap[a.enc]; if (!e) continue;
+      var babySpId = a.species === 'purple_dragon' ? (rng.chance(0.5) ? 'pugon' : 'drassy') : a.species;
+      var babySp = SP[babySpId] || sp;
       var n = 0;
       for (var q = 0; q < e.animals.length; q++) {
         var anq = RT.aById.get(e.animals[q]);
-        if (anq && anq.species === a.species) n++;
+        if (anq && anq.species === babySpId) n++;
       }
-      if (e.area / (n + 1) < sp.space * 0.7) { a.pregnant = 1; continue; }
-      var baby = makeAnimal(a.species, e, a.x + rng.range(-0.8, 0.8), a.z + rng.range(-0.8, 0.8), true);
+      if (e.area / (n + 1) < babySp.space * 0.7) { a.pregnant = 1; continue; }
+      var baby = makeAnimal(babySpId, e, a.x + rng.range(-0.8, 0.8), a.z + rng.range(-0.8, 0.8), true);
       var bt = tileOf(baby.x, baby.z);
       if (bt < 0 || !aok(baby, bt)) { baby.x = a.x; baby.z = a.z; }
       insertAnimal(baby);
       S.stats.babiesBorn++; S.stats.births++;
-      msg('A baby ' + sp.name.toLowerCase() + ' has been born at ' + e.name + '! Say hello to ' + baby.name + '.', 'good');
+      msg('A baby ' + babySp.name.toLowerCase() + ' has been born at ' + e.name + '! Say hello to ' + baby.name + '.', 'good');
       bus.emit('birth', baby);
     }
     // new pregnancies
     for (k = 0; k < S.enclosures.length; k++) {
       e = S.enclosures[k];
       for (var s = 0; s < e.species.length; s++) {
-        var spId = e.species[s], ad = adultAge(SP[spId]);
+        var spId = e.species[s];
         sp = SP[spId];
+        if (!sp || sp.breedOnly || !sp.breedChance) continue;
+        var ad = adultAge(sp);
         var list = [], hasM = false, fem = [];
         for (var i = 0; i < e.animals.length; i++) {
           var an2 = RT.aById.get(e.animals[i]);
@@ -3940,6 +3964,23 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!hasM || suit < 0.55 || list.length > sp.social[1]) continue;
         for (z = 0; z < fem.length; z++) {
           if (rng.chance(sp.breedChance * 0.4 * (0.5 + suit))) fem[z].pregnant = 2;
+        }
+      }
+      // Hybrid breeding: Puss in Boots (adult male) + Purple Dragon (adult female)
+      if (e.species.indexOf('puss_in_boots') >= 0 && e.species.indexOf('purple_dragon') >= 0) {
+        var spP = SP.puss_in_boots, spD = SP.purple_dragon;
+        var adP = adultAge(spP), adD = adultAge(spD);
+        var hasAdultPuss = false, dragonFem = null;
+        for (var hi = 0; hi < e.animals.length; hi++) {
+          var ha = RT.aById.get(e.animals[hi]);
+          if (!ha || ha.baby) continue;
+          if (ha.species === 'puss_in_boots' && ha.age >= adP && ha.sex === 'm') hasAdultPuss = true;
+          else if (ha.species === 'purple_dragon' && ha.age >= adD && ha.sex === 'f' && !ha.pregnant && !ha.sick && ha.happiness > 55) dragonFem = ha;
+        }
+        var suitP = e.suitability.puss_in_boots || 0, suitD = e.suitability.purple_dragon || 0;
+        if (hasAdultPuss && dragonFem && suitP >= 0.55 && suitD >= 0.55) {
+          var hybridChance = Math.max(spD.breedChance || 0.04, spP.breedChance || 0.06) * 0.4 * (0.5 + suitD);
+          if (rng.chance(hybridChance)) dragonFem.pregnant = 2;
         }
       }
     }
@@ -4259,6 +4300,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (a.diet === 'carnivore' || a.predator) needs.push('Meat/Carcass feeder');
       if (a.social) needs.push('Herd of ' + a.social[0] + '-' + a.social[1]);
       if (a.companion && SP[a.companion]) needs.push('Companion: ' + SP[a.companion].name);
+      if (a.breedOnly) needs.push('Breed Puss in Boots + Purple Dragon');
       needs.push('Enrichment toys (1 per 40 tiles)');
       species.push({
         id: a.id, name: a.name, emoji: a.emoji, predator: !!(a.predator || a.diet === 'carnivore'),
@@ -4413,6 +4455,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!isFinite(a.heading)) a.heading = 0;
         if (a.injured === undefined) a.injured = false;
         if (a.fightCd === undefined) a.fightCd = 0;
+        var aSp = SP[a.species];
+        if (aSp && aSp.fixedSex) a.sex = aSp.fixedSex;
+        if (!a.homeEnc && a.home) a.homeEnc = a.home;
         if (a.state === 'fight' && (!a.fid || !fightIds[a.fid])) { a.state = 'idle'; a.fid = 0; }
         else if (a.state !== 'fight') a.fid = 0;
         if (a.state !== 'escaped' && a.state !== 'sleep' && a.state !== 'sick' && a.state !== 'fight') a.state = 'idle';

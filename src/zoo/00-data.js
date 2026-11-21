@@ -430,6 +430,7 @@ window.Z.DATA = {
       foliage: ["castle", "enchanted_tree", "wizard_shelter", "rainbow_arch", "climbing_frame", "ball"],
       needsWater: false, needsShelter: true, needsRocks: false, minFence: 3, speed: 1.75, size: 0.75,
       lifespan: 1600, breedChance: 0.06, star: 4, danger: 1, fantasy: true, companion: "purple_dragon",
+      fixedSex: "m", maxCount: 1, companionGroup: "puss_dragon",
       fact: "A dashing storybook swordsman in plumed hat and polished boots who charms crowds with dramatic bows and refuses to leave his purple dragon companion."
     },
     {
@@ -439,7 +440,28 @@ window.Z.DATA = {
       foliage: ["castle", "standing_stones", "crystal_cluster", "heat_rock"],
       needsWater: false, needsShelter: true, needsRocks: true, minFence: 5, speed: 1.4, size: 4.2,
       lifespan: 3000, breedChance: 0.04, star: 4, danger: 3, fantasy: true, companion: "puss_in_boots",
+      fixedSex: "f", maxCount: 1, companionGroup: "puss_dragon",
       fact: "An enormous, amethyst-scaled fairytale dragon who towers over every exhibit and will only be happy when sharing her castle with Puss in Boots."
+    },
+    {
+      id: "pugon", name: "Pugon", emoji: "🦁", biome: "enchanted",
+      terrainPrefs: { enchanted: 0.45, lava: 0.4, rock: 0.1, grass: 0.05 },
+      cost: 14500, "upkeep/day": 145, appeal: 108, space: 12, social: [1, 20], diet: "carnivore",
+      foliage: ["castle", "enchanted_tree", "wizard_shelter", "crystal_cluster", "standing_stones", "heat_rock", "rainbow_arch", "climbing_frame", "ball"],
+      needsWater: false, needsShelter: true, needsRocks: false, minFence: 4, speed: 1.7, size: 1.05,
+      lifespan: 2400, breedChance: 0, star: 4, danger: 2, fantasy: true,
+      breedOnly: true, fixedSex: "m", companionGroup: "puss_dragon",
+      fact: "A dashing dragon-kitten hybrid born to Puss in Boots and Purple Dragon — sporting amethyst scales, golden boots, and a feathered swashbuckler hat."
+    },
+    {
+      id: "drassy", name: "Drassy", emoji: "🐲", biome: "enchanted",
+      terrainPrefs: { lava: 0.45, enchanted: 0.4, rock: 0.15 },
+      cost: 15500, "upkeep/day": 155, appeal: 112, space: 14, social: [1, 20], diet: "carnivore",
+      foliage: ["castle", "enchanted_tree", "crystal_cluster", "standing_stones", "heat_rock", "wizard_shelter"],
+      needsWater: false, needsShelter: true, needsRocks: true, minFence: 4, speed: 1.65, size: 1.25,
+      lifespan: 2600, breedChance: 0, star: 4, danger: 2, fantasy: true,
+      breedOnly: true, fixedSex: "f", companionGroup: "puss_dragon",
+      fact: "A spirited fairytale dragonet daughter of Purple Dragon and Puss in Boots, with iridescent violet wings and a fearless storybook strut."
     }
   ],
 
@@ -874,7 +896,7 @@ window.Z.DATA = {
       wooden: {
         id: "wooden", name: "Wooden Coaster", stationId: "coaster_wooden", star: 0,
         trackCost: 35, waterExtra: 35, trainCost: 2400, carCost: 500, trainUpkeep: 28, carUpkeep: 6,
-        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 4,
+        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 5,
         baseSpeed: 8.5, maxSpeed: 15.5, excMul: 1.0,
         allowedSpecs: [1, 3],
         colors: { rail: 0x8b5a2b, tie: 0x6d421e, support: 0x9b6b3c, car: 0xc93b3b, accent: 0xf4e4c1, station: 0x8b5a2b, roof: 0xb84232 }
@@ -882,7 +904,7 @@ window.Z.DATA = {
       mine: {
         id: "mine", name: "Runaway Mine Train", stationId: "coaster_mine", star: 1,
         trackCost: 42, waterExtra: 40, trainCost: 3000, carCost: 650, trainUpkeep: 34, carUpkeep: 7,
-        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 5,
+        minCars: 2, maxCars: 5, maxTrains: 3, capacity: 4, maxHeight: 7,
         baseSpeed: 9.2, maxSpeed: 17.0, excMul: 1.1,
         allowedSpecs: [1, 2, 3],
         colors: { rail: 0x5c534a, tie: 0x6b4423, support: 0x7a5230, car: 0x9c5a2c, accent: 0xe6b44c, station: 0x735238, roof: 0x585c62 }
@@ -890,7 +912,7 @@ window.Z.DATA = {
       flume: {
         id: "flume", name: "Splash Log Flume", stationId: "coaster_flume", star: 2,
         trackCost: 48, waterExtra: 20, trainCost: 3200, carCost: 700, trainUpkeep: 38, carUpkeep: 8,
-        minCars: 2, maxCars: 4, maxTrains: 3, capacity: 4, maxHeight: 5,
+        minCars: 2, maxCars: 4, maxTrains: 3, capacity: 4, maxHeight: 8,
         baseSpeed: 8.0, maxSpeed: 16.0, excMul: 1.15,
         allowedSpecs: [1, 3],
         colors: { rail: 0x3b8ec4, tie: 0x2a6d9c, support: 0x7e5a38, car: 0x7a4822, accent: 0x9be2ff, station: 0x4b7b9e, roof: 0x3b6e52 }
@@ -898,7 +920,7 @@ window.Z.DATA = {
       steel: {
         id: "steel", name: "Steel Thrill Coaster", stationId: "coaster_steel", star: 3,
         trackCost: 60, waterExtra: 50, trainCost: 4400, carCost: 900, trainUpkeep: 48, carUpkeep: 10,
-        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 6,
+        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 12,
         baseSpeed: 10.5, maxSpeed: 21.0, excMul: 1.3,
         allowedSpecs: [1, 2, 3, 4, 5],
         colors: { rail: 0xd93838, tie: 0x354352, support: 0xcfd6de, car: 0x2574c4, accent: 0xffd24c, station: 0x34465a, roof: 0xd93838 }
@@ -906,7 +928,7 @@ window.Z.DATA = {
       hyper: {
         id: "hyper", name: "Mythical Hyper Coaster", stationId: "coaster_hyper", star: 4, fantasy: true,
         trackCost: 80, waterExtra: 55, trainCost: 5800, carCost: 1150, trainUpkeep: 60, carUpkeep: 12,
-        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 8,
+        minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 18,
         baseSpeed: 12.0, maxSpeed: 25.0, excMul: 1.5,
         allowedSpecs: [1, 2, 3, 4, 5],
         colors: { rail: 0x9b4dff, tie: 0x3a205c, support: 0xe6c15c, car: 0x6f2dbd, accent: 0x56f0d0, station: 0x4d267a, roof: 0xd4a438 }

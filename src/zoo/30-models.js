@@ -198,8 +198,17 @@ function legPieces(spec, front) {
       gU.limb(0, 0, 0, 0, -up, 0, r0, r1, col, { seg: lg.seg || 6, hs: lg.hs });
       gU.sph(r1 * 1.05, r1 * 1.05, r1 * 1.05, 0, -up, 0, col, { s: [5, 4] });
       gL = B();
-      gL.limb(0, 0, 0, 0, -lo + fh * 0.8, 0, r1, r2, col, { seg: lg.seg || 6, hs: lg.hs });
-      addFoot(gL, -lo);
+      if (ft.type === 'boot') {
+        var bCol = ft.col || 0x261810, cCol = ft.cuffCol || 0x3a2518, gCol = ft.buckleCol || 0xf2c94c;
+        gL.cyl(r1 * 1.52, r1 * 1.18, lo * 0.28, 0, -lo * 0.12, 0, cCol, { seg: 8 });
+        gL.limb(0, -lo * 0.18, 0, 0, -lo + fh * 0.65, 0, r1 * 1.16, r2 * 1.18, bCol, { seg: 8 });
+        gL.sph(r2 * 1.42, fh * 0.72, r2 * 2.1, 0, -lo + fh * 0.52, r2 * 0.68, bCol, { s: [7, 5] });
+        gL.box(r2 * 1.9, fh * 0.62, r2 * 1.3, 0, -lo + fh * 0.34, -r2 * 0.2, bCol);
+        gL.box(r2 * 1.1, fh * 0.55, r2 * 0.45, 0, -lo + fh * 1.15, r2 * 1.28, gCol);
+      } else {
+        gL.limb(0, 0, 0, 0, -lo + fh * 0.8, 0, r1, r2, col, { seg: lg.seg || 6, hs: lg.hs });
+        addFoot(gL, -lo);
+      }
     }
   }
   return { up: gU.build(), lo: gL ? gL.build() : null, upLen: up, loLen: lo };
@@ -495,7 +504,8 @@ function quadUpdate(I, dt, ent) {
     }
   }
   if (I.wings) {
-    var flyA = Math.max(rw, W.play);
+    var airborne = (ent && ((ent.flyAlt && ent.flyAlt > 0.05) || ent.flyover)) ? 1 : 0;
+    var flyA = Math.max(rw, W.play, airborne);
     var wz = lerp(-0.38 + 0.03 * breathe, 0.25 + 0.58 * sin(t * 11 + I.seed), flyA);
     wz = lerp(wz, -0.08 + 0.16 * sin(ph * 2), gw * (1 - flyA) * 0.75);
     wz = lerp(wz, -0.62, W.sleep);
@@ -1049,14 +1059,74 @@ function earBall(g, x, y, z, r, col, inner) {
   };
 })();
 
-// ---- PURPLE DRAGON
+// ---- PURPLE DRAGON & HYBRIDS (PUGON, DRASSY)
 (function () {
   var PR = 0x6b28aa, PR_DK = 0x451478, PR_LT = 0x924dd6, BELLY = 0xc97cf5, HORN = 0x241432, FANG = 0xf6eed8, WING = 0x561a86, WING_LT = 0x8232ba, SPINE = 0x2c0e4a;
+  var OR = 0xe0842c, STR = 0xb05414, CR = 0xf7e3c4, BT = 0x261810, BT2 = 0x3a2518, HAT = 0x221a18, GD = 0xf2c94c, CP = 0xb8222a, CP2 = 0x82141a;
   var bc = function (x, y, z, nx, ny) {
     if (ny < -0.42) return fract(z * 3.5) < 0.25 ? shade(BELLY, 0.85) : BELLY;
     var h = hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4));
     return h > 0.65 ? PR_DK : (h < 0.25 ? PR_LT : PR);
   };
+  function dragonWing(k, r) {
+    var g = B(), s = r ? -1 : 1, th = max(0.018, 0.032 * k);
+    // heavy purple wing arm & wrist claw spur
+    g.limb(0, 0, 0, s * 1.25 * k, 0.85 * k, -0.15 * k, 0.18 * k, 0.12 * k, PR, { seg: 6 });
+    g.limb(s * 1.25 * k, 0.85 * k, -0.15 * k, s * 2.55 * k, 1.10 * k, -0.32 * k, 0.12 * k, 0.06 * k, PR_DK, { seg: 6 });
+    g.cone(0.06 * k, 0.32 * k, s * 2.55 * k, 1.24 * k, -0.22 * k, HORN, { seg: 5, rot: [0.3, 0, s * -0.4] });
+    // radiating finger struts
+    g.limb(s * 2.55 * k, 1.10 * k, -0.32 * k, s * 3.95 * k, 0.62 * k, -0.62 * k, 0.06 * k, 0.02 * k, PR_DK, { seg: 5 });
+    g.limb(s * 2.55 * k, 1.10 * k, -0.32 * k, s * 3.55 * k, -0.18 * k, -1.12 * k, 0.055 * k, 0.018 * k, PR_DK, { seg: 5 });
+    g.limb(s * 2.55 * k, 1.10 * k, -0.32 * k, s * 2.65 * k, -0.75 * k, -1.32 * k, 0.05 * k, 0.018 * k, PR_DK, { seg: 5 });
+    g.limb(s * 1.25 * k, 0.85 * k, -0.15 * k, s * 1.45 * k, -0.82 * k, -1.22 * k, 0.06 * k, 0.02 * k, PR_DK, { seg: 5 });
+    // rich purple-plum wing membranes
+    var wCol = function (x, y, z) { return fract(abs(x / k) * 1.5 + (z / k) * 1.2) < 0.22 ? WING_LT : WING; };
+    g.sph(0.95 * k, th, 0.82 * k, s * 0.82 * k, 0.18 * k, -0.64 * k, wCol, { s: [8, 4], rot: [0.35, s * 0.18, s * 0.25] });
+    g.sph(1.05 * k, th * 0.94, 0.92 * k, s * 2.05 * k, 0.22 * k, -0.82 * k, wCol, { s: [8, 4], rot: [0.28, s * 0.22, s * -0.06] });
+    g.sph(0.88 * k, th * 0.82, 0.72 * k, s * 3.12 * k, 0.24 * k, -0.78 * k, wCol, { s: [7, 4], rot: [0.22, s * 0.28, s * -0.26] });
+    return g.build();
+  }
+  function dragonHeadBase(g, k, col, lowHorns) {
+    // armored skull, brow ridges, snout, jaw & fangs
+    g.sph(0.40 * k, 0.34 * k, 0.48 * k, 0, 0.04 * k, 0.20 * k, col, { s: [9, 7] });
+    g.box(0.76 * k, 0.11 * k, 0.32 * k, 0, 0.24 * k, 0.28 * k, PR_DK, { rot: [0.14, 0, 0] });
+    g.sph(0.26 * k, 0.20 * k, 0.52 * k, 0, -0.02 * k, 0.68 * k, col, { s: [8, 6] });
+    g.sph(0.21 * k, 0.12 * k, 0.44 * k, 0, -0.20 * k, 0.62 * k, PR_LT, { s: [8, 5] });
+    // flared nasal crest & snout horn
+    g.cone(0.08 * k, 0.26 * k, 0, 0.18 * k, 0.96 * k, HORN, { seg: 5, rot: [0.35, 0, 0] });
+    for (var s = -1; s <= 1; s += 2) {
+      g.cone(0.042 * k, 0.16 * k, s * 0.15 * k, -0.16 * k, 0.94 * k, FANG, { seg: 5, rot: [PI - 0.1, 0, 0] });
+      g.cone(0.036 * k, 0.14 * k, s * 0.13 * k, -0.15 * k, 0.72 * k, FANG, { seg: 5, rot: [PI - 0.08, 0, 0] });
+      if (lowHorns) {
+        // compact horns sweeping out underneath a hat brim
+        g.limb(s * 0.13, 0.10, -0.02, s * 0.25, 0.19, -0.20, 0.052, 0.032, HORN, { seg: 6 });
+        g.limb(s * 0.25, 0.19, -0.20, s * 0.31, 0.28, -0.37, 0.032, 0.008, shade(HORN, 1.3), { seg: 5 });
+      } else {
+        // sweeping curved dragon horns
+        g.limb(s * 0.22 * k, 0.24 * k, 0.04 * k, s * 0.42 * k, 0.68 * k, -0.45 * k, 0.13 * k, 0.085 * k, HORN, { seg: 6 });
+        g.limb(s * 0.42 * k, 0.68 * k, -0.45 * k, s * 0.52 * k, 0.98 * k, -1.12 * k, 0.085 * k, 0.015 * k, shade(HORN, 1.3), { seg: 6 });
+      }
+      // cheek frill spikes
+      g.cone(0.075 * k, 0.38 * k, s * 0.36 * k, 0.02 * k, -0.08 * k, PR_DK, { seg: 5, rot: [-0.95, 0, s * -0.55] });
+      g.cone(0.065 * k, 0.32 * k, s * 0.34 * k, -0.12 * k, -0.04 * k, PR_DK, { seg: 5, rot: [-0.85, 0, s * -0.65] });
+    }
+    // chin spike
+    g.cone(0.07 * k, 0.24 * k, 0, -0.30 * k, 0.68 * k, HORN, { seg: 5, rot: [PI - 0.35, 0, 0] });
+  }
+  function dragonHeadGlow(k) {
+    return [
+      {
+        col: 0xffe24a, em: 0xff7800,
+        build: function (g) {
+          g.sph(0.065 * k, 0.055 * k, 0.055 * k, 0.26 * k, 0.12 * k, 0.42 * k, 0xffe24a, { s: [6, 4] });
+          g.sph(0.065 * k, 0.055 * k, 0.055 * k, -0.26 * k, 0.12 * k, 0.42 * k, 0xffe24a, { s: [6, 4] });
+          g.sph(0.04 * k, 0.032 * k, 0.032 * k, 0.12 * k, 0.06 * k, 1.12 * k, 0xff7a18, { s: [5, 4] });
+          g.sph(0.04 * k, 0.032 * k, 0.032 * k, -0.12 * k, 0.06 * k, 1.12 * k, 0xff7a18, { s: [5, 4] });
+        }
+      }
+    ];
+  }
+
   QUADS.purple_dragon = {
     id: 'purple_dragon', cy: 2.25, hl: 2.1, hh: 0.9, height: 5.8, size: 4.2, walkA: 0.34, runA: 0.52, bend: 0.55, babyScale: 0.42, babyHead: 1.38, hopH: 1.1,
     body: function (g) {
@@ -1093,40 +1163,8 @@ function earBall(g, x, y, z, r, col, inner) {
       }
     },
     hpitch: 0.72, eatY: 0.35,
-    head: function (g) {
-      // armored skull, brow ridges, snout, jaw & fangs
-      g.sph(0.40, 0.34, 0.48, 0, 0.04, 0.20, bc, { s: [9, 7] });
-      g.box(0.76, 0.11, 0.32, 0, 0.24, 0.28, PR_DK, { rot: [0.14, 0, 0] });
-      g.sph(0.26, 0.20, 0.52, 0, -0.02, 0.68, bc, { s: [8, 6] });
-      g.sph(0.21, 0.12, 0.44, 0, -0.20, 0.62, PR_LT, { s: [8, 5] });
-      // flared nasal crest & snout horn
-      g.cone(0.08, 0.26, 0, 0.18, 0.96, HORN, { seg: 5, rot: [0.35, 0, 0] });
-      // upper & lower fangs
-      for (var s = -1; s <= 1; s += 2) {
-        g.cone(0.042, 0.16, s * 0.15, -0.16, 0.94, FANG, { seg: 5, rot: [PI - 0.1, 0, 0] });
-        g.cone(0.036, 0.14, s * 0.13, -0.15, 0.72, FANG, { seg: 5, rot: [PI - 0.08, 0, 0] });
-        // huge sweeping curved horns
-        g.limb(s * 0.22, 0.24, 0.04, s * 0.42, 0.68, -0.45, 0.13, 0.085, HORN, { seg: 6 });
-        g.limb(s * 0.42, 0.68, -0.45, s * 0.52, 0.98, -1.12, 0.085, 0.015, shade(HORN, 1.3), { seg: 6 });
-        // cheek frill spikes
-        g.cone(0.075, 0.38, s * 0.36, 0.02, -0.08, PR_DK, { seg: 5, rot: [-0.95, 0, s * -0.55] });
-        g.cone(0.065, 0.32, s * 0.34, -0.12, -0.04, PR_DK, { seg: 5, rot: [-0.85, 0, s * -0.65] });
-      }
-      // chin spike
-      g.cone(0.07, 0.24, 0, -0.30, 0.68, HORN, { seg: 5, rot: [PI - 0.35, 0, 0] });
-    },
-    headGlow: [
-      {
-        col: 0xffe24a, em: 0xff7800,
-        build: function (g) {
-          // fierce glowing golden-amber eyes & inner nostril glow
-          g.sph(0.065, 0.055, 0.055, 0.26, 0.12, 0.42, 0xffe24a, { s: [6, 4] });
-          g.sph(0.065, 0.055, 0.055, -0.26, 0.12, 0.42, 0xffe24a, { s: [6, 4] });
-          g.sph(0.04, 0.032, 0.032, 0.12, 0.06, 1.12, 0xff7a18, { s: [5, 4] });
-          g.sph(0.04, 0.032, 0.032, -0.12, 0.06, 1.12, 0xff7a18, { s: [5, 4] });
-        }
-      }
-    ],
+    head: function (g) { dragonHeadBase(g, 1.0, bc, false); },
+    headGlow: dragonHeadGlow(1.0),
     legs: {
       fx: 0.72, fy: 1.45, fz: 1.05, hy: 1.45, hz: -1.15, hx: 0.76, fLen: 1.45, hLen: 1.45,
       fr: [0.30, 0.22, 0.18], hr: [0.34, 0.24, 0.18], shoulder: [0.36, 0.42, 0.40], haunch: [0.42, 0.50, 0.48],
@@ -1147,25 +1185,135 @@ function earBall(g, x, y, z, r, col, inner) {
       }
     },
     wingAt: [0.76, 2.95, 0.72],
-    wings: function (r) {
-      var g = B(), s = r ? -1 : 1;
-      // heavy purple wing arm & wrist claw spur
-      g.limb(0, 0, 0, s * 1.25, 0.85, -0.15, 0.18, 0.12, PR, { seg: 6 });
-      g.limb(s * 1.25, 0.85, -0.15, s * 2.55, 1.10, -0.32, 0.12, 0.06, PR_DK, { seg: 6 });
-      g.cone(0.06, 0.32, s * 2.55, 1.24, -0.22, HORN, { seg: 5, rot: [0.3, 0, s * -0.4] });
-      // radiating finger struts
-      g.limb(s * 2.55, 1.10, -0.32, s * 3.95, 0.62, -0.62, 0.06, 0.02, PR_DK, { seg: 5 });
-      g.limb(s * 2.55, 1.10, -0.32, s * 3.55, -0.18, -1.12, 0.055, 0.018, PR_DK, { seg: 5 });
-      g.limb(s * 2.55, 1.10, -0.32, s * 2.65, -0.75, -1.32, 0.05, 0.018, PR_DK, { seg: 5 });
-      g.limb(s * 1.25, 0.85, -0.15, s * 1.45, -0.82, -1.22, 0.06, 0.02, PR_DK, { seg: 5 });
-      // rich purple-plum wing membranes (double-sided thin ellipsoids so visible from above and below)
-      var wCol = function (x, y, z) { return fract(abs(x) * 1.5 + z * 1.2) < 0.22 ? WING_LT : WING; };
-      g.sph(0.95, 0.032, 0.82, s * 0.82, 0.18, -0.64, wCol, { s: [8, 4], rot: [0.35, s * 0.18, s * 0.25] });
-      g.sph(1.05, 0.030, 0.92, s * 2.05, 0.22, -0.82, wCol, { s: [8, 4], rot: [0.28, s * 0.22, s * -0.06] });
-      g.sph(0.88, 0.026, 0.72, s * 3.12, 0.24, -0.78, wCol, { s: [7, 4], rot: [0.22, s * 0.28, s * -0.26] });
-      return g.build();
-    },
+    wings: function (r) { return dragonWing(1.0, r); },
     fold: { fa: -0.95, fb: 1.9, ha: -0.95, hb: 1.9, splay: 0.25, hp: 0.55, hy: 0.75, lieY: 0.95 }
+  };
+
+  // ---- PUGON (male hybrid: small purple dragon + Puss's plumed hat, 4 boots, belt/cape & striped tabby tail)
+  var capeCol = function (x, y, z, nx, ny) { return ny < 0 ? CP2 : CP; };
+  QUADS.pugon = {
+    id: 'pugon', cy: 0.96, hl: 0.92, hh: 0.38, height: 2.15, size: 1.45, walkA: 0.42, runA: 0.68, bend: 0.65, babyScale: 0.48, babyHead: 1.38, hopH: 1.15,
+    body: function (g) {
+      g.torso({ z0: -0.90, z1: 0.82, n: 20, seg: 14, rxA: 0.34, rxB: 0.44, ryA: 0.32, ryB: 0.45, ycA: 0.88, ycB: 1.00 }, bc);
+      g.sph(0.40, 0.38, 0.36, 0, 0.98, 0.50, bc, { s: [9, 6] });
+      g.sph(0.28, 0.22, 0.36, 0, 0.68, 0.26, BELLY, { s: [8, 5] });
+      // leather waist belt & shiny gold buckles on flanks + chest strap clasp
+      g.cyl(0.415, 0.415, 0.08, 0, 0.94, -0.04, BT, { seg: 14, rot: [PI / 2, 0, 0] });
+      g.box(0.032, 0.10, 0.11, 0.415, 0.94, -0.04, GD);
+      g.box(0.032, 0.10, 0.11, -0.415, 0.94, -0.04, GD);
+      // dashing crimson cavalier capelet with gold shoulder clasps
+      g.cyl(0.26, 0.31, 0.065, 0, 1.22, 0.56, CP, { seg: 10, rot: [0.65, 0, 0] });
+      for (var s = -1; s <= 1; s += 2) {
+        g.sph(0.044, 0.044, 0.038, s * 0.22, 1.18, 0.66, GD, { s: [5, 4] });
+        g.box(0.22, 0.035, 0.54, s * 0.15, 1.33, 0.04, capeCol, { rot: [0.14, s * 0.16, s * -0.40] });
+        g.box(0.24, 0.035, 0.36, s * 0.20, 1.25, -0.35, capeCol, { rot: [0.22, s * 0.22, s * -0.50] });
+      }
+      // purple dragon dorsal ridge spines rising cleanly along the spine
+      for (var i = 0; i < 6; i++) {
+        var sz = 0.46 - i * 0.24, sy = 1.36 - Math.abs(sz) * 0.12, sh = 0.28 - i * 0.015;
+        g.cone(0.075, sh, 0, sy + sh * 0.34, sz, i % 2 ? SPINE : PR_DK, { seg: 5, rot: [-0.46, 0, 0] });
+      }
+    },
+    bodyGlow: [
+      {
+        col: 0xff9a28, em: 0xc44200,
+        build: function (g) {
+          var zs = [0.54, 0.34, 0.14, -0.22, -0.40];
+          for (var i = 0; i < zs.length; i++) {
+            var vz = zs[i], vy = 0.57 - Math.abs(vz - 0.15) * 0.04;
+            g.sph(0.18 - i * 0.01, 0.042, 0.07, 0, vy, vz, 0xffaa30, { s: [6, 4] });
+          }
+        }
+      }
+    ],
+    neck: {
+      y: 1.16, z: 0.62, len: 0.62, up: 0.92, r0: 0.22, r1: 0.15, hs: 4, col: bc,
+      extra: function (g) {
+        for (var i = 0; i < 3; i++) {
+          var nz = 0.14 + i * 0.16;
+          g.sph(0.11 - i * 0.012, 0.06, 0.09, 0, -0.12 + i * 0.01, nz, BELLY, { s: [5, 4] });
+          g.cone(0.052, 0.22 - i * 0.02, 0, 0.16 - i * 0.01, nz, SPINE, { seg: 5, rot: [-0.55, 0, 0] });
+        }
+      }
+    },
+    hpitch: 0.75, eatY: 0.22,
+    head: function (g) {
+      dragonHeadBase(g, 0.52, bc, true);
+      // iconic wide-brimmed cavalier hat, gold band & sweeping golden feather plume
+      g.cyl(0.30, 0.32, 0.028, 0.012, 0.19, 0.04, HAT, { seg: 14, rot: [-0.08, 0, -0.13] });
+      g.cyl(0.145, 0.165, 0.16, 0.022, 0.275, 0.035, HAT, { seg: 12, rot: [-0.08, 0, -0.13] });
+      g.cyl(0.166, 0.169, 0.034, 0.017, 0.215, 0.038, GD, { seg: 12, rot: [-0.08, 0, -0.13] });
+      g.limb(0.13, 0.23, 0.05, 0.24, 0.44, -0.09, 0.028, 0.046, GD, { seg: 5 });
+      g.limb(0.24, 0.44, -0.09, 0.28, 0.56, -0.29, 0.046, 0.014, shade(GD, 1.08), { seg: 5 });
+    },
+    headGlow: dragonHeadGlow(0.52),
+    legs: {
+      fx: 0.32, fy: 0.68, fz: 0.48, hy: 0.68, hz: -0.52, hx: 0.34, fLen: 0.68, hLen: 0.68, kf: 0.45,
+      fr: [0.135, 0.10, 0.082], hr: [0.15, 0.105, 0.082], shoulder: [0.16, 0.19, 0.18], haunch: [0.19, 0.23, 0.22],
+      col: function (y) { return y < -0.25 ? PR_DK : PR; },
+      foot: { type: 'boot', col: BT, cuffCol: BT2, buckleCol: GD, h: 0.085 }
+    },
+    tail: {
+      y: 0.92, z: -0.84, n: 4, len: 1.55, r0: 0.115, r1: 0.082, seg: 7, hs: 4,
+      col: function (i, x, y, z) { return fract(-z * 6.0 + i * 0.25) < 0.34 ? STR : OR; },
+      up: 0.28, curl: 0.26,
+      tip: function (g, sl) {
+        g.sph(0.10, 0.10, 0.125, 0, 0, -sl * 1.02, CR, { s: [7, 5] });
+      }
+    },
+    wingAt: [0.34, 1.24, 0.30],
+    wings: function (r) { return dragonWing(0.44, r); },
+    fold: { fa: -0.95, fb: 1.9, ha: -0.95, hb: 1.9, splay: 0.24, hp: 0.55, hy: 0.75, lieY: 0.45 }
+  };
+
+  // ---- DRASSY (female hybrid: larger sleek ginger cat body + purple dragon head, wings & dorsal crest)
+  var catBody = function (x, y, z, nx, ny) {
+    if (ny < -0.44 || (z > 1.02 && ny < 0.08)) return CR;
+    return fract(z * 4.2 + sin(y * 3.5 + x * 2) * 0.4) < 0.28 ? STR : OR;
+  };
+  QUADS.drassy = {
+    id: 'drassy', cy: 1.18, hl: 1.24, hh: 0.42, height: 2.55, size: 1.95, walkA: 0.45, runA: 0.80, bend: 0.88, babyScale: 0.46, babyHead: 1.38, hopH: 1.05,
+    body: function (g) {
+      g.torso({ z0: -1.35, z1: 1.25, n: 22, seg: 14, rxA: 0.36, rxB: 0.42, ryA: 0.42, ryB: 0.49, ycA: 1.14, ycB: 1.24 }, catBody);
+      // subtle purple dragon dorsal spines & ridge crest along the cat's spine
+      for (var i = 0; i < 7; i++) {
+        var sz = 0.88 - i * 0.31, sy = 1.66 - Math.abs(sz) * 0.07, sh = 0.30 - i * 0.016;
+        g.sph(0.07, 0.055, 0.13, 0, sy - 0.02, sz, PR_DK, { s: [5, 4] });
+        g.cone(0.075, sh, 0, sy + sh * 0.34, sz, i % 2 ? SPINE : PR, { seg: 5, rot: [-0.52, 0, 0] });
+      }
+    },
+    neck: {
+      y: 1.38, z: 0.94, len: 0.56, up: 0.72, r0: 0.25, r1: 0.19, hs: 4,
+      col: function (x, y, z, nx, ny) {
+        if (z < 0.20) return ny < -0.4 ? CR : (fract(z * 6.5) < 0.28 ? STR : OR);
+        if (z < 0.34) return mixHex(ny < -0.4 ? CR : OR, ny < -0.4 ? BELLY : PR, (z - 0.20) / 0.14);
+        return ny < -0.4 ? BELLY : PR;
+      },
+      extra: function (g) {
+        for (var i = 0; i < 3; i++) {
+          var nz = 0.16 + i * 0.14;
+          g.cone(0.055, 0.22 - i * 0.02, 0, 0.18 - i * 0.01, nz, i % 2 ? PR : SPINE, { seg: 5, rot: [-0.55, 0, 0] });
+        }
+      }
+    },
+    hpitch: 0.65, eatY: 0.26,
+    head: function (g) { dragonHeadBase(g, 0.62, bc, false); },
+    headGlow: dragonHeadGlow(0.62),
+    legs: {
+      hs: 4, fx: 0.19, fy: 0.90, fz: 0.72, hy: 0.88, hz: -0.84, hx: 0.20, fLen: 0.90, hLen: 0.88,
+      fr: [0.13, 0.095, 0.078], hr: [0.15, 0.098, 0.078], haunch: [0.18, 0.24, 0.27],
+      col: function (y) { return y < -0.70 ? CR : (fract(y * 7.5) < 0.28 ? STR : OR); },
+      foot: { type: 'paw', col: 0x222222, h: 0.095, pawCol: CR, claws: true }
+    },
+    tail: {
+      y: 1.18, z: -1.24, n: 4, len: 1.65, r0: 0.072, r1: 0.048, hs: 4,
+      col: function (i, x, y, z) { return fract(-z * 6.5 + i * 0.35) < 0.30 ? STR : OR; },
+      up: -0.45, curl: 0.26,
+      tip: function (g, sl) { g.sph(0.056, 0.056, 0.10, 0, 0, -sl, STR, { s: [5, 4] }); }
+    },
+    wingAt: [0.34, 1.54, 0.42],
+    wings: function (r) { return dragonWing(0.58, r); },
+    fold: { roll: 0.10, hp: 0.55, hy: 0.85 }
   };
 })();
 
