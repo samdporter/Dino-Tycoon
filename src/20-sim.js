@@ -758,8 +758,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (Z.Monorail && Z.Monorail.updateGraph) Z.Monorail.updateGraph();   // monorail graph before reach/facilities
       refreshReach();
       refreshFacilities();
+      if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before moats and enclosures: pumps & electric fences read it)
       if (Z.Moats) Z.Moats.update();   // moats package: ditch networks, water supply (before enclosures are rebuilt)
-      if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before enclosures: electric fences read it)
       recomputeEnclosures();
       if (Z.Realms) Z.Realms.update();   // realms package: towers, plants, tank supply, zone cover (after enclosures are known)
       if (Z.Monorail) Z.Monorail.update();   // monorail package: track graph, lines, pylons, enclosures overlooked (after enclosures are known)
@@ -1127,6 +1127,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       case 'terr':
         for (k = 0; k < op.ts.length; k++) {
           t = op.ts[k];
+          if (seaMask()[t]) return 'That tile is now part of the sea';
           if (W.terrain[t] !== op.nw) return 'The ground has changed since, so this cannot be undone';
           if (op.old[k] === WATER && (W.path[t] || W.occ[t])) return 'Something now stands where the water would return';
           W.terrain[t] = op.old[k];
@@ -5221,11 +5222,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     S.staff.push(sci); RT.sById.set(sci.id, sci); placeScientist(sci, 0);
     makeCandidates(); refreshMarket(true);
     if (Z.DNA) Z.DNA.afterReset();
+    if (Z.Power) Z.Power.afterLoad(true);   // power package: fresh grid state (before moats and enclosures)
+    if (Z.Moats) Z.Moats.afterLoad ? Z.Moats.afterLoad(true) : Z.Moats.update();   // moats package: fresh ditch/water state
     recomputeEnclosures();
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package
-    if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
-    if (Z.Power) Z.Power.afterLoad(true);   // power package: fresh grid state
     if (Z.Realms) { Z.Realms.reset(); Z.Realms.update(); }   // realms package
+    if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
     if (Z.News) Z.News.afterLoad(true);   // news package: empty feed
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to Amber Acres! Your lab is ready: run an extraction, hatch a Dryosaurus and open the gates.', 'info', false);
@@ -5311,6 +5313,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       a.st = rng.range(0.5, 3); a.tx = a.x; a.tz = a.z; a.speed = 0;
     }
     initDerived();
+    if (Z.Power) Z.Power.afterLoad();   // power package: default state of old saves, derive the grid (before moats and enclosures)
+    if (Z.Moats) Z.Moats.afterLoad ? Z.Moats.afterLoad() : Z.Moats.update();   // moats package: derive ditch networks & water supply (before enclosures)
     recomputeEnclosures();
     // drop any fights whose participants no longer exist after loading
     for (k = S.fights.length - 1; k >= 0; k--) {
@@ -5324,7 +5328,6 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package: default fields of old saves, relink riders, derive the track graph
-    if (Z.Power) Z.Power.afterLoad();   // power package: default state of old saves, derive the grid
     if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
     if (Z.Safari) Z.Safari.afterLoad();   // safari package: riders relink, derived routes and zones (after realms and enclosures)
     if (Z.News) Z.News.afterLoad();   // news package

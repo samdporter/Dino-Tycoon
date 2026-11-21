@@ -900,7 +900,7 @@ window.Z.DATA.donors = [
     ],
     bridge: { maxSpan: 6, mult: 4, flat: 20 },                 // bridge tile cost = path cost x mult + flat
     // water supply, in "depth units" (one tile of a Medium ditch = 2 units). Lakes give lakeCap per lake tile; a river system is generous.
-    supply: { lakeCap: 8, riverCap: 900 },
+    supply: { lakeCap: 8, riverCap: 900, seaCap: 1200 },
     // Species overrides. Anything not listed is DERIVED in 23-sim-moats.js (reqFor): ditchWidth = tiles it can leap (from length x agility from speed),
     // ditchDepth = depth level it can climb out of (from size), swims (marine realm, piscivores, hybrids of swimmers). Other agents' species need no entry.
     species: {

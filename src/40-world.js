@@ -697,7 +697,7 @@ function calcVertex(a, b) {
   }
   var mv = Z.MoatsWorld ? Z.MoatsWorld.vtx(a, b) : null;   // moats package: trenches cut into the mesh
   var rv = Z.RealmsWorld ? Z.RealmsWorld.vtx(a, b, hgt) : null;   // realms package: sunk tank basins, sea-bed trenches under tunnels
-  if (rv) mv = rv;
+  if (rv && (!mv || rv.drop >= mv.drop)) mv = rv;
   if (mv) hgt -= mv.drop;
   var n1 = fbm(x * 0.11 + 3.1, z * 0.11 + 9.7, 3) - 0.5, n2 = h2(a * 3 + 1, b * 7 + 5) - 0.5, n3 = fbm(x * 0.45, z * 0.45, 2) - 0.5;
   var m = 1 + amp * (n1 * 2.2 + n2 * 0.9 + n3 * 1.2);
@@ -806,9 +806,10 @@ function ensureWaterMat() {
       ' float w1 = sin(p.x*2.3+sin(p.y*1.7+t*0.7)*1.6+t*0.6)*sin(p.y*2.1+sin(p.x*1.9-t*0.5)*1.6); float glint = smoothstep(0.55,1.0,w1)*0.09*(1.0-0.65*vSea);',
       ' col *= uLight; col += uSunCol*sp + vec3(glint)*uLight;',
       ' float foam = smoothstep(0.0,0.012,dd)*(1.0-smoothstep(0.012,0.07,dd));',
+      ' float bankFoam = smoothstep(0.0,0.02,dd)*(1.0-smoothstep(0.03,0.18,dd))*(1.0-vSea)*0.35;',
       ' float wash = 0.5+0.5*sin(dd*34.0-t*1.6+p.x*0.4); float band = smoothstep(0.0,0.03,dd)*(1.0-smoothstep(0.05,0.2,dd))*wash*vSea;',
-      ' col += vec3(0.55,0.62,0.6)*(foam*(0.6+0.4*sin(p.x*5.0+t*2.0))+band*0.55)*uLight;',
-      ' float a = mix(smoothstep(0.0,0.10,dd)*0.84, 0.28+0.62*smoothstep(0.06,0.9,dd), vSea); a = max(a, max(sp*0.6, max(foam*0.55, band*0.5)));',
+      ' col += vec3(0.55,0.62,0.6)*(foam*(0.6+0.4*sin(p.x*5.0+t*2.0))+bankFoam+band*0.55)*uLight;',
+      ' float a = mix(smoothstep(0.0,0.10,dd)*0.84, 0.28+0.62*smoothstep(0.06,0.9,dd), vSea); a = max(a, max(sp*0.6, max(foam*0.55, max(bankFoam*0.45, band*0.5))));',
       ' gl_FragColor = vec4(col,a);',
       ' #include <encodings_fragment>',
       ' #include <fog_fragment>',
@@ -819,7 +820,7 @@ function ensureWaterMat() {
 }
 function rebuildWater() {
   waterDirty = false;
-  var ter = Z.state && Z.state.terrain, any = false;
+  var s = Z.state, ter = s && s.terrain, dt = s && s.ditch, any = false;
   if (!WLT) WLT = new Float32Array(N * N);
   WLT.fill(-99);
   if (ter && waterIdx >= 0) for (var k = 0; k < ter.length; k++) if (ter[k] === waterIdx) { any = true; break; }
@@ -827,12 +828,35 @@ function rebuildWater() {
   if (waterMesh) { root.remove(waterMesh); waterMesh.geometry.dispose(); waterMesh = null; }
   if (!any) return;
   var sea = Z.Sim && Z.Sim.seaMask ? Z.Sim.seaMask(true) : new Uint8Array(N * N);
-  // connected (8-way) bodies of one kind: fresh bodies get one surface level = their lowest tile corner + WATER_Y; sea tiles sit at SEA_Y
+  function vtxHasOnlyPlainLand(aa, bb) {
+    var i0 = (aa & 1) ? ((aa - 1) >> 1) : ((aa >> 1) - 1), i1 = (aa & 1) ? i0 : (aa >> 1);
+    var j0 = (bb & 1) ? ((bb - 1) >> 1) : ((bb >> 1) - 1), j1 = (bb & 1) ? j0 : (bb >> 1);
+    for (var jj = j0; jj <= j1; jj++) for (var ii = i0; ii <= i1; ii++) {
+      if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+      var nt = ii + jj * N;
+      if (ter && waterIdx >= 0 && ter[nt] === waterIdx) return false;
+      if (dt && dt[nt]) return false;
+    }
+    return true;
+  }
+  function isFreshInteriorVtx(aa, bb) {
+    var i0 = (aa & 1) ? ((aa - 1) >> 1) : ((aa >> 1) - 1), i1 = (aa & 1) ? i0 : (aa >> 1);
+    var j0 = (bb & 1) ? ((bb - 1) >> 1) : ((bb >> 1) - 1), j1 = (bb & 1) ? j0 : (bb >> 1);
+    var anyF = false;
+    for (var jj = j0; jj <= j1; jj++) for (var ii = i0; ii <= i1; ii++) {
+      if (ii < 0 || jj < 0 || ii >= N || jj >= N) continue;
+      var nt = ii + jj * N;
+      if (!ter || ter[nt] !== waterIdx || sea[nt]) return false;
+      anyF = true;
+    }
+    return anyF;
+  }
+  // connected (8-way) bodies of one kind: flat fresh bodies sit at min corner + WATER_Y, sloped ones grade per tile above the bed; sea sits at SEA_Y
   var lab = new Int16Array(N * N).fill(-1), stack = [], nb = 0, i, j, q, di, dj;
   if (!WLV) WLV = new Float32Array(S2 * S2);
   if (!WLS) WLS = new Uint8Array(S2 * S2);
   WLV.fill(1e9); WLS.fill(0);
-  for (q = 0; q < N * N; q++) {
+  if (ter && waterIdx >= 0) for (q = 0; q < N * N; q++) {
     if (ter[q] !== waterIdx || lab[q] >= 0) continue;
     var tiles = [], mn = 1e9, isSea = sea[q] === 1;
     lab[q] = nb; stack.push(q);
@@ -846,13 +870,41 @@ function rebuildWater() {
         var nq = ni + nj * N; if (ter[nq] === waterIdx && lab[nq] < 0 && (sea[nq] === 1) === isSea) { lab[nq] = nb; stack.push(nq); }
       }
     }
-    var lvl = isSea ? SEA_Y : mn + WATER_Y;
     for (var tt = 0; tt < tiles.length; tt++) {
       var ti = tiles[tt] % N, tj = (tiles[tt] / N) | 0;
-      WLT[tiles[tt]] = lvl;
-      for (var bb = Math.max(0, 2 * tj - 1); bb <= Math.min(S2 - 1, 2 * tj + 3); bb++) for (var aa = Math.max(0, 2 * ti - 1); aa <= Math.min(S2 - 1, 2 * ti + 3); aa++) {
-        var vq = aa + bb * S2; if (lvl < WLV[vq]) WLV[vq] = lvl;
-        if (isSea) WLS[vq] = 1;
+      var tlvl;
+      if (isSea) {
+        tlvl = SEA_Y;
+      } else {
+        var e00 = elevAt(ti, tj), e10 = elevAt(ti + 1, tj), e01 = elevAt(ti, tj + 1), e11 = elevAt(ti + 1, tj + 1);
+        var cMin = Math.min(Math.min(e00, e10), Math.min(e01, e11));
+        var cAvg = 0.25 * (e00 + e10 + e01 + e11);
+        tlvl = Math.max(mn + WATER_Y, cMin + WATER_Y, cAvg - DEPTH_MAX + 0.16);
+      }
+      WLT[tiles[tt]] = tlvl;
+      var aLo = 2 * ti, aHi = 2 * ti + 2, bLo = 2 * tj, bHi = 2 * tj + 2;
+      for (var bb = Math.max(0, bLo - 1); bb <= Math.min(S2 - 1, bHi + 1); bb++) {
+        for (var aa = Math.max(0, aLo - 1); aa <= Math.min(S2 - 1, aHi + 1); aa++) {
+          var vq = aa + bb * S2;
+          if (aa >= aLo && aa <= aHi && bb >= bLo && bb <= bHi) {
+            WLV[vq] = WLV[vq] > 1e8 ? tlvl : Math.max(WLV[vq], tlvl);
+            if (isSea) WLS[vq] = 1;
+          } else if (vtxHasOnlyPlainLand(aa, bb)) {
+            if (tlvl < WLV[vq]) { WLV[vq] = tlvl; WLS[vq] = isSea ? 1 : 0; }
+            else if (isSea && tlvl === WLV[vq]) WLS[vq] = 1;
+          }
+        }
+      }
+    }
+    if (!isSea) {
+      for (var tt2 = 0; tt2 < tiles.length; tt2++) {
+        var ti2 = tiles[tt2] % N, tj2 = (tiles[tt2] / N) | 0;
+        for (var bb2 = 2 * tj2; bb2 <= 2 * tj2 + 2; bb2++) for (var aa2 = 2 * ti2; aa2 <= 2 * ti2 + 2; aa2++) {
+          if (isFreshInteriorVtx(aa2, bb2)) {
+            var vq2 = aa2 + bb2 * S2;
+            if (WLV[vq2] < TH[vq2] + 0.08) WLV[vq2] = TH[vq2] + 0.08;
+          }
+        }
       }
     }
     nb++;
@@ -897,10 +949,21 @@ function groundY(x, z) {
 }
 // water surface level at a world position (or -99 when the tile has no water)
 function waterLvlAt(x, z) {
-  if (!WLT) return -99;
   var i = (x / T) | 0, j = (z / T) | 0;
   if (x < 0 || z < 0 || i >= N || j >= N) return -99;
-  return WLT[i + j * N];
+  var t = i + j * N, wl = WLT ? WLT[t] : -99;
+  if (wl > -50) return wl;
+  var s = Z.state;
+  if (s && s.tileEnc && s.enclosures) {
+    var eid = s.tileEnc[t];
+    if (eid) {
+      for (var k = 0; k < s.enclosures.length; k++) {
+        var enc = s.enclosures[k];
+        if (enc.id === eid) return (enc.kind === 'tank' && enc.surf !== undefined) ? enc.surf : -99;
+      }
+    }
+  }
+  return -99;
 }
 // highest ground over a tile footprint's corners (buildings stand on the plateau)
 function footBase(i, j, w, h) {
@@ -925,11 +988,21 @@ function floorH(x, z) {
   return lerp(he, SEA_FLOOR, sstep(0, 12, d));
 }
 function calcOuterSig() {
-  var e = Z.state && Z.state.elev, mp = mapB(), sg = (mp.i0 * 7 + mp.j0 * 13 + mp.i1 * 17 + mp.j1 * 19) | 0;
+  var s = Z.state, e = s && s.elev, ter = s && s.terrain, dt = s && s.ditch, mp = mapB(), sg = (mp.i0 * 7 + mp.j0 * 13 + mp.i1 * 17 + mp.j1 * 19) | 0;
   if (!e) return sg;
   for (var k = 0; k <= N; k++) {
     sg = (sg * 31 + e[k] + 17) | 0; sg = (sg * 31 + e[k + N * (N + 1)] + 17) | 0;
     sg = (sg * 31 + e[k * (N + 1)] + 17) | 0; sg = (sg * 31 + e[N + k * (N + 1)] + 17) | 0;
+  }
+  for (k = 0; k < N; k++) {
+    if (ter) {
+      sg = (sg * 31 + ter[k] + 3) | 0; sg = (sg * 31 + ter[k + (N - 1) * N] + 3) | 0;
+      sg = (sg * 31 + ter[k * N] + 3) | 0; sg = (sg * 31 + ter[(N - 1) + k * N] + 3) | 0;
+    }
+    if (dt) {
+      sg = (sg * 31 + dt[k] + 5) | 0; sg = (sg * 31 + dt[k + (N - 1) * N] + 5) | 0;
+      sg = (sg * 31 + dt[k * N] + 5) | 0; sg = (sg * 31 + dt[(N - 1) + k * N] + 5) | 0;
+    }
   }
   return sg;
 }
@@ -944,8 +1017,12 @@ function buildOuter() {
   if (outerMesh) { root.remove(outerMesh); outerMesh.geometry.dispose(); outerMesh = null; }
   if (oceanMesh) { root.remove(oceanMesh); oceanMesh.geometry.dispose(); oceanMesh = null; }
   outerSig = calcOuterSig();
-  var M = 56, rings = RING_D.length, pos = [], col = [], uv = [], nor = [], idx = [], wpos = [], wdep = [], wsea = [];
-  var sand = lin3('#d9c995'), deepc = lin3('#2f6a7a'), gc = lin3((D.terrain && D.terrain[0] && D.terrain[0].colour) || '#6fae4a');
+  var M = Math.max(56, 2 * N), rings = RING_D.length, pos = [], col = [], uv = [], nor = [], idx = [], wpos = [], wdep = [], wsea = [];
+  var mapId = Z.state && Z.state.map && Z.state.map.id;
+  var mapDef = mapId && D.maps ? D.maps.filter(function (m) { return m.id === mapId; })[0] : null;
+  var mapBaseId = (Z.state && Z.state.map && Z.state.map.base) || (mapDef && mapDef.gen && mapDef.gen.base) || 'grass';
+  var baseTer = (D.terrain || []).filter(function (t) { return t.id === mapBaseId; })[0] || (D.terrain && D.terrain[0]);
+  var sand = lin3('#d9c995'), deepc = lin3('#2f6a7a'), gc = lin3((baseTer && baseTer.colour) || '#6fae4a');
   for (var r = 0; r < rings; r++) {
     var d = RING_D[r];
     var x0 = -d, z0 = -d, x1 = W + d, z1 = W + d;
@@ -959,7 +1036,8 @@ function buildOuter() {
       var c = mix3(sand, deepc, sstep(-0.3, -1.3, h));
       if (h > -0.05) c = mix3(c, gc, sstep(0.0, 0.5, h) * 0.8);
       var nn = 1 + (fbm(x * 0.09, z * 0.09, 2) - 0.5) * 0.25;
-      pos.push(x, h - 0.02, z); col.push(c[0] * nn, c[1] * nn, c[2] * nn);
+      var yOff = r === 0 ? 0 : -0.02;
+      pos.push(x, h + yOff, z); col.push(c[0] * nn, c[1] * nn, c[2] * nn);
       uv.push(x / 9, z / 9); nor.push(0, 1, 0);
       wpos.push(x, SEA_Y, z); wdep.push(Math.max(0, SEA_Y - h)); wsea.push(1);
     }
@@ -974,6 +1052,7 @@ function buildOuter() {
   g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
   g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
   g.setIndex(idx);
+  g.computeVertexNormals();
   g.boundingSphere = new THREE.Sphere(new THREE.Vector3(W / 2, 0, W / 2), 900);
   outerMesh = new THREE.Mesh(g, MAT.outer);
   outerMesh.frustumCulled = false;
@@ -1958,14 +2037,22 @@ function updateEntities(dt, dtGame) {
       rec.vis_ = vis; rec.imp = false;
       if (!vis) { rec.group.visible = false; continue; }
       rec.d2 = d2;
-      var gy;
+      var gy, eyOff = e.y || 0;
       var wl = waterLvlAt(x, z);
       if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
-      else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); if (Z.MoatsWorld) { var bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) gy = bdy; } }
+      else {
+        var ti = (x / T) | 0, tj = (z / T) | 0, bdy = null;
+        gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0);
+        if (Z.MoatsWorld) { bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) gy = bdy; }
+        if (bdy === null && wl > -50 && eyOff < 0 && (e.wb === undefined || e.wb === null || e.wb === false)) {
+          gy = Math.max(groundY(x, z), wl + eyOff);
+          eyOff = 0;
+        }
+      }
       if (Z.RealmsWorld) { var rdy = Z.RealmsWorld.deckY(x, z); if (rdy !== null && e.state !== 'swim' && e.wb === undefined) gy = rdy; }   // realms package: piers carry guests and staff
       if (e.wb !== undefined && e.wb !== null && e.wb !== false) gy = e.wb;   // realms package: sea animals hang from the water surface of their tank or pen
       rec.wl = wl;
-      rec.gy = gy + (e.y || 0); rec.gy0 = gy;
+      rec.gy = gy + eyOff; rec.gy0 = gy;
       if (kind === 'animal' && e.wb !== undefined && e.wb !== null && e.wb !== false && Z.RealmsWorld) {   // realms package: sea animals pass over acrylic tunnels, not through them
         var tct = Z.RealmsWorld.tunnelTop(x, z), tgt = tct === null ? -6 : tct + 0.55; rec.tcl = rec.tcl === undefined ? tgt : rec.tcl + (tgt - rec.tcl) * 0.14;
         if (rec.tcl > -5 && rec.gy < rec.tcl) rec.gy = rec.tcl;
@@ -2777,7 +2864,8 @@ function svGround(x, z) {
   if (Z.MonoWorld) { var mny = Z.MonoWorld.svY(x, z); if (mny !== null) return mny; }   // monorail package: ride-along stands on the carriage floor
   if (Z.SafariWorld) { var sfy = Z.SafariWorld.svY(x, z); if (sfy !== null) return sfy; }   // safari package: ride-along stands on the truck or boat floor
   if (s && s.path && ti >= 0 && tj >= 0 && ti < N && tj < N && s.path[ti + tj * N]) y = Math.max(y, PY);
-  return Math.max(y, WATER_Y);
+  var wl = waterLvlAt(x, z);
+  return Math.max(y, wl > -50 ? wl : WATER_Y);
 }
 function svStep(dt) {
   var b = svBounds(), sp = SV.run ? 11 : 5, f = SV.fwd, st = SV.str, l = Math.max(1, Math.hypot(f, st)), tx = 0, tz = 0;

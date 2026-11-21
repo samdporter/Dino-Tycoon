@@ -167,10 +167,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   function evaluate(fromUpdate, integrate) {
     var s = S(), ps = ensure(), t = now(), k, e, g;
     if (!s || !ps) return;
-    if (coverMap()) { /* nodes changed */ }
+    if (coverMap()) buildEntries();
     // expire outages and repairs
     if (ps.cut && ps.cut.eta <= t) endCut();
-    for (var nid in ps.nodes) if (ps.nodes[nid].eta <= t) { delete ps.nodes[nid]; C.msg('The substation has been repaired and power is flowing to its area again.', 'good', false); X.nodeSig = ''; coverMap(); }
+    for (var nid in ps.nodes) if (ps.nodes[nid].eta <= t) { delete ps.nodes[nid]; C.msg('The substation has been repaired and power is flowing to its area again.', 'good', false); X.nodeSig = ''; if (coverMap()) buildEntries(); }
     for (var bid in ps.broken) if (ps.broken[bid].eta <= t) { delete ps.broken[bid]; C.msg('A generator has been repaired and is back in service.', 'good', false); }
     var scope = scopeOf(), mainDown = scope === 'main', cableDown = scope === 'cable' || mainDown;
     var fuelOk = !ps.fuelCut;
@@ -246,15 +246,29 @@ window.Z = window.Z || {}; var Z = window.Z;
       else ps.over = Math.max(0, ps.over - HPS * 2);
     }
     // ---- apply flips
-    var offTiles = [], onTiles = [], fenceFlip = false, changedObj = false;
+    var offTiles = [], onTiles = [], fenceFlip = false, changedObj = false, moatFlip = false;
     for (k = 0; k < X.entries.length; k++) {
       e = X.entries[k]; var was = X.prevOn[e.key];
-      if (was === undefined) { X.prevOn[e.key] = e.on; if (e.kind === 'obj' && e.o) e.o.off = !e.on; if (e.kind === 'obj' && e.def.moat && Z.Sim && Z.Sim.moats && Z.Sim.moats.setSourcePowered) { try { Z.Sim.moats.setSourcePowered(e.id, e.on); } catch (er) { } } continue; }
+      if (was === undefined) {
+        X.prevOn[e.key] = e.on;
+        if (e.kind === 'obj' && e.o) {
+          if (e.on) delete e.o.off; else e.o.off = 1;
+          if (e.def.moat) moatFlip = true;
+        }
+        continue;
+      }
       if (was === e.on) continue;
       X.prevOn[e.key] = e.on;
-      if (e.kind === 'obj' && e.o) { e.o.off = !e.on; changedObj = true; if (e.def.moat && Z.Sim && Z.Sim.moats && Z.Sim.moats.setSourcePowered) { try { Z.Sim.moats.setSourcePowered(e.id, e.on); } catch (er2) { } } }
+      if (e.kind === 'obj' && e.o) {
+        if (e.on) delete e.o.off; else e.o.off = 1;
+        changedObj = true;
+        if (e.def.moat) moatFlip = true;
+      }
       if (e.kind === 'fence') fenceFlip = true;
       (e.on ? onTiles : offTiles).push(e.t);
+    }
+    if (moatFlip && Z.Sim && Z.Sim.moats && Z.Sim.moats.update) {
+      try { Z.Sim.moats.update(); } catch (er) { }
     }
     if (changedObj && Z.Monorail && Z.Monorail.setPowered) { var allOn = true; for (k = 0; k < X.entries.length; k++) if (X.entries[k].kind === 'obj' && X.entries[k].def.mono && !X.entries[k].on) allOn = false; Z.Monorail.setPowered(allOn); }
     // status snapshot
@@ -269,7 +283,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (offTiles.length) emitPower(false, cause, offTiles);
       if (onTiles.length) emitPower(true, cause, onTiles);
     }
-    if (!fromUpdate && (fenceFlip || X.fenceSig !== fenceSig())) { X.fenceSig = fenceSig(); C.refreshEncs(true); }
+    if (!fromUpdate && (moatFlip || fenceFlip || X.fenceSig !== fenceSig())) { X.fenceSig = fenceSig(); C.refreshEncs(!moatFlip); }
     else if (fromUpdate) X.fenceSig = fenceSig();
   }
   function fenceSig() { var s = '', gk; for (gk in X.fenceGrp) s += gk + (X.fenceGrp[gk].on ? 1 : 0) + ','; return s; }

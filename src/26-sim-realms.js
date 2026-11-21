@@ -187,7 +187,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     } else if (kind === 'pen') {
       var fresh = 0, sea = 0, sum = 0, mxf = -99; rl.dep = new Float32Array(NN);
       for (k = 0; k < enc.tiles.length; k++) { t = enc.tiles[k]; if (isSea(t)) sea++; else fresh++; mxf = Math.max(mxf, tileFloor(t)); }
-      enc.salt = sea >= fresh; enc.surf = enc.salt ? SEA_Y : mxf + 0.12;
+      enc.salt = sea >= fresh; enc.surf = enc.salt ? SEA_Y : mxf + SEA_Y;
       for (k = 0; k < enc.tiles.length; k++) { t = enc.tiles[k]; var dd = Math.max(0.25, enc.surf - tileAvg(t)); rl.dep[t] = dd; sum += dd; }
       enc.depth = Math.round(sum / enc.tiles.length * 100) / 100; enc.vol = Math.round(sum * 10) / 10;
     } else if (kind === 'dome') {

@@ -113,18 +113,18 @@
   // ---------------------------------------------------------------- tanks: glass walls, rim, water
   function tileIn(enc, i, j) { return i >= 0 && j >= 0 && i < N && j < N && S().tileEnc[i + j * N] === enc.id; }
   function buildTank(enc) {
-    var fr = new GB(), gl = new GB(), wt = new GB(), s = S(), floor = enc.floor, top = enc.surf + 0.32, wallCol = enc.wall >= 3 ? 0x6e7b86 : enc.wall === 2 ? 0x8a9aa6 : 0xa9b6bf;
+    var fr = new GB(), gl = new GB(), wtSurf = new GB(), wtWall = new GB(), s = S(), floor = enc.floor, top = enc.surf + 0.32, wallCol = enc.wall >= 3 ? 0x6e7b86 : enc.wall === 2 ? 0x8a9aa6 : 0xa9b6bf;
     var surfCol = 0x2fa3b8;
     enc.tiles.forEach(function (t) {
       var i = t % N, j = (t - i) / N, x0 = i * T, z0 = j * T, x1 = x0 + T, z1 = z0 + T;
-      wt.quad([x0, enc.surf, z0], [x0, enc.surf, z1], [x1, enc.surf, z1], [x1, enc.surf, z0], surfCol);
+      wtSurf.quad([x0, enc.surf, z0], [x0, enc.surf, z1], [x1, enc.surf, z1], [x1, enc.surf, z0], surfCol);
       var dirs = [[0, -1, x0, z0, x1, z0], [0, 1, x0, z1, x1, z1], [-1, 0, x0, z0, x0, z1], [1, 0, x1, z0, x1, z1]];
       dirs.forEach(function (d) {
         var ni = i + d[0], nj = j + d[1]; if (tileIn(enc, ni, nj)) return;
-        var nt = ni + nj * N, opening = ni >= 0 && nj >= 0 && ni < N && nj < N && false;
-        var tw = walkOf[t] === 1; if (tw) { var k2 = d[0] ? 0 : 1; }   // a tunnel tile on the rim: open the wall for the portal
+        var nt = ni + nj * N, hasOut = ni >= 0 && nj >= 0 && ni < N && nj < N && (walkOf[nt] === 1 || s.path[nt] > 0);
+        var tw = walkOf[t] === 1;
         var ax = d[2], az = d[3], bx = d[4], bz = d[5], ya = floor - 0.25;
-        if (tw) {   // portal: frame above the opening only
+        if (tw && hasOut) {   // portal: frame above the opening only on the edge meeting an outside tunnel/path
           var cx = (ax + bx) / 2, cz = (az + bz) / 2, hw = 0.95;
           var ox = d[0] ? 0 : 1, oz = d[0] ? 1 : 0;   // along the wall
           var p0 = [cx - ox * T / 2, 0, cz - oz * T / 2], p1 = [cx + ox * T / 2, 0, cz + oz * T / 2];
@@ -136,7 +136,7 @@
         gl.quad([ax, ya, az], [bx, ya, bz], [bx, top, bz], [ax, top, az], 0xbfe9f3);
         // water-side tint just inside the glass
         var inx = -d[0] * 0.03, inz = -d[1] * 0.03;
-        wt.quad([ax + inx, floor, az + inz], [bx + inx, floor, bz + inz], [bx + inx, enc.surf, bz + inz], [ax + inx, enc.surf, az + inz], 0x1f8aa6);
+        wtWall.quad([ax + inx, floor, az + inz], [bx + inx, floor, bz + inz], [bx + inx, enc.surf, bz + inz], [ax + inx, enc.surf, az + inz], 0x1f8aa6);
         // plinth and rim bar
         fr.box(Math.min(ax, bx) - 0.06 + (d[1] ? 0 : -d[0] * 0.02), floor - 0.3, Math.min(az, bz) - 0.06 + (d[0] ? 0 : -d[1] * 0.02), Math.max(ax, bx) + 0.06, floor + 0.2, Math.max(az, bz) + 0.06, shade(wallCol, 0.8));
         fr.box(Math.min(ax, bx) - 0.07, top - 0.1, Math.min(az, bz) - 0.07, Math.max(ax, bx) + 0.07, top + 0.05, Math.max(az, bz) + 0.07, wallCol);
@@ -148,7 +148,7 @@
         if (n === 1 || n === 3) fr.box(c[0] - 0.06, floor - 0.3, c[1] - 0.06, c[0] + 0.06, top + 0.05, c[1] + 0.06, wallCol);
       });
     });
-    add(fr, lam()); add(gl, glass(0.13), 4); add(wt, glass(0.34), 3);
+    add(fr, lam()); add(wtWall, glass(0.34), 3); add(wtSurf, glass(0.34), 4); add(gl, glass(0.13), 4);
   }
   RW.tankWater = function () { return true; };
 
@@ -356,7 +356,7 @@
         top.quad([x0, gm + band.h1, z0], [x0, gm + band.h1, z1], [x1, gm + band.h1, z1], [x1, gm + band.h1, z0], 0xffffff);
         top.quad([x0, gm + band.h0, z0], [x0, gm + band.h0, z1], [x1, gm + band.h0, z1], [x1, gm + band.h0, z0], 0xffffff);
       } else if (enc.realm === 'land' || overlayOn) {
-        var x2 = i * T + 0.14, z2 = j * T + 0.14, x3 = (i + 1) * T - 0.14, z3 = (j + 1) * T - 0.14, yy = enc.realm === 'sea' ? SEA_Y + 0.04 : Math.max(gy(x2, z2), gy(x3, z2), gy(x2, z3), gy(x3, z3)) + 0.08;
+        var x2 = i * T + 0.14, z2 = j * T + 0.14, x3 = (i + 1) * T - 0.14, z3 = (j + 1) * T - 0.14, yy = enc.realm === 'sea' ? SEA_Y + 0.075 : Math.max(gy(x2, z2), gy(x3, z2), gy(x2, z3), gy(x3, z3)) + 0.08;
         top.quad([x2, yy, z2], [x2, yy, z3], [x3, yy, z3], [x3, yy, z2], 0xffffff);
       }
     });
@@ -444,6 +444,7 @@
       }
       var i = (SV.x / T) | 0, j = (SV.z / T) | 0, enc = S().tileEnc[i + j * N], sf = SEA_Y;
       if (enc) { var e = S().enclosures.filter(function (q) { return q.id === enc; })[0]; if (e && e.kind === 'tank' && e.surf !== undefined) sf = e.surf; }
+      if (sf === SEA_Y) { var wl = Z.World.waterLevelAt ? Z.World.waterLevelAt(SV.x, SV.z) : -99; if (wl > -50) sf = wl; }
       ceil.position.set(SV.x, sf, SV.z); ceil.visible = true;
       if (skyM) skyM.visible = false; hidSky = true;
       bgCol.set(0x2b8fae); scene.background = bgCol;

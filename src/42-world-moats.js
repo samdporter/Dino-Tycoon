@@ -24,11 +24,11 @@
     else if (ea) {       // edge between tiles (i, j-1) and (i, j)
       i = (a - 1) >> 1; j = b >> 1; d0 = dAt(dt, i, j - 1); d1 = dAt(dt, i, j);
       if (!d0 && !d1) return null;
-      if (d0 && d1) { full = DW[Math.min(d0, d1) - 1]; drop = full; } else { full = DW[Math.max(d0, d1) - 1]; drop = full * 0.12; }
+      if (d0 && d1) { full = DW[Math.min(d0, d1) - 1]; drop = full; } else { full = DW[Math.max(d0, d1) - 1]; drop = full * 0.18; }
     } else if (eb) {     // edge between tiles (i-1, j) and (i, j)
       i = a >> 1; j = (b - 1) >> 1; d0 = dAt(dt, i - 1, j); d1 = dAt(dt, i, j);
       if (!d0 && !d1) return null;
-      if (d0 && d1) { full = DW[Math.min(d0, d1) - 1]; drop = full; } else { full = DW[Math.max(d0, d1) - 1]; drop = full * 0.12; }
+      if (d0 && d1) { full = DW[Math.min(d0, d1) - 1]; drop = full; } else { full = DW[Math.max(d0, d1) - 1]; drop = full * 0.18; }
     } else {             // corner of four tiles
       i = a >> 1; j = b >> 1; d0 = dAt(dt, i - 1, j - 1); var q1 = dAt(dt, i, j - 1), q2 = dAt(dt, i - 1, j), q3 = dAt(dt, i, j);
       if (!d0 && !q1 && !q2 && !q3) return null;
@@ -45,31 +45,75 @@
   // wet ditches feed the shared water mesh: set per-vertex surface levels (WLV), sea flag (WLS) and tile level (WLT)
   MW.water = function (WLV, WLS, WLT, S2, elevAt) {
     if (!dcount || !Z.Moats) return;
-    var st = Z.Moats.state(), dt = st.ditch, netMin = {}, t, i, j, k;
+    var st = Z.Moats.state(), dt = st.ditch, t, i, j, k, pass;
     function top(i, j) { return (elevAt(i, j) + elevAt(i + 1, j) + elevAt(i, j + 1) + elevAt(i + 1, j + 1)) * 0.25; }
+    var rawLvl = new Float32Array(NN), minLvl = new Float32Array(NN), maxLvl = new Float32Array(NN), nextLvl = new Float32Array(NN);
+    rawLvl.fill(-99);
     for (t = 0; t < NN; t++) {
       if (!dt[t] || !st.fill[t]) continue; i = t % N; j = (t - i) / N;
-      var full = top(i, j) - 0.28 * DW[dt[t] - 1], id = st.net[t];
-      if (netMin[id] === undefined || full < netMin[id]) netMin[id] = full;
-      // a ditch that meets a river or lake can never stand higher than that water
+      var tp = top(i, j), dw = DW[dt[t] - 1], floor = tp - dw, target = tp - 0.28 * dw;
+      var contactMin = floor + Math.min(0.35, 0.45 * dw);
+      minLvl[t] = floor + (st.wet[t] > 0 ? 0.45 * dw : 0.04);
+      maxLvl[t] = target;
+      var lvl = target;
+      // clamp against adjacent lakes/rivers, or sea when near sea level, without draining below ditch bed
       var nb = [i > 0 ? t - 1 : -1, i < N - 1 ? t + 1 : -1, j > 0 ? t - N : -1, j < N - 1 ? t + N : -1];
-      for (k = 0; k < 4; k++) if (nb[k] >= 0 && WLT[nb[k]] > -50 && !dt[nb[k]] && WLS[2 * (nb[k] % N) + 1 + (2 * ((nb[k] / N) | 0) + 1) * S2] === 0) netMin[id] = Math.min(netMin[id], WLT[nb[k]]);
+      for (k = 0; k < 4; k++) {
+        var nq = nb[k];
+        if (nq >= 0 && WLT[nq] > -50 && !dt[nq]) {
+          var isSeaNb = WLS[2 * (nq % N) + 1 + (2 * ((nq / N) | 0) + 1) * S2] === 1;
+          if (!isSeaNb || Math.abs(lvl - WLT[nq]) < 0.6) lvl = Math.min(lvl, Math.max(contactMin, WLT[nq]));
+        }
+      }
+      rawLvl[t] = lvl;
     }
+    for (pass = 0; pass < 3; pass++) {
+      for (t = 0; t < NN; t++) {
+        if (rawLvl[t] <= -50) { nextLvl[t] = -99; continue; }
+        i = t % N; j = (t - i) / N;
+        var sum = rawLvl[t], cnt = 1;
+        if (i > 0 && rawLvl[t - 1] > -50) { sum += rawLvl[t - 1]; cnt++; }
+        if (i < N - 1 && rawLvl[t + 1] > -50) { sum += rawLvl[t + 1]; cnt++; }
+        if (j > 0 && rawLvl[t - N] > -50) { sum += rawLvl[t - N]; cnt++; }
+        if (j < N - 1 && rawLvl[t + N] > -50) { sum += rawLvl[t + N]; cnt++; }
+        var v = sum / cnt;
+        if (v < minLvl[t]) v = minLvl[t];
+        if (v > maxLvl[t]) v = maxLvl[t];
+        nextLvl[t] = v;
+      }
+      var tmp = rawLvl; rawLvl = nextLvl; nextLvl = tmp;
+    }
+    var vSum = new Float32Array(S2 * S2), vCnt = new Uint8Array(S2 * S2);
     for (t = 0; t < NN; t++) {
       if (!dt[t] || !st.fill[t]) continue; i = t % N; j = (t - i) / N;
-      var tp = top(i, j), floor = tp - DW[dt[t] - 1], lvl = Math.min(netMin[st.net[t]], tp - 0.28 * DW[dt[t] - 1]), fr = st.fill[t] / 255;
-      if (fr < 1) lvl = floor + 0.04 + fr * (lvl - floor - 0.04);
-      WLT[t] = lvl;
+      var tp2 = top(i, j), dw2 = DW[dt[t] - 1], floor2 = tp2 - dw2, lvl2 = rawLvl[t], fr = st.fill[t] / 255;
+      if (st.wet[t] > 0 && lvl2 < floor2 + 0.45 * dw2) lvl2 = floor2 + 0.45 * dw2;
+      if (fr < 1) lvl2 = floor2 + 0.04 + fr * (lvl2 - floor2 - 0.04);
+      WLT[t] = lvl2;
       for (var bb = 2 * j; bb <= 2 * j + 2; bb++) for (var aa = 2 * i; aa <= 2 * i + 2; aa++) {
-        var vq = aa + bb * S2; if (lvl < WLV[vq]) WLV[vq] = lvl;
+        var vq = aa + bb * S2;
+        vSum[vq] += lvl2; vCnt[vq]++;
         if (st.wet[t] === 2) WLS[vq] = 1;
       }
+    }
+    for (var vq2 = 0; vq2 < S2 * S2; vq2++) {
+      if (!vCnt[vq2]) continue;
+      var avg = vSum[vq2] / vCnt[vq2];
+      WLV[vq2] = WLV[vq2] < 1e8 ? Math.max(WLV[vq2], avg) : avg;
     }
   };
 
   // ---------------------------------------------------------------- bridges
   var runOf = new Int16Array(NN).fill(-1), runs = [];
-  function isSpanTile(s, t) { var pd = D.paths[s.path[t] - 1]; if (pd && pd.walk) return false; return s.ditch[t] > 0 || s.terrain[t] === WI(); }   // QA visual: tunnels, piers and walks over water are not bridges
+  function isSpanTile(s, t) {
+    var pd = D.paths[s.path[t] - 1]; if (pd && pd.walk) return false;
+    if (s.ditch[t] > 0) return true;
+    if (s.terrain[t] === WI()) {
+      if (Z.Sim && Z.Sim.isSea && Z.Sim.isSea(t % N, (t / N) | 0)) return false;
+      return true;
+    }
+    return false;
+  }   // QA visual: tunnels, piers, walks and open sea tiles are not bridges
   var wiC = -1; function WI() { if (wiC < 0) wiC = D.terrain.findIndex(function (q) { return q.id === 'water'; }); return wiC; }
   MW.isBridge = function (i, j) { return !!(dcount || bridgeAny) && bridgeSet(i, j); };
   var bridgeAny = true;
@@ -257,17 +301,17 @@
     flow.frustumCulled = false; flow.renderOrder = 3; scene.add(flow);
     FL = []; for (var k = 0; k < flowN; k++) { var tt = tiles[(k * 7919) % tiles.length]; FL.push({ t: tt, u: (k * 0.37) % 1, v: ((k * 53) % 17) / 17 - 0.5, ax: (k & 1) }); }
   }
-  var _m = null, _q = null, _s = null, _p = null;
+  var _m = null, _q = null, _s = null, _p = null, _up = null;
   function updateFlow(time) {
     if (!flow || !FL) return;
-    if (!_m) { _m = new THREE.Matrix4(); _q = new THREE.Quaternion(); _s = new THREE.Vector3(1, 1, 1); _p = new THREE.Vector3(); }
+    if (!_m) { _m = new THREE.Matrix4(); _q = new THREE.Quaternion(); _s = new THREE.Vector3(1, 1, 1); _p = new THREE.Vector3(); _up = new THREE.Vector3(0, 1, 0); }
     var st = Z.Moats.state();
     for (var k = 0; k < FL.length; k++) {
       var f = FL[k], i = f.t % N, j = (f.t - i) / N, u = (f.u + time * 0.08) % 1;
       var x = (i + (f.ax ? u : 0.5 + f.v * 0.6)) * T, z = (j + (f.ax ? 0.5 + f.v * 0.6 : u)) * T;
       var lvl = Z.World.waterLevelAt ? Z.World.waterLevelAt(x, z) : -99;
       _p.set(x, (lvl > -50 ? lvl : Z.World.groundY(x, z)) + 0.04, z);
-      _q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), f.ax ? 0 : Math.PI / 2);
+      _q.setFromAxisAngle(_up, f.ax ? 0 : Math.PI / 2);
       _m.compose(_p, _q, _s); flow.setMatrixAt(k, _m);
     }
     flow.instanceMatrix.needsUpdate = true;
@@ -286,7 +330,7 @@
   var fdirty = true;
   function dirtyAll() { recount(); bdirty = true; odirty = true; fdirty = true; }
   Z.bus.on('terrain', dirtyAll); Z.bus.on('reset', dirtyAll); Z.bus.on('moats', function () { odirty = true; fdirty = true; });
-  Z.bus.on('path', function () { bdirty = true; }); Z.bus.on('enclosures', function () { bdirty = true; odirty = true; }); Z.bus.on('elev', function () { bdirty = true; odirty = true; });
-  if (Z.World && Z.World.frame) { var ofr = Z.World.frame; Z.World.frame = function (dt) { ofr.apply(this, arguments); try { frame(dt); } catch (e) { if (!MW._err) { MW._err = 1; console.error('moats world', e); } } }; }
+  Z.bus.on('path', function () { bdirty = true; }); Z.bus.on('enclosures', function () { bdirty = true; odirty = true; }); Z.bus.on('elev', function () { bdirty = true; odirty = true; fdirty = true; });
+  if (Z.World && Z.World.frame) { var ofr = Z.World.frame; Z.World.frame = function (dt) { try { frame(dt); } catch (e) { if (!MW._err) { MW._err = 1; console.error('moats world', e); } } return ofr.apply(this, arguments); }; }
   MW.info = function () { return { runs: runs.length, ditch: dcount, overlay: overlayOn }; };
 })();

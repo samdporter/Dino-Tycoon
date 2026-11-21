@@ -16,7 +16,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var C = Z.moatCtx; if (!C) return;
   var N = Z.N, NN = N * N, D = Z.DATA, MD = D.moats, bus = Z.bus, rng = Z.rng, clamp = C.clamp, fail = C.fail, okr = C.okr;
-  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; });
+  if (bus && bus.on) bus.on('gridsize', function (n) { N = n; NN = n * n; X = null; });
   var M = Z.Moats = {};
   if (Z.Sim) Z.Sim.moats = M;
   var DN = ['', 'shallow', 'medium', 'deep'], DNC = ['', 'Shallow', 'Medium', 'Deep'];
@@ -117,6 +117,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { lab: lab, bodies: bodies };
   }
 
+  function tileFloor(s, t, depth) {
+    var i = t % N, j = (t - i) / N, ew = N + 1, ev = s.elev;
+    var top = ev ? (ev[i + j * ew] + ev[i + 1 + j * ew] + ev[i + (j + 1) * ew] + ev[i + 1 + (j + 1) * ew]) * 0.25 * (Z.ELEV_STEP || 0.5) : 0;
+    return top - MD.depths[depth - 1].world;
+  }
+
   // Pure: networks, sources and water from a ditch array (so tools can preview "what if").
   function compute(ditch) {
     var s = S(), sea = C.seaMask(), res = emptyResult(), net = res.net, k, t, d, i, j, Wt = WI();
@@ -124,7 +130,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var st = [], nid = 0;
     for (t = 0; t < NN; t++) {
       if (!ditch[t] || net[t]) continue;
-      var nw = { id: ++nid, tiles: [], units: 0, srcs: [], seeds: [], cap: 0, used: 0, wetN: 0, partN: 0, salt: false, state: 'dry', warnings: [] };
+      var nw = { id: ++nid, tiles: [], units: 0, srcs: [], seeds: [], cap: 0, used: 0, wetN: 0, partN: 0, salt: false, shallowSea: false, state: 'dry', warnings: [] };
       net[t] = nw.id; st.push(t);
       while (st.length) {
         var c = st.pop(); nw.tiles.push(c); nw.units += ditch[c];
@@ -137,7 +143,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       res.nets.push(nw);
     }
     if (!nid) return res;
-    // 2. sources: lakes/rivers touching, pump stations, boreholes
+    // 2. sources: lakes/rivers/sea touching, pump stations, boreholes
     var bl = labelBodies(s, sea), srcOfBody = {}, objs = s.objects;
     res.bodies = bl.bodies;
     function addSrc(nw, src, seeds) {
@@ -152,7 +158,18 @@ window.Z = window.Z || {}; var Z = window.Z;
         for (d = 0; d < 4; d++) {
           var ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0); if (!inb(ni, nj)) continue;
           var nt = ni + nj * N;
-          if (s.terrain[nt] === Wt && !sea[nt] && bl.lab[nt] >= 0) {
+          if (s.terrain[nt] !== Wt) continue;
+          if (sea[nt]) {
+            if (tileFloor(s, t, ditch[t]) <= -0.35) {
+              var seaSrc = srcOfBody.sea;
+              if (!seaSrc) {
+                var scap = MD.supply.seaCap || 1200;
+                seaSrc = srcOfBody.sea = { type: 'sea', id: 0, name: 'Sea', cap: scap, rem: scap, used: 0, salt: true, powered: true, river: false };
+                res.srcs.push(seaSrc);
+              }
+              addSrc(n2, seaSrc, [t]);
+            } else n2.shallowSea = true;
+          } else if (bl.lab[nt] >= 0) {
             var bd = bl.bodies[bl.lab[nt]], key = 'b' + bd.id, src = srcOfBody[key];
             if (!src) { src = srcOfBody[key] = { type: 'body', id: bd.id, name: bd.river ? 'River' : 'Lake', cap: bd.cap, rem: bd.cap, used: 0, salt: false, powered: true, river: bd.river, tiles: bd.n }; res.srcs.push(src); }
             addSrc(n2, src, [t]);
@@ -183,7 +200,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     // 3. fill: breadth-first from the source contact tiles; each tile takes its depth in units from the pools
     for (k = 0; k < res.nets.length; k++) {
       var nw2 = res.nets[k], order = [], seen = {}, owner = {}, head = 0, sIdx;
-      if (!nw2.srcs.length) { nw2.state = 'dry'; nw2.warnings.push('No water source: a dry ditch (ha-ha)'); continue; }
+      if (!nw2.srcs.length) { nw2.state = 'dry'; nw2.warnings.push(nw2.shallowSea ? 'Too shallow at the shore to reach sea level: dig deeper to connect to the sea' : 'No water source: a dry ditch (ha-ha)'); continue; }
       for (sIdx = 0; sIdx < nw2.srcs.length; sIdx++) {
         var sd = nw2.seeds[sIdx]; for (q2 = 0; q2 < sd.length; q2++) if (!seen[sd[q2]]) { seen[sd[q2]] = 1; owner[sd[q2]] = sIdx; order.push(sd[q2]); }
       }
@@ -194,12 +211,13 @@ window.Z = window.Z || {}; var Z = window.Z;
       }
       var wetN = 0, partN = 0;
       for (q2 = 0; q2 < order.length; q2++) {
-        var tile = order[q2], need = ditch[tile], got = 0, pref = owner[tile], pi, pickSalt = nw2.srcs[pref].salt;
+        var tile = order[q2], need = ditch[tile], got = 0, gotSalt = 0, pref = owner[tile], pi;
         for (pi = 0; pi < nw2.srcs.length && got < need - 1e-6; pi++) {
           var sx = nw2.srcs[(pref + pi) % nw2.srcs.length], take = Math.min(sx.rem, need - got);
-          if (take > 0) { sx.rem -= take; sx.used += take; got += take; }
+          if (take > 0) { sx.rem -= take; sx.used += take; got += take; if (sx.salt) gotSalt += take; }
         }
-        if (got >= need - 1e-6) { res.wet[tile] = pickSalt ? 2 : 1; res.fill[tile] = 255; wetN++; if (pickSalt) nw2.salt = true; }
+        var isSalt = gotSalt > 1e-6;
+        if (got >= need - 1e-6) { res.wet[tile] = isSalt ? 2 : 1; res.fill[tile] = 255; wetN++; if (isSalt) nw2.salt = true; }
         else if (got > 0) { res.fill[tile] = Math.max(1, Math.round(255 * got / need)); partN++; }
         nw2.used += got;
       }
@@ -207,10 +225,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       for (sIdx = 0; sIdx < nw2.srcs.length; sIdx++) nw2.cap += nw2.srcs[sIdx].cap;
       nw2.state = wetN === nw2.tiles.length ? 'wet' : (wetN + partN > 0 ? 'partial' : 'dry');
       if (nw2.state !== 'wet') {
-        var off = nw2.srcs.filter(function (z2) { return z2.type !== 'body' && !z2.powered; }).length, nowat = nw2.srcs.filter(function (z3) { return z3.type === 'pump' && !z3.hasWater; }).length;
+        var off = nw2.srcs.filter(function (z2) { return z2.type !== 'body' && z2.type !== 'sea' && !z2.powered; }).length, nowat = nw2.srcs.filter(function (z3) { return z3.type === 'pump' && !z3.hasWater; }).length;
         if (off) nw2.warnings.push('A pump or borehole is switched off');
         else if (nowat && nw2.cap === 0) nw2.warnings.push('The pump has no water to draw from');
         else nw2.warnings.push('Not enough water: ' + (Math.round(nw2.used * 10) / 10) + ' of ' + nw2.units + ' units needed, the rest stays dry. Add a pump or borehole, or dig a shorter moat');
+        if (nw2.shallowSea) nw2.warnings.push('Too shallow at the shore to reach sea level: dig deeper to connect to the sea');
       }
     }
     for (t = 0; t < NN; t++) if (ditch[t]) { if (res.wet[t]) { res.wetN++; if (res.wet[t] === 2) res.saltN++; } else res.dryN++; }
@@ -219,13 +238,15 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   M.update = function () {
     var s = S(); if (!s || !s.ditch) return;
-    var prev = X, res = compute(s.ditch);
+    var prev = X && X.wet.length === NN ? X : null, res = compute(s.ditch);
     res.ver = prev ? prev.ver + 1 : 1;
     var changed = !prev;
     if (prev) for (var t = 0; t < NN; t++) if (prev.wet[t] !== res.wet[t] || prev.fill[t] !== res.fill[t]) { changed = true; break; }
     X = res; if (changed) bus.emit('moats', { ver: X.ver });
   };
-  function ensure() { if (!X) M.update(); return X; }
+  M.afterLoad = function () { X = null; M.update(); };
+  M.reset = function () { X = null; M.update(); };
+  function ensure() { if (!X || X.wet.length !== NN) M.update(); return X; }
   M.state = function () { var x = ensure(); return { ditch: S().ditch, wet: x.wet, fill: x.fill, net: x.net, ver: x.ver }; };
   M.wetAt = function (i, j) { return inb(i, j) ? ensure().wet[i + j * N] : 0; };
   M.fillAt = function (i, j) { return inb(i, j) ? ensure().fill[i + j * N] / 255 : 0; };
@@ -322,7 +343,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { msg: tooLong ? 'Too wide to bridge (a bridge spans at most ' + MD.bridge.maxSpan + ' tiles)' : 'A bridge needs solid ground at both ends' };
   };
   M.bridgeCost = function (pid) { return Math.round(D.paths[pid - 1].cost * MD.bridge.mult + MD.bridge.flat); };
-  M.isBridge = function (i, j) { var s = S(), t = i + j * N; if (!inb(i, j) || !s.path[t]) return false; return s.ditch[t] > 0 || s.terrain[t] === WI(); };
+  M.isBridge = function (i, j) { var s = S(), t = i + j * N; if (!inb(i, j) || !s.path[t]) return false; return s.ditch[t] > 0 || (s.terrain[t] === WI() && !C.seaMask()[t]); };
 
   // ============================================================ pumps and boreholes
   function ringHasWater(fp) {
@@ -373,9 +394,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   M.setSourcePowered = function (objId, on) {
     var s = S(), o = null; for (var k = 0; k < s.objects.length; k++) if (s.objects[k].id === objId) { o = s.objects[k]; break; }
     if (!o || !BD()[o.type] || !BD()[o.type].moat) return false;
-    var off = !on; if (!!o.off === off) return true;
+    var off = !on;
     if (off) o.off = 1; else delete o.off;
-    C.world(false);
+    M.update();
+    if (!C.RT().inWorld) C.world(false);
     return true;
   };
 
@@ -450,10 +472,11 @@ window.Z = window.Z || {}; var Z = window.Z;
     return best ? { g: best, jd: bj } : null;
   }
   // message for a species in this enclosure (null when every ditch segment holds it)
-  M.advice = function (enc, spId) {
+  M.advice = function (enc, spId, trs) {
     if (!enc || !X) return null;
     var sp = SPt()[spId]; if (!sp) return null;
-    var req = reqFor(sp), w = worstGroup(enc, req);
+    var arr = Array.isArray(trs) ? trs : (trs && typeof trs === 'object' ? Object.keys(trs).filter(function (k) { return trs[k] > 0; }) : null);
+    var req = arr && arr.length ? reqOf(sp, { traits: arr }) : reqFor(sp), w = worstGroup(enc, req);
     return w ? explain(sp, req, w.g, w.jd) : null;
   };
   // does every ditch segment hold this animal?
@@ -472,7 +495,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     else { how = (req.swims ? 'scrambled across the ditch around' : 'leapt the ditch around'); p = 0.2 + 0.08 * Math.min(3, jd.score); }
     return { t: to, how: how, p: p, wet: g.wet };
   };
-  M.warnFor = function (enc, spId) { return M.advice(enc, spId); };
+  M.warnFor = function (enc, spId, trs) { return M.advice(enc, spId, trs); };
 
   // ============================================================ reports
   M.report = function (enc) {

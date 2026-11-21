@@ -1695,4 +1695,213 @@ test('vets detect and heal injured animals (vetNeedsAnimal, animalReport, and tr
   assert.equal(repAfter.injured, false);
 });
 
+test('moats survive save/load (including cross-size) without drying out or causing animal escapes', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1201, map: 'fern_meadow', difficulty: 'easy', money: 300000 });
+  setupFlatZone(z, 15, 18, 27, 27);
+
+  // Width-1 shallow ditch ring around interior [21..24, 21..24] (20 ditch tiles = 20 units)
+  const ditch = [];
+  for (let j = 20; j <= 25; j++) for (let i = 20; i <= 25; i++) {
+    if (i >= 21 && i <= 24 && j >= 21 && j <= 24) continue;
+    ditch.push({ i, j });
+  }
+  assert.equal(z.Sim.moats.dig(ditch, 1).ok, true);
+
+  // Velociraptor (leap 1, climb 2) is NOT held by a width-1 shallow dry ditch
+  const raptor = z.Sim.spawnAnimal('velociraptor', 22, 22);
+  const encDry = z.state.enclosures.find(e => e.id === raptor.enc);
+  assert.ok(encDry);
+  assert.equal(z.Sim.moats.holds(encDry, raptor), false);
+  assert.notEqual(z.Sim.moats.escapeCheck(encDry, raptor), null);
+
+  // Connect powered borehole + substation + diesel_gen so the moat fills with fresh water
+  assert.equal(z.Sim.placeObject('diesel_gen', 16, 20, 0).ok, true);
+  assert.equal(z.Sim.placeObject('substation', 16, 23, 0).ok, true);
+  assert.equal(z.Sim.placeObject('borehole', 19, 22, 0).ok, true);
+
+  const encWet = z.state.enclosures.find(e => e.id === raptor.enc);
+  assert.equal(z.Sim.moats.holds(encWet, raptor), true);
+  assert.equal(z.Sim.moats.escapeCheck(encWet, raptor), null);
+  const stBefore = z.Sim.moats.state();
+  for (const { i, j } of ditch) {
+    const t = i + j * z.N;
+    assert.ok(stBefore.wet[t] > 0, `expected moat tile (${i},${j}) to be wet`);
+    assert.equal(stBefore.fill[t], 255, `expected moat tile (${i},${j}) to be full`);
+  }
+
+  // Save, reset to an empty park with 0 ditches, and reload
+  const raw = z.Sim.save();
+  z.Sim.newGame({ seed: 999 });
+  assert.equal(z.Sim.moats.state().ditch.every(v => v === 0), true);
+  assert.equal(z.Sim.load(raw), true);
+
+  // Immediately after load (with zero world edits), moat must stay wet and hold the raptor
+  const stLoaded = z.Sim.moats.state();
+  for (const { i, j } of ditch) {
+    const t = i + j * z.N;
+    assert.ok(stLoaded.wet[t] > 0, `loaded moat tile (${i},${j}) must remain wet`);
+    assert.equal(stLoaded.fill[t], 255, `loaded moat tile (${i},${j}) must remain full`);
+  }
+  const animalLoaded = z.state.animals.find(a => a.id === raptor.id);
+  const encLoaded = z.state.enclosures.find(e => e.id === animalLoaded.enc);
+  assert.ok(animalLoaded && encLoaded);
+  assert.equal(z.Sim.moats.holds(encLoaded, animalLoaded), true);
+  assert.equal(z.Sim.moats.escapeCheck(encLoaded, animalLoaded), null);
+
+  // Simulate 48 game hours of tick(0.5) (at speed 1, each tick(0.5) advances 0.25s; 2 days = 2 * DAY_SECONDS)
+  const ticks48h = Math.ceil((2 * z.Sim.DAY_SECONDS) / 0.25);
+  for (let k = 0; k < ticks48h; k++) z.Sim.tick(0.5);
+  assert.notEqual(animalLoaded.state, 'escaped');
+  assert.equal(z.state.stats.escapes, 0);
+
+  // Cross-size moat save/load: large (N=72) -> small (N=40) -> load large (N=72)
+  z.Sim.newGame({ seed: 1202, map: 'fern_meadow', mapSize: 'large', difficulty: 'easy', money: 300000 });
+  assert.equal(z.N, 72);
+  setupFlatZone(z, 26, 26, 36, 36);
+  const largeDitch = [];
+  for (let j = 28; j <= 32; j++) for (let i = 28; i <= 32; i++) {
+    if (i >= 29 && i <= 31 && j >= 29 && j <= 31) continue;
+    largeDitch.push({ i, j });
+  }
+  assert.equal(z.Sim.moats.dig(largeDitch, 1).ok, true);
+  assert.equal(z.Sim.placeObject('diesel_gen', 33, 27, 0).ok, true);
+  assert.equal(z.Sim.placeObject('substation', 33, 30, 0).ok, true);
+  assert.equal(z.Sim.placeObject('borehole', 33, 29, 0).ok, true);
+  for (const { i, j } of largeDitch) assert.ok(z.Sim.moats.wetAt(i, j) > 0);
+  const rawLarge = z.Sim.save();
+
+  z.Sim.newGame({ seed: 1203, map: 'pocket_paddock', mapSize: 'small' });
+  assert.equal(z.N, 40);
+  assert.equal(z.Sim.load(rawLarge), true);
+  assert.equal(z.N, 72);
+  const stLarge = z.Sim.moats.state();
+  assert.equal(stLarge.wet.length, 72 * 72);
+  for (const { i, j } of largeDitch) {
+    const t = i + j * 72;
+    assert.ok(stLarge.wet[t] > 0, `large moat tile (${i},${j}) must remain wet after small->large load`);
+    assert.equal(stLarge.fill[t], 255);
+  }
+});
+
+test('direct sea connection fills deep coastal moats with salt water across save/load', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1204, map: 'fern_meadow', difficulty: 'easy', money: 300000 });
+  const waterIdx = z.DATA.terrain.findIndex(t => t.id === 'water');
+  const b = z.state.map;
+
+  // Find a land tile inside map bounds with sea immediately to its west and clear land to its east
+  let shore = null;
+  for (let j = b.j0 + 3; j <= b.j1 - 6 && !shore; j++) {
+    for (let i = b.i0 + 1; i <= b.i1 - 7 && !shore; i++) {
+      if (!z.Sim.isSea(i - 1, j)) continue;
+      let ok = true;
+      for (let dj = -2; dj <= 2 && ok; dj++) {
+        for (let di = 0; di <= 5 && ok; di++) {
+          const x = i + di, y = j + dj, t = x + y * z.N;
+          if (!z.Sim.inMap(x, y) || z.Sim.isSea(x, y) || z.state.terrain[t] === waterIdx || z.state.path[t] || z.state.tileObj[t] || y >= z.N - 6) ok = false;
+        }
+      }
+      if (ok) shore = { i, j };
+    }
+  }
+  assert.ok(shore, 'expected to find a clear coastal tile adjacent to sea on fern_meadow');
+
+  // Flatten inland plot to elev 0 and raise the coastal tile corners to elev 1 (top = 0.5)
+  setupFlatZone(z, shore.i + 1, shore.j - 2, shore.i + 5, shore.j + 2);
+  const ew = z.N + 1;
+  const ci = shore.i, cj = shore.j;
+  z.state.elev[ci + cj * ew] = 1;
+  z.state.elev[(ci + 1) + cj * ew] = 1;
+  z.state.elev[ci + (cj + 1) * ew] = 1;
+  z.state.elev[(ci + 1) + (cj + 1) * ew] = 1;
+
+  // Shallow (depth 1) coastal ditch has floor = 0.5 - 0.8 = -0.30 > -0.35 -> too shallow for sea
+  assert.equal(z.Sim.moats.dig([{ i: ci, j: cj }], 1).ok, true);
+  assert.equal(z.Sim.moats.wetAt(ci, cj), 0);
+  const nwShallow = z.Sim.moats.networkAt(ci, cj);
+  assert.equal(nwShallow.state, 'dry');
+  assert.ok(nwShallow.warnings.some(w => /Too shallow at the shore to reach sea level/i.test(w)));
+
+  // Deepen coastal ditch to Medium (depth 2, floor = 0.5 - 1.6 = -1.10 <= -0.35) and extend a moat ring inland
+  const ring = [{ i: ci, j: cj }];
+  for (let y = cj - 2; y <= cj + 2; y++) for (let x = ci + 1; x <= ci + 5; x++) {
+    if (x >= ci + 2 && x <= ci + 4 && y >= cj - 1 && y <= cj + 1) continue;
+    ring.push({ i: x, j: y });
+  }
+  assert.equal(z.Sim.moats.dig(ring, 2).ok, true);
+
+  for (const { i, j } of ring) {
+    assert.equal(z.Sim.moats.wetAt(i, j), 2, `tile (${i},${j}) should fill with salt sea water`);
+  }
+  const nwSea = z.Sim.moats.networkAt(ci, cj);
+  assert.equal(nwSea.state, 'wet');
+  assert.equal(nwSea.salt, true);
+  assert.ok(nwSea.sources.some(s => s.type === 'sea' && s.cap === 1200));
+  assert.equal(z.state.objects.some(o => o.type === 'pump_station' || o.type === 'borehole'), false);
+
+  // Holds non-swimming animals across save/load without any pump or power
+  const raptor = z.Sim.spawnAnimal('velociraptor', ci + 3, cj);
+  const enc = z.state.enclosures.find(e => e.id === raptor.enc);
+  assert.ok(enc);
+  assert.equal(z.Sim.moats.holds(enc, raptor), true);
+  assert.equal(z.Sim.moats.escapeCheck(enc, raptor), null);
+
+  const raw = z.Sim.save();
+  z.Sim.newGame({ seed: 999 });
+  assert.equal(z.Sim.load(raw), true);
+
+  for (const { i, j } of ring) assert.equal(z.Sim.moats.wetAt(i, j), 2);
+  const nwLoaded = z.Sim.moats.networkAt(ci, cj);
+  assert.equal(nwLoaded.state, 'wet');
+  assert.equal(nwLoaded.salt, true);
+  const raptorLoaded = z.state.animals.find(a => a.id === raptor.id);
+  const encLoaded = z.state.enclosures.find(e => e.id === raptorLoaded.enc);
+  assert.equal(z.Sim.moats.holds(encLoaded, raptorLoaded), true);
+  assert.equal(z.Sim.moats.escapeCheck(encLoaded, raptorLoaded), null);
+});
+
+test('power cuts, substation outages, and restoration immediately dry out and refill borehole moats', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 1205, map: 'fern_meadow', difficulty: 'easy', money: 300000 });
+  // Place well north of mainland cable coverage (cable at (27.5, 55.5), radius 24)
+  setupFlatZone(z, 15, 18, 27, 27);
+
+  const ditch = [];
+  for (let j = 20; j <= 25; j++) for (let i = 20; i <= 25; i++) {
+    if (i >= 21 && i <= 24 && j >= 21 && j <= 24) continue;
+    ditch.push({ i, j });
+  }
+  assert.equal(z.Sim.moats.dig(ditch, 1).ok, true);
+
+  assert.equal(z.Sim.placeObject('diesel_gen', 16, 20, 0).ok, true);
+  const sub = z.Sim.placeObject('substation', 16, 23, 0);
+  assert.equal(sub.ok, true);
+  const bore = z.Sim.placeObject('borehole', 19, 22, 0);
+  assert.equal(bore.ok, true);
+
+  assert.equal(z.Sim.power.objPowered(bore.id), true);
+  for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 1);
+
+  // Substation failure immediately dries out the borehole-fed moat
+  z.Sim.power.nodeDown(sub.id, 3, 'storm');
+  assert.equal(z.Sim.power.objPowered(bore.id), false);
+  for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 0);
+
+  // Advance past the 3-hour substation repair window; moat immediately refills on restoration
+  const ticks4h = Math.ceil(((4 / 24) * z.Sim.DAY_SECONDS) / 0.25);
+  for (let k = 0; k < ticks4h; k++) z.Sim.tick(0.5);
+  assert.equal(z.Sim.power.objPowered(bore.id), true);
+  for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 1);
+
+  // Grid-wide power cut and immediate restore also dry and refill the moat immediately
+  z.Sim.power.cut('storm', 4, 'main');
+  assert.equal(z.Sim.power.objPowered(bore.id), false);
+  for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 0);
+
+  z.Sim.power.restore();
+  assert.equal(z.Sim.power.objPowered(bore.id), true);
+  for (const { i, j } of ditch) assert.equal(z.Sim.moats.wetAt(i, j), 1);
+});
+
 

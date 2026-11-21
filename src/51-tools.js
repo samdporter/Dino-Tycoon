@@ -233,8 +233,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (k = 0; k < D.terrain.length; k++) if (D.terrain[k].id === t.id) ti = k;
     centers.forEach(function (c) { brushTiles(c.i, c.j, radius).forEach(function (q) { var idx = q.i + q.j * N; if (!set[idx]) { set[idx] = 1; list.push(q); } }); });
     var chg = list.filter(function (q) {
+      if (Z.Sim.inMap && !Z.Sim.inMap(q.i, q.j)) return false;
+      if (Z.Sim.isSea && Z.Sim.isSea(q.i, q.j)) return false;
       var idx = q.i + q.j * N; if (S.terrain[idx] === ti) return false;
-      if (water && (S.path[idx] || S.tileObj[idx])) { return false; } return true;
+      if (water && ((S.ditch && S.ditch[idx]) || S.path[idx] || S.tileObj[idx])) { return false; } return true;
     });
     var cost = chg.length * D.terrain[ti].cost, afford = cost <= S.money;
     return { spec: { type: 'tiles', tiles: chg.length ? chg : list, ok: chg.length > 0 && afford }, ok: chg.length > 0 && afford, cost: cost, n: chg.length, msg: !chg.length ? (water ? 'Nothing to change (paths and objects block water)' : 'Already that terrain') : (!afford ? 'Not enough money' : ''),
