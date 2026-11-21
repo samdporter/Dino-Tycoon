@@ -82,7 +82,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your park' }));
       var stList = [['Day', S2.day], ['Dinosaurs', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Species unlocked', Z.Sim.research.summary().unlockedSpecies + ' of 20'], ['Experiments', S2.research.stats.experiments], ['Hatched', S2.research.stats.hatched], ['Guests in the park', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
-      if (S2.stats && S2.stats.ridesTaken > 0) stList.push(['Rides taken', S2.stats.ridesTaken]);
+      var rt2 = Z.Sim._rt();
+      if ((S2.stats && S2.stats.ridesTaken > 0) || (rt2 && rt2.rides && rt2.rides.length)) stList.push(['Rides taken', (S2.stats && S2.stats.ridesTaken) || 0]);
+      if ((S2.stats && S2.stats.arcadePlayed > 0) || (rt2 && rt2.arcades && rt2.arcades.length)) stList.push(['Arcade games played', (S2.stats && S2.stats.arcadePlayed) || 0]);
       stList.forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
     }
     upd(); return upd;
@@ -90,7 +92,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function setBar(b, frac) { var f = UI.clamp(frac, 0, 1); b.className = 'bar' + (f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low'); b.firstChild.style.width = Math.round(f * 100) + '%'; }
 
   // ------------------------------------------------------------------ finances
-  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops & rides', donations: 'Donations & grants', research: 'Research (amber, reagents, labs)', animals: 'Hatchery (eggs, refunds, sales)', construction: 'Construction', upkeep: 'Dinosaur & building upkeep', wages: 'Wages', marketing: 'Marketing', interest: 'Loan interest', other: 'Loans, hiring & other' };
+  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops, rides & arcade', donations: 'Donations & grants', research: 'Research (amber, reagents, labs)', animals: 'Hatchery (eggs, refunds, sales)', construction: 'Construction', upkeep: 'Dinosaur & building upkeep', wages: 'Wages', marketing: 'Marketing', interest: 'Loan interest', other: 'Loans, hiring & other' };
   function pctStr(r) { return (r * 100).toFixed(1) + '%'; }
   function finTab(b) {
     var S = Z.state, borrowAmt = 5000, loanSig = '';
