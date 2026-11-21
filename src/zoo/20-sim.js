@@ -717,6 +717,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     RT.gaesT = 0;
     RT.glmPv = -1;
     recomputeEnclosures();
+    if (Z.Coaster) Z.Coaster.updateGraph();
+    if (Z.Coaster) Z.Coaster.update();
     RT.value = arrivalValue();
   }
 
@@ -979,6 +981,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (dk.kind === 'building') {
       if (!footprintFlat(fp, 1)) return fail('Too steep — level the ground first');
       if (inEnc) return fail("Buildings can't go inside an enclosure");
+      if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp); if (cr) return fail(cr); }
       if (!adjacentPathExists(fp)) warn = 'Not connected to a path yet';
     } else {
       if (inEnc && def.inEnclosure === false) return fail("Can't place that inside an enclosure");
@@ -1011,6 +1014,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (gu.bid === o.id) { releaseGuest(gu); gu.glide = 0; if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; gu.gid = 0; } }
     }
     delete RT.bq[o.id];
+    if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
     bus.emit('objectRemoved', o);
   }
 
@@ -1038,6 +1042,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       afterWorldChange(true);
       return okr(-refund2);
     }
+    if (Z.Coaster && Z.Coaster.hasTrack(t)) return Z.Coaster.removeTiles([t], opts);
     return fail('Nothing to remove here');
   }
 
@@ -1134,6 +1139,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         for (k = 0; k < sn.tiles.length; k++) W.occ[sn.tiles[k]] = op.o.id;
         return null;
       }
+      case 'x': return op.check ? op.check(W) : null;
     }
     return null;
   }
@@ -1184,6 +1190,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           op.o.id = no.id;
           S.objects.push(no); added.push(no); break;
         }
+        case 'x': if (op.undo) op.undo(); break;
       }
     }
     RT.undoBusy = false;
@@ -1439,7 +1446,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var rideCount = 0, arcadeCount = 0;
     if (RT.rides) for (k = 0; k < RT.rides.length; k++) if (buildingConnected(RT.rides[k])) rideCount++;
     if (RT.arcades) for (k = 0; k < RT.arcades.length; k++) if (buildingConnected(RT.arcades[k])) arcadeCount++;
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + Math.min(6, rideCount * 1.2 + arcadeCount * 0.45);
+    var cb = Z.Coaster ? Z.Coaster.valueBonus() : 0;
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + Math.min(6, rideCount * 1.2 + arcadeCount * 0.45) + cb;
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
@@ -1522,6 +1530,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function releaseGuest(g) {
+    if (Z.Coaster) Z.Coaster.release(g);
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.bid = 0; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -1587,18 +1596,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var o = list[k], def = BD[o.type];
       if (kind === 'cover') { if (!gxIndoor(o)) continue; }
       else if (gxKind(o) !== kind) continue;
+      if (def.coasterStation) { if (!Z.Coaster || !Z.Coaster.stationReady(o.id)) continue; }
       if (kind === 'act' && g.seenB[o.id]) continue;
       var price = o.price === undefined ? def.price : o.price;
+      var refPrice = (def.coasterStation && Z.Coaster) ? Z.Coaster.recommendedPrice(o.id) : def.price;
       if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
       var f = getField('b' + o.id);
       if (!f || !(f[g.ti] < INF)) continue;
       cand++;
-      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.8) || (def.price > 0 && price > def.price * tolE))) { rejected++; continue; }
+      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.8) || (refPrice > 0 && price > refPrice * tolE))) { rejected++; continue; }
       var q = RT.bq[o.id], ql = q ? q.q.length : 0;
       var cap = Math.max(5, Math.ceil(def.capacity * 1.5) + 2);
       if (ql >= cap) continue;
       var sc = f[g.ti] * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 8 : 0);
-      if (kind === 'act') sc -= (def.thrill || 0) * 1.8 + (def.type === 'ride' ? 7 : 1);
+      var effThrill = (def.coasterStation && Z.Coaster) ? Z.Coaster.stationExcitement(o.id) * 0.7 : (def.thrill || 0);
+      if (kind === 'act') sc -= effThrill * 1.8 + (def.type === 'ride' ? 7 : 1);
       if (sc < bs) { bs = sc; best = o; }
     }
     if (!best) {
@@ -1832,7 +1844,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var o = RT.oById.get(g.gid); if (!o) { g.gt = ''; return; }
       var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] }), def = BD[o.type];
       var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
-      if (q.use < def.capacity && q.q.length === 0) { gxPlace(g, false); startUse(g, o); }
+      if (def.coasterStation && Z.Coaster) {
+        if (!Z.Coaster.arrive(g, o)) { g.gt = ''; g.dk = ''; }
+      } else if (q.use < def.capacity && q.q.length === 0) { gxPlace(g, false); startUse(g, o); }
       else if (q.q.length >= Math.max(5, Math.ceil(def.capacity * 1.5) + 2)) { g.gt = ''; g.dk = ''; say(g, 'crowded'); g.mood -= 1; g.nbuy = gxHr() * 0.2; }
       else { g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; gxPlace(g, false); }
     } else if (gt === 'enc') {
@@ -1979,6 +1993,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function guestThink(g, a) {
+    if (g.state === 'ride') {
+      g.thoughtT -= a; g.tcool -= a; g.stay -= a;
+      if (g.thoughtT <= 0 && g.thought) g.thought = '';
+      if (Z.Coaster) Z.Coaster.rideTick(g, a);
+      return;
+    }
     var k, hr = gxHr(), ah = a / hr, st0 = g.state, still = st0 === 'watch' || st0 === 'queue' || st0 === 'use';
     if (!g.al) gxPlan(g, hr, 0);
     g.hunger = Math.min(100, g.hunger + 7.5 * WX.hunger * ah);
@@ -2152,7 +2172,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!g.al) gxPlan(g, gxHr(), 0);
     if (g.pv !== RT.pathVer) { if (revalidateGuest(g) === false) return; }
     var st = g.state;
-    if (st === 'walk' || st === 'leave' || st === 'flee') {
+    if (st === 'ride') {
+      g.speed = 0; g.glide = 0;
+    } else if (st === 'walk' || st === 'leave' || st === 'flee') {
       g.glide = 0;
       if (g.gt || st === 'flee') {
         var r = guestMove(g, dt);
@@ -2201,6 +2223,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
+      if (s === 'ride') continue;
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -2211,6 +2234,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
       if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
+      if (BD[o.type].coasterStation) continue;
       var cap = BD[o.type].capacity;
       while (q.q.length && q.use < cap) {
         var gq = RT.gById.get(q.q.shift());
@@ -3910,6 +3934,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     up = Math.round(up * (DIFF.costs || 1) * (EV.feedCost || 1));
     wages = Math.round(wages * (DIFF.costs || 1));
     if (up) spend(up, 'upkeep'); if (wages) spend(wages, 'wages');
+    if (Z.Coaster) Z.Coaster.newDay();
     if (S.loan > 0) { var intr = Math.round(S.loan * (DIFF.interest || 0.004)); if (intr) spend(intr, 'other'); }
     var t = S.finance.today;
     var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
@@ -3974,6 +3999,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     } else RT.arrAcc = 0;
     var gs = S.guests;
     for (k = gs.length - 1; k >= 0; k--) { if (k < gs.length) guestStep(gs[k], dt); }
+    if (Z.Coaster) Z.Coaster.step(dt);
     updateQueues();
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
@@ -4267,6 +4293,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     rebuildObjects();
     recomputeEnclosures();
     ensureInit();
+    if (Z.Coaster) Z.Coaster.afterLoad();
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to your new zoo! Build an enclosure, add some animals, and open the gates.', 'info', false);
     bus.emit('reset');
@@ -4280,6 +4307,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     });
   }
   var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array };
+  var ARR_OPTIONAL = { coasterRail: Uint8Array, coasterElev: Int8Array, coasterSpec: Uint8Array };
   function expectedArrLen(f, gn) {
     if (f === 'fenceX') return gn * (gn + 1);
     if (f === 'fenceZ') return (gn + 1) * gn;
@@ -4302,6 +4330,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (v && v.__t) v = Z.unpackArray(v);
         if (!v || v.length !== expectedArrLen(f, gn)) return false;
         ns[f] = v;
+      }
+      for (var fo in ARR_OPTIONAL) {
+        var vo = ns[fo];
+        if (vo && vo.__t) vo = Z.unpackArray(vo);
+        if (vo !== undefined && vo !== null) {
+          if (vo.length !== gn * gn) return false;
+          ns[fo] = vo;
+        } else {
+          ns[fo] = new ARR_OPTIONAL[fo](gn * gn);
+        }
       }
       var ev = ns.elev;
       if (ev && ev.__t) ev = Z.unpackArray(ev);
@@ -4343,7 +4381,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (k = 0; k < S.guests.length; k++) {
         var g = S.guests[k];
         g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
-        if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
+        if (g.state === 'ride') { /* re-attached by Z.Coaster.afterLoad */ }
+        else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; }
+        else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
         if (g.gt === 'out') g.gt = 'exit';
       }
       var fightIds = {};
@@ -4363,6 +4403,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
       initDerived();
       recomputeEnclosures();
+      if (Z.Coaster) Z.Coaster.afterLoad();
       secondly();
       bus.emit('reset');
       return true;
@@ -4485,6 +4526,24 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var e = encById(encId), E = e && RT.encx[encId]; if (!e || !SP[speciesId]) return null;
     return suitFor(e, E, speciesId, (E.bySp[speciesId] || 0) + 1);
   }
+
+  Z.coasterCtx = {
+    getS: function () { return S; },
+    getRT: function () { return RT; },
+    getN: function () { return N; },
+    getWX: function () { return WX; },
+    getDIFF: function () { return DIFF; },
+    BD: BD, SP: SP, WATER: WATER, TILE: TILE, DAY_SECONDS: DAY_SECONDS,
+    bus: bus, rng: rng, fmt: fmt,
+    inMap: inMap, cxOf: cxOf, czOf: czOf, tileOf: tileOf,
+    cornerElev: cornerElev, heightAt: heightAt,
+    footprint: footprint, buildingConnected: buildingConnected,
+    encById: encById, gxHr: gxHr, gxPlace: gxPlace,
+    earn: earn, spend: spend, msg: msg, say: say,
+    jBegin: jBegin, jOp: jOp, jEnd: jEnd,
+    afterWorldChange: afterWorldChange,
+    fail: fail, okr: okr, dryOf: dryOf
+  };
 
   Z.Sim = {
     newGame: newGame, tick: tick, save: save, load: load,

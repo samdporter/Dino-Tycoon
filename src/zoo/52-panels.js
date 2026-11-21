@@ -69,11 +69,14 @@ window.Z = window.Z || {}; var Z = window.Z;
   function $q(s, r) { return r.querySelector(s); }
   function thumbBox(kind, id, size, fb) { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:26px' }); UI.lazyThumb(d, kind, id, fb || '', size || 96, true); return d; }
 
+  Panel.kit = { frame: frame, thumbBox: thumbBox, confirmBtn: confirmBtn, issuesList: issuesList, setCur: function (c) { cur = c; } };
+
   Panel.open = function (kind, id) {
     if (UI.tool) return;
     try { Z.World.highlightEnclosure(null); Z.World.setPreview(null); } catch (e) { }
     var ok = false;
-    if (kind === 'animal') ok = openAnimal(id); else if (kind === 'enclosure') ok = openEnc(id); else if (kind === 'guest') ok = openGuest(id);
+    if (UI.Coaster && UI.Coaster.open && UI.Coaster.open(kind, id)) ok = true;
+    else if (kind === 'animal') ok = openAnimal(id); else if (kind === 'enclosure') ok = openEnc(id); else if (kind === 'guest') ok = openGuest(id);
     else if (kind === 'object') ok = openObject(id); else if (kind === 'staff') ok = openStaff(id);
     if (ok) { UI.sel = { kind: kind, id: id }; el.panel.scrollTop = 0; }
   };

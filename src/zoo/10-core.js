@@ -70,6 +70,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       terrain: new Uint8Array(gn * gn), path: new Uint8Array(gn * gn),
       fenceX: new Uint8Array(gn * (gn + 1)), fenceZ: new Uint8Array((gn + 1) * gn),
       tileObj: new Int32Array(gn * gn), tileEnc: new Int16Array(gn * gn), dirt: new Uint8Array(gn * gn),
+      coasterRail: new Uint8Array(gn * gn), coasterElev: new Int8Array(gn * gn), coasterSpec: new Uint8Array(gn * gn),
+      coaster: { trains: [], nextTrain: 1, stats: { riders: 0, income: 0, boardings: 0, breakdowns: 0, maxExcitement: 0 } },
       objects: [], enclosures: [], animals: [], guests: [], staff: [],
       finance: { today: Z.emptyFinance(), history: [] },
       goals: {},

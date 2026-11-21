@@ -2035,16 +2035,20 @@ function updateEntities(dt, dtGame) {
       var vis = isFin(d2) && d2 < far2;
       if (vis && SV.blend > 0.4 && dx * dx + dz * dz < 0.9) vis = false; // street view: never draw a body around the camera
       var alt = (e.y || 0) + (e.flyAlt || 0);
-      if (vis) { _sph.center.set(x, groundY(x, z) + alt + rec.ht * 0.5, z); _sph.radius = rec.ht * 0.8 + 1.2; vis = _fr.intersectsSphere(_sph); }
+      var hasAbsY = typeof e.absY === 'number' && isFin(e.absY);
+      if (vis) { _sph.center.set(x, (hasAbsY ? e.absY : groundY(x, z) + alt) + rec.ht * 0.5, z); _sph.radius = rec.ht * 0.8 + 1.2; vis = _fr.intersectsSphere(_sph); }
       rec.vis_ = vis; rec.imp = false;
       if (!vis) { rec.group.visible = false; continue; }
       rec.d2 = d2;
       var gy;
       var wl = waterLvlAt(x, z);
-      if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
-      else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); }
+      if (hasAbsY) { gy = e.absY; rec.gy = e.absY; rec.gy0 = groundY(x, z); }
+      else {
+        if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
+        else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); }
+        rec.gy = gy + alt; rec.gy0 = gy;
+      }
       rec.wl = wl;
-      rec.gy = gy + alt; rec.gy0 = gy;
       rec.score = kind === 'animal' ? d2 * 0.35 : d2;
       visList.push(rec); totalMc += rec.mc;
     }
@@ -2874,9 +2878,15 @@ function updateCamera(dt) {
     } else { SV.on = false; SV.blend = 0; }
   }
   camera.fov = isFin(fov) && fov > 1 ? fov : (G.baseFov || 42);
-  camera.updateProjectionMatrix();
-  camera.lookAt(lkx, lky, lkz);
-  camera.updateMatrixWorld();
+  camera.up.set(0, 1, 0);
+  if (Z.CoasterWorld && Z.CoasterWorld.applyCamera && Z.CoasterWorld.applyCamera(camera, dt)) {
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+  } else {
+    camera.updateProjectionMatrix();
+    camera.lookAt(lkx, lky, lkz);
+    camera.updateMatrixWorld();
+  }
   view3.set(view.x, view.ty, view.z);
   _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   _fr.setFromProjectionMatrix(_vp);
@@ -3008,7 +3018,17 @@ function pickEntity(cx, cy) {
       if (d < rad && sc < bestS) { bestS = sc; best = { kind: kind, id: rec.id }; }
     });
   }
-  if (best) return best;
+  if (Z.CoasterWorld && Z.CoasterWorld.pickTrain) {
+    var ct = Z.CoasterWorld.pickTrain(cx, cy, projectPoint, pxPerUnit, base);
+    if (ct) return ct;
+  }
+  if (best) {
+    if (best.kind === 'guest') {
+      var ge = ents.guest.get(best.id);
+      if (ge && ge.ent && ge.ent.state === 'ride' && ge.ent.coasterTrain) return { kind: 'ctrain', id: ge.ent.coasterTrain };
+    }
+    return best;
+  }
   var gp = pickGround(cx, cy), s = Z.state;
   if (gp) {
     var idx = gp.i + gp.j * N, oid = s.tileObj ? s.tileObj[idx] : 0;
@@ -3147,6 +3167,7 @@ function frame(dtReal) {
   updateFloaters(dtReal);
   updateGrime(dtReal);
   updateLamps(dtReal);
+  if (Z.CoasterWorld && Z.CoasterWorld.frame) Z.CoasterWorld.frame(dtReal, dtGame);
   updatePreview();
   renderer.render(scene, camera);
 }
@@ -3186,5 +3207,7 @@ World._G = G;
 World.renderer = function () { return renderer; };
 World.setQuality = function (pr, budget) { if (pr) G.prCap = pr; if (budget) MESH_BUDGET = budget; resize(); };
 World.scene = function () { return scene; };
+World.root = function () { return root; };
 World.camera = function () { return camera; };
+World.cam = cam;
 })();

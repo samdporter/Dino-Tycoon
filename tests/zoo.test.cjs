@@ -18,7 +18,7 @@ function zoo(seed) {
     location: { protocol: 'http:' }, performance: { now: () => 0 } });
   vm.runInContext('var window=globalThis', ctx);
   const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx);
-  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = { h: node, ic: () => '', snd() {}, toast() {}, reset() {}, closeModal() {}, narrow: () => false,
     Tutorial: { restart() {} }, el: { cards: node() } };
@@ -295,7 +295,7 @@ function zooWithPlayTimer(opts) {
   });
   vm.runInContext('var window=globalThis', ctx);
   const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx);
-  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = {
     h: (sel, a, ...kids) => {
@@ -763,7 +763,7 @@ test('Zoo UI shows 48t station badges, preview zones, inspect stats, and radio d
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
   const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   let lastPreview = null;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
@@ -1118,7 +1118,8 @@ test('Zoo star progression reserves Star 4 exclusively for fairytale pack items'
   assert.equal(D.animals.some(a => !a.fantasy && a.star >= 4), false);
   assert.deepEqual(star4Terrains, [...expectedFantasyTerrains].sort());
   assert.deepEqual(star4Scenery, [...expectedFantasyScenery].sort());
-  assert.deepEqual(star4Buildings, []);
+  assert.deepEqual(star4Buildings, ['coaster_hyper']);
+  assert.ok(D.buildings.filter(b => b.star === 4).every(b => b.fantasy === true));
 
   const byId = Object.fromEntries(D.animals.map(a => [a.id, a]));
   assert.equal(byId.elephant.star, 3);
@@ -2118,39 +2119,52 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
   const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  ['50-ui.js', '51-tools.js', '52-panels.js', '53-screens.js'].forEach(load);
+  ['50-ui.js', '51-tools.js', '52-panels.js', '66-ui-coaster.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 912 });
   z.state.money = 250000; z.state.unlocked.star = 3;
 
-  // Theme Park tab exists right after Facilities
+  // Coasters tab exists right after Facilities; static theme park buildings live in Facilities & Scenery
   const catIds = z.UI.CATS.map(c => c.id);
-  assert.equal(catIds[catIds.indexOf('fac') + 1], 'themepark');
+  assert.equal(catIds[catIds.indexOf('fac') + 1], 'coasters');
 
-  z.UI.openCat('themepark', true);
-  const allCards = z.UI.el.cards.querySelectorAll('.card');
-  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'wooden_coaster'));
-  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'rubber_duck_stand'));
-  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'candy_floss'));
-  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'themepark_arch'));
-
-  // Sub-filter buttons work
-  const filterBtns = z.UI.el.cards.querySelectorAll('.drawer-mode button');
-  assert.equal(filterBtns.length, 5);
-  filterBtns[1].click(); // Rides & Coasters
-  assert.ok(z.UI.el.cards.querySelector('.card[data-id="loop_coaster"]'));
-  assert.equal(z.UI.el.cards.querySelector('.card[data-id="rubber_duck_stand"]'), null);
-  filterBtns[2].click(); // Arcade & Stands
+  // Facilities contains static theme park rides, arcades, and food stands with sub-filters
+  z.UI.openCat('fac', true);
+  const facCards = z.UI.el.cards.querySelectorAll('.card');
+  assert.ok(facCards.some(c => c.getAttribute('data-id') === 'ferris_wheel'));
+  assert.ok(facCards.some(c => c.getAttribute('data-id') === 'rubber_duck_stand'));
+  assert.ok(facCards.some(c => c.getAttribute('data-id') === 'candy_floss'));
+  const facFilters = z.UI.el.cards.querySelectorAll('.drawer-mode button');
+  assert.equal(facFilters.length, 5);
+  facFilters[3].click(); // Arcade
   assert.ok(z.UI.el.cards.querySelector('.card[data-id="air_rifle_stand"]'));
-  assert.equal(z.UI.el.cards.querySelector('.card[data-id="loop_coaster"]'), null);
-  filterBtns[3].click(); // Food & Drink
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="slushie_bar"]'), null);
+  facFilters[1].click(); // Food & Drink
   assert.ok(z.UI.el.cards.querySelector('.card[data-id="slushie_bar"]'));
-  filterBtns[4].click(); // Scenery
+  facFilters[0].click(); // All
+
+  // Scenery contains static theme park scenery
+  z.UI.openCat('decor', true);
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="themepark_arch"]'));
   assert.ok(z.UI.el.cards.querySelector('.card[data-id="circus_lamp"]'));
-  filterBtns[0].click(); // All
+
+  // Coasters tab contains custom coaster stations, track/height tools, and unlockable specials
+  z.UI.openCat('coasters', true);
+  const cFilters = z.UI.el.cards.querySelectorAll('.drawer-mode button');
+  assert.equal(cFilters.length, 4);
+  cFilters[1].click(); // Stations
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="coaster_wooden"]'));
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="coaster_steel"]'));
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="ctrack"]'), null);
+  cFilters[2].click(); // Track & Height
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="ctrack"]'));
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="craise"]'));
+  cFilters[3].click(); // Specials
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="cspec_4"]')); // Loop-de-Loop
+  cFilters[0].click(); // All
 
   // Place coaster and arcade stand and check inspect panel & goalProgress
   for (let j = 34; j <= 39; j++) {
@@ -2628,3 +2642,256 @@ test('Zoo Theme Park 3D models and world module pass 1,000-frame animation and g
 
 
 
+
+// ============================================================================
+// Custom Rollercoasters (Zoo Tycoon ONLY)
+// ============================================================================
+
+test('Zoo Custom Rollercoasters: star unlock progression and Zoo-only isolation', () => {
+  const { z } = zoo();
+  const D = z.DATA;
+  z.Sim.newGame({ seed: 1001, money: 100000 });
+  assert.ok(z.Coaster, 'Z.Coaster should exist in Zoo Tycoon');
+
+  // Verify star progression: Wooden at 0, Mine at 1, Flume at 2, Steel at 3, Hyper at 4 (fantasy)
+  const bMap = Object.fromEntries(D.buildings.map(b => [b.id, b]));
+  assert.equal(bMap.coaster_wooden.star, 0);
+  assert.equal(bMap.coaster_mine.star, 1);
+  assert.equal(bMap.coaster_flume.star, 2);
+  assert.equal(bMap.coaster_steel.star, 3);
+  assert.equal(bMap.coaster_hyper.star, 4);
+  assert.equal(bMap.coaster_hyper.fantasy, true);
+
+  // Early start (0 stars): Wooden Coaster Station is allowed, Steel is locked
+  assert.equal(z.state.unlocked.star, 0);
+  const N = z.N;
+  for (let j = 32; j <= 40; j++) for (let i = 18; i <= 26; i++) {
+    const t = i + j * N;
+    z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t];
+    if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const stLocked = z.Sim.placeObject('coaster_steel', 20, 35, 0);
+  assert.equal(stLocked.ok, false, 'Steel coaster should be locked at 0 stars');
+  const wdOk = z.Sim.placeObject('coaster_wooden', 20, 35, 0);
+  assert.equal(wdOk.ok, true, 'Wooden coaster should be buildable at 0 stars');
+
+  // Dino Tycoon must NOT have Z.Coaster
+  const dinoIndex = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.equal(dinoIndex.includes('coaster'), false, 'index.html (Dino Tycoon) must not load Zoo coaster scripts');
+});
+
+test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, dynamic excitement, undo & save/load', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 1002, money: 250000 });
+  z.state.unlocked.star = 3;
+  const N = z.N;
+  const tidx = (i, j) => i + j * N;
+
+  // Clear flat build area
+  for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
+    const t = tidx(i, j);
+    z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t];
+    if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+
+  // Place Steel Coaster Station at (20, 35), rot=0 => footprint (20..23, 35..36), track row j=35, endF=(23,35), endB=(20,35)
+  const stRes = z.Sim.placeObject('coaster_steel', 20, 35, 0);
+  assert.equal(stRes.ok, true, stRes.msg);
+
+  // Build closed rectangular loop going East from (23,35) -> North -> West -> South -> back to (20,35)
+  const loopRoute = [
+    tidx(23, 35), tidx(24, 35), tidx(25, 35),
+    tidx(25, 34), tidx(25, 33), tidx(25, 32), tidx(25, 31),
+    tidx(24, 31), tidx(23, 31), tidx(22, 31), tidx(21, 31), tidx(20, 31), tidx(19, 31), tidx(18, 31),
+    tidx(18, 32), tidx(18, 33), tidx(18, 34), tidx(18, 35),
+    tidx(19, 35), tidx(20, 35)
+  ];
+  const trRes = z.Coaster.buildTrack(loopRoute);
+  assert.equal(trRes.ok, true, trRes.msg);
+  assert.equal(trRes.autoSpawned, true, 'Completing loop should auto-spawn starter train');
+
+  let info = z.Coaster.stationInfo(stRes.id);
+  assert.equal(info.ready, true);
+  assert.equal(info.loop, true);
+  assert.equal(info.trains.length, 1);
+  const baseExc = info.excitement;
+
+  // Raise a tall hill on the north straight (20..23, 31)
+  const hillTiles = [tidx(20, 31), tidx(21, 31), tidx(22, 31), tidx(23, 31)];
+  for (let h = 0; h < 3; h++) {
+    const rH = z.Coaster.changeHeight(hillTiles, 1);
+    assert.equal(rH.ok, true, rH.msg);
+  }
+  info = z.Coaster.stationInfo(stRes.id);
+  assert.ok(info.maxHeight > 4, 'Raising track should increase maxHeight');
+  assert.ok(info.excitement > baseExc, 'Adding hills & drops should increase Excitement');
+  const hillExc = info.excitement;
+
+  // Stamp Loop-de-Loop (4), Corkscrew (5), Boost (2), Chain Lift (1), Water Splash (3) on straight tiles
+  assert.equal(z.Coaster.placeSpecial([tidx(24, 35)], 1).ok, true); // Chain Lift
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 31)], 4).ok, true); // Loop-de-Loop
+  assert.equal(z.Coaster.placeSpecial([tidx(23, 31)], 5).ok, true); // Corkscrew
+  assert.equal(z.Coaster.placeSpecial([tidx(19, 35)], 2).ok, true); // Boost
+  assert.equal(z.Coaster.placeSpecial([tidx(18, 33)], 3).ok, true); // Water Splash
+
+  info = z.Coaster.stationInfo(stRes.id);
+  assert.ok(info.excitement > hillExc, 'Adding loop-de-loop, corkscrew & boost should significantly increase Excitement');
+  assert.equal(info.specs[4], 1);
+  assert.equal(info.specs[5], 1);
+
+  // Verify Loop-de-Loop creates inverted up-vector (uy < -0.5) on the spline
+  const L = info.line;
+  let minUy = 1;
+  for (let k = 0; k < L.nS; k++) if (L.uy[k] < minUy) minUy = L.uy[k];
+  assert.ok(minUy < -0.5, `Expected vertical loop inversion uy < -0.5, got ${minUy}`);
+
+  // Undo last special (Water Splash) works
+  assert.equal(z.Sim.undo().ok, true);
+  assert.equal(z.state.coasterSpec[tidx(18, 33)], 0);
+
+  // Save and load round-trip preserves track, heights, specials, and trains
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  const infoAfter = z.Coaster.stationInfo(stRes.id);
+  assert.equal(infoAfter.ready, true);
+  assert.equal(infoAfter.specs[4], 1);
+  assert.equal(infoAfter.specs[5], 1);
+  assert.equal(infoAfter.trains.length, 1);
+});
+
+test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdowns + mechanic repair work', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 1003, money: 250000 });
+  z.state.unlocked.star = 3;
+  const N = z.N;
+  const tidx = (i, j) => i + j * N;
+
+  for (let j = 30; j <= 44; j++) for (let i = 18; i <= 32; i++) {
+    const t = tidx(i, j);
+    z.state.terrain[t] = 0;
+    const oid = z.state.tileObj[t];
+    if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+
+  // Connect path from main entrance walkway to coaster station front (j=37)
+  for (let i = 20; i <= 28; i++) z.Sim.placePath(i, 37, 'paved');
+  for (let j = 37; j <= 44; j++) z.Sim.placePath(27, j, 'paved');
+
+  const stRes = z.Sim.placeObject('coaster_wooden', 20, 35, 0);
+  assert.equal(stRes.ok, true, stRes.msg);
+
+  // Wooden coaster should reject Loop-de-Loop
+  const loopRoute = [
+    tidx(23, 35), tidx(24, 35), tidx(24, 34), tidx(24, 33), tidx(24, 32),
+    tidx(23, 32), tidx(22, 32), tidx(21, 32), tidx(20, 32), tidx(19, 32),
+    tidx(19, 33), tidx(19, 34), tidx(19, 35), tidx(20, 35)
+  ];
+  assert.equal(z.Coaster.buildTrack(loopRoute).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 32)], 4).ok, false, 'Wooden coaster should not allow Loop-de-Loop');
+
+  // Buy a second train
+  const buy2 = z.Coaster.buyTrain(stRes.id, 3);
+  assert.equal(buy2.ok, true, buy2.msg);
+  assert.equal(z.Coaster.trainsOnStation(stRes.id).length, 2);
+
+  // Spawn guests right at station front and direct them to board
+  const g = {
+    id: 9001, name: 'Test Rider', seed: 1, x: 21.5 * 2, z: 37.5 * 2,
+    heading: 0, speed: 0, state: 'walk', hunger: 10, thirst: 10, bladder: 10, energy: 90,
+    happiness: 65, money: 50, thought: '', thoughtT: 0, seen: {}, seenEnc: {}, seenB: {},
+    group: 99, ti: tidx(21, 37), ni: -1, px: 43, pz: 75, lo: 0, lo2: 0, bs: 3,
+    gt: 'bld', gid: stRes.id, dk: '', wt: 0, nt: 0.5, acc: 0, tcool: 0, fun: 40, mood: 0,
+    lit: false, stay: 200, stay0: 200, pv: 0, tol: 1.5, thor: 0.8, al: { act: 3 }
+  };
+  z.state.guests.push(g);
+  z.Sim._rt().gById.set(g.id, g);
+  assert.equal(z.Coaster.arrive(g, z.state.objects.find(o => o.id === stRes.id)), true);
+
+  // Step simulation until guest boards, rides, and finishes the circuit
+  let sawRiding = false, maxY = -1;
+  for (let step = 0; step < 300; step++) {
+    z.Sim._step(0.2);
+    if (g.state === 'ride') {
+      sawRiding = true;
+      if (typeof g.absY === 'number' && g.absY > maxY) maxY = g.absY;
+    }
+  }
+  assert.equal(sawRiding, true, 'Guest should board and ride the coaster train');
+  assert.ok(maxY > 1.5, `Riding guest should be elevated on track, got absY=${maxY}`);
+  assert.ok(z.state.coaster.stats.boardings >= 1, 'Boardings counter should increment');
+  assert.ok(z.state.coaster.stats.income > 0, 'Coaster ticket revenue should be earned');
+
+  // Test breakdown & mechanic repair
+  const trainId = z.state.coaster.trains[0].id;
+  assert.equal(z.Coaster.breakdown(trainId), true);
+  assert.equal(z.Coaster.trainInfo(trainId).state, 'broken');
+  const engRes = z.Coaster.callEngineer(trainId);
+  assert.equal(engRes.ok, true, engRes.msg);
+  assert.equal(z.Coaster.trainInfo(trainId).eng, true);
+  for (let step = 0; step < 40; step++) z.Sim._step(0.2);
+  assert.equal(z.Coaster.trainInfo(trainId).state, 'run', 'Train should resume running after mechanic repair');
+
+  // Sell second train
+  assert.equal(z.Coaster.sellTrain(buy2.id).ok, true);
+  assert.equal(z.Coaster.trainsOnStation(stRes.id).length, 1);
+});
+
+test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, splashes & Ride Along camera', () => {
+  const THREE = require('../vendor/three.r128.min.js');
+  const root = new THREE.Group();
+  const cam = { target: { x: 0, z: 0 } };
+  const ctx = vm.createContext({ console, THREE, Math, Float32Array, Uint8Array, Int8Array, Int16Array, Int32Array });
+  vm.runInContext('var window = globalThis;', ctx);
+  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
+  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const z = ctx.Z;
+  z.Models = { createBuilding: () => new THREE.Group() };
+  z.World = { root: () => root, groundY: () => 0, cam, _G: { t: 1 } };
+  load('43-world-coaster.js');
+
+  assert.ok(z.CoasterWorld, 'Z.CoasterWorld should initialize');
+  // All 5 station models build cleanly
+  ['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'].forEach(id => {
+    const m = z.Models.createBuilding(id);
+    assert.ok(m && m.children.length > 5, `${id} 3D station model should build cleanly`);
+  });
+
+  z.Sim.newGame({ seed: 1004, money: 250000 });
+  z.state.unlocked.star = 4;
+  const N = z.N;
+  const tidx = (i, j) => i + j * N;
+  for (let j = 30; j <= 40; j++) for (let i = 18; i <= 28; i++) {
+    const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const st = z.Sim.placeObject('coaster_hyper', 20, 35, 0);
+  assert.equal(st.ok, true);
+  const route = [
+    tidx(23, 35), tidx(24, 35), tidx(24, 34), tidx(24, 33), tidx(24, 32),
+    tidx(23, 32), tidx(22, 32), tidx(21, 32), tidx(20, 32), tidx(19, 32),
+    tidx(19, 33), tidx(19, 34), tidx(19, 35), tidx(20, 35)
+  ];
+  assert.equal(z.Coaster.buildTrack(route).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(22, 32)], 4).ok, true); // Loop-de-Loop
+  assert.equal(z.Coaster.placeSpecial([tidx(20, 32)], 5).ok, true); // Corkscrew
+
+  // Render frames + first-person Ride Along camera
+  const trainId = z.state.coaster.trains[0].id;
+  assert.equal(z.CoasterWorld.rideAlong(trainId), true);
+  const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 500);
+  for (let f = 0; f < 30; f++) {
+    z.Sim._step(0.1);
+    z.CoasterWorld.frame(0.016, 0.016);
+    const applied = z.CoasterWorld.applyCamera(camera, 0.016);
+    assert.equal(applied, true);
+    assert.ok(Number.isFinite(camera.position.x) && Number.isFinite(camera.position.y) && Number.isFinite(camera.position.z));
+  }
+  z.CoasterWorld.endRide();
+  assert.equal(z.CoasterWorld.isRiding(), 0);
+});
