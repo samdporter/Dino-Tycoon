@@ -4152,6 +4152,130 @@ SC.castle = { custom: function (grp0) {
   return grp0;
 } };
 
+SC.themepark_arch = { custom: function (grp0) {
+  var g = B(), R = 0xe84a4a, W = 0xfaf0d8, G = 0xf2c030, B1 = 0x3b82f6;
+  for (var s = -1; s <= 1; s += 2) {
+    var x = s * 0.92;
+    g.box(0.36, 0.26, 0.36, x, 0.13, 0, 0x8d8a84);
+    g.cyl(0.13, 0.14, 2.3, x, 1.4, 0, function (px, py) { return fract(py * 2.2) < 0.5 ? R : W; }, { seg: 10 });
+    g.cyl(0.18, 0.15, 0.14, x, 2.6, 0, G, { seg: 10 });
+    g.sph(0.13, 0.13, 0.13, x, 2.78, 0, G, { s: [6, 5] });
+  }
+  var nSeg = 12, cols = [R, G, B1, 0x58b040, 0xf06aa0];
+  for (var i = 0; i < nSeg; i++) {
+    var t0 = i / nSeg, t1 = (i + 1) / nSeg;
+    var a0 = lerp(PI, 0, t0), a1 = lerp(PI, 0, t1);
+    var x0 = Math.cos(a0) * 0.92, y0 = 2.6 + Math.sin(a0) * 0.95;
+    var x1 = Math.cos(a1) * 0.92, y1 = 2.6 + Math.sin(a1) * 0.95;
+    g.limb(x0, y0, 0, x1, y1, 0, 0.13, 0.13, i % 2 ? R : W, { seg: 6 });
+    g.cone(0.09, 0.22, (x0 + x1) / 2, (y0 + y1) / 2 - 0.18, 0, cols[i % cols.length], { seg: 4, rot: [PI, 0, 0] });
+    g.sph(0.06, 0.06, 0.06, x0, y0 + 0.13, 0.08, 0xfff1b0, { s: [5, 4] });
+  }
+  g.box(1.1, 0.42, 0.12, 0, 3.55, 0, B1);
+  g.box(1.18, 0.48, 0.08, 0, 3.55, 0, G);
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('MIDWAY', 0xe84a4a, 0xfff4d0, 1.0, 0.32, 0, 3.55, 0.07, 0));
+  grp0.add(labelMesh('MIDWAY', 0xe84a4a, 0xfff4d0, 1.0, 0.32, 0, 3.55, -0.07, PI));
+  return grp0;
+} };
+
+SC.bunting_poles = { build: function (g) {
+  var R = 0xe84a4a, W = 0xfaf0d8, G = 0xf2c030, cols = [0xe84a4a, 0xf2c030, 0x3b82f6, 0xf06aa0, 0x58b040];
+  for (var s = -1; s <= 1; s += 2) {
+    var x = s * 0.85;
+    g.cyl(0.12, 0.15, 0.18, x, 0.09, 0, 0x7a7874, { seg: 8 });
+    g.cyl(0.055, 0.065, 2.5, x, 1.35, 0, function (px, py) { return fract(py * 2.5) < 0.5 ? R : W; }, { seg: 8 });
+    g.sph(0.09, 0.09, 0.09, x, 2.66, 0, G, { s: [6, 5] });
+  }
+  var n = 8;
+  for (var i = 0; i < n; i++) {
+    var t0 = i / n, t1 = (i + 1) / n;
+    var x0 = lerp(-0.85, 0.85, t0), x1 = lerp(-0.85, 0.85, t1);
+    var y0 = 2.45 - 0.38 * sin(PI * t0), y1 = 2.45 - 0.38 * sin(PI * t1);
+    g.limb(x0, y0, 0, x1, y1, 0, 0.02, 0.02, 0x5a4a3a, { seg: 4 });
+    g.cone(0.09, 0.22, (x0 + x1) / 2, (y0 + y1) / 2 - 0.12, 0, cols[i % cols.length], { seg: 3, rot: [PI, 0, 0] });
+  }
+} };
+
+SC.funhouse_mirror = { build: function (g) {
+  var G = 0xe8b838, R = 0xd83a2a, W = 0xfaf0d8, MIR = function (x, y) { return shade(0xb8e4fa, 0.92 + 0.12 * sin(y * 5 + x * 4)); };
+  g.box(1.7, 0.14, 0.65, 0, 0.07, 0, 0x6a4a2e);
+  var panels = [[-0.56, 0.08, 0.25], [0, 0, 0], [0.56, 0.08, -0.25]];
+  for (var i = 0; i < panels.length; i++) {
+    var p = panels[i];
+    g.box(0.52, 1.85, 0.1, p[0], 1.06, p[1], G, { rot: [0, p[2], 0] });
+    g.box(0.42, 1.68, 0.12, p[0], 1.06, p[1] + 0.01, MIR, { rot: [0, p[2], 0], s: [1, 6, 1] });
+    g.sph(0.18, 0.45, 0.07, p[0], 1.05, p[1] + 0.04, 0xd8f2ff, { s: [6, 6], rot: [0, p[2], 0] });
+  }
+  g.box(1.72, 0.24, 0.18, 0, 2.08, 0.04, function (px) { return fract(px * 4) < 0.5 ? R : W; });
+  for (var j = 0; j < 5; j++) g.sph(0.05, 0.05, 0.05, -0.68 + j * 0.34, 2.08, 0.14, 0xfff1b0, { s: [5, 4] });
+} };
+
+SC.balloon_arch = { custom: function (grp0) {
+  var g = B(), cols = [0xe84a4a, 0xff8a3a, 0xf2c030, 0x58b040, 0x3b82f6, 0xa060e0, 0xf06aa0];
+  for (var s = -1; s <= 1; s += 2) {
+    g.cyl(0.22, 0.26, 0.25, s * 0.9, 0.125, 0, 0x8d8a84, { seg: 8 });
+    g.cyl(0.14, 0.14, 0.1, s * 0.9, 0.28, 0, 0xf2c030, { seg: 8 });
+  }
+  grp0.add(mesh(g.build()));
+  var arch = grp('arch'), bg = B();
+  var n = 15;
+  for (var i = 0; i < n; i++) {
+    var a = lerp(PI, 0, i / (n - 1));
+    var bx = Math.cos(a) * 0.9, by = 0.42 + Math.sin(a) * 2.25;
+    bg.sph(0.22, 0.26, 0.22, bx, by, 0, cols[i % cols.length], { s: [7, 5] });
+    bg.sph(0.16, 0.19, 0.16, bx + 0.08, by + 0.04, 0.12, cols[(i + 2) % cols.length], { s: [6, 4] });
+    bg.sph(0.16, 0.19, 0.16, bx - 0.08, by + 0.04, -0.12, cols[(i + 4) % cols.length], { s: [6, 4] });
+  }
+  arch.add(mesh(bg.build()));
+  grp0.add(arch);
+  grp0.userData.update = function (dt, t) { arch.rotation.z = Math.sin((t || 0) * 1.4) * 0.035; };
+  return grp0;
+} };
+
+SC.circus_lamp = { custom: function (grp0) {
+  var g = B(), D = 0x3a3d44, R = 0xe84a4a, W = 0xfaf0d8;
+  g.cyl(0.16, 0.2, 0.22, 0, 0.11, 0, D, { seg: 8 });
+  g.cyl(0.06, 0.07, 2.7, 0, 1.55, 0, function (px, py) { return fract(py * 2.4) < 0.5 ? R : W; }, { seg: 8 });
+  g.cyl(0.1, 0.1, 0.08, 0, 2.9, 0, 0xf2c030, { seg: 8 });
+  g.limb(-0.5, 2.95, 0, 0.5, 2.95, 0, 0.035, 0.035, D, { seg: 5 });
+  for (var s = -1; s <= 1; s += 2) {
+    g.cyl(0.18, 0.04, 0.12, s * 0.5, 3.04, 0, R, { seg: 8 });
+    g.cyl(0.02, 0.18, 0.05, s * 0.5, 3.12, 0, 0xf2c030, { seg: 8 });
+  }
+  grp0.add(mesh(g.build()));
+  var bGeo = unit('bulbg', function () { return new T.SphereGeometry(0.13, 8, 6); });
+  for (s = -1; s <= 1; s += 2) {
+    var bulb = new T.Mesh(bGeo, LAMP_MAT); bulb.name = 'bulb'; bulb.position.set(s * 0.5, 2.88, 0); grp0.add(bulb);
+  }
+  grp0.userData.isLamp = true;
+  return grp0;
+} };
+
+SC.clown_statue = { build: function (g) {
+  var R = 0xe84a4a, W = 0xfaf0d8, G = 0xf0c038, G2 = 0xc89828;
+  g.box(1.15, 0.24, 1.15, 0, 0.12, 0, 0x8d8a84);
+  g.cyl(0.42, 0.46, 0.72, 0, 0.6, 0, function (px, py, pz) { return fract(Math.atan2(px, pz) / TAU * 6) < 0.5 ? R : W; }, { seg: 12 });
+  g.cyl(0.48, 0.48, 0.1, 0, 1.0, 0, G, { seg: 12 });
+  var y = 1.05;
+  g.cyl(0.24, 0.3, 0.65, 0, y + 0.32, 0, G, { seg: 10 });
+  g.cyl(0.32, 0.32, 0.08, 0, y + 0.65, 0, G2, { seg: 10 }); // ruff collar
+  g.sph(0.24, 0.26, 0.24, 0, y + 0.92, 0, G, { s: [9, 7] }); // head
+  g.sph(0.06, 0.06, 0.06, 0, y + 0.9, 0.25, R, { s: [5, 4] }); // clown nose
+  // 3-pronged jester hat
+  g.cone(0.11, 0.42, -0.22, y + 1.25, 0, G, { seg: 6, rot: [0, 0, 0.55] });
+  g.cone(0.11, 0.42, 0.22, y + 1.25, 0, G, { seg: 6, rot: [0, 0, -0.55] });
+  g.cone(0.1, 0.44, 0, y + 1.32, -0.1, G2, { seg: 6, rot: [-0.4, 0, 0] });
+  g.sph(0.06, 0.06, 0.06, -0.34, y + 1.4, 0, R, { s: [5, 4] });
+  g.sph(0.06, 0.06, 0.06, 0.34, y + 1.4, 0, R, { s: [5, 4] });
+  g.sph(0.06, 0.06, 0.06, 0, y + 1.5, -0.18, R, { s: [5, 4] });
+  // arms & star wand
+  g.limb(-0.22, y + 0.52, 0, -0.45, y + 0.35, 0.15, 0.07, 0.06, G, { seg: 5 });
+  g.limb(0.22, y + 0.52, 0, 0.42, y + 0.72, 0.18, 0.07, 0.06, G, { seg: 5 });
+  g.limb(0.42, y + 0.72, 0.18, 0.48, y + 1.25, 0.22, 0.025, 0.025, G2, { seg: 4 });
+  g.sph(0.12, 0.12, 0.06, 0.48, y + 1.32, 0.22, 0xfff080, { s: [6, 5] });
+} };
+
 var INSTANCED = { oak: 1, pine: 1, acacia: 1, palm: 1, bamboo: 1, baobab: 1, cactus: 1, snow_pine: 1, jungle_tree: 1, bush: 1, fern: 1, tall_grass: 1, boulder: 1, rock_pile: 1, ice_floe: 1, log: 1, heat_rock: 1, enchanted_tree: 1, standing_stones: 1, rainbow_arch: 1, wizard_shelter: 1 };
 function sceneryGeo(id) {
   if (sceneryGeoCache[id]) return sceneryGeoCache[id];
@@ -4171,7 +4295,7 @@ var SCENERY_API;
 
 // ================================================================ BUILDINGS
 var BLD = {};
-var BLD_DEF = { burger_stand: [1, 1], pizza_hut: [1, 1], ice_cream: [1, 1], drinks_stall: [1, 1], coffee_cart: [1, 1], toilets: [2, 1], gift_shop: [2, 1], balloon_stand: [1, 1], carousel: [2, 2], info_kiosk: [1, 1], restaurant: [2, 2], keeper_hut: [1, 1], vet_clinic: [2, 2], education_centre: [2, 2], viewing_platform: [2, 1], emergency_bunker: [2, 2] };
+var BLD_DEF = { burger_stand: [1, 1], pizza_hut: [1, 1], ice_cream: [1, 1], drinks_stall: [1, 1], coffee_cart: [1, 1], toilets: [2, 1], gift_shop: [2, 1], balloon_stand: [1, 1], carousel: [2, 2], info_kiosk: [1, 1], restaurant: [2, 2], keeper_hut: [1, 1], vet_clinic: [2, 2], education_centre: [2, 2], viewing_platform: [2, 1], emergency_bunker: [2, 2], wooden_coaster: [3, 3], loop_coaster: [4, 3], mine_coaster: [3, 2], log_flume: [3, 3], ferris_wheel: [2, 2], rubber_duck_stand: [1, 1], air_rifle_stand: [1, 1], ring_toss_stand: [1, 1], whack_a_mole: [1, 1], high_striker: [1, 1], candy_floss: [1, 1], popcorn_stand: [1, 1], hot_dog_stand: [1, 1], slushie_bar: [1, 1] };
 var texMats = {};
 function labelMat(text, bg, fg, w, h) {
   var key = text + bg + fg + w + h; if (texMats[key]) return texMats[key];
@@ -4499,6 +4623,552 @@ BLD.emergency_bunker = function (grp0) { // 4x4 m
   var lg = new T.Mesh(unit('ebeaconl', function () { return new T.SphereGeometry(0.42, 8, 6); }), pulseMat(0xff3a2a, 0xff1a0a)); lg.position.set(0, 2.95, -0.4); grp0.add(lg);
   chainUpd(grp0, function (dt, tm) { rot.rotation.y = tm * 4; var s = Math.max(0, Math.sin(tm * 4.5)); lg.material.opacity = 0.1 + 0.5 * s; });
   grp0.userData.update(0, 0);
+};
+
+function buildCoasterTrack(g, fn, steps, halfW, railCol, tieCol, supCol, opts) {
+  opts = opts || {};
+  var pts = [], i;
+  for (i = 0; i < steps; i++) pts.push(fn(i / steps));
+  var vF = new T.Vector3(), vU = new T.Vector3(), vR = new T.Vector3();
+  var supEvery = opts.supEvery || 3;
+  for (i = 0; i < steps; i++) {
+    var p0 = pts[i], p1 = pts[(i + 1) % steps];
+    vF.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+    if (vF.lengthSq() < 1e-8) continue;
+    vF.normalize();
+    if (p0.up) vU.set(p0.up[0], p0.up[1], p0.up[2]).normalize(); else vU.set(0, 1, 0);
+    vR.crossVectors(vU, vF);
+    if (vR.lengthSq() < 1e-6) vR.set(1, 0, 0); else vR.normalize();
+    var p2 = pts[(i + 2) % steps];
+    var vF2 = new T.Vector3(p2.x - p1.x, p2.y - p1.y, p2.z - p1.z);
+    if (vF2.lengthSq() > 1e-8) vF2.normalize(); else vF2.copy(vF);
+    var vU2 = p1.up ? new T.Vector3(p1.up[0], p1.up[1], p1.up[2]).normalize() : new T.Vector3(0, 1, 0);
+    var vR2 = new T.Vector3().crossVectors(vU2, vF2);
+    if (vR2.lengthSq() < 1e-6) vR2.copy(vR); else vR2.normalize();
+    for (var s = -1; s <= 1; s += 2) {
+      g.limb(p0.x + vR.x * halfW * s, p0.y + vR.y * halfW * s, p0.z + vR.z * halfW * s,
+        p1.x + vR2.x * halfW * s, p1.y + vR2.y * halfW * s, p1.z + vR2.z * halfW * s,
+        opts.railR || 0.032, opts.railR || 0.032, railCol, { seg: 5 });
+    }
+    if (i % (opts.tieEvery || 1) === 0) {
+      g.limb(p0.x - vR.x * (halfW + 0.06), p0.y - vR.y * (halfW + 0.06), p0.z - vR.z * (halfW + 0.06),
+        p0.x + vR.x * (halfW + 0.06), p0.y + vR.y * (halfW + 0.06), p0.z + vR.z * (halfW + 0.06),
+        0.028, 0.028, tieCol, { seg: 4 });
+    }
+    if (opts.spine) {
+      g.limb(p0.x - vU.x * 0.1, p0.y - vU.y * 0.1, p0.z - vU.z * 0.1,
+        p1.x - vU2.x * 0.1, p1.y - vU2.y * 0.1, p1.z - vU2.z * 0.1,
+        0.048, 0.048, opts.spine, { seg: 5 });
+    }
+    if (supCol && (i % supEvery === 0) && p0.y > 0.45 && (!p0.noSup)) {
+      if (opts.trestle) {
+        for (var s2 = -1; s2 <= 1; s2 += 2) {
+          var bx = p0.x + vR.x * (halfW + 0.08) * s2, bz = p0.z + vR.z * (halfW + 0.08) * s2;
+          g.limb(bx, 0.06, bz, bx, p0.y - 0.04, bz, 0.045, 0.04, supCol, { seg: 4 });
+        }
+        g.limb(p0.x - vR.x * (halfW + 0.08), p0.y * 0.52, p0.z - vR.z * (halfW + 0.08),
+          p0.x + vR.x * (halfW + 0.08), p0.y * 0.52, p0.z + vR.z * (halfW + 0.08), 0.03, 0.03, shade(supCol, 0.88), { seg: 4 });
+      } else {
+        g.limb(p0.x, 0.06, p0.z, p0.x, p0.y - 0.06, p0.z, 0.06, 0.05, supCol, { seg: 6 });
+      }
+    }
+  }
+}
+
+function makeCoasterCar(col, accent, guestHead) {
+  var cg = B();
+  cg.box(0.36, 0.16, 0.48, 0, 0.1, 0, col);
+  cg.box(0.38, 0.06, 0.5, 0, 0.18, 0, accent || 0xfaf0d8);
+  if (guestHead !== false) {
+    cg.sph(0.08, 0.08, 0.08, -0.08, 0.27, 0.04, 0xf2c8a0, { s: [5, 4] });
+    cg.sph(0.08, 0.08, 0.08, 0.08, 0.27, 0.04, 0xe8b890, { s: [5, 4] });
+    cg.sph(0.075, 0.05, 0.075, -0.08, 0.33, 0.04, 0x4a3220, { s: [5, 3] });
+    cg.sph(0.075, 0.05, 0.075, 0.08, 0.33, 0.04, 0xd8a030, { s: [5, 3] });
+  }
+  var m = grp('car'); m.add(mesh(cg.build())); return m;
+}
+
+function orientOnTrack(obj, fn, u) {
+  var p0 = fn(fract(u)), p1 = fn(fract(u + 0.008));
+  var fwd = _a.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+  if (fwd.lengthSq() < 1e-8) fwd.set(0, 0, 1); else fwd.normalize();
+  var upHint = p0.up ? _b.set(p0.up[0], p0.up[1], p0.up[2]).normalize() : _b.set(0, 1, 0);
+  var right = _c.crossVectors(upHint, fwd);
+  if (right.lengthSq() < 1e-6) right.set(1, 0, 0); else right.normalize();
+  var up = _e1.crossVectors(fwd, right).normalize();
+  _ma.makeBasis(right, up, fwd);
+  obj.quaternion.setFromRotationMatrix(_ma);
+  obj.position.set(p0.x, p0.y, p0.z);
+}
+
+BLD.wooden_coaster = function (grp0) { // 3x3 = 6x6m
+  var g = B(), WD = 0xa06a38, WD2 = 0x7c4f28, RAIL = 0xc8ccd0;
+  g.box(5.8, 0.12, 5.8, 0, 0.06, 0, 0x8d8a84);
+  // boarding station at front
+  g.box(2.6, 0.22, 1.15, 0, 0.22, 2.15, WD2);
+  for (var sx = -1; sx <= 1; sx += 2) {
+    post(g, sx * 1.15, 1.65, 0.2, 1.75, WD, 0.05);
+    post(g, sx * 1.15, 2.65, 0.2, 1.75, WD, 0.05);
+  }
+  awning(g, 0, 1.9, 2.15, 2.7, 1.1, 0xd83a2a, 0xfaf0d8, 10, 0.22);
+  g.box(2.7, 0.1, 1.2, 0, 1.85, 2.1, 0xb83020);
+  var trackFn = function (u) {
+    var a = u * TAU;
+    var x = 2.15 * Math.sin(a) + 0.35 * Math.sin(2 * a);
+    var z = 2.05 * Math.cos(a) - 0.15 * Math.cos(3 * a);
+    var y = 0.6 + 1.55 * (1 - Math.cos(a - 1.9)) * 0.5 + 1.05 * Math.max(0, Math.sin(a * 2 - 0.6));
+    if (z > 1.35 && Math.abs(x) < 1.2) y = lerp(y, 0.52, 0.72);
+    return { x: x, y: y, z: z };
+  };
+  buildCoasterTrack(g, trackFn, 56, 0.18, RAIL, WD2, WD, { trestle: true, supEvery: 2 });
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('COASTER', 0xc83a2a, 0xfff4d0, 1.6, 0.34, 0, 1.78, 2.74, 0));
+  var cars = [makeCoasterCar(0xe84a4a, 0xf6d030), makeCoasterCar(0xf2c030, 0xe84a4a), makeCoasterCar(0x3b82f6, 0xfaf0d8)];
+  cars.forEach(function (c) { grp0.add(c); });
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var i = 0; i < cars.length; i++) orientOnTrack(cars[i], trackFn, tm * 0.22 - i * 0.042);
+  };
+  grp0.userData.update(0, 0);
+};
+
+BLD.loop_coaster = function (grp0) { // 4x3 = 8x6m
+  var g = B(), SUP = 0x2684a8, SPINE = 0xf05a28, RAIL = 0xf6d030;
+  g.box(7.8, 0.12, 5.8, 0, 0.06, 0, 0x6a727a);
+  // modern station at front
+  g.box(3.0, 0.24, 1.15, -0.4, 0.24, 2.15, 0x46525e);
+  for (var sx = -1; sx <= 1; sx += 2) {
+    post(g, -0.4 + sx * 1.35, 1.65, 0.2, 1.8, 0xd8e2ec, 0.05);
+    post(g, -0.4 + sx * 1.35, 2.65, 0.2, 1.8, 0xd8e2ec, 0.05);
+  }
+  g.box(3.1, 0.14, 1.3, -0.4, 1.88, 2.15, 0x1e6496);
+  g.box(3.15, 0.08, 1.35, -0.4, 1.96, 2.15, 0x42c8f5);
+  // Parametric loop coaster: vertical loop occupies u in [0.42, 0.68]
+  var trackFn = function (u) {
+    u = fract(u);
+    if (u >= 0.42 && u <= 0.68) {
+      var lu = (u - 0.42) / 0.26;
+      var th = lu * TAU - PI / 2;
+      var lr = 1.45;
+      return {
+        x: lerp(-0.5, 0.55, lu) + 0.0,
+        y: 2.05 + lr * Math.sin(th),
+        z: -0.25 + lr * Math.cos(th),
+        up: [0, -Math.sin(th), -Math.cos(th)],
+        noSup: lu > 0.18 && lu < 0.82
+      };
+    }
+    var ru = u < 0.42 ? u / 0.42 : (u - 0.68) / 0.32;
+    if (u < 0.42) {
+      // station (x=-0.5, z=2.0) -> left sweep -> back straight -> approach loop (x=-0.5, z=-0.25)
+      var a = ru * PI;
+      var x = lerp(-0.5, -3.15, Math.sin(a)) + (ru > 0.5 ? lerp(0, 2.65, (ru - 0.5) * 2) : 0);
+      var z = lerp(1.95, -2.05, ru) + (ru > 0.72 ? lerp(0, 1.8, (ru - 0.72) / 0.28) : 0);
+      var y = 0.55 + 2.8 * Math.sin(ru * PI * 0.85);
+      if (ru > 0.75) y = lerp(y, 0.6, (ru - 0.75) / 0.25);
+      return { x: x, y: y, z: z };
+    } else {
+      // exit loop (x=0.55, z=-0.25) -> right helix -> station (x=-0.5, z=1.95)
+      var x2 = 0.55 + 2.7 * Math.sin(ru * PI) - ru * 1.05;
+      var z2 = -0.25 - 1.5 * Math.sin(ru * PI) + ru * 2.2;
+      var y2 = 0.6 + 1.9 * Math.sin(ru * PI);
+      return { x: x2, y: y2, z: z2 };
+    }
+  };
+  buildCoasterTrack(g, trackFn, 72, 0.17, RAIL, 0x2a343e, SUP, { spine: SPINE, supEvery: 3 });
+  // extra A-frame supports for the vertical loop
+  g.limb(-0.5, 0.08, -1.65, -0.1, 2.05, -0.25, 0.07, 0.055, SUP, { seg: 6 });
+  g.limb(0.55, 0.08, 1.15, 0.1, 2.05, -0.25, 0.07, 0.055, SUP, { seg: 6 });
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('LOOP COASTER', 0x1e6496, 0xfff4d0, 2.2, 0.34, -0.4, 1.9, 2.83, 0));
+  var cars = [makeCoasterCar(0x38bdf8, 0xf6d030), makeCoasterCar(0xf43f5e, 0xffffff), makeCoasterCar(0xa855f7, 0xf6d030)];
+  cars.forEach(function (c) { grp0.add(c); });
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var i = 0; i < cars.length; i++) orientOnTrack(cars[i], trackFn, tm * 0.26 - i * 0.036);
+  };
+  grp0.userData.update(0, 0);
+};
+
+BLD.mine_coaster = function (grp0) { // 3x2 = 6x4m
+  var g = B(), RK = 0xb8663a, WD = 0x7c4f28, IR = 0x525860;
+  g.box(5.8, 0.12, 3.8, 0, 0.06, 0, 0x9c866a);
+  // craggy canyon rock peak + side boulders
+  rock(g, 1.4, 1.5, 1.1, 0, 1.1, -0.35, RK, 31, 0.2);
+  rock(g, 1.0, 1.0, 0.85, -1.15, 0.75, -0.25, shade(RK, 0.9), 32, 0.9);
+  rock(g, 0.95, 0.95, 0.8, 1.2, 0.7, -0.3, shade(RK, 1.08), 33, 1.4);
+  rock(g, 0.55, 0.5, 0.5, -2.15, 0.35, 1.1, shade(RK, 0.92), 34);
+  rock(g, 0.5, 0.45, 0.45, 2.15, 0.32, -1.1, shade(RK, 1.05), 35);
+  // mine tunnel portal frame at back/side
+  post(g, -0.45, -1.35, 0.1, 1.35, WD, 0.06); post(g, 0.45, -1.35, 0.1, 1.35, WD, 0.06);
+  g.box(1.08, 0.14, 0.18, 0, 1.38, -1.35, WD);
+  // boarding shack at front
+  g.box(2.1, 0.2, 0.9, 0, 0.2, 1.35, WD);
+  gable(g, 2.0, 0.9, 1.4, 0.45, 0x8a4a2a, 0.12);
+  for (var sx = -1; sx <= 1; sx += 2) { post(g, sx * 0.85, 0.95, 0.2, 1.4, WD, 0.05); post(g, sx * 0.85, 1.75, 0.2, 1.4, WD, 0.05); }
+  var trackFn = function (u) {
+    var a = u * TAU;
+    return {
+      x: 2.25 * Math.sin(a),
+      y: 0.58 + 1.05 * (1 - Math.cos(a)) * 0.5 + 0.45 * Math.sin(2 * a - 0.5),
+      z: 1.25 * Math.cos(a) - 0.1 * Math.sin(2 * a)
+    };
+  };
+  buildCoasterTrack(g, trackFn, 52, 0.15, IR, WD, WD, { trestle: true, supEvery: 3 });
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('MINE TRAIN', 0x7c4f28, 0xffe8a8, 1.6, 0.3, 0, 1.45, 1.85, 0));
+  // locomotive + 2 ore cars
+  var loco = makeCoasterCar(0x3a3e44, 0xd88828, false);
+  var cgL = B(); cgL.cyl(0.06, 0.05, 0.25, 0, 0.3, 0.14, 0x222226, { seg: 6 }); cgL.box(0.32, 0.2, 0.22, 0, 0.25, -0.1, 0x8a3a28);
+  loco.add(mesh(cgL.build()));
+  var cars = [loco, makeCoasterCar(0x9a6234, 0x555860), makeCoasterCar(0x8a542a, 0x555860)];
+  cars.forEach(function (c) { grp0.add(c); });
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var i = 0; i < cars.length; i++) orientOnTrack(cars[i], trackFn, tm * 0.2 - i * 0.045);
+  };
+  grp0.userData.update(0, 0);
+};
+
+BLD.log_flume = function (grp0) { // 3x3 = 6x6m
+  var g = B(), WD = 0x8a5a32, WD2 = 0x6a4222, WT = 0x3b9ae0;
+  g.box(5.8, 0.12, 5.8, 0, 0.06, 0, 0x8d8a84);
+  // stone-rimmed splashdown basin at front-right
+  g.box(4.8, 0.32, 0.18, 0, 0.2, 2.65, 0x7e7a72); g.box(4.8, 0.32, 0.18, 0, 0.2, 0.5, 0x7e7a72);
+  g.box(0.18, 0.32, 2.3, -2.35, 0.2, 1.58, 0x7e7a72); g.box(0.18, 0.32, 2.3, 2.35, 0.2, 1.58, 0x7e7a72);
+  // boarding dock at front-left
+  g.box(1.9, 0.28, 1.15, -1.3, 0.26, 2.05, WD);
+  for (var sx = -1; sx <= 1; sx += 2) { post(g, -1.3 + sx * 0.8, 1.55, 0.3, 1.65, WD2, 0.05); post(g, -1.3 + sx * 0.8, 2.55, 0.3, 1.65, WD2, 0.05); }
+  gable(g, 1.8, 1.1, 1.65, 0.45, 0x2f8a5a, 0.12);
+  var trackFn = function (u) {
+    var a = u * TAU;
+    var x = 2.05 * Math.sin(a);
+    var z = 1.85 * Math.cos(a) - 0.35;
+    // lift hill around back, steep plunge down front-right into splash pool
+    var y = 0.42 + 2.85 * Math.pow(Math.max(0, -Math.cos(a + 0.35)), 1.35);
+    return { x: x, y: y, z: z };
+  };
+  buildCoasterTrack(g, trackFn, 54, 0.2, WD, WD2, WD2, { spine: WT, trestle: true, supEvery: 3 });
+  grp0.add(mesh(g.build()));
+  var pool = new T.Mesh(unit('flumepool', function () { return new T.BoxGeometry(4.5, 0.08, 2.0); }), WATER_MAT);
+  pool.position.set(0, 0.24, 1.58); grp0.add(pool);
+  grp0.add(labelMesh('LOG FLUME', 0x2f8a5a, 0xfff4d0, 1.6, 0.32, -1.3, 1.65, 2.66, 0));
+  // 2 hollow log boats
+  var boats = [];
+  for (var b = 0; b < 2; b++) {
+    var lb = B();
+    lb.cyl(0.18, 0.18, 0.62, 0, 0.14, 0, 0x6a3e20, { seg: 8, rot: [PI / 2, 0, 0] });
+    lb.box(0.24, 0.1, 0.42, 0, 0.2, 0, 0x3b82f6);
+    lb.sph(0.08, 0.08, 0.08, 0, 0.32, 0.06, 0xf2c8a0, { s: [5, 4] });
+    var bm = grp('logboat'); bm.add(mesh(lb.build())); grp0.add(bm); boats.push(bm);
+  }
+  // splash droplets at bottom of plunge
+  var drops = [], dGeo = unit('fdrop', function () { return new T.SphereGeometry(0.06, 5, 4); }), dMat = mat(0xd8f4ff, { opacity: 0.85 });
+  for (var d = 0; d < 10; d++) { var dm = new T.Mesh(dGeo, dMat); dm.userData = { a: d / 10 * TAU, ph: d * 0.23 }; grp0.add(dm); drops.push(dm); }
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var i = 0; i < boats.length; i++) orientOnTrack(boats[i], trackFn, tm * 0.17 + i * 0.5);
+    for (var j = 0; j < drops.length; j++) {
+      var dd = drops[j], u = fract(tm * 1.1 + dd.userData.ph);
+      dd.position.set(1.35 + Math.sin(dd.userData.a) * 0.45 * u, 0.28 + Math.sin(u * PI) * 0.7, 1.2 + Math.cos(dd.userData.a) * 0.45 * u);
+      dd.scale.setScalar(1.1 - u * 0.6);
+    }
+  };
+  grp0.userData.update(0, 0);
+};
+
+BLD.ferris_wheel = function (grp0) { // 2x2 = 4x4m
+  var g = B(), ST = 0xd8e0e8, ACC = 0xe84a6a;
+  g.box(3.8, 0.14, 3.8, 0, 0.07, 0, 0x8d8a84);
+  g.box(3.2, 0.16, 2.2, 0, 0.2, 0, 0xa8a49c);
+  // twin A-frame support towers
+  for (var s = -1; s <= 1; s += 2) {
+    var z = s * 0.62;
+    g.limb(-1.25, 0.2, z, 0, 3.45, z, 0.08, 0.065, ST, { seg: 6 });
+    g.limb(1.25, 0.2, z, 0, 3.45, z, 0.08, 0.065, ST, { seg: 6 });
+    g.limb(-0.65, 1.8, z, 0.65, 1.8, z, 0.045, 0.045, ACC, { seg: 5 });
+  }
+  g.cyl(0.11, 0.11, 1.5, 0, 3.45, 0, 0xf2c030, { seg: 10, rot: [PI / 2, 0, 0] });
+  // front ticket booth
+  g.box(1.15, 1.0, 0.65, 0, 0.65, 1.4, 0xf4e8c8);
+  g.box(1.25, 0.14, 0.75, 0, 1.2, 1.4, ACC);
+  g.box(0.55, 0.45, 0.04, 0, 0.78, 1.73, 0x2a221e);
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('FERRIS WHEEL', 0xe84a6a, 0xffffff, 1.15, 0.24, 0, 1.08, 1.75, 0));
+  var wheel = grp('wheel'); wheel.position.set(0, 3.45, 0); grp0.add(wheel);
+  var wg = B(), R = 2.25, nG = 8;
+  for (var i = 0; i < 16; i++) {
+    var a0 = i / 16 * TAU, a1 = (i + 1) / 16 * TAU;
+    for (var side = -1; side <= 1; side += 2) {
+      var wz = side * 0.36;
+      wg.limb(Math.cos(a0) * R, Math.sin(a0) * R, wz, Math.cos(a1) * R, Math.sin(a1) * R, wz, 0.045, 0.045, 0xfaf0d8, { seg: 5 });
+      wg.limb(Math.cos(a0) * R * 0.65, Math.sin(a0) * R * 0.65, wz, Math.cos(a1) * R * 0.65, Math.sin(a1) * R * 0.65, wz, 0.03, 0.03, ACC, { seg: 4 });
+    }
+    if (i % 2 === 0) {
+      for (side = -1; side <= 1; side += 2) wg.limb(0, 0, side * 0.36, Math.cos(a0) * R, Math.sin(a0) * R, side * 0.36, 0.025, 0.025, 0xf2c030, { seg: 4 });
+      wg.limb(Math.cos(a0) * R, Math.sin(a0) * R, -0.36, Math.cos(a0) * R, Math.sin(a0) * R, 0.36, 0.028, 0.028, 0x8d98a4, { seg: 4 });
+    }
+    wg.sph(0.065, 0.065, 0.065, Math.cos(a0) * R, Math.sin(a0) * R, 0.42, i % 2 ? 0xfff1b0 : 0x60d8ff, { s: [5, 4] });
+  }
+  wg.cyl(0.24, 0.24, 0.85, 0, 0, 0, 0xf2c030, { seg: 10, rot: [PI / 2, 0, 0] });
+  wheel.add(mesh(wg.build()));
+  var gCols = [0xe84a4a, 0x3b82f6, 0xf2c030, 0x58b040, 0xf06aa0, 0xa060e0, 0xff8a3a, 0x30c8d8];
+  var gondolas = [];
+  for (i = 0; i < nG; i++) {
+    var ga = i / nG * TAU, gg = B(), col = gCols[i % gCols.length];
+    gg.limb(0, 0, -0.3, 0, -0.35, -0.2, 0.02, 0.02, 0x666666, { seg: 4 });
+    gg.limb(0, 0, 0.3, 0, -0.35, 0.2, 0.02, 0.02, 0x666666, { seg: 4 });
+    gg.box(0.42, 0.28, 0.48, 0, -0.48, 0, col);
+    gg.box(0.46, 0.07, 0.52, 0, -0.18, 0, shade(col, 1.15));
+    var gm = grp('gondola'); gm.position.set(Math.cos(ga) * R, Math.sin(ga) * R, 0); gm.add(mesh(gg.build()));
+    wheel.add(gm); gondolas.push(gm);
+  }
+  grp0.userData.update = function (dt) {
+    wheel.rotation.z += dt * 0.45;
+    for (var j = 0; j < gondolas.length; j++) gondolas[j].rotation.z = -wheel.rotation.z;
+  };
+};
+
+BLD.rubber_duck_stand = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.65, d: 1.45, h: 1.25, wall: 0x38a8e8, trim: 0xf6d030, roof: 0x1d70b8, awn1: 0xf6d030, awn2: 0x38a8e8, counter: 0x1d70b8, bands: true });
+  // water trough on the counter
+  g.box(1.32, 0.14, 0.42, 0, 0.72, 0.88, 0x0c4a6e);
+  // leaning fishing rods & hanging plush prizes
+  g.limb(-0.68, 0.12, 0.96, -0.52, 1.22, 0.78, 0.018, 0.014, 0xc8923a, { seg: 4 });
+  g.limb(0.68, 0.12, 0.96, 0.52, 1.22, 0.78, 0.018, 0.014, 0xc8923a, { seg: 4 });
+  g.sph(0.11, 0.12, 0.1, -0.62, 1.32, 0.84, 0xf06aa0, { s: [5, 4] });
+  g.sph(0.11, 0.12, 0.1, 0.62, 1.32, 0.84, 0x58b040, { s: [5, 4] });
+  // giant rubber duck on roof
+  g.cyl(0.05, 0.05, 0.25, 0, 1.56, 0, 0x555555, { seg: 5 });
+  g.sph(0.32, 0.24, 0.38, 0, 1.85, 0, 0xf6d030, { s: [8, 6] });
+  g.sph(0.2, 0.19, 0.2, 0, 2.15, 0.18, 0xf6d030, { s: [7, 5] });
+  g.cone(0.08, 0.16, 0, 2.12, 0.39, 0xff7a1a, { seg: 5, rot: [PI / 2, 0, 0] });
+  grp0.add(mesh(g.build()));
+  var twater = new T.Mesh(unit('duckwater', function () { return new T.BoxGeometry(1.22, 0.04, 0.34); }), WATER_MAT);
+  twater.position.set(0, 0.78, 0.88); grp0.add(twater);
+  var ducks = [];
+  for (var i = 0; i < 4; i++) {
+    var dg = B();
+    dg.sph(0.065, 0.05, 0.08, 0, 0.04, 0, 0xf6d030, { s: [6, 4] });
+    dg.sph(0.045, 0.045, 0.045, 0, 0.095, 0.045, 0xf6d030, { s: [5, 4] });
+    dg.cone(0.02, 0.04, 0, 0.09, 0.09, 0xff7a1a, { seg: 4, rot: [PI / 2, 0, 0] });
+    var dm = grp('duck'); dm.add(mesh(dg.build())); dm.userData.ph = i / 4; grp0.add(dm); ducks.push(dm);
+  }
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var j = 0; j < ducks.length; j++) {
+      var a = (tm * 0.9 + ducks[j].userData.ph * TAU);
+      ducks[j].position.set(Math.sin(a) * 0.45, 0.79 + Math.sin(tm * 3 + j) * 0.015, 0.88 + Math.cos(a) * 0.08);
+      ducks[j].rotation.y = a + PI / 2;
+    }
+  };
+  grp0.userData.update(0, 0);
+  grp0.add(labelMesh('HOOK A DUCK', 0x1d70b8, 0xfff080, 1.2, 0.24, 0, 0.35, 0.75, 0));
+};
+
+BLD.air_rifle_stand = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.65, d: 1.45, h: 1.3, wall: 0xb82828, trim: 0xf2c030, roof: 0x7a1a1a, awn1: 0xd83a2a, awn2: 0xfaf0d8, counter: 0x8a5a3a, bands: true });
+  // cork air rifles on counter
+  for (var i = -1; i <= 1; i++) {
+    g.limb(i * 0.36, 0.72, 0.95, i * 0.36, 0.74, 0.65, 0.02, 0.015, 0x3a3d44, { seg: 4 });
+    g.box(0.05, 0.06, 0.16, i * 0.36, 0.71, 0.95, 0x6a3a22);
+  }
+  // tin cans on back shelf
+  for (var c = 0; c < 4; c++) g.cyl(0.04, 0.04, 0.1, -0.36 + c * 0.24, 0.95, 0.66, [0xe84a4a, 0xf2c030, 0x3b82f6, 0x58b040][c], { seg: 6 });
+  // rooftop bullseye target
+  g.cyl(0.05, 0.05, 0.35, 0, 1.6, 0, 0x555555, { seg: 5 });
+  g.cyl(0.36, 0.36, 0.08, 0, 2.02, 0, 0xffffff, { seg: 14, rot: [PI / 2, 0, 0] });
+  g.cyl(0.24, 0.24, 0.09, 0, 2.02, 0, 0xd83a2a, { seg: 14, rot: [PI / 2, 0, 0] });
+  g.cyl(0.11, 0.11, 0.1, 0, 2.02, 0, 0xf2c030, { seg: 12, rot: [PI / 2, 0, 0] });
+  grp0.add(mesh(g.build()));
+  // moving mechanical bullseye targets
+  var targets = [];
+  for (i = 0; i < 3; i++) {
+    var tg = B();
+    tg.cyl(0.1, 0.1, 0.03, 0, 0, 0, 0xffffff, { seg: 10, rot: [PI / 2, 0, 0] });
+    tg.cyl(0.05, 0.05, 0.04, 0, 0, 0, 0xd83a2a, { seg: 8, rot: [PI / 2, 0, 0] });
+    var tm2 = grp('target'); tm2.add(mesh(tg.build())); grp0.add(tm2); targets.push(tm2);
+  }
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var j = 0; j < targets.length; j++) {
+      targets[j].position.set(Math.sin(tm * 1.8 + j * 2.1) * 0.42, 1.12, 0.72);
+    }
+  };
+  grp0.userData.update(0, 0);
+  grp0.add(labelMesh('AIR RIFLES', 0x7a1a1a, 0xfff080, 1.2, 0.24, 0, 0.35, 0.75, 0));
+};
+
+BLD.ring_toss_stand = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.6, d: 1.4, h: 1.22, wall: 0x7c3aed, trim: 0xf6d030, roof: 0x5b21b6, awn1: 0xa855f7, awn2: 0xf6d030, counter: 0xf4ead0, bands: true });
+  // grid of colourful glass bottles on counter
+  var bCols = [0x58b040, 0x3b82f6, 0xe84a4a, 0xf2c030];
+  for (var bx = -1; bx <= 1; bx++) for (var bz = 0; bz <= 1; bz++) {
+    var col = bCols[(bx + 1 + bz) % 4];
+    g.cyl(0.038, 0.045, 0.16, bx * 0.22, 0.76, 0.8 + bz * 0.18, col, { seg: 7 });
+    g.cyl(0.018, 0.032, 0.06, bx * 0.22, 0.87, 0.8 + bz * 0.18, col, { seg: 6 });
+  }
+  // hanging giant plush bears on sides
+  for (var s = -1; s <= 1; s += 2) {
+    g.sph(0.12, 0.14, 0.1, s * 0.65, 1.22, 0.84, s < 0 ? 0xd89050 : 0xf49ac0, { s: [6, 5] });
+    g.sph(0.08, 0.08, 0.08, s * 0.65, 1.4, 0.84, s < 0 ? 0xd89050 : 0xf49ac0, { s: [5, 4] });
+  }
+  // rooftop giant ring & bottle
+  g.cyl(0.05, 0.05, 0.25, 0, 1.54, 0, 0x555555, { seg: 5 });
+  g.cyl(0.1, 0.12, 0.5, 0, 1.9, 0, 0x58b040, { seg: 8 });
+  for (var r = 0; r < 10; r++) {
+    var a0 = r / 10 * TAU, a1 = (r + 1) / 10 * TAU;
+    g.limb(Math.sin(a0) * 0.26, 2.02, Math.cos(a0) * 0.26, Math.sin(a1) * 0.26, 2.02, Math.cos(a1) * 0.26, 0.045, 0.045, 0xf6d030, { seg: 5 });
+  }
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('RING TOSS', 0x5b21b6, 0xfff080, 1.15, 0.24, 0, 0.35, 0.73, 0));
+};
+
+BLD.whack_a_mole = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.6, d: 1.4, h: 1.22, wall: 0x16a34a, trim: 0xf97316, roof: 0x15803d, awn1: 0xf97316, awn2: 0xfef08a, counter: 0x7a4a2a, bands: true });
+  // mole holes + resting mallet on counter
+  for (var m = -1; m <= 1; m++) g.cyl(0.11, 0.11, 0.05, m * 0.34, 0.72, 0.88, 0x222226, { seg: 8 });
+  g.limb(0.45, 0.72, 0.96, 0.58, 0.74, 0.78, 0.02, 0.02, 0xc89050, { seg: 4 });
+  g.cyl(0.06, 0.06, 0.14, 0.58, 0.76, 0.78, 0xe84a4a, { seg: 6, rot: [0, 0, PI / 2] });
+  // giant mallet on roof
+  g.limb(0, 1.45, 0, 0, 2.0, 0, 0.045, 0.045, 0xc89050, { seg: 5 });
+  g.cyl(0.16, 0.16, 0.44, 0, 2.1, 0, 0xe84a4a, { seg: 8, rot: [0, 0, PI / 2] });
+  grp0.add(mesh(g.build()));
+  var moles = [];
+  for (var i = 0; i < 3; i++) {
+    var mg = B();
+    mg.cyl(0.075, 0.085, 0.14, 0, 0.07, 0, 0x8a5a3a, { seg: 7 });
+    mg.sph(0.075, 0.07, 0.075, 0, 0.15, 0, 0x9a6a44, { s: [6, 5] });
+    mg.sph(0.025, 0.02, 0.025, 0, 0.15, 0.07, 0xf06aa0, { s: [4, 3] });
+    var mm = grp('mole'); mm.add(mesh(mg.build())); grp0.add(mm); moles.push(mm);
+  }
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    for (var j = 0; j < moles.length; j++) {
+      var h = Math.max(0, Math.sin(tm * 3.5 + j * 2.1));
+      moles[j].position.set((j - 1) * 0.34, 0.66 + h * 0.16, 0.88);
+    }
+  };
+  grp0.userData.update(0, 0);
+  grp0.add(labelMesh('WHACK!', 0x15803d, 0xfef08a, 1.1, 0.24, 0, 0.35, 0.73, 0));
+};
+
+BLD.high_striker = function (grp0) { // 1x1
+  var g = B();
+  g.box(1.7, 0.14, 1.5, 0, 0.07, 0, 0x8d8a84);
+  g.box(1.5, 0.85, 0.6, 0, 0.56, -0.35, 0xd83a2a, { s: [1, 3, 1] });
+  g.box(1.55, 0.1, 0.65, 0, 1.02, -0.35, 0xf6d030);
+  // striker platform & lever pad
+  g.box(0.85, 0.16, 0.85, 0, 0.2, 0.35, 0x3b82f6);
+  g.cyl(0.18, 0.2, 0.12, 0, 0.34, 0.52, 0xf6d030, { seg: 8 });
+  // tall graduated striker tower
+  g.box(0.28, 3.05, 0.16, 0, 1.72, 0.05, function (px, py) { return fract(py * 2.0) < 0.5 ? 0xfaf0d8 : 0xe84a4a; });
+  g.box(0.06, 2.95, 0.06, 0, 1.72, 0.15, 0xc8ccd0);
+  // golden bell at top
+  g.cyl(0.14, 0.24, 0.22, 0, 3.36, 0.08, 0xf6d030, { seg: 10 });
+  g.sph(0.14, 0.1, 0.14, 0, 3.47, 0.08, 0xf6d030, { s: [8, 4] });
+  // resting mallet
+  g.limb(0.45, 0.15, 0.45, 0.65, 0.95, 0.3, 0.028, 0.025, 0x8a5a3a, { seg: 4 });
+  g.cyl(0.11, 0.11, 0.26, 0.65, 0.98, 0.3, 0x3a3d44, { seg: 6, rot: [0, 0, PI / 2] });
+  grp0.add(mesh(g.build()));
+  var pg = B(); pg.cyl(0.12, 0.12, 0.09, 0, 0, 0, 0xf2c030, { seg: 8, rot: [PI / 2, 0, 0] });
+  var puck = grp('puck'); puck.add(mesh(pg.build())); grp0.add(puck);
+  grp0.userData.update = function (dt, tm) {
+    tm = tm || 0;
+    var u = fract(tm * 0.45);
+    var h = u < 0.35 ? Math.sin((u / 0.35) * PI * 0.5) : u < 0.65 ? Math.cos(((u - 0.35) / 0.3) * PI * 0.5) : 0;
+    puck.position.set(0, 0.45 + h * 2.7, 0.18);
+  };
+  grp0.userData.update(0, 0);
+  grp0.add(labelMesh('STRIKER', 0xd83a2a, 0xfff4d0, 1.15, 0.24, 0, 0.65, -0.04, 0));
+};
+
+BLD.candy_floss = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.6, d: 1.4, h: 1.22, wall: 0xf472b6, trim: 0xffffff, roof: 0xec4899, awn1: 0xf472b6, awn2: 0x7dd3fc, counter: 0xfdf2f8, bands: true });
+  // spinning bowl machine on counter + sticks
+  g.cyl(0.24, 0.2, 0.16, -0.25, 0.78, 0.85, 0xd8dde4, { seg: 10 });
+  g.sph(0.2, 0.14, 0.2, -0.25, 0.88, 0.85, 0xf9a8d4, { s: [8, 5] });
+  g.sph(0.12, 0.18, 0.12, 0.35, 0.92, 0.86, 0x7dd3fc, { s: [6, 5] });
+  g.cyl(0.05, 0.05, 0.4, 0, 1.56, 0, 0x555555, { seg: 5 });
+  grp0.add(mesh(g.build()));
+  // giant spinning candy floss on roof
+  var cf = B();
+  cf.limb(0, -0.35, 0, 0, 0.35, 0, 0.03, 0.03, 0xffffff, { seg: 5 });
+  cf.sph(0.32, 0.38, 0.32, 0, 0.28, 0, 0xf472b6, { s: [9, 6] });
+  cf.sph(0.26, 0.28, 0.26, 0.1, 0.42, 0.05, 0xf9a8d4, { s: [8, 5] });
+  cf.sph(0.22, 0.22, 0.22, -0.1, 0.15, -0.05, 0x7dd3fc, { s: [7, 5] });
+  addSpin(grp0, cf.build(), 2.0, 1.1);
+  grp0.add(labelMesh('CANDY FLOSS', 0xec4899, 0xffffff, 1.2, 0.24, 0, 0.35, 0.73, 0));
+};
+
+BLD.popcorn_stand = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.6, d: 1.4, h: 1.22, wall: 0xd83a2a, trim: 0xf6d030, roof: 0xb82820, awn1: 0xd83a2a, awn2: 0xffffff, counter: 0xfaf0d8, bands: true });
+  // glass popper box on counter
+  g.box(0.45, 0.42, 0.34, 0, 0.9, 0.85, 0xd8f0fa);
+  g.box(0.47, 0.06, 0.36, 0, 1.12, 0.85, 0xd83a2a);
+  g.sph(0.18, 0.12, 0.14, 0, 0.78, 0.85, 0xfef08a, { s: [6, 4] });
+  g.cyl(0.05, 0.05, 0.4, 0, 1.56, 0, 0x555555, { seg: 5 });
+  grp0.add(mesh(g.build()));
+  // giant striped popcorn tub on roof
+  var pc = B();
+  pc.cyl(0.32, 0.22, 0.65, 0, 0, 0, function (x, y, z) { return fract(Math.atan2(x, z) / TAU * 8) < 0.5 ? 0xd83a2a : 0xffffff; }, { seg: 8 });
+  for (var i = 0; i < 9; i++) {
+    var a = i / 9 * TAU, rr = i < 7 ? 0.17 : 0.05;
+    pc.sph(0.12, 0.1, 0.12, Math.sin(a) * rr, 0.36 + (i % 3) * 0.05, Math.cos(a) * rr, i % 2 ? 0xfef08a : 0xfffbe0, { s: [5, 4] });
+  }
+  addSpin(grp0, pc.build(), 2.05, 0.9);
+  grp0.add(labelMesh('POPCORN', 0xb82820, 0xfef08a, 1.15, 0.24, 0, 0.35, 0.73, 0));
+};
+
+BLD.hot_dog_stand = function (grp0) { // 1x1
+  var g = B();
+  g.box(1.4, 0.68, 0.95, 0, 0.68, 0, 0xd83a2a, { s: [1, 3, 1] });
+  g.box(1.48, 0.08, 1.02, 0, 1.06, 0, 0xe8ecf0);
+  g.box(1.36, 0.1, 0.9, 0, 0.34, 0, 0xf6d030);
+  for (var s = -1; s <= 1; s += 2) {
+    g.cyl(0.32, 0.32, 0.09, s * 0.68, 0.32, 0, 0x2a2a2a, { seg: 10, rot: [0, 0, PI / 2] });
+    g.cyl(0.12, 0.12, 0.11, s * 0.68, 0.32, 0, 0xf6d030, { seg: 6, rot: [0, 0, PI / 2] });
+  }
+  // grill + sausages + mustard/ketchup bottles
+  g.box(0.65, 0.06, 0.5, -0.2, 1.13, 0, 0x3a3d44);
+  for (var i = 0; i < 3; i++) g.cyl(0.04, 0.04, 0.32, -0.35 + i * 0.15, 1.18, 0, 0xc85228, { seg: 6, rot: [PI / 2, 0, 0] });
+  g.cyl(0.04, 0.04, 0.2, 0.35, 1.2, 0.15, 0xd83a2a, { seg: 6 });
+  g.cyl(0.04, 0.04, 0.2, 0.5, 1.2, 0.15, 0xf6d030, { seg: 6 });
+  // striped carnival umbrella
+  g.limb(0.45, 1.1, -0.3, 0.45, 2.45, -0.3, 0.03, 0.03, 0x555555, { seg: 4 });
+  g.cone(1.25, 0.52, 0.45, 2.48, -0.3, function (x, y, z) { return fract(Math.atan2(x - 0.45, z + 0.3) / TAU * 10) < 0.5 ? 0xd83a2a : 0xf6d030; }, { seg: 10 });
+  // giant hot dog sign on roof of cart
+  g.cyl(0.16, 0.16, 0.72, -0.2, 1.56, 0, 0xe0a050, { seg: 8, rot: [0, 0, PI / 2] });
+  g.cyl(0.12, 0.12, 0.86, -0.2, 1.66, 0, 0xc84824, { seg: 8, rot: [0, 0, PI / 2] });
+  g.box(0.7, 0.04, 0.06, -0.2, 1.78, 0, 0xf6d030);
+  grp0.add(mesh(g.build()));
+  grp0.add(labelMesh('HOT DOGS', 0xd83a2a, 0xfef08a, 0.95, 0.22, 0, 0.68, 0.485, 0));
+};
+
+BLD.slushie_bar = function (grp0) { // 1x1
+  var g = B();
+  stall(g, { w: 1.6, d: 1.4, h: 1.22, wall: 0x06b6d4, trim: 0xf43f5e, roof: 0x0e7490, awn1: 0x22d3ee, awn2: 0xf43f5e, counter: 0xe0f2fe, bands: true });
+  // twin slushie dispenser tanks
+  g.box(0.28, 0.36, 0.24, -0.24, 0.9, 0.84, 0xf43f5e);
+  g.box(0.28, 0.36, 0.24, 0.24, 0.9, 0.84, 0x38bdf8);
+  g.box(0.3, 0.06, 0.26, -0.24, 1.1, 0.84, 0xffffff);
+  g.box(0.3, 0.06, 0.26, 0.24, 1.1, 0.84, 0xffffff);
+  g.cyl(0.05, 0.05, 0.4, 0, 1.56, 0, 0x555555, { seg: 5 });
+  grp0.add(mesh(g.build()));
+  // spinning giant slushie cup on roof
+  var sl = B();
+  sl.cyl(0.3, 0.2, 0.72, 0, 0, 0, function (x, y) { return y > 0 ? 0xf43f5e : 0x38bdf8; }, { seg: 10 });
+  sl.sph(0.29, 0.22, 0.29, 0, 0.38, 0, 0xe0f2fe, { s: [10, 6] });
+  sl.limb(0.06, 0.4, 0, 0.14, 0.78, 0, 0.03, 0.03, 0xfacc15, { seg: 4 });
+  sl.limb(0.14, 0.78, 0, 0.32, 0.84, 0, 0.03, 0.03, 0xfacc15, { seg: 4 });
+  addSpin(grp0, sl.build(), 2.1, 1.0);
+  grp0.add(labelMesh('SLUSHIES', 0x0e7490, 0xffffff, 1.15, 0.24, 0, 0.35, 0.73, 0));
 };
 
 BUILDING_API = {

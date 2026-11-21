@@ -2132,7 +2132,7 @@ function updateBuildings(dtGame) {
 function entityRec(kind, id) { var m = ents[kind]; return m ? m.get(id) : null; }
 
 /* --------------------------------------------- overlays: bubbles, floaters */
-var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋' };
+var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', flyingMonkey: '🦇', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋', coaster: '🎢', arcade: '🎯', candyFloss: '🍭' };
 var BUB = {}, EMO = {}, bubSprites = [], floaters = [], emotes = [], thoughtCache = {};
 var thoughtIdx = null;
 function mkSpriteMat(canvas) {
@@ -2242,6 +2242,7 @@ function thoughtCat(text) {
     res = /hungr|eat|starv|burger|bite|food/.test(l) ? 'hungry' : /thirst|drink|water/.test(l) ? 'thirsty' : /loo|toilet|wait much/.test(l) ? 'toilet' :
       /bored|dull|nothing/.test(l) ? 'bored' : /tired|rest|feet/.test(l) ? 'tired' : /bench|sit/.test(l) ? 'noBench' : /litter|bin|dirty|mess/.test(l) ? 'dirty' :
       /expensive|price|cost/.test(l) ? 'expensive' : /cheap|bargain/.test(l) ? 'cheap' : /crowd|busy/.test(l) ? 'crowded' : /escape|loose/.test(l) ? 'escaped' :
+      /coaster|ride|loop|flume|wheel/.test(l) ? 'coaster' : /duck|rifle|bullseye|carnival|high striker|ring toss|whack/.test(l) ? 'arcade' : /candy floss|popcorn|slushie|fairground/.test(l) ? 'candyFloss' :
       /baby|cub|foal/.test(l) ? 'baby' : /see|view/.test(l) ? 'cantSee' : /leav|home/.test(l) ? 'leaving' : /unhappy|sad|poor/.test(l) ? 'animalsUnhappy' : 'happy';
   }
   thoughtCache[text] = res; return res;

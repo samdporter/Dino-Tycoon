@@ -80,6 +80,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
       undo: undoStack, undoStack: undoStack, stroke: null, curEntry: null, strokeDepth: 0,
       bunkers: [], allBunkers: [], dangerEsc: 0, lockdown: false, hunters: {}, undoBusy: false,
+      rides: [], arcades: [], coasters: [],
       gstand: new Uint8Array(NN), gtarg: new Uint8Array(NN), gvd: {}, wbuf: [], gload: {},
       comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: []
     };
@@ -373,6 +374,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var bt = RT.byType; bt.food = []; bt.drink = []; bt.toilet = []; bt.fun = []; bt.bench = []; bt.bin = [];
     RT.hasHut = false; RT.huts.length = 0; RT.hasVet = false; RT.vets.length = 0; RT.hasEdu = false;
     RT.bunkers = []; RT.allBunkers = [];
+    RT.rides = []; RT.arcades = []; RT.coasters = [];
     S.tileObj.fill(0);
     for (var k = 0; k < S.objects.length; k++) {
       var o = S.objects[k]; RT.oById.set(o.id, o);
@@ -381,7 +383,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         def = BD[o.type]; solid = true;
         if (def.type === 'food') bt.food.push(o); else if (def.type === 'drink') bt.drink.push(o);
         else if (def.type === 'toilet') bt.toilet.push(o);
-        else if (def.type === 'shop' || def.type === 'ride' || def.type === 'info') { if (o.type !== 'emergency_bunker') bt.fun.push(o); }
+        else if (def.type === 'shop' || def.type === 'ride' || def.type === 'arcade' || def.type === 'info') { if (o.type !== 'emergency_bunker') bt.fun.push(o); }
+        if (def.type === 'ride') { RT.rides.push(o); if (def.rideKind === 'coaster') RT.coasters.push(o); }
+        else if (def.type === 'arcade') RT.arcades.push(o);
         if (o.type === 'emergency_bunker') { RT.bunkers.push(o); RT.allBunkers.push(o); }
         if (o.type === 'keeper_hut') { RT.hasHut = true; RT.huts.push(o); } if (o.type === 'vet_clinic') { RT.hasVet = true; RT.vets.push(o); } if (o.type === 'education_centre') RT.hasEdu = true;
       } else {
@@ -713,6 +717,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     RT.gaesT = 0;
     RT.glmPv = -1;
     recomputeEnclosures();
+    RT.value = arrivalValue();
   }
 
   // ---- undo journal ----
@@ -998,12 +1003,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k = S.objects.indexOf(o); if (k >= 0) S.objects.splice(k, 1);
     for (var g = 0; g < S.guests.length; g++) {
       var gu = S.guests[g];
-      if (gu.gid === o.id && (gu.gt === 'bld' || gu.gt === 'bunker')) {
-        releaseGuest(gu); gu.gt = ''; gu.dk = ''; gu.ni = -1; gu.glide = 0;
+      if ((gu.gid === o.id && (gu.gt === 'bld' || gu.gt === 'bunker' || gu.shel)) || gu.ubid === o.id) {
+        releaseGuest(gu); gu.gt = ''; gu.gid = 0; gu.dk = ''; gu.pk = ''; gu.ni = -1; gu.glide = 0;
         if (gu.state === 'queue' || gu.state === 'use') gu.state = 'walk';
         gu.shel = 0; gu.ubid = 0;
       }
-      if (gu.bid === o.id) { releaseGuest(gu); gu.glide = 0; if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; } }
+      if (gu.bid === o.id) { releaseGuest(gu); gu.glide = 0; if (gu.state === 'sit') { gu.state = 'walk'; gu.gt = ''; gu.gid = 0; } }
     }
     delete RT.bq[o.id];
     bus.emit('objectRemoved', o);
@@ -1431,7 +1436,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!seen[a.species] && a.enc) { seen[a.species] = 1; spCount++; } }
     RT.speciesCount = spCount;
     var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) ap += SP[q.species].appeal * (q.baby ? 1.5 : 1); } RT.appeal = ap;
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9;
+    var rideCount = 0, arcadeCount = 0;
+    if (RT.rides) for (k = 0; k < RT.rides.length; k++) if (buildingConnected(RT.rides[k])) rideCount++;
+    if (RT.arcades) for (k = 0; k < RT.arcades.length; k++) if (buildingConnected(RT.arcades[k])) arcadeCount++;
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + Math.min(6, rideCount * 1.2 + arcadeCount * 0.45);
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
@@ -1447,6 +1455,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (def.type === 'drink') return 'drink';
     if (def.type === 'toilet') return 'toilet';
     if (def.type === 'shop') return 'shop';
+    if (def.type === 'arcade') return 'act';
     if (def.type === 'ride' || def.type === 'info') return 'act';
     return 'act';
   }
@@ -1463,13 +1472,21 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (var sk in g.seen) if (/^\d+$/.test(sk)) delete g.seen[sk];
     }
     var left = Math.max(0, (CLOSE_T - S.time) * DAY_SECONDS);
+    var hasTP = (RT.rides && RT.rides.length) || (RT.arcades && RT.arcades.length);
     var h = rng.range(4.0, 5.6); if (rng.chance(0.2)) h += rng.range(0.6, 1.6);
+    if (hasTP) h += rng.range(1.2, 2.2);
     g.stay0 = Math.min(h * hr, Math.max(hr * 0.5, left - rng.range(0.3, 3.2) * hr));
     g.stay = g.stay0;
     g.tol = rng.range(1.05, 1.9);
     g.thor = rng.range(0.75, 1.0);
     g.tiredAt = rng.range(28, 46);
-    g.al = { meal: rng.chance(0.7) ? 1 + (rng.chance(0.1) ? 1 : 0) : 0, drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0, treat: rng.chance(0.2) ? 1 : 0, shop: rng.chance(0.13) ? 1 : 0, act: rng.chance(0.25) ? 1 : 0 };
+    g.al = {
+      meal: rng.chance(0.7) ? 1 + (rng.chance(0.1) ? 1 : 0) : 0,
+      drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0,
+      treat: hasTP ? (rng.chance(0.55) ? 1 + (rng.chance(0.25) ? 1 : 0) : 0) : (rng.chance(0.2) ? 1 : 0),
+      shop: rng.chance(0.13) ? 1 : 0,
+      act: hasTP ? (2 + (rng.chance(0.55) ? 1 : 0) + (RT.coasters && RT.coasters.length ? 1 : 0)) : (rng.chance(0.25) ? 1 : 0)
+    };
     g.seenEnc = g.seenEnc || {}; g.seenB = g.seenB || {};
     g.spent = g.spent || 0; g.paid = ticket || 0; g.nSeen = 0; g.nView = 0;
     g.prettyE = 0.3; g.nbuy = 0; g.done = 0; g.strollNext = 0; g.idle = 0; g.gAge = 0; g.ix = g.x; g.iz = g.z; g.glide = 0; g.sx = g.x; g.sz = g.z; g.spot = 0; g.lm = 0; g.wat = 0;
@@ -1480,7 +1497,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var gi = GATE_I0 + (rng.chance(0.5) ? 1 : 0), t = gi + GATE_J * N;
     if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
     var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12), hr = gxHr();
-    var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating);
+    var tpRideC = 0, tpArcC = 0, rk;
+    if (RT.rides) for (rk = 0; rk < RT.rides.length; rk++) if (buildingConnected(RT.rides[rk])) tpRideC++;
+    if (RT.arcades) for (rk = 0; rk < RT.arcades.length; rk++) if (buildingConnected(RT.arcades[rk])) tpArcC++;
+    var tpBonus = (Math.min(4, tpRideC) * 7 + Math.min(4, tpArcC) * 2.5) * rng.range(0.75, 1.35);
+    var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating) + tpBonus;
     var g = {
       id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: N * TILE + rng.range(0.3, 1.4),
       heading: PI, speed: 0, state: 'walk', hunger: rng.range(6, 38), thirst: rng.range(4, 36), bladder: rng.range(0, 34), energy: rng.range(72, 100),
@@ -1572,11 +1593,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var f = getField('b' + o.id);
       if (!f || !(f[g.ti] < INF)) continue;
       cand++;
-      if (price > 0 && (price > g.money * 0.7 || (def.price > 0 && price > def.price * tolE))) { rejected++; continue; }
+      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.8) || (def.price > 0 && price > def.price * tolE))) { rejected++; continue; }
       var q = RT.bq[o.id], ql = q ? q.q.length : 0;
       var cap = Math.max(5, Math.ceil(def.capacity * 1.5) + 2);
       if (ql >= cap) continue;
-      var sc = f[g.ti] * 1.6 + rng.next() * 12 + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 6 : 0);
+      var sc = f[g.ti] * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 8 : 0);
+      if (kind === 'act') sc -= (def.thrill || 0) * 1.8 + (def.type === 'ride' ? 7 : 1);
       if (sc < bs) { bs = sc; best = o; }
     }
     if (!best) {
@@ -1718,9 +1740,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (WX.shelter && !g.cov) { g.cov = 1; if (rng.chance(0.5) && pickBuilding(g, bt.food.concat(bt.fun), 'cover')) return; }
     if (g.nbuy <= 0) {
+      var hasTP = (RT.rides && RT.rides.length) || (RT.arcades && RT.arcades.length);
+      var sawEx = g.nSeen > 0 || !RT.speciesCount;
       if (al.shop > 0 && (g.done || g.stay < 1.4 * hr || rng.chance(0.06)) && pickBuilding(g, bt.fun, 'shop')) return;
-      if (al.treat > 0 && g.happiness > 55 && rng.chance(0.12) && pickBuilding(g, bt.food, 'treat')) return;
-      if ((al.act > 0 || rng.chance(0.1)) && rng.chance(0.3) && pickBuilding(g, bt.fun, 'act')) return;
+      if (al.treat > 0 && g.happiness > 50 && rng.chance(hasTP ? (sawEx ? 0.24 : 0.12) : 0.12) && pickBuilding(g, bt.food, 'treat')) return;
+      if ((al.act > 0 || rng.chance(0.1)) && rng.chance(hasTP ? (sawEx ? 0.5 : 0.25) : 0.3) && pickBuilding(g, bt.fun, 'act')) return;
     }
     if (g.strollNext) { g.strollNext = 0; if (gxStroll(g)) return; }
     if (!g.done && pickExhibit(g)) return;
@@ -1765,7 +1789,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       earn(price, cat, g.x, g.z); o.income = (o.income || 0) + price;
     }
     q.use++; g.state = 'use'; g.ubid = o.id; g.speed = 0; g.seenB[o.id] = 1;
-    g.wt = def.type === 'ride' ? 9 : def.type === 'food' ? (kind === 'treat' ? 3 : 6) : def.type === 'toilet' ? 4 : def.type === 'drink' ? 3 : 4;
+    g.wt = def.rideKind === 'coaster' ? 11 : def.type === 'ride' ? 9 : def.type === 'arcade' ? 5 : def.type === 'food' ? (kind === 'treat' ? 3 : 6) : def.type === 'toilet' ? 4 : def.type === 'drink' ? 3 : 4;
     if (g.pk === 'cover' && WX.shelter) g.wt = clamp(hr * 0.6, 8, 16);
     var c = objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
   }
@@ -1780,9 +1804,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (s.bladder) g.bladder = Math.max(0, g.bladder - s.bladder * 100);
     if (s.energy) g.energy = Math.min(100, g.energy + s.energy * 100);
     if (s.fun) { g.fun = Math.min(100, g.fun + s.fun * 100); g.mood += s.fun * 8; }
-    if (def.type === 'ride') g.mood += 3;
+    if (def.rideKind === 'coaster') { g.mood += 5; g.happiness = Math.min(100, g.happiness + 8); if (rng.chance(0.55)) say(g, 'coaster'); }
+    else if (def.type === 'ride') { g.mood += 3.5; g.happiness = Math.min(100, g.happiness + 5); if (rng.chance(0.35)) say(g, 'coaster'); }
+    else if (def.type === 'arcade') { g.mood += 2.5; g.happiness = Math.min(100, g.happiness + 4); if (rng.chance(0.5)) say(g, 'arcade'); }
+    if (o.type === 'candy_floss' || o.type === 'popcorn_stand') { if (rng.chance(0.45)) say(g, 'candyFloss'); }
     if (def.type === 'food' || def.type === 'drink') { g.mood += 1; if (rng.chance(0.6)) g.lit = true; }
     o.uses = (o.uses || 0) + 1;
+    if (S.stats) {
+      S.stats.ridesTaken = (S.stats.ridesTaken || 0) + (def.type === 'ride' ? 1 : 0);
+      S.stats.arcadePlayed = (S.stats.arcadePlayed || 0) + (def.type === 'arcade' ? 1 : 0);
+    }
     if (def.type === 'info' && RT.hasEdu) g.mood += 2;
     if (rng.chance(0.2)) say(g, 'happy');
   }
@@ -1989,12 +2020,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     } else { g.wxd = 0; g.cov = 0; }
     if (g.state !== 'leave') {
+      var inUse = g.state === 'use' && !g.shel;
       var leave = false;
-      if (!S.open || S.time >= CLOSE_T - 0.004) leave = true;
-      else if (g.stay <= 0) {
+      if (!S.open || S.time >= CLOSE_T + (inUse ? 0.04 : -0.004)) leave = true;
+      else if (!inUse && g.stay <= 0) {
         if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
         else leave = true;
-      } else {
+      } else if (!inUse) {
         if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, Math.max(hr * rng.range(0.35, 1.0), rng.range(6, 14))); }
         if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
         else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;
@@ -3448,6 +3480,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       case 'species': return RT.speciesCount >= g.target;
       case 'babies': return S.stats.babiesBorn >= g.target;
       case 'happiness': return S.guestHappiness >= g.target;
+      case 'themepark': {
+        var tpCount = 0;
+        for (var k = 0; k < S.objects.length; k++) {
+          var o = S.objects[k];
+          if (o.kind === 'building' && BD[o.type] && (BD[o.type].type === 'ride' || BD[o.type].type === 'arcade')) tpCount++;
+        }
+        return tpCount >= g.target;
+      }
     }
     return false;
   }
@@ -4287,6 +4327,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       ns.stats = Object.assign(tpl.stats, ns.stats);
       if (ns.stats.injuries === undefined) ns.stats.injuries = 0;
       if (ns.stats.compensation === undefined) ns.stats.compensation = 0;
+      if (ns.stats.ridesTaken === undefined) ns.stats.ridesTaken = 0;
+      if (ns.stats.arcadePlayed === undefined) ns.stats.arcadePlayed = 0;
       ns.unlocked = Object.assign({ star: 0 }, ns.unlocked);
     } catch (e) {
       if (Z.N !== prevN) Z.setGridSize(prevN);
@@ -4300,7 +4342,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var k;
       for (k = 0; k < S.guests.length; k++) {
         var g = S.guests[k];
-        g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.nt = rng.next();
+        g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
         if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
         if (g.gt === 'out') g.gt = 'exit';
       }
@@ -4431,6 +4473,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     return { id: o.id, kind: o.kind, type: o.type, name: def.name, connected: connected, issues: issues, price: o.price, defaultPrice: def.price, uses: o.uses || 0, income: o.income || 0,
       queue: q ? q.q.length : 0, users: q ? q.use : 0, fill: o.fill, upkeep: def.upkeep || 0,
+      rideKind: def.rideKind || null, thrill: def.thrill || 0, themepark: !!def.themepark,
       thriving: thriving, thrivesOn: thrivesOn, terrainHere: hereName, info: def.info || '' };
   }
   function footprintOf(type, i, j, rot) {

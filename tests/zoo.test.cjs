@@ -1814,5 +1814,817 @@ test('Zoo enormous purple dragon, lava terrain, castle shelter, and mutual compa
   assert.match(lionWarn.warn, /Predators in this enclosure/);
 });
 
+test('Zoo Theme Park Extension data, footprints, placement, undo/bulldoze, and save/load persistence', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 707, map: 'meadow', money: 500000 });
+  z.state.unlocked.star = 3;
+
+  const D = z.DATA;
+  const expectedBuildings = [
+    ['wooden_coaster', 'ride', 'coaster', 3, 3, 3, 2],
+    ['loop_coaster', 'ride', 'coaster', 5, 4, 3, 3],
+    ['mine_coaster', 'ride', 'coaster', 2, 3, 2, 1],
+    ['log_flume', 'ride', 'coaster', 3, 3, 3, 2],
+    ['ferris_wheel', 'ride', 'wheel', 2, 2, 2, 2],
+    ['rubber_duck_stand', 'arcade', undefined, undefined, 1, 1, 0],
+    ['air_rifle_stand', 'arcade', undefined, undefined, 1, 1, 1],
+    ['ring_toss_stand', 'arcade', undefined, undefined, 1, 1, 0],
+    ['whack_a_mole', 'arcade', undefined, undefined, 1, 1, 1],
+    ['high_striker', 'arcade', undefined, undefined, 1, 1, 0],
+    ['candy_floss', 'food', undefined, undefined, 1, 1, 0],
+    ['popcorn_stand', 'food', undefined, undefined, 1, 1, 0],
+    ['hot_dog_stand', 'food', undefined, undefined, 1, 1, 0],
+    ['slushie_bar', 'drink', undefined, undefined, 1, 1, 1]
+  ];
+  const byB = Object.fromEntries(D.buildings.map(b => [b.id, b]));
+  for (const [id, type, rideKind, thrill, w, h, star] of expectedBuildings) {
+    const b = byB[id];
+    assert.ok(b, `Missing building ${id}`);
+    assert.equal(b.themepark, true, `${id} must have themepark: true`);
+    assert.equal(b.type, type);
+    assert.equal(b.rideKind, rideKind);
+    assert.equal(b.thrill, thrill);
+    assert.equal(b.w, w);
+    assert.equal(b.h, h);
+    assert.equal(b.star, star);
+  }
+  assert.equal(byB.carousel.themepark, true);
+  assert.equal(byB.balloon_stand.themepark, true);
+
+  const expectedScenery = ['themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue'];
+  const byS = Object.fromEntries(D.scenery.map(s => [s.id, s]));
+  for (const sid of expectedScenery) {
+    const s = byS[sid];
+    assert.ok(s, `Missing scenery ${sid}`);
+    assert.equal(s.inEnclosure, false);
+    assert.equal(s.themepark, true);
+    assert.ok((s.star || 0) < 4);
+  }
+
+  assert.ok(Array.isArray(D.guestThoughts.coaster) && D.guestThoughts.coaster.length >= 3);
+  assert.ok(Array.isArray(D.guestThoughts.arcade) && D.guestThoughts.arcade.length >= 3);
+  assert.ok(Array.isArray(D.guestThoughts.candyFloss) && D.guestThoughts.candyFloss.length >= 3);
+  const tpGoal = D.goals.find(g => g.id === 'themepark_3');
+  assert.ok(tpGoal && tpGoal.type === 'themepark' && tpGoal.target === 3 && tpGoal.reward === 1800);
+
+  // Flatten a large midway area and lay a path
+  for (let j = 16; j <= 41; j++) {
+    for (let i = 10; i <= 40; i++) {
+      const t = i + j * z.N;
+      z.state.terrain[t] = 0;
+      const oId = z.state.tileObj[t];
+      if (oId) {
+        const obj = z.state.objects.find(o => o.id === oId);
+        if (obj) z.Sim.bulldoze(obj.i, obj.j);
+      }
+    }
+  }
+  for (let j = 16; j <= 42; j++) {
+    for (let i = 10; i <= 41; i++) {
+      z.state.elev[i + j * (z.N + 1)] = 0;
+    }
+  }
+  for (let i = 12; i <= 38; i++) assert.equal(z.Sim.placePath(i, 24, 'paved').ok, true);
+  for (let j = 25; j <= 39; j++) assert.equal(z.Sim.placePath(27, j, 'paved').ok, true);
+
+  const wc = z.Sim.placeObject('wooden_coaster', 12, 21, 0);
+  const lc = z.Sim.placeObject('loop_coaster', 16, 21, 0);
+  const mc = z.Sim.placeObject('mine_coaster', 21, 22, 0);
+  const lf = z.Sim.placeObject('log_flume', 25, 21, 0);
+  const fw = z.Sim.placeObject('ferris_wheel', 29, 22, 0);
+  assert.ok(wc.ok && lc.ok && mc.ok && lf.ok && fw.ok, 'All coasters and Ferris wheel should place cleanly');
+
+  const duck = z.Sim.placeObject('rubber_duck_stand', 12, 25, 0);
+  const rifle = z.Sim.placeObject('air_rifle_stand', 14, 25, 0);
+  const ring = z.Sim.placeObject('ring_toss_stand', 16, 25, 0);
+  const whack = z.Sim.placeObject('whack_a_mole', 18, 25, 0);
+  const striker = z.Sim.placeObject('high_striker', 20, 25, 0);
+  const floss = z.Sim.placeObject('candy_floss', 22, 25, 0);
+  const pop = z.Sim.placeObject('popcorn_stand', 24, 25, 0);
+  const hotdog = z.Sim.placeObject('hot_dog_stand', 25, 25, 0);
+  const slush = z.Sim.placeObject('slushie_bar', 26, 25, 0);
+  assert.ok(duck.ok && rifle.ok && ring.ok && whack.ok && striker.ok && floss.ok && pop.ok && hotdog.ok && slush.ok);
+
+  const arch = z.Sim.placeObject('themepark_arch', 29, 25, 0);
+  const bunt = z.Sim.placeObject('bunting_poles', 30, 25, 0);
+  const mir = z.Sim.placeObject('funhouse_mirror', 31, 25, 0);
+  const barch = z.Sim.placeObject('balloon_arch', 32, 25, 0);
+  const clamp = z.Sim.placeObject('circus_lamp', 33, 25, 0);
+  const clown = z.Sim.placeObject('clown_statue', 34, 25, 0);
+  assert.ok(arch.ok && bunt.ok && mir.ok && barch.ok && clamp.ok && clown.ok);
+
+  // Verify footprints & objectReport fields
+  const wcRep = z.Sim.objectReport(wc.id);
+  assert.equal(wcRep.connected, true);
+  assert.equal(wcRep.rideKind, 'coaster');
+  assert.equal(wcRep.thrill, 3);
+  assert.equal(wcRep.themepark, true);
+  assert.equal(z.Sim.footprint('loop_coaster', 16, 20, 0).w, 4);
+  assert.equal(z.Sim.footprint('loop_coaster', 16, 20, 0).h, 3);
+
+  // Undo & Bulldoze check
+  const canU = z.Sim.canUndo();
+  assert.ok(canU.count > 0);
+  assert.equal(z.Sim.undo().ok, true);
+  assert.equal(z.state.objects.some(o => o.id === clown.id), false);
+  const bRes = z.Sim.bulldoze(33, 25);
+  assert.equal(bRes.ok, true);
+  assert.equal(z.state.objects.some(o => o.id === clamp.id), false);
+
+  // Save & load persistence
+  const saved = z.Sim.save();
+  z.Sim.newGame({ seed: 1 });
+  assert.equal(z.Sim.load(saved), true);
+  assert.ok(z.state.objects.some(o => o.type === 'wooden_coaster'));
+  assert.ok(z.state.objects.some(o => o.type === 'loop_coaster'));
+  assert.ok(z.state.objects.some(o => o.type === 'rubber_duck_stand'));
+  assert.ok(z.state.objects.some(o => o.type === 'candy_floss'));
+  assert.ok(z.state.objects.some(o => o.type === 'themepark_arch'));
+});
+
+test('Zoo Theme Park guests ride coasters, play arcade stands, eat candy floss, boost arrivalValue & complete goal', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 808, map: 'meadow', money: 250000 });
+  z.state.unlocked.star = 3;
+
+  // Clear central midway area
+  for (let j = 28; j <= 39; j++) {
+    for (let i = 20; i <= 36; i++) {
+      const t = i + j * z.N;
+      z.state.terrain[t] = 0;
+      const oId = z.state.tileObj[t];
+      if (oId) {
+        const obj = z.state.objects.find(o => o.id === oId);
+        if (obj) z.Sim.bulldoze(obj.i, obj.j);
+      }
+    }
+  }
+  for (let j = 28; j <= 40; j++) for (let i = 20; i <= 37; i++) z.state.elev[i + j * (z.N + 1)] = 0;
+
+  // Connect path from gate to midway
+  for (let j = 34; j <= 52; j++) z.Sim.placePath(27, j, 'paved');
+  for (let i = 22; i <= 33; i++) z.Sim.placePath(i, 34, 'paved');
+
+  const baseVal = z.Sim._rt().value;
+  const coaster = z.Sim.placeObject('wooden_coaster', 23, 31, 0);
+  const duck = z.Sim.placeObject('rubber_duck_stand', 26, 33, 0);
+  const rifle = z.Sim.placeObject('air_rifle_stand', 28, 33, 0);
+  const floss = z.Sim.placeObject('candy_floss', 30, 33, 0);
+  assert.ok(coaster.ok && duck.ok && rifle.ok && floss.ok);
+
+  const boostedVal = z.Sim._rt().value;
+  assert.ok(boostedVal >= baseVal + 2.0, `Connected coaster + arcades should boost arrivalValue (${baseVal} -> ${boostedVal})`);
+
+  // Goal completion check after secondly/checkGoals cycle (runs every 2s)
+  const moneyBeforeGoal = z.state.money;
+  for (let k = 0; k < 4; k++) z.Sim._step(0.5);
+  assert.equal(z.state.goals.themepark_3, true, 'themepark_3 goal should complete with 3 attractions');
+  assert.ok(z.state.money >= moneyBeforeGoal + 1800, 'themepark_3 goal should award £1,800');
+
+  // Spawn guests near the midway and step simulation so they visit coaster, arcades, and candy floss
+  const gProto = {
+    x: 27 * z.TILE + 1, z: 34 * z.TILE + 1, heading: 0, speed: 0, state: 'walk',
+    hunger: 30, thirst: 20, bladder: 10, energy: 90, happiness: 70, money: 200,
+    thought: '', thoughtT: 0, seen: {}, group: 1, ti: 27 + 34 * z.N, ni: 27 + 34 * z.N,
+    px: 27 * z.TILE + 1, pz: 34 * z.TILE + 1, lo: 0, lo2: 0, bs: 3.0, gt: '', gid: 0, dk: '',
+    wt: 0, nt: 0, acc: 0, tcool: 0, fun: 40, mood: 5, lit: false, stay: 300, pv: 0,
+    last: 0, bid: 0, fleeT: 0, nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0, shel: 0, ubid: 0,
+    al: { meal: 0, drink: 0, treat: 3, shop: 0, act: 5 },
+    seenEnc: {}, seenB: {}, tol: 1.5, thor: 0.9, tiredAt: 25, spent: 0, paid: 8,
+    nSeen: 0, nView: 0, prettyE: 0.3, nbuy: 0, done: 0, strollNext: 0, idle: 0, gAge: 0,
+    ix: 27 * z.TILE + 1, iz: 34 * z.TILE + 1, glide: 0, sx: 0, sz: 0, spot: 0, lm: 0, wat: 0
+  };
+  const thoughtsSeen = new Set();
+  for (let i = 0; i < 16; i++) {
+    const g = JSON.parse(JSON.stringify(gProto));
+    g.id = 9000 + i;
+    g.group = 900 + i;
+    g.seed = 100 + i;
+    g.pv = z.Sim._rt().pathVer;
+    z.state.guests.push(g);
+    z.Sim._rt().gById.set(g.id, g);
+  }
+
+  for (let step = 0; step < 300; step++) {
+    z.Sim._step(0.5);
+    for (const g of z.state.guests) {
+      g.stay = 300;
+      g.nbuy = 0;
+      g.bladder = 10;
+      g.thirst = 10;
+      g.energy = 90;
+      g.happiness = Math.max(g.happiness, 65);
+      if (g.thought) thoughtsSeen.add(g.thought);
+    }
+  }
+
+  const cObj = z.Sim.objectReport(coaster.id);
+  const dObj = z.Sim.objectReport(duck.id);
+  const rObj = z.Sim.objectReport(rifle.id);
+  const fObj = z.Sim.objectReport(floss.id);
+
+  assert.ok(cObj.uses >= 1, `Rollercoaster should have uses >= 1, got ${cObj.uses}`);
+  assert.ok(cObj.income >= 10, `Rollercoaster should earn income, got ${cObj.income}`);
+  assert.ok((dObj.uses + rObj.uses) >= 1, `Arcade stands should have uses >= 1, got duck=${dObj.uses}, rifle=${rObj.uses}`);
+  assert.ok(fObj.uses >= 1, `Candy floss stand should have uses >= 1, got ${fObj.uses}`);
+  assert.ok(z.state.stats.ridesTaken >= 1, 'S.stats.ridesTaken should increment');
+  assert.ok(z.state.stats.arcadePlayed >= 1, 'S.stats.arcadePlayed should increment');
+
+  const allCoaster = new Set(z.DATA.guestThoughts.coaster);
+  const allArcade = new Set(z.DATA.guestThoughts.arcade);
+  const allFloss = new Set(z.DATA.guestThoughts.candyFloss);
+  const sawCoaster = [...thoughtsSeen].some(t => allCoaster.has(t));
+  const sawArcade = [...thoughtsSeen].some(t => allArcade.has(t));
+  const sawFloss = [...thoughtsSeen].some(t => allFloss.has(t));
+  assert.ok(sawCoaster || sawArcade || sawFloss, `Expected theme park thoughts, saw: ${[...thoughtsSeen].join(' | ')}`);
+});
+
+test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill/arcade display', () => {
+  function mkEl(tag) {
+    const attrs = {}, children = [], cls = new Set(), listeners = {}, style = { setProperty() {} };
+    let _html = '', _text = '';
+    const node = {
+      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      classList: {
+        add(...a) { a.forEach(c => c && cls.add(c)); }, remove(...a) { a.forEach(c => c && cls.delete(c)); },
+        toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
+        contains(c) { return cls.has(c); }
+      },
+      set className(v) { cls.clear(); String(v || '').split(/\s+/).filter(Boolean).forEach(c => cls.add(c)); },
+      get className() { return Array.from(cls).join(' '); },
+      set innerHTML(v) {
+        _html = String(v || ''); children.length = 0;
+        const stack = [node], re = /<(\/?)([a-zA-Z0-9-]+)([^>]*)>|([^<]+)/g;
+        let m;
+        while ((m = re.exec(_html))) {
+          if (m[4]) { stack[stack.length - 1].children.push({ nodeType: 3, textContent: m[4], children: [] }); continue; }
+          if (m[1]) { if (stack.length > 1) stack.pop(); continue; }
+          const ch = mkEl(m[2]), rawAttr = m[3] || '', selfClose = /\/\s*$/.test(rawAttr);
+          let am; const are = /([a-zA-Z0-9_-]+)(?:="([^"]*)")?/g;
+          while ((am = are.exec(rawAttr))) if (am[1] && am[1] !== '/') ch.setAttribute(am[1], am[2] || '');
+          stack[stack.length - 1].appendChild(ch);
+          if (!selfClose) stack.push(ch);
+        }
+      },
+      get innerHTML() { return _html; },
+      set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
+      get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
+      removeAttribute(k) { delete attrs[k]; },
+      appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
+      insertBefore(c, ref) { if (!c) return c; c.parentNode = node; const idx = children.indexOf(ref); if (idx >= 0) children.splice(idx, 0, c); else children.push(c); return c; },
+      addEventListener(ev, fn) { (listeners[ev] = listeners[ev] || []).push(fn); },
+      click() { (listeners.click || []).forEach(fn => fn({ stopPropagation() {}, preventDefault() {} })); },
+      querySelector(sel) { return node.querySelectorAll(sel)[0] || null; },
+      querySelectorAll(sel) {
+        const matchOne = (el, part) => {
+          let s = part.trim(), m;
+          const attrM = s.match(/\[([^\]=]+)="([^"]*)"\]/g) || [];
+          for (const a of attrM) { const p = a.slice(1, -1).split('='); if (el.getAttribute(p[0]) !== p[1].replace(/^"|"$/g, '')) return false; s = s.replace(a, ''); }
+          if ((m = s.match(/#([a-zA-Z0-9_-]+)/))) { if (el.getAttribute('id') !== m[1]) return false; s = s.replace(m[0], ''); }
+          const clsM = s.match(/\.[a-zA-Z0-9_-]+/g) || [];
+          for (const c of clsM) { if (!el.classList.contains(c.slice(1))) return false; s = s.replace(c, ''); }
+          if (s && el.tagName.toLowerCase() !== s.toLowerCase()) return false;
+          return true;
+        };
+        const parts = sel.trim().split(/\s+/);
+        let scope = [node];
+        for (const part of parts) {
+          const next = [];
+          const walk = el => { for (const ch of el.children) { if (ch.tagName) { if (matchOne(ch, part)) next.push(ch); walk(ch); } } };
+          scope.forEach(walk); scope = next;
+        }
+        return scope;
+      },
+      focus() {}, blur() {}, scrollLeft: 0, scrollTop: 0, offsetWidth: 80, offsetHeight: 40,
+      getContext() { return { fillRect() {}, strokeRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, quadraticCurveTo() {}, stroke() {}, fill() {}, arc() {}, clearRect() {}, save() {}, restore() {}, translate() {}, scale() {}, fillText() {}, createLinearGradient() { return { addColorStop() {} }; } }; },
+      getBoundingClientRect() { return { left: 0, top: 0, bottom: 40, right: 80, width: 80, height: 40 }; }
+    };
+    return node;
+  }
+  const rootUi = mkEl('div'), body = mkEl('body'), head = mkEl('head'), worldEl = mkEl('div');
+  rootUi.setAttribute('id', 'ui'); worldEl.setAttribute('id', 'world');
+  const doc = {
+    head, body, createElement: mkEl, createTextNode: t => ({ nodeType: 3, textContent: String(t ?? ''), children: [] }),
+    getElementById: id => id === 'ui' ? rootUi : id === 'world' ? worldEl : null,
+    querySelector: s => s === '#ui' ? rootUi : s === '#world' ? worldEl : rootUi.querySelector(s),
+    querySelectorAll: s => rootUi.querySelectorAll(s), addEventListener() {}
+  };
+  const ctx = vm.createContext({
+    console, setTimeout() { return 1; }, clearTimeout() {}, setInterval() { return 1; }, clearInterval() {},
+    requestAnimationFrame() {}, document: doc, window: null, innerWidth: 1280, innerHeight: 900,
+    btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
+  });
+  ctx.window = ctx; ctx.addEventListener = () => {};
+  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
+  ['00-data.js', '10-core.js', '20-sim.js'].forEach(load);
+  const z = ctx.Z;
+  z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  ['50-ui.js', '51-tools.js', '52-panels.js', '53-screens.js'].forEach(load);
+  z.UI.init();
+  z.Sim.newGame({ seed: 912 });
+  z.state.money = 250000; z.state.unlocked.star = 3;
+
+  // Theme Park tab exists right after Facilities
+  const catIds = z.UI.CATS.map(c => c.id);
+  assert.equal(catIds[catIds.indexOf('fac') + 1], 'themepark');
+
+  z.UI.openCat('themepark', true);
+  const allCards = z.UI.el.cards.querySelectorAll('.card');
+  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'wooden_coaster'));
+  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'rubber_duck_stand'));
+  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'candy_floss'));
+  assert.ok(allCards.some(c => c.getAttribute('data-id') === 'themepark_arch'));
+
+  // Sub-filter buttons work
+  const filterBtns = z.UI.el.cards.querySelectorAll('.drawer-mode button');
+  assert.equal(filterBtns.length, 5);
+  filterBtns[1].click(); // Rides & Coasters
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="loop_coaster"]'));
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="rubber_duck_stand"]'), null);
+  filterBtns[2].click(); // Arcade & Stands
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="air_rifle_stand"]'));
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="loop_coaster"]'), null);
+  filterBtns[3].click(); // Food & Drink
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="slushie_bar"]'));
+  filterBtns[4].click(); // Scenery
+  assert.ok(z.UI.el.cards.querySelector('.card[data-id="circus_lamp"]'));
+  filterBtns[0].click(); // All
+
+  // Place coaster and arcade stand and check inspect panel & goalProgress
+  for (let j = 34; j <= 39; j++) {
+    for (let i = 25; i <= 32; i++) {
+      const t = i + j * z.N;
+      z.state.terrain[t] = 0;
+      const oId = z.state.tileObj[t];
+      if (oId) {
+        const obj = z.state.objects.find(o => o.id === oId);
+        if (obj) z.Sim.bulldoze(obj.i, obj.j);
+      }
+      z.state.elev[i + j * (z.N + 1)] = 0;
+    }
+  }
+  z.Sim.placePath(27, 36, 'paved');
+  const wc = z.Sim.placeObject('wooden_coaster', 28, 35, 0);
+  const duck = z.Sim.placeObject('rubber_duck_stand', 26, 36, 0);
+  assert.ok(wc.ok && duck.ok);
+
+  const tpGoal = z.DATA.goals.find(g => g.id === 'themepark_3');
+  const gp = z.UI.goalProgress(tpGoal);
+  assert.equal(gp.value, 2);
+
+  z.UI.Panel.open('object', wc.id);
+  assert.match(z.UI.el.panel.textContent, /Rollercoaster/);
+  assert.match(z.UI.el.panel.textContent, /Thrill rating.*★★★/);
+
+  z.UI.Panel.open('object', duck.id);
+  assert.match(z.UI.el.panel.textContent, /Arcade & game stall/);
+});
+
+test('Zoo Theme Park 3D models build cleanly and animate without errors', () => {
+  // Lightweight THREE mock sufficient for 30-models.js BufferGeometry & Group builders
+  class Vector3 {
+    constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }
+    set(x, y, z) { this.x = x; this.y = y; this.z = z; return this; }
+    copy(v) { this.x = v.x; this.y = v.y; this.z = v.z; return this; }
+    subVectors(a, b) { this.x = a.x - b.x; this.y = a.y - b.y; this.z = a.z - b.z; return this; }
+    crossVectors(a, b) {
+      const ax = a.x, ay = a.y, az = a.z, bx = b.x, by = b.y, bz = b.z;
+      this.x = ay * bz - az * by; this.y = az * bx - ax * bz; this.z = ax * by - ay * bx; return this;
+    }
+    lengthSq() { return this.x * this.x + this.y * this.y + this.z * this.z; }
+    length() { return Math.sqrt(this.lengthSq()); }
+    normalize() { const l = this.length() || 1; return this.divideScalar(l); }
+    divideScalar(s) { this.x /= s; this.y /= s; this.z /= s; return this; }
+    multiplyScalar(s) { this.x *= s; this.y *= s; this.z *= s; return this; }
+    negate() { this.x = -this.x; this.y = -this.y; this.z = -this.z; return this; }
+    applyMatrix4() { return this; }
+  }
+  class Quaternion {
+    constructor() { this.x = 0; this.y = 0; this.z = 0; this.w = 1; }
+    copy(q) { Object.assign(this, q); return this; }
+    setFromEuler() { return this; }
+    setFromUnitVectors() { return this; }
+    setFromRotationMatrix() { return this; }
+  }
+  class Euler { set() { return this; } }
+  class Matrix4 {
+    compose() { return this; }
+    makeBasis() { return this; }
+  }
+  class BufferAttribute {
+    constructor(array, itemSize) { this.array = array; this.itemSize = itemSize; this.count = array.length / itemSize; }
+    getX(i) { return this.array[i * this.itemSize]; }
+    getY(i) { return this.array[i * this.itemSize + 1]; }
+    getZ(i) { return this.array[i * this.itemSize + 2]; }
+    setXYZ(i, x, y, z) { const o = i * this.itemSize; this.array[o] = x; this.array[o + 1] = y; this.array[o + 2] = z; }
+  }
+  class BufferGeometry {
+    constructor() { this.attributes = { position: new BufferAttribute(new Float32Array(18), 3) }; }
+    setAttribute(k, v) { this.attributes[k] = v; }
+    toNonIndexed() { return this; }
+    computeBoundingSphere() {}
+    computeBoundingBox() {}
+  }
+  class Obj3D {
+    constructor() {
+      this.position = new Vector3(); this.rotation = { x: 0, y: 0, z: 0 };
+      this.quaternion = new Quaternion(); this.scale = { x: 1, y: 1, z: 1, set(x, y, z) { this.x = x; this.y = y; this.z = z; }, setScalar(s) { this.x = this.y = this.z = s; } };
+      this.children = []; this.userData = {};
+    }
+    add(...a) { this.children.push(...a); }
+    clone() { const c = new Obj3D(); c.userData = { ...this.userData }; return c; }
+  }
+  class Group extends Obj3D {}
+  class Mesh extends Obj3D { constructor(g, m) { super(); this.geometry = g; this.material = m || {}; } }
+  class MeshLambertMaterial { constructor(o = {}) { Object.assign(this, o); } }
+  class CanvasTexture {}
+
+  const THREE = {
+    Vector3, Quaternion, Euler, Matrix4, BufferAttribute, BufferGeometry, Group, Mesh, MeshLambertMaterial, CanvasTexture,
+    SphereGeometry: BufferGeometry, BoxGeometry: BufferGeometry, CylinderGeometry: BufferGeometry,
+    IcosahedronGeometry: BufferGeometry, PlaneGeometry: BufferGeometry, CircleGeometry: BufferGeometry,
+    DoubleSide: 2
+  };
+  const fakeCanvas = () => ({
+    width: 128, height: 64,
+    getContext: () => ({ fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '', textBaseline: '', fillRect() {}, strokeRect() {}, fillText() {} })
+  });
+  const ctx = vm.createContext({
+    console, THREE,
+    document: { createElement: tag => tag === 'canvas' ? fakeCanvas() : {} }
+  });
+  ctx.window = ctx;
+  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
+  ['00-data.js', '30-models.js'].forEach(load);
+
+  const M = ctx.Z.Models;
+  const tpBuildings = [
+    'wooden_coaster', 'loop_coaster', 'mine_coaster', 'log_flume', 'ferris_wheel',
+    'rubber_duck_stand', 'air_rifle_stand', 'ring_toss_stand', 'whack_a_mole', 'high_striker',
+    'candy_floss', 'popcorn_stand', 'hot_dog_stand', 'slushie_bar'
+  ];
+  for (const id of tpBuildings) {
+    const grp = M.createBuilding(id);
+    assert.ok(grp && grp.userData.buildingId === id, `Model missing for ${id}`);
+    assert.ok(grp.children.length >= 1, `Model ${id} should have children`);
+    if (typeof grp.userData.update === 'function') grp.userData.update(0.05, 1.25);
+  }
+
+  const tpScenery = ['themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue'];
+  for (const id of tpScenery) {
+    const grp = M.createScenery(id);
+    assert.ok(grp && grp.userData.sceneryId === id, `Scenery model missing for ${id}`);
+    assert.ok(grp.children.length >= 1, `Scenery ${id} should have children`);
+    if (typeof grp.userData.update === 'function') grp.userData.update(0.05, 1.25);
+  }
+  assert.equal(M.createScenery('circus_lamp').userData.isLamp, true);
+});
+
+test('Zoo Theme Park multi-day stress simulation validates guest invariants, queues, finances, and zoo-vs-ride balance', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 2026, map: 'meadow', mapSize: 'medium', money: 500000 });
+  z.state.unlocked.star = 4;
+  z.state.open = true;
+
+  const clearRect = (i0, j0, i1, j1) => {
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const t = i + j * z.N;
+        z.state.terrain[t] = 0;
+        const oId = z.state.tileObj[t];
+        if (oId) {
+          const obj = z.state.objects.find(o => o.id === oId);
+          if (obj) z.Sim.bulldoze(obj.i, obj.j);
+        }
+      }
+    }
+    for (let j = j0; j <= j1 + 1; j++) {
+      for (let i = i0; i <= i1 + 1; i++) z.state.elev[i + j * (z.N + 1)] = 0;
+    }
+  };
+  const makeEnc = (i0, j0, i1, j1, fenceType) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j0 }, fenceType).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, fenceType).ok, true);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i0, j }, fenceType).ok, true);
+      assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, fenceType).ok, true);
+    }
+  };
+
+  clearRect(10, 12, 45, 50);
+  for (let j = 18; j <= 51; j++) { z.Sim.placePath(27, j, 'paved'); z.Sim.placePath(28, j, 'paved'); }
+  for (const j of [18, 26, 34, 42]) for (let i = 14; i <= 42; i++) z.Sim.placePath(i, j, 'paved');
+  for (let j = 36; j <= 42; j++) { z.Sim.placePath(14, j, 'paved'); z.Sim.placePath(42, j, 'paved'); }
+  for (let j = 43; j <= 48; j++) { z.Sim.placePath(21, j, 'paved'); z.Sim.placePath(35, j, 'paved'); }
+
+  makeEnc(15, 44, 20, 49, 'reinforced');
+  assert.ok(z.Sim.placeObject('cave_shelter', 17, 46, 0).ok && z.Sim.placeObject('wooden_shelter', 18, 47, 0).ok);
+  assert.ok(z.Sim.placeObject('boulder', 16, 47, 0).ok);
+  assert.ok(z.Sim.addAnimal('lion', 17, 45).ok && z.Sim.addAnimal('lion', 18, 45).ok);
+
+  makeEnc(36, 44, 41, 49, 'glass');
+  z.Sim.paintTerrain(40, 48, 'water', 0);
+  assert.ok(z.Sim.placeObject('acacia', 38, 46, 0).ok && z.Sim.placeObject('tall_grass', 39, 47, 0).ok);
+  assert.ok(z.Sim.addAnimal('giraffe', 37, 45).ok && z.Sim.addAnimal('giraffe', 38, 45).ok);
+  assert.ok(z.Sim.addAnimal('zebra', 40, 45).ok && z.Sim.addAnimal('zebra', 39, 45).ok);
+
+  makeEnc(15, 36, 20, 40, 'low_wood');
+  assert.ok(z.Sim.placeObject('climbing_frame', 17, 38, 0).ok && z.Sim.placeObject('bush', 18, 38, 0).ok);
+  assert.ok(z.Sim.addAnimal('meerkat', 16, 37).ok && z.Sim.addAnimal('meerkat', 19, 37).ok);
+
+  makeEnc(36, 36, 41, 40, 'glass');
+  z.Sim.paintTerrain(38, 38, 'water', 0);
+  z.Sim.paintTerrain(39, 38, 'water', 0);
+  assert.ok(z.Sim.placeObject('ice_floe', 38, 38, 0).ok);
+  assert.ok(z.Sim.addAnimal('penguin', 37, 37).ok && z.Sim.addAnimal('penguin', 40, 37).ok);
+
+  for (const [id, i, j] of [
+    ['keeper_hut', 26, 43], ['vet_clinic', 29, 43], ['toilets', 24, 43],
+    ['toilets', 24, 27], ['burger_stand', 26, 41], ['drinks_stall', 29, 41], ['gift_shop', 22, 41]
+  ]) assert.equal(z.Sim.placeObject(id, i, j, 0).ok, true, `Facility ${id}`);
+
+  const tpPlacements = [
+    ['wooden_coaster', 15, 19, 0], ['loop_coaster', 22, 19, 0], ['mine_coaster', 30, 19, 0],
+    ['log_flume', 36, 19, 0], ['ferris_wheel', 15, 27, 0],
+    ['rubber_duck_stand', 22, 27, 0], ['air_rifle_stand', 23, 27, 0], ['ring_toss_stand', 26, 27, 0],
+    ['whack_a_mole', 29, 27, 0], ['high_striker', 31, 27, 0],
+    ['candy_floss', 22, 33, 0], ['popcorn_stand', 24, 33, 0], ['hot_dog_stand', 26, 33, 0], ['slushie_bar', 29, 33, 0]
+  ];
+  const placedTP = {};
+  for (const [id, i, j, r] of tpPlacements) {
+    const res = z.Sim.placeObject(id, i, j, r);
+    assert.equal(res.ok, true, `Place ${id}`);
+    assert.equal(z.Sim.objectReport(res.id).connected, true, `${id} connected`);
+    placedTP[id] = res.id;
+  }
+
+  for (const [id, i, j, r] of [
+    ['themepark_arch', 26, 35, 0], ['bunting_poles', 29, 35, 0], ['funhouse_mirror', 31, 35, 0],
+    ['balloon_arch', 33, 35, 0], ['circus_lamp', 34, 33, 0], ['clown_statue', 32, 33, 0]
+  ]) assert.equal(z.Sim.placeObject(id, i, j, r).ok, true, `Scenery ${id}`);
+
+  for (const [i, j] of [[25, 35], [25, 25], [25, 43], [33, 41]]) {
+    z.Sim.placeObject('bench', i, j, 0);
+    z.Sim.placeObject('bin', i + 1, j, 0);
+  }
+  for (const st of ['keeper', 'keeper', 'vet', 'cleaner', 'cleaner', 'guide', 'security']) {
+    assert.equal(z.Sim.hireStaff(st).ok, true);
+  }
+
+  const DAY_S = 150;
+  const dt = 0.25;
+  const steps = Math.ceil((DAY_S * 5.2) / dt);
+  let maxGuests = 0;
+  const guestSnapshots = new Map();
+
+  for (let s = 0; s < steps; s++) {
+    z.Sim._step(dt);
+    const st = z.state;
+    const rt = z.Sim._rt();
+    if (st.guests.length > maxGuests) maxGuests = st.guests.length;
+    if (s % 12 === 0) {
+      assert.ok(Number.isFinite(st.money));
+      assert.ok(Number.isFinite(st.rating) && st.rating >= 0 && st.rating <= 5);
+      assert.ok(st.guestHappiness === undefined || (Number.isFinite(st.guestHappiness) && st.guestHappiness >= 0 && st.guestHappiness <= 100));
+      for (const k of ['tickets', 'food', 'shops', 'donations', 'upkeep', 'wages', 'construction', 'marketing', 'other']) {
+        assert.ok(Number.isFinite(st.finance.today[k]));
+      }
+      for (const g of st.guests) {
+        assert.ok(Number.isFinite(g.x) && Number.isFinite(g.z));
+        assert.ok(Number.isFinite(g.money) && g.money >= 0);
+        for (const n of ['hunger', 'thirst', 'bladder', 'energy', 'fun', 'happiness']) {
+          assert.ok(Number.isFinite(g[n]) && g[n] >= 0 && g[n] <= 100, `guest ${n}=${g[n]}`);
+        }
+        guestSnapshots.set(g.id, {
+          encSeen: Object.keys(g.seenEnc || {}).length,
+          bSeen: Object.keys(g.seenB || {}).length
+        });
+      }
+      for (const id in rt.bq) {
+        const q = rt.bq[id];
+        assert.ok(Number.isInteger(q.use) && q.use >= 0 && Array.isArray(q.q));
+        const obj = st.objects.find(o => o.id === +id);
+        if (obj) {
+          const cap = z.DATA.buildings.find(b => b.id === obj.type).capacity;
+          assert.ok(q.use <= cap);
+        }
+      }
+    }
+  }
+
+  let withEnc = 0, withB = 0, withBoth = 0;
+  for (const snap of guestSnapshots.values()) {
+    if (snap.encSeen > 0) withEnc++;
+    if (snap.bSeen > 0) withB++;
+    if (snap.encSeen > 0 && snap.bSeen > 0) withBoth++;
+  }
+  assert.ok(maxGuests >= 100, `Expected >= 100 concurrent guests, got ${maxGuests}`);
+  assert.ok(z.state.finance.history.length >= 5, `Expected >= 5 days of finance history, got ${z.state.finance.history.length}`);
+  assert.ok(z.state.stats.ridesTaken >= 10, `Expected >= 10 rides taken, got ${z.state.stats.ridesTaken}`);
+  assert.ok(z.state.stats.arcadePlayed >= 10, `Expected >= 10 arcade games played, got ${z.state.stats.arcadePlayed}`);
+  assert.ok(withEnc >= 50 && withB >= 50 && withBoth >= 25, `Expected balanced exhibit & ride visits: enc=${withEnc}, b=${withB}, both=${withBoth}`);
+});
+
+test('Zoo Theme Park rotation, terrain elevation, undo, mid-ride bulldoze, and save/load fuzzing', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 999, map: 'meadow', mapSize: 'medium', money: 1000000 });
+  z.state.unlocked.star = 4;
+
+  for (let j = 10; j <= 48; j++) {
+    for (let i = 6; i <= 48; i++) {
+      const t = i + j * z.N;
+      z.state.terrain[t] = 0;
+      const oId = z.state.tileObj[t];
+      if (oId) {
+        const obj = z.state.objects.find(o => o.id === oId);
+        if (obj) z.Sim.bulldoze(obj.i, obj.j);
+      }
+    }
+  }
+  for (let j = 10; j <= 49; j++) for (let i = 6; i <= 49; i++) z.state.elev[i + j * (z.N + 1)] = 0;
+  for (let j = 10; j <= 48; j++) z.Sim.placePath(25, j, 'paved');
+  for (let i = 6; i <= 48; i++) z.Sim.placePath(i, 25, 'paved');
+
+  const tpBuildings = [
+    'wooden_coaster', 'loop_coaster', 'mine_coaster', 'log_flume', 'ferris_wheel',
+    'rubber_duck_stand', 'air_rifle_stand', 'ring_toss_stand', 'whack_a_mole', 'high_striker',
+    'candy_floss', 'popcorn_stand', 'hot_dog_stand', 'slushie_bar'
+  ];
+  const tpScenery = ['themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue'];
+
+  for (const id of tpBuildings) {
+    const def = z.DATA.buildings.find(b => b.id === id);
+    for (let rot = 0; rot < 4; rot++) {
+      const fp = z.Sim.footprint(id, 10, 10, rot);
+      assert.equal(fp.w, rot % 2 === 1 ? def.h : def.w);
+      assert.equal(fp.h, rot % 2 === 1 ? def.w : def.h);
+      const r1 = z.Sim.placeObject(id, 10, 26, rot);
+      assert.equal(r1.ok, true, `${id} rot=${rot}`);
+      assert.equal(z.Sim.undo().ok, true);
+      const r2 = z.Sim.placeObject(id, 10, 26, rot);
+      assert.equal(r2.ok, true);
+      assert.equal(z.Sim.bulldoze(10, 26).ok, true);
+      assert.equal(z.state.objects.some(o => o.id === r2.id), false);
+    }
+    assert.equal(z.Sim.placeObject(id, 53, 53, 0).ok, false, `${id} OOB rejected`);
+  }
+
+  z.Sim.terraform(15, 15, 'raise', 0);
+  z.Sim.terraform(15, 15, 'raise', 0);
+  z.Sim.terraform(15, 15, 'raise', 0);
+  for (const id of tpScenery) {
+    for (let rot = 0; rot < 4; rot++) {
+      const r = z.Sim.placeObject(id, 15, 15, rot);
+      assert.equal(r.ok, true, `Scenery ${id} sloped rot=${rot}`);
+      assert.equal(z.Sim.undo().ok, true);
+    }
+  }
+  assert.equal(z.Sim.placeObject('wooden_coaster', 14, 14, 0).ok, false, 'Steep coaster rejected');
+
+  // Active mid-ride bulldoze + save/load
+  z.Sim.newGame({ seed: 777, map: 'meadow', mapSize: 'medium', money: 500000 });
+  z.state.unlocked.star = 4;
+  z.state.open = true;
+  for (let j = 28; j <= 42; j++) {
+    for (let i = 20; i <= 36; i++) {
+      const t = i + j * z.N;
+      z.state.terrain[t] = 0;
+      const oId = z.state.tileObj[t];
+      if (oId) {
+        const obj = z.state.objects.find(o => o.id === oId);
+        if (obj) z.Sim.bulldoze(obj.i, obj.j);
+      }
+      z.state.elev[i + j * (z.N + 1)] = 0;
+    }
+  }
+  for (let j = 34; j <= 52; j++) z.Sim.placePath(27, j, 'paved');
+  for (let i = 22; i <= 34; i++) z.Sim.placePath(i, 34, 'paved');
+  const lc = z.Sim.placeObject('loop_coaster', 22, 31, 0);
+  assert.ok(lc.ok);
+
+  for (let i = 0; i < 26; i++) {
+    const g = {
+      id: 50000 + i, name: 'Rider ' + i, seed: i + 1, x: 25 * 2 + 1, z: 34 * 2 + 1,
+      heading: 0, speed: 0, state: 'walk', hunger: 10, thirst: 10, bladder: 10, energy: 90,
+      happiness: 80, money: 200, thought: '', thoughtT: 0, seen: {}, group: 5000 + i,
+      ti: 25 + 34 * z.N, ni: 25 + 34 * z.N, px: 51, pz: 69, lo: 0, lo2: 0, bs: 3,
+      gt: 'bld', gid: lc.id, dk: 'b' + lc.id, wt: 0, nt: 0.5, acc: 0, tcool: 0, fun: 30,
+      mood: 5, lit: false, stay: 300, pv: z.Sim._rt().pathVer, last: 0, bid: 0, fleeT: 0,
+      nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0, shel: 0, ubid: 0,
+      al: { meal: 1, drink: 1, treat: 2, shop: 1, act: 3 }, seenEnc: {}, seenB: {},
+      tol: 1.8, thor: 0.9, tiredAt: 25, spent: 0, paid: 8, nSeen: 0, nView: 0, prettyE: 0.3,
+      nbuy: 0, done: 0, strollNext: 0, idle: 0, gAge: 0, ix: 51, iz: 69, glide: 0, sx: 51, sz: 69,
+      spot: 0, lm: 0, wat: 0
+    };
+    z.state.guests.push(g);
+    z.Sim._rt().gById.set(g.id, g);
+  }
+  for (let s = 0; s < 20; s++) z.Sim._step(0.25);
+
+  const rt = z.Sim._rt();
+  assert.ok(z.state.guests.some(g => g.state === 'use') && z.state.guests.some(g => g.state === 'queue'));
+  const midSave = z.Sim.save();
+  assert.equal(z.Sim.bulldoze(22, 31).ok, true);
+  assert.equal(rt.bq[lc.id], undefined);
+  for (const g of z.state.guests) {
+    assert.notEqual(g.gid, lc.id);
+    assert.notEqual(g.ubid, lc.id);
+    assert.ok(g.state !== 'queue' && g.state !== 'use');
+  }
+  assert.equal(z.Sim.undo().ok, true);
+  assert.equal(z.Sim.load(midSave), true);
+  for (let s = 0; s < 30; s++) z.Sim._step(0.25);
+  for (const g of z.state.guests) assert.ok(Number.isFinite(g.x) && Number.isFinite(g.z));
+});
+
+test('Zoo Theme Park 3D models and world module pass 1,000-frame animation and geometry stress test with real THREE', () => {
+  const fakeCanvas = () => ({
+    width: 128, height: 64, style: {},
+    getContext: () => ({
+      fillStyle: '', strokeStyle: '', lineWidth: 1, font: '', textAlign: '', textBaseline: '',
+      shadowColor: '', shadowBlur: 0, shadowOffsetY: 0,
+      fillRect() {}, strokeRect() {}, clearRect() {}, fillText() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, arcTo() {}, quadraticCurveTo() {}, closePath() {},
+      stroke() {}, fill() {}, arc() {}, save() {}, restore() {}, translate() {}, scale() {},
+      createLinearGradient() { return { addColorStop() {} }; }
+    })
+  });
+  const ctx = vm.createContext({
+    console, setTimeout, clearTimeout, Math, Float32Array, Uint16Array, Uint32Array, Int16Array, Int32Array, Uint8Array,
+    performance: { now: () => Date.now() },
+    document: { createElement: tag => tag === 'canvas' ? fakeCanvas() : { style: {}, appendChild() {} }, addEventListener() {} },
+    window: null, requestAnimationFrame() {}
+  });
+  ctx.window = ctx; ctx.self = ctx;
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../vendor/three.r128.min.js'), 'utf8'), ctx, { filename: 'three.r128.min.js' });
+  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
+  ['00-data.js', '10-core.js', '20-sim.js', '30-models.js', '40-world.js'].forEach(load);
+
+  const THREE = ctx.THREE;
+  const M = ctx.Z.Models;
+  assert.ok(ctx.Z.World);
+
+  const tpBuildings = [
+    'wooden_coaster', 'loop_coaster', 'mine_coaster', 'log_flume', 'ferris_wheel',
+    'rubber_duck_stand', 'air_rifle_stand', 'ring_toss_stand', 'whack_a_mole', 'high_striker',
+    'candy_floss', 'popcorn_stand', 'hot_dog_stand', 'slushie_bar'
+  ];
+  const tpScenery = ['themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue'];
+
+  const checkSubtreeFinite = (obj, label) => {
+    obj.traverse(ch => {
+      for (const axis of ['x', 'y', 'z']) {
+        assert.ok(Number.isFinite(ch.position[axis]), `${label} pos.${axis}`);
+        assert.ok(Number.isFinite(ch.rotation[axis]), `${label} rot.${axis}`);
+        assert.ok(Number.isFinite(ch.scale[axis]), `${label} scale.${axis}`);
+      }
+      if (ch.quaternion) {
+        for (const axis of ['x', 'y', 'z', 'w']) assert.ok(Number.isFinite(ch.quaternion[axis]), `${label} quat.${axis}`);
+      }
+      if (ch.geometry && ch.geometry.attributes && ch.geometry.attributes.position) {
+        const arr = ch.geometry.attributes.position.array;
+        for (let i = 0; i < arr.length; i++) assert.ok(Number.isFinite(arr[i]), `${label} vertex NaN`);
+      }
+    });
+  };
+
+  const models = [];
+  for (const id of tpBuildings) {
+    const grp = M.createBuilding(id);
+    assert.ok(grp && grp.userData.buildingId === id);
+    const box = new THREE.Box3().setFromObject(grp);
+    assert.ok(Number.isFinite(box.min.x) && Number.isFinite(box.max.y) && box.max.y > box.min.y);
+    models.push({ id, grp });
+  }
+  for (const id of tpScenery) {
+    const grp = M.createScenery(id);
+    assert.ok(grp && grp.userData.sceneryId === id);
+    const box = new THREE.Box3().setFromObject(grp);
+    assert.ok(Number.isFinite(box.min.x) && Number.isFinite(box.max.y) && box.max.y > box.min.y);
+    models.push({ id, grp });
+  }
+
+  for (const m of models) {
+    if (typeof m.grp.userData.update !== 'function') continue;
+    m.grp.userData.update(0, 0);
+    checkSubtreeFinite(m.grp, `${m.id}@t=0`);
+    m.grp.userData.update(0.25, 10000);
+    checkSubtreeFinite(m.grp, `${m.id}@t=10000`);
+  }
+  const dts = [0, 0.016, 0.25];
+  let tSim = 0;
+  for (let f = 0; f < 1000; f++) {
+    const dt = dts[f % dts.length];
+    tSim += dt;
+    for (const m of models) if (typeof m.grp.userData.update === 'function') m.grp.userData.update(dt, tSim);
+    if (f % 250 === 0 || f === 999) for (const m of models) checkSubtreeFinite(m.grp, `${m.id}@f=${f}`);
+  }
+});
+
+
 
 
