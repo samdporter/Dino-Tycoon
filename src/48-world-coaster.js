@@ -209,12 +209,60 @@
     return { addBox: addBox, addBeamSeg: addBeamSeg, build: build };
   }
 
+  var _beaconRes = null;
+  function getBeaconRes() {
+    if (!_beaconRes) {
+      _beaconRes = {
+        openRingGeo: new THREE.TorusGeometry(0.62, 0.08, 6, 18),
+        badRingGeo: new THREE.TorusGeometry(0.76, 0.09, 6, 20),
+        stemGeo: new THREE.CylinderGeometry(0.06, 0.06, 1.3, 8),
+        coneGeo: new THREE.ConeGeometry(0.36, 0.72, 8),
+        openMat: new THREE.MeshBasicMaterial({ color: 0xff6a1a }),
+        openRingMat: new THREE.MeshBasicMaterial({ color: 0xffb030 }),
+        warnMat: new THREE.MeshBasicMaterial({ color: 0xff2222 })
+      };
+    }
+    return _beaconRes;
+  }
+
+  function addBeacon(x, y, z, isWarn) {
+    var R = getBeaconRes();
+    var ring = new THREE.Mesh(R.openRingGeo, isWarn ? R.warnMat : R.openRingMat);
+    ring.rotation.x = Math.PI * 0.5;
+    ring.position.set(x, y + 0.08, z);
+    ring.userData.shared = true;
+    trackGrp.add(ring);
+
+    var stem = new THREE.Mesh(R.stemGeo, isWarn ? R.warnMat : R.openMat);
+    stem.position.set(x, y + 0.75, z);
+    stem.userData.shared = true;
+    trackGrp.add(stem);
+
+    var cone = new THREE.Mesh(R.coneGeo, isWarn ? R.warnMat : R.openMat);
+    cone.rotation.x = Math.PI;
+    cone.position.set(x, y + 1.65, z);
+    cone.userData.shared = true;
+    trackGrp.add(cone);
+  }
+
+  function addBadRing(x, y, z) {
+    var R = getBeaconRes();
+    var ring = new THREE.Mesh(R.badRingGeo, R.warnMat);
+    ring.rotation.x = Math.PI * 0.5;
+    ring.position.set(x, y + 0.08, z);
+    ring.userData.shared = true;
+    trackGrp.add(ring);
+  }
+
   function clearGroup(g) {
     while (g.children.length) {
       var ch = g.children[g.children.length - 1];
       g.remove(ch);
-      if (ch.geometry) ch.geometry.dispose();
-      if (ch.material && ch.material.dispose) ch.material.dispose();
+      if (ch.children && ch.children.length) clearGroup(ch);
+      if (!ch.userData || !ch.userData.shared) {
+        if (ch.geometry) ch.geometry.dispose();
+        if (ch.material && ch.material.dispose) ch.material.dispose();
+      }
     }
   }
 
@@ -230,6 +278,7 @@
     var s = Z.state;
     if (!s || !s.coasterRail) return;
 
+    var N = Z.N || 56, rail = s.coasterRail, elev = s.coasterElev;
     var gb = makeBufBuilder();
     var lines = X.lines;
     var k, i;
@@ -309,7 +358,8 @@
         }
 
         // ---- Special Track Elements ----
-        if (sp === 1) {
+        var isLiftSeg = sp === 1 || (L.sLift && L.sLift[i] === 1);
+        if (isLiftSeg) {
           // CHAIN LIFT HILL:
           // 1) Raised dark-steel chain guide trough down the exact center between the twin rails (+U * 0.09)
           gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.08, 0.11, 0.055, 0x262b33);
@@ -327,7 +377,9 @@
             );
           }
           // 4) Toothed sprocket wheel housing at the start and end of every chain lift section
-          if (spPrev !== 1 || spNext !== 1) {
+          var liftPrev = i > 0 && (spPrev === 1 || (L.sLift && L.sLift[i - 1] === 1));
+          var liftNext = spNext === 1 || (L.sLift && L.sLift[j] === 1);
+          if (!liftPrev || !liftNext) {
             gb.addBox(
               mx + u0x * 0.08, my + u0y * 0.08, mz + u0z * 0.08,
               0.16, 0.22, 0.22, r0x, r0y, r0z, u0x, u0y, u0z, fx, fy, fz, 0xd49b2a
@@ -370,14 +422,59 @@
           gb.addBox(py.x, midY - 0.1, py.z, 0.17, Math.max(0.1, ht * 0.5 - 0.1), 0.17, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
           gb.addBox(py.x, py.yTop - 0.08, py.z, gauge + 0.06, 0.08, 0.14, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
           gb.addBox(py.x, py.yBot + 0.16, py.z, 0.34, 0.16, 0.34, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x5c626a);
+          if (py.spec >= 4) {
+            // Reinforced angled steel A-frame / arch support towers bracing loops & corkscrews
+            var archTop = py.yTop + (py.spec === 6 ? 5.2 : py.spec === 7 ? 3.2 : py.spec === 4 ? 2.6 : 1.6);
+            var baseSpread = py.spec === 6 ? 3.0 : py.spec === 7 ? 4.2 : py.spec === 4 ? 2.0 : 2.6;
+            var topSpread = py.spec === 6 ? 2.2 : py.spec === 7 ? 3.5 : py.spec === 4 ? 1.45 : 2.1;
+            var foreSpread = py.spec >= 6 ? 1.35 : 0.9;
+            for (var sgn = -1; sgn <= 1; sgn += 2) {
+              var tx = py.x + prx * (sgn * topSpread), tz = py.z + prz * (sgn * topSpread);
+              var bx = py.x + prx * (sgn * baseSpread), bz = py.z + prz * (sgn * baseSpread);
+              gb.addBeamSeg(bx - pfx * foreSpread, py.yBot, bz - pfz * foreSpread, prx, 0, prz, pfx, 0, pfz, tx, archTop, tz, prx, 0, prz, pfx, 0, pfz, 0, 0, 0.08, 0.08, col.support);
+              gb.addBeamSeg(bx + pfx * foreSpread, py.yBot, bz + pfz * foreSpread, prx, 0, prz, pfx, 0, pfz, tx, archTop, tz, prx, 0, prz, pfx, 0, pfz, 0, 0, 0.08, 0.08, col.support);
+              gb.addBox(bx - pfx * foreSpread, py.yBot + 0.12, bz - pfz * foreSpread, 0.24, 0.12, 0.24, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, 0x5c626a);
+              gb.addBox(bx + pfx * foreSpread, py.yBot + 0.12, bz + pfz * foreSpread, 0.24, 0.12, 0.24, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, 0x5c626a);
+            }
+          }
+        }
+      }
+
+      // ---- 4. 3D Indicators for Open Track Ends, Stall Points & Blocked Supports ----
+      if (!L.loop && L.nodes && L.nodes.length >= 2 && n >= 1) {
+        var firstT = L.nodes[0];
+        if (!X.stAt || X.stAt[firstT] < 0) addBeacon(L.px[0], L.py[0], L.pz[0], false);
+        var lastT = L.nodes[L.nodes.length - 1];
+        if ((!X.stAt || X.stAt[lastT] < 0) && (lastT !== firstT || n > 1)) {
+          addBeacon(L.px[n - 1], L.py[n - 1], L.pz[n - 1], false);
+        }
+      }
+      if (L.loop && !L.energyOk && L.stallSample >= 0 && L.stallSample < n) {
+        var ss = L.stallSample;
+        addBeacon(L.px[ss], L.py[ss], L.pz[ss], true);
+      }
+      if (L.bad) {
+        for (var bt in L.bad) {
+          var bTile = +bt;
+          var bti = bTile % N, btj = (bTile - bti) / N;
+          var bcx = (bti + 0.5) * TILE, bcz = (btj + 0.5) * TILE;
+          var bgy = Z.World && Z.World.groundY ? Z.World.groundY(bcx, bcz) : 0;
+          var by = bgy + CD.clearance + (elev[bTile] || 0) * CD.elevStep;
+          var bestD2 = 1e9;
+          for (i = 0; i < n; i++) {
+            var bdx = L.px[i] - bcx, bdz = L.pz[i] - bcz;
+            var bd2 = bdx * bdx + bdz * bdz;
+            if (bd2 < bestD2) { bestD2 = bd2; by = L.py[i]; }
+          }
+          addBadRing(bcx, by, bcz);
         }
       }
     }
 
-    // Single isolated 1-tile track stubs (not yet connected to a 2+ tile chain): render proper twin rails + ties too!
-    var N = Z.N || 56, rail = s.coasterRail, elev = s.coasterElev;
+    // Single isolated 1-tile track stubs (not yet connected to a 2+ tile chain): render proper twin rails + ties + open-end beacon!
     for (var t = 0; t < rail.length; t++) {
       if (!rail[t]) continue;
+      if (X.stAt && X.stAt[t] >= 0) continue;
       if (X.lineAt && X.lineAt[t] >= 0) continue;
       var ti = t % N, tj = (t - ti) / N;
       var cx = (ti + 0.5) * TILE, cz = (tj + 0.5) * TILE;
@@ -391,6 +488,7 @@
       for (var so = -0.6; so <= 0.61; so += 0.6) {
         gb.addBox(cx + sfx * so, y + 0.01, cz + sfz * so, 0.65, 0.045, 0.085, srx, 0, srz, 0, 1, 0, sfx, 0, sfz, 0x6d421e);
       }
+      addBeacon(cx, y, cz, false);
     }
 
     var mesh = gb.build();

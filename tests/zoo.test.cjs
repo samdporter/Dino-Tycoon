@@ -1104,7 +1104,7 @@ test('Zoo star progression reserves Star 4 exclusively for fairytale pack items'
   const { z } = zoo();
   const D = z.DATA;
 
-  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots', 'purple_dragon'];
+  const expectedFantasyAnimals = ['unicorn', 'winged_monkey', 'sasquatch', 'nessie', 'phoenix', 'griffin', 'puss_in_boots', 'purple_dragon', 'pugon', 'drassy'];
   const expectedFantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand', 'lava'];
   const expectedFantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter', 'castle'];
 
@@ -2770,6 +2770,120 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   assert.equal(infoAfter.specs[4], 1);
   assert.equal(infoAfter.specs[5], 1);
   assert.equal(infoAfter.trains.length, 1);
+
+  // Verify Large Loop-de-Loop (6) and Large Corkscrew (7) placement, height, and excitement boost
+  // Replace standard Loop/Corkscrew on hill crest with Large Loop-de-Loop (6) & Large Corkscrew (7) on a clean Steel coaster
+  assert.equal(z.Coaster.placeSpecial([tidx(22, 31)], 6).ok, true, 'Steel coaster should allow Large Loop-de-Loop (6)');
+  assert.equal(z.Coaster.placeSpecial([tidx(20, 31)], 7).ok, true, 'Steel coaster should allow Large Corkscrew (7)');
+  const infoLarge = z.Coaster.stationInfo(stRes.id);
+  assert.equal(infoLarge.specs[6], 1);
+  assert.equal(infoLarge.specs[7], 1);
+  assert.ok(infoLarge.maxHeight > infoAfter.maxHeight + 3.5, `Large Loop-de-Loop (R=4.5) should raise maxHeight significantly, got ${infoLarge.maxHeight} vs ${infoAfter.maxHeight}`);
+  let minUyLarge = 1;
+  for (let k = 0; k < infoLarge.line.nS; k++) if (infoLarge.line.uy[k] < minUyLarge) minUyLarge = infoLarge.line.uy[k];
+  assert.ok(minUyLarge < -0.5, `Expected inverted uy < -0.5 on Large Loop-de-Loop/Corkscrew, got ${minUyLarge}`);
+
+  // Wooden coaster should reject Large Loop-de-Loop (6) and Large Corkscrew (7)
+  z.Sim.newGame({ seed: 1005, money: 250000 });
+  z.state.unlocked.star = 4;
+  for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
+    const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const wdSt = z.Sim.placeObject('coaster_wooden', 20, 35, 0);
+  assert.equal(z.Coaster.buildTrack(loopRoute).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 31)], 6).ok, false, 'Wooden coaster must reject Large Loop-de-Loop (6)');
+  assert.equal(z.Coaster.placeSpecial([tidx(19, 31)], 7).ok, false, 'Wooden coaster must reject Large Corkscrew (7)');
+
+  // Compare excitement of Large Loop (6) + Large Corkscrew (7) vs standard Loop (4) + Corkscrew (5) on identical Steel coaster
+  z.Sim.newGame({ seed: 1006, money: 250000 });
+  z.state.unlocked.star = 4;
+  for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
+    const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const stCmp = z.Sim.placeObject('coaster_steel', 20, 35, 0);
+  assert.equal(z.Coaster.buildTrack(loopRoute).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(24, 35)], 2).ok, true); // Boost
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 31)], 4).ok, true);
+  const excStd = z.Coaster.stationInfo(stCmp.id).excitement;
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 31)], 6).ok, true);
+  const excLarge = z.Coaster.stationInfo(stCmp.id).excitement;
+  assert.ok(excLarge > excStd, `Large Loop-de-Loop excitement (${excLarge}) should exceed standard Loop-de-Loop (${excStd})`);
+
+  // Verify live train physics: accelerates down drops, decelerates up hills, and rolls back on unpowered climbs (never constant-speed uphill)
+  z.Sim.newGame({ seed: 1007, money: 250000 });
+  z.state.unlocked.star = 4;
+  for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
+    const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const stPhys = z.Sim.placeObject('coaster_steel', 20, 35, 0);
+  assert.equal(z.Coaster.buildTrack(loopRoute).ok, true);
+  for (let h = 0; h < 4; h++) assert.equal(z.Coaster.changeHeight([tidx(23, 31), tidx(22, 31), tidx(21, 31)], 1).ok, true);
+  assert.equal(z.Coaster.placeSpecial([tidx(25, 34), tidx(25, 33), tidx(25, 32)], 1).ok, true);
+  const physInfo = z.Coaster.stationInfo(stPhys.id);
+  assert.equal(physInfo.ready, true, `Chain lift hill should power circuit: ${physInfo.stallReason}`);
+  const physTid = z.state.coaster.trains[0].id;
+  let liftSpeeds = [], dropSpeeds = [], minClimbSpeed = 999, sawDropAccel = false;
+  let prevSpd = 0;
+  for (let step = 0; step < 260; step++) {
+    z.Sim._step(0.1);
+    const ti = z.Coaster.trainInfo(physTid);
+    if (ti.state !== 'run') continue;
+    const Lphys = ti.line;
+    const nIdx = Math.floor((ti.train.s / Lphys.totalLen) * Lphys.nS) % Lphys.nS;
+    if (Lphys.sLift[nIdx]) liftSpeeds.push(ti.speed);
+    if (Lphys.avgTy[nIdx] < -0.15) {
+      dropSpeeds.push(ti.speed);
+      if (ti.speed > prevSpd + 0.05) sawDropAccel = true;
+    }
+    if (!Lphys.sLift[nIdx] && Lphys.avgTy[nIdx] > 0.05 && ti.speed < minClimbSpeed) minClimbSpeed = ti.speed;
+    prevSpd = ti.speed;
+  }
+  assert.ok(liftSpeeds.length > 5 && Math.max(...liftSpeeds) <= 6.0, `Chain lift should hold steady climb speed (~4.2 m/s), got max=${Math.max(...liftSpeeds)}`);
+  assert.ok(dropSpeeds.length > 3 && Math.max(...dropSpeeds) > 8.5 && sawDropAccel, `Train should accelerate strongly down drop (>8.5 m/s), got max=${Math.max(...dropSpeeds)}`);
+
+  // Now test unpowered hill stall & rollback: start flat oval, dispatch train, then raise tall unpowered hill ahead of it
+  z.Sim.newGame({ seed: 1008, money: 250000 });
+  z.state.unlocked.star = 4;
+  for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
+    const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
+    const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+  const stStall = z.Sim.placeObject('coaster_steel', 20, 35, 0);
+  assert.equal(z.Coaster.buildTrack(loopRoute).ok, true);
+  const stallTid = z.state.coaster.trains[0].id;
+  for (let step = 0; step < 100; step++) {
+    z.Sim._step(0.1);
+    if (z.Coaster.trainInfo(stallTid).state === 'run') break;
+  }
+  assert.equal(z.Coaster.trainInfo(stallTid).state, 'run');
+  // Raise unpowered tall hill on north straight while train is running East
+  for (let h = 0; h < 5; h++) assert.equal(z.Coaster.changeHeight([tidx(22, 31), tidx(21, 31), tidx(20, 31)], 1).ok, true);
+  assert.equal(z.Coaster.stationInfo(stStall.id).energyOk, false);
+  let sawRollback = false, sawWinchBack = false, sawClimbDecel = false;
+  let lastClimbSpd = null;
+  for (let step = 0; step < 200; step++) {
+    z.Sim._step(0.1);
+    const ti = z.Coaster.trainInfo(stallTid);
+    if (ti.state === 'run' && ti.line) {
+      const idx = Math.floor((ti.train.s / ti.line.totalLen) * ti.line.nS) % ti.line.nS;
+      if (ti.line.avgTy[idx] > 0.05 && ti.speed > 0) {
+        if (lastClimbSpd !== null && ti.speed < lastClimbSpd - 0.1) sawClimbDecel = true;
+        lastClimbSpd = ti.speed;
+      }
+    }
+    if (ti.speed < -0.1) sawRollback = true;
+    if (sawRollback && ti.state === 'dwell') { sawWinchBack = true; break; }
+  }
+  assert.equal(sawClimbDecel, true, 'Train must decelerate while climbing an unpowered hill');
+  assert.equal(sawRollback, true, 'Train on unpowered hill must decelerate and roll backward under gravity rather than climbing at constant speed');
+  assert.equal(sawWinchBack, true, 'Stalled train should winch back to station after pause');
 });
 
 test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdowns + mechanic repair work', () => {
@@ -2919,12 +3033,25 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
     tidx(19, 33), tidx(19, 34), tidx(19, 35), tidx(20, 35)
   ];
   assert.equal(z.Coaster.buildTrack(route).ok, true);
-  assert.equal(z.Coaster.placeSpecial([tidx(24, 34)], 2).ok, true); // Launch Boost on straight tile to power through Loop & Corkscrew
+  assert.equal(z.Coaster.placeSpecial([tidx(24, 34)], 2).ok, true); // Launch Boost on straight tile to power through Loops & Corkscrews
   assert.equal(z.Coaster.placeSpecial([tidx(24, 33)], 1).ok, true); // Chain Lift Hill (verifies animated 3D chain links)
+  assert.equal(z.Coaster.placeSpecial([tidx(23, 32)], 6).ok, true); // Large Loop-de-Loop
   assert.equal(z.Coaster.placeSpecial([tidx(22, 32)], 4).ok, true); // Loop-de-Loop
+  assert.equal(z.Coaster.placeSpecial([tidx(21, 32)], 7).ok, true); // Large Corkscrew
   assert.equal(z.Coaster.placeSpecial([tidx(20, 32)], 5).ok, true); // Corkscrew
 
-  // Render frames + first-person Ride Along camera
+  // Render frames + verify 3D track geometry reaches Large Loop height (>= 10m) + first-person Ride Along camera
+  z.CoasterWorld.frame(0.016, 0.016);
+  let maxTrackY = 0;
+  root.traverse(obj => {
+    if (obj.isMesh && obj.geometry && obj.geometry.attributes && obj.geometry.attributes.position) {
+      obj.geometry.computeBoundingBox();
+      if (obj.geometry.boundingBox && obj.geometry.boundingBox.max.y > maxTrackY) {
+        maxTrackY = obj.geometry.boundingBox.max.y;
+      }
+    }
+  });
+  assert.ok(maxTrackY >= 10.0, `Expected 3D track geometry with Large Loop-de-Loop to reach >= 10m, got ${maxTrackY}`);
   const trainId = z.state.coaster.trains[0].id;
   assert.equal(z.CoasterWorld.rideAlong(trainId), true);
   const camera = new THREE.PerspectiveCamera(45, 1.5, 0.1, 500);

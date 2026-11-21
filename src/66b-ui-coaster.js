@@ -140,10 +140,17 @@
       }
     } else {
       // Strictly inline exterior snap: only snap if rt[0] is the exact inline tile in front of endF or endB!
+      // Skip if rt[1] is already inside that station (player is dragging INTO the station).
       for (var s = 0; s < X.stations.length; s++) {
         var stA = X.stations[s];
-        if (rt[0] === stepTile(stA.endF, stA.fd)) { rt.unshift(stA.endF); break; }
-        if (rt[0] === stepTile(stA.endB, stA.bd)) { rt.unshift(stA.endB); break; }
+        if (rt[0] === stepTile(stA.endF, stA.fd)) {
+          if (!(rt.length >= 2 && X.stAt[rt[1]] === s)) rt.unshift(stA.endF);
+          break;
+        }
+        if (rt[0] === stepTile(stA.endB, stA.bd)) {
+          if (!(rt.length >= 2 && X.stAt[rt[1]] === s)) rt.unshift(stA.endB);
+          break;
+        }
       }
     }
 
@@ -171,8 +178,14 @@
     } else {
       for (var s2 = 0; s2 < X.stations.length; s2++) {
         var stB = X.stations[s2];
-        if (lastT === stepTile(stB.endF, stB.fd) && rt[0] !== stB.endF) { rt.push(stB.endF); break; }
-        if (lastT === stepTile(stB.endB, stB.bd) && rt[0] !== stB.endB) { rt.push(stB.endB); break; }
+        if (lastT === stepTile(stB.endF, stB.fd) && rt[0] !== stB.endF) {
+          if (!(rt.length >= 2 && X.stAt[rt[rt.length - 2]] === s2)) rt.push(stB.endF);
+          break;
+        }
+        if (lastT === stepTile(stB.endB, stB.bd) && rt[0] !== stB.endB) {
+          if (!(rt.length >= 2 && X.stAt[rt[rt.length - 2]] === s2)) rt.push(stB.endB);
+          break;
+        }
       }
     }
     return rt;
@@ -389,7 +402,7 @@
             }
           }
         }
-        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
+        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.hasBad, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
         if (key === lastKey) return true;
         lastKey = key;
         syncPrice();
@@ -401,7 +414,7 @@
           statusEl.appendChild(h('ul.issues', h('li.ok', { text: info.paused ? 'Paused — closed to guests' : 'Circuit complete & running!' })));
         } else if (info.branch) {
           statusEl.appendChild(kit.issuesList(['Track cannot branch or cross — remove extra branches']));
-        } else if (info.loop && !info.energyOk && info.stallReason) {
+        } else if (info.loop && (info.hasBad || !info.energyOk) && info.stallReason) {
           statusEl.appendChild(kit.issuesList([info.stallReason]));
         } else {
           statusEl.appendChild(kit.issuesList(['Incomplete circuit — drag track from the green station arrow around in a loop to the amber arrow']));

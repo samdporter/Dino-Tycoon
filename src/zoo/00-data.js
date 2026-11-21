@@ -922,7 +922,7 @@ window.Z.DATA = {
         trackCost: 60, waterExtra: 50, trainCost: 4400, carCost: 900, trainUpkeep: 48, carUpkeep: 10,
         minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 12,
         baseSpeed: 10.5, maxSpeed: 21.0, excMul: 1.3,
-        allowedSpecs: [1, 2, 3, 4, 5],
+        allowedSpecs: [1, 2, 3, 4, 5, 6, 7],
         colors: { rail: 0xd93838, tie: 0x354352, support: 0xcfd6de, car: 0x2574c4, accent: 0xffd24c, station: 0x34465a, roof: 0xd93838 }
       },
       hyper: {
@@ -930,7 +930,7 @@ window.Z.DATA = {
         trackCost: 80, waterExtra: 55, trainCost: 5800, carCost: 1150, trainUpkeep: 60, carUpkeep: 12,
         minCars: 2, maxCars: 6, maxTrains: 3, capacity: 4, maxHeight: 18,
         baseSpeed: 12.0, maxSpeed: 25.0, excMul: 1.5,
-        allowedSpecs: [1, 2, 3, 4, 5],
+        allowedSpecs: [1, 2, 3, 4, 5, 6, 7],
         colors: { rail: 0x9b4dff, tie: 0x3a205c, support: 0xe6c15c, car: 0x6f2dbd, accent: 0x56f0d0, station: 0x4d267a, roof: 0xd4a438 }
       }
     },
@@ -939,7 +939,9 @@ window.Z.DATA = {
       { id: 2, key: "boost", name: "Launch Boost", emoji: "⚡", cost: 180, star: 2, excitement: 0.9, intensity: 0.7, info: "High-speed launch pads that rocket trains down straight track. Requires Mine, Steel or Hyper coaster." },
       { id: 3, key: "splash", name: "Water Splash", emoji: "💦", cost: 160, star: 2, excitement: 0.85, intensity: 0.4, info: "Splashdown water trough that sprays guests as the train zooms through. Bonus excitement on Log Flumes!" },
       { id: 4, key: "loop", name: "Loop-de-Loop", emoji: "➿", cost: 450, star: 3, excitement: 1.65, intensity: 1.4, info: "Full 360° vertical inversion loop on straight track. Requires Steel or Hyper coaster." },
-      { id: 5, key: "corkscrew", name: "Corkscrew", emoji: "🌀", cost: 520, star: 3, excitement: 1.85, intensity: 1.6, info: "Twisting 360° barrel-roll inversion on straight track. Requires Steel or Hyper coaster." }
+      { id: 5, key: "corkscrew", name: "Corkscrew", emoji: "🌀", cost: 520, star: 3, excitement: 1.85, intensity: 1.6, info: "Twisting 360° barrel-roll inversion on straight track. Requires Steel or Hyper coaster." },
+      { id: 6, key: "loop_large", name: "Large Loop-de-Loop", emoji: "🎡", cost: 850, star: 3, excitement: 2.35, intensity: 1.95, info: "Massive 360° vertical clothoid loop towering over straight track. Requires Steel or Hyper coaster." },
+      { id: 7, key: "corkscrew_large", name: "Large Corkscrew", emoji: "🌪️", cost: 960, star: 3, excitement: 2.5, intensity: 2.1, info: "Sweeping grand 360° helical barrel-roll inversion along straight track. Requires Steel or Hyper coaster." }
     ]
   },
 

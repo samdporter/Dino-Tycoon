@@ -22,13 +22,14 @@
   // 4-bit orthogonal connection masks: 1=N(-z), 2=E(+x), 4=S(+z), 8=W(-x)
   var DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0], BIT = [1, 2, 4, 8], OPP = [4, 8, 1, 2];
 
-  // Physics constants: gravitational acceleration, rolling friction, air drag, station push & chain speed
-  var GRAV = 15.0;          // m/s^2 along track slope
-  var FRIC_ACCEL = 0.42;    // rolling friction deceleration (m/s^2) — stops unpowered flat trains if track is too long (>18 tiles)
-  var AIR_DRAG = 0.0018;    // aerodynamic drag coefficient (v^2)
-  var STATION_PUSH = 6.5;   // initial dispatch push leaving station (m/s) — max climb v^2/(2g) = 1.4m < 1.6m (1 hill step), so ANY hill requires a Chain Lift or Boost!
-  var CHAIN_SPEED = 6.2;    // motorized chain lift climb speed (m/s)
-  var BOOST_ACCEL = 26.0;   // launch boost acceleration (m/s^2)
+  // Physics constants: gravitational acceleration, rolling/curve friction, air drag, station push, chain speed & boost
+  var GRAV = 18.0;          // m/s^2 along track slope
+  var FRIC_ACCEL = 0.22;    // base rolling resistance (m/s^2)
+  var CURVE_DRAG = 0.28;    // extra flange/lateral-G friction in horizontal turns
+  var AIR_DRAG = 0.0018;    // quadratic aerodynamic drag coefficient (v^2)
+  var CHAIN_SPEED = 4.2;    // deliberate, steady mechanical chain-lift climb speed (m/s)
+  var STATION_PUSH = 5.4;   // modest station dispatch speed (m/s)
+  var BOOST_ACCEL = 24.0;   // launch boost linear thrust (m/s^2)
 
   // Derived graph + runtime train state (never serialized)
   var X = emptyX();
@@ -182,72 +183,96 @@
     return [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
   }
 
+  // Unified per-step physics for both circuit energy simulation and live train stepping
+  function stepCoasterPhysics(v, ds, dt, ty, sp, isLift, curv, td, poweredCircuit) {
+    var dragMag = FRIC_ACCEL + CURVE_DRAG * (curv || 0) + AIR_DRAG * v * v;
+    var signV = v >= 0 ? 1 : -1;
+    var aDrag = -signV * dragMag;
+
+    if (isLift === 1 && sp <= 1) {
+      // Chain Lift: ratchet freely if faster than chain, otherwise motor pulls steadily at CHAIN_SPEED
+      if (v > CHAIN_SPEED) {
+        var v2c = v * v + 2 * (-GRAV * ty + aDrag) * ds;
+        v = Math.max(CHAIN_SPEED, v2c > 0 ? Math.sqrt(v2c) : CHAIN_SPEED);
+      } else {
+        v = Math.min(CHAIN_SPEED, Math.max(1.8, v) + 7.5 * dt);
+      }
+    } else if (sp === 2) {
+      // Launch Boost linear thrust
+      var v2b = v * v + 2 * (BOOST_ACCEL - GRAV * ty + aDrag) * ds;
+      v = Math.min(td.maxSpeed * 1.15, Math.sqrt(Math.max(0, v2b)));
+    } else if (sp === 3) {
+      // Water Splash hydrodynamic braking scoop
+      var splashDrag = v > 3.8 ? (3.5 + 0.08 * v * v) : 0.35;
+      var v2s = v * v + 2 * (-GRAV * ty - splashDrag) * ds;
+      v = v2s > 0 ? Math.sqrt(v2s) : 0;
+    } else if (sp >= 4 && sp <= 7) {
+      // Inversions (Loop-de-Loop 4, Corkscrew 5, Large Loop 6, Large Corkscrew 7)
+      var Rinv = sp === 6 ? 4.5 : sp === 7 ? 2.45 : sp === 4 ? 2.4 : 1.2;
+      if (!poweredCircuit) {
+        var v2u = v * v + 2 * (-GRAV * ty + aDrag) * ds;
+        v = v2u > 0 ? Math.sqrt(v2u) : 0;
+      } else {
+        var aGrav = ty > 0
+          ? -Math.max(0.55, (0.32 * v * v) / Rinv) * ty
+          : -(GRAV * 0.55) * ty;
+        var v2i = v * v + 2 * (aGrav + aDrag * 0.45) * ds;
+        v = v2i > 0 ? Math.sqrt(v2i) : 0;
+      }
+    } else {
+      // Normal Track / Unpowered Hills & Drops: pure Newtonian potential exchange + drag
+      var aNet = -GRAV * ty + aDrag;
+      if (v > 0.6 && ds > 0) {
+        var v2n = v * v + 2 * aNet * ds;
+        v = v2n > 0 ? Math.sqrt(v2n) : (v + aNet * dt);
+      } else {
+        v = v + aNet * dt;
+      }
+    }
+
+    return Math.min(v, td.maxSpeed * 1.18);
+  }
+
   // Simulate gravitational potential energy + rolling friction/air drag + chain lift/boost around a closed circuit
-  function simulateCircuit(pxA, pyA, pzA, tyA, spA, nS, totalLen, stMidS, td, nodes, stLen) {
+  function simulateCircuit(pxA, pyA, pzA, tyA, spA, liftA, avgTyA, curvA, nS, totalLen, stMidS, td, nodes, stLen) {
     if (nS < 4 || totalLen <= 1) return { ok: false, peakSpeed: 0, minSpeed: 0, reason: 'Track is too short' };
     var ds = totalLen / nS;
     var startIdx = Math.floor((stMidS / totalLen) * nS) % nS;
     var y0 = pyA[startIdx];
     var v = STATION_PUSH;
     var peakV = v, minV = v;
-    var hasHill = false, liftActive = false, seenAnyLift = false, seenAnyBoost = false;
+    var hasHill = false, seenAnyLift = false, seenAnyBoost = false;
 
     for (var k = 0; k < nS; k++) {
-      if (spA[k] === 1) seenAnyLift = true;
+      if (spA[k] === 1 || liftA[k]) seenAnyLift = true;
       if (spA[k] === 2) seenAnyBoost = true;
     }
+    var poweredCircuit = seenAnyLift || seenAnyBoost;
 
     // Specific kinetic + potential energy simulation around the loop from station departure back to station arrival
     for (var step = 0; step < nS; step++) {
       var i = (startIdx + step) % nS;
       var sp = spA[i];
-      var ty = tyA[i]; // sin(pitch) = dy/ds
+      var isLift = liftA[i];
+      var ty = avgTyA[i];
       var hRel = Math.max(0, pyA[i] - y0);
 
       if (hRel > 1.25) hasHill = true;
-      // Chain lift engages on the climb once a chain lift tile is reached (and carries through the connected uphill ramp to its crest)
-      if (sp === 1) liftActive = true;
-      else if (ty < -0.05) liftActive = false; // disengage chain at the hill crest once dropping
 
-      var aGrav = -GRAV * ty;
-      var aDrag = -(FRIC_ACCEL + AIR_DRAG * v * v);
-      var aNet = aGrav + aDrag;
+      v = stepCoasterPhysics(v, ds, ds / Math.max(v, 1.0), ty, sp, isLift, curvA[i], td, poweredCircuit);
+      if (isLift && sp <= 1 && v < CHAIN_SPEED) v = CHAIN_SPEED;
 
-      if (sp === 1 || (liftActive && ty > -0.02)) {
-        // Motorized Chain Lift pulls train steadily up the climb at CHAIN_SPEED, storing gravitational potential energy g*h!
-        v = Math.max(v, CHAIN_SPEED);
-      } else if (sp === 2) {
-        // Launch Boost injects kinetic energy
-        var v2b = v * v + 2 * (BOOST_ACCEL + aGrav) * ds;
-        v = Math.min(td.maxSpeed * 1.15, Math.sqrt(Math.max(0, v2b)));
-      } else if (sp === 3) {
-        // Water Splash drag
-        var v2s = v * v + 2 * (aNet - 2.0) * ds;
-        v = v2s > 0 ? Math.sqrt(v2s) : 0;
-      } else if ((sp === 4 || sp === 5) && (seenAnyLift || seenAnyBoost)) {
-        // Inversions convert speed & gravity around the loop; require sufficient entry speed (>= 7.5 m/s) from a prior hill drop or boost
-        var v2l = v * v + 2 * (aGrav * 0.55 + aDrag * 0.5) * ds;
-        v = v2l > 0 ? Math.sqrt(v2l) : 0;
-      } else {
-        // Pure gravitational potential energy exchange (-g * dy) minus rolling friction & air drag!
-        // Note: when climbing without an active chain lift, v^2 drops by 2*g*dh + 2*aDrag*ds; when dropping, v^2 increases by 2*g*|dh|!
-        var dragScale = (seenAnyLift || seenAnyBoost) ? 0.45 : 1.0;
-        var v2 = v * v + 2 * (aGrav + aDrag * dragScale) * ds;
-        v = v2 > 0 ? Math.sqrt(v2) : 0;
-      }
-
-      v = Math.min(v, td.maxSpeed * 1.18);
       if (v > peakV) peakV = v;
       if (v < minV) minV = v;
 
       if (v <= 0.45) {
         var reason;
-        if (hasHill && !seenAnyLift && !seenAnyBoost) {
-          reason = 'Train stalls climbing the hill! Stamp a Chain Lift Hill (⛓️) on the uphill track (or add a Launch Boost).';
-        } else if (ty > 0.06 && !liftActive) {
-          reason = 'Train stalls climbing a hill! Stamp a Chain Lift Hill (⛓️) on the uphill slope or make your first lift hill taller.';
-        } else if (sp === 4 || sp === 5) {
+        if (sp >= 4 && sp <= 7) {
           reason = 'Train stalls inside the loop! Build a taller hill drop with a Chain Lift or add a Launch Boost before the loop.';
+        } else if (hasHill && !seenAnyLift && !seenAnyBoost) {
+          reason = 'Train stalls climbing the hill! Stamp a Chain Lift Hill (⛓️) on the uphill track (or add a Launch Boost).';
+        } else if (ty > 0.06 && !isLift) {
+          reason = 'Train stalls climbing a hill! Stamp a Chain Lift Hill (⛓️) on the uphill slope or make your first lift hill taller.';
         } else if (hasHill) {
           reason = 'Train loses momentum before finishing the circuit! Make your first Chain Lift hill taller or add a Launch Boost.';
         } else {
@@ -304,13 +329,13 @@
       }
     }
     // Node-level hill crest/valley smoothing on non-station nodes
-    for (var spass = 0; spass < 2; spass++) {
+    for (var spass = 0; spass < 1; spass++) {
       var h2 = h.slice();
       for (k = 0; k < m; k++) {
         if (x.stAt[nodes[k]] >= 0) continue;
         var p1 = (k - 1 + m) % m, n1 = (k + 1) % m;
         if (!loop && (k === 0 || k === m - 1)) continue;
-        h2[k] = Math.max(h[k] * 0.64 + (h[p1] + h[n1]) * 0.18, cmax(nodes[k]) + CD.clearance * 0.85);
+        h2[k] = Math.max(h[k] * 0.76 + (h[p1] + h[n1]) * 0.12, cmax(nodes[k]) + CD.clearance * 0.85);
       }
       h = h2;
     }
@@ -326,10 +351,10 @@
       var plen = Math.sqrt(pdx * pdx + pdz * pdz) || 1;
       var prx = -(pdz / plen), prz = pdx / plen;
       if (okBase && (span >= CD.prefSpan - 1 || k === m - 1 || (elev[tk] || 0) >= 1 || (spec[tk] || 0) >= 4)) {
-        pylons.push({ t: tk, x: C.cxOf(tk), z: C.czOf(tk), rx: prx, rz: prz, yTop: h[k], yBot: Math.min(cmean(tk) - 0.3, h[k] - 0.5) });
+        pylons.push({ t: tk, x: C.cxOf(tk), z: C.czOf(tk), rx: prx, rz: prz, yTop: h[k], yBot: Math.min(cmean(tk) - 0.3, h[k] - 0.5), spec: spec[tk] || 0 });
         span = 0;
       } else if (okBase && span >= CD.maxSpan - 1) {
-        pylons.push({ t: tk, x: C.cxOf(tk), z: C.czOf(tk), rx: prx, rz: prz, yTop: h[k], yBot: Math.min(cmean(tk) - 0.3, h[k] - 0.5) });
+        pylons.push({ t: tk, x: C.cxOf(tk), z: C.czOf(tk), rx: prx, rz: prz, yTop: h[k], yBot: Math.min(cmean(tk) - 0.3, h[k] - 0.5), spec: spec[tk] || 0 });
         span = 0;
       } else {
         span++;
@@ -337,9 +362,28 @@
       }
     }
 
+    // Node-level Chain Lift active ramp: carries a chain lift up its immediately connected uphill climb to the crest
+    var nodeLift = new Uint8Array(m);
+    for (k = 0; k < m; k++) {
+      if (x.stAt[nodes[k]] < 0 && spec[nodes[k]] === 1) nodeLift[k] = 1;
+    }
+    for (k = 0; k < m; k++) {
+      if (spec[nodes[k]] !== 1) continue;
+      for (var step = 1; step <= 3; step++) {
+        if (!loop && k + step >= m) break;
+        var nkLift = (k + step) % m;
+        var pkLift = (nkLift - 1 + m) % m;
+        if (x.stAt[nodes[nkLift]] < 0 && (spec[nodes[nkLift]] || 0) === 0 && h[nkLift] > h[pkLift] + 0.03) {
+          nodeLift[nkLift] = 1;
+        } else {
+          break;
+        }
+      }
+    }
+
     // 3. Build 3D control points with Bezier corners + parametric Loops & Corkscrews
-    var pts = []; // { x, y, z, spec, ux, uy, uz, hasUp, st }
-    var specsCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    var pts = []; // { x, y, z, spec, ux, uy, uz, hasUp, st, lift }
+    var specsCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
     var maxH = 0, totalDrop = 0;
 
     function pushPt(pt) {
@@ -363,6 +407,7 @@
 
       var spc = isSt ? 0 : (spec[tc] || 0);
       if (spc && specsCount[spc] !== undefined) specsCount[spc]++;
+      var isLiftNode = nodeLift[k] ? 1 : 0;
 
       // Open line endpoints: extend out to the tile edge if only 1 neighbor, or tile center
       if (hasPrev && hasNext) {
@@ -378,52 +423,61 @@
               x: iu * iu * m1x + 2 * iu * u * cx + u * u * m2x,
               y: iu * iu * m1h + 2 * iu * u * hc + u * u * m2h,
               z: iu * iu * m1z + 2 * iu * u * cz + u * u * m2z,
-              spec: spc, hasUp: false, st: isSt
+              spec: spc, hasUp: false, st: isSt, lift: isLiftNode
             });
           }
           continue;
         }
-        // Straight tile: check for Loop-de-Loop (4) or Corkscrew (5)
-        if (spc === 4 || spc === 5) {
+        // Straight tile: check for Loop-de-Loop (4), Corkscrew (5), Large Loop-de-Loop (6), or Large Corkscrew (7)
+        if (spc >= 4 && spc <= 7) {
           var fl = Math.sqrt(d1x * d1x + d1z * d1z) || 1;
           var fx = d1x / fl, fz = d1z / fl;
           var rx = -fz, rz = fx;
-          var steps = spc === 4 ? 32 : 28;
-          var R = spc === 4 ? 2.4 : 1.15;
-          if (spc === 4) maxH = Math.max(maxH, gH + R * 2);
+          var steps = spc === 6 ? 52 : spc === 7 ? 48 : spc === 4 ? 34 : 30;
+          var R = spc === 6 ? 4.5 : spc === 7 ? 2.45 : spc === 4 ? 2.4 : 1.2;
+          maxH = Math.max(maxH, gH + R * 2);
           for (var j = 0; j <= steps; j++) {
             var th = (j / steps) * Math.PI * 2;
             var px, py, pz, ux, uy, uz;
-            if (spc === 4) {
+            if (spc === 4 || spc === 6) {
               var lin = -1.0 + 2.0 * (j / steps);
               var fwdOff = lin + R * Math.sin(th) * 0.85;
-              var latOff = 0.42 * Math.sin(th * 0.5);
+              var latOff = (spc === 6 ? 1.25 : 0.55) * ((th / Math.PI) - 1) * Math.sin(th * 0.5);
               px = cx + fx * fwdOff + rx * latOff;
               py = hc + R * (1 - Math.cos(th));
               pz = cz + fz * fwdOff + rz * latOff;
               var nu = vecNorm(-fx * Math.sin(th), Math.cos(th), -fz * Math.sin(th));
               ux = nu[0]; uy = nu[1]; uz = nu[2];
-            } else {
+            } else if (spc === 5) {
               var lin2 = -1.0 + 2.0 * (j / steps);
               px = cx + fx * lin2 + rx * (R * Math.sin(th));
               py = hc + R * (1 - Math.cos(th));
               pz = cz + fz * lin2 + rz * (R * Math.sin(th));
               var nu2 = vecNorm(-rx * Math.sin(th), Math.cos(th), -rz * Math.sin(th));
               ux = nu2[0]; uy = nu2[1]; uz = nu2[2];
+            } else {
+              var lin3 = -1.0 + 2.0 * (j / steps);
+              var fwdC = lin3 + 1.55 * Math.sin(th);
+              var latC = R * Math.sin(th) + 0.85 * ((th / Math.PI) - 1) * Math.sin(th * 0.5);
+              px = cx + fx * fwdC + rx * latC;
+              py = hc + R * (1 - Math.cos(th));
+              pz = cz + fz * fwdC + rz * latC;
+              var nu3 = vecNorm(-(fx * 0.42 + rx * 0.91) * Math.sin(th), Math.cos(th), -(fz * 0.42 + rz * 0.91) * Math.sin(th));
+              ux = nu3[0]; uy = nu3[1]; uz = nu3[2];
             }
-            pushPt({ x: px, y: py, z: pz, spec: spc, ux: ux, uy: uy, uz: uz, hasUp: true, st: false });
+            pushPt({ x: px, y: py, z: pz, spec: spc, ux: ux, uy: uy, uz: uz, hasUp: true, st: false, lift: 0 });
           }
           continue;
         }
         // Subdivide straight segments at entry midpoint, center, and exit midpoint so vertical hills curve smoothly!
         var sm1x = (C.cxOf(tp) + cx) * 0.5, sm1z = (C.czOf(tp) + cz) * 0.5, sm1h = (h[prevK] + hc) * 0.5;
         var sm2x = (cx + C.cxOf(tn)) * 0.5, sm2z = (cz + C.czOf(tn)) * 0.5, sm2h = (hc + h[nextK]) * 0.5;
-        pushPt({ x: sm1x, y: sm1h, z: sm1z, spec: spc, hasUp: false, st: isSt });
-        pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt });
-        pushPt({ x: sm2x, y: sm2h, z: sm2z, spec: spc, hasUp: false, st: isSt });
+        pushPt({ x: sm1x, y: sm1h, z: sm1z, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
+        pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
+        pushPt({ x: sm2x, y: sm2h, z: sm2z, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
         continue;
       }
-      pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt });
+      pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
     }
 
     // 4. Resample uniformly along arc length at fine resolution (0.36m) for silky smooth curves & hills
@@ -444,6 +498,7 @@
     var txA = new Float32Array(nS), tyA = new Float32Array(nS), tzA = new Float32Array(nS);
     var uxA = new Float32Array(nS), uyA = new Float32Array(nS), uzA = new Float32Array(nS);
     var spA = new Uint8Array(nS);
+    var liftA = new Uint8Array(nS);
     var hasUpA = new Uint8Array(nS);
     var stSampleA = new Uint8Array(nS);
 
@@ -458,18 +513,20 @@
       pyA[k] = a0.y + (a1.y - a0.y) * f;
       pzA[k] = a0.z + (a1.z - a0.z) * f;
       spA[k] = f < 0.5 ? a0.spec : a1.spec;
+      liftA[k] = (f < 0.5 ? a0.lift : a1.lift) ? 1 : 0;
+      if (spA[k] >= 2) liftA[k] = 0;
       stSampleA[k] = (a0.st || a1.st) ? 1 : 0;
       if (a0.hasUp || a1.hasUp) {
         var u0x = a0.hasUp ? a0.ux : 0, u0y = a0.hasUp ? a0.uy : 1, u0z = a0.hasUp ? a0.uz : 0;
         var u1x = a1.hasUp ? a1.ux : 0, u1y = a1.hasUp ? a1.uy : 1, u1z = a1.hasUp ? a1.uz : 0;
-        var nu3 = vecNorm(u0x + (u1x - u0x) * f, u0y + (u1y - u0y) * f, u0z + (u1z - u0z) * f);
-        uxA[k] = nu3[0]; uyA[k] = nu3[1]; uzA[k] = nu3[2];
+        var nu4 = vecNorm(u0x + (u1x - u0x) * f, u0y + (u1y - u0y) * f, u0z + (u1z - u0z) * f);
+        uxA[k] = nu4[0]; uyA[k] = nu4[1]; uzA[k] = nu4[2];
         hasUpA[k] = 1;
       }
     }
 
     // Smooth vertical profile (pyA) across samples (skipping station samples and loops/corkscrews) so hill crests and valleys are gracefully rounded
-    for (var vpass = 0; vpass < 3; vpass++) {
+    for (var vpass = 0; vpass < 2; vpass++) {
       var pyTmp = pyA.slice();
       for (k = 0; k < nS; k++) {
         if (stSampleA[k] || hasUpA[k]) continue;
@@ -497,6 +554,27 @@
         var dot = uxA[k] * tn3[0] + uyA[k] * tn3[1] + uzA[k] * tn3[2];
         var un2 = vecNorm(uxA[k] - dot * tn3[0], uyA[k] - dot * tn3[1], uzA[k] - dot * tn3[2]);
         uxA[k] = un2[0]; uyA[k] = un2[1]; uzA[k] = un2[2];
+      }
+    }
+
+    // Precompute train center-of-mass slope (avgTyA) and horizontal curvature (curvA)
+    var dsSample = totalLen / Math.max(1, nS);
+    var avgTyA = new Float32Array(nS), curvA = new Float32Array(nS);
+    for (k = 0; k < nS; k++) {
+      if (spA[k] >= 4) {
+        avgTyA[k] = tyA[k];
+        curvA[k] = 0;
+      } else {
+        var sumTy = 0;
+        for (var sd = -2; sd <= 2; sd++) {
+          var ks = loop ? (k + sd + nS) % nS : clamp(k + sd, 0, nS - 1);
+          sumTy += tyA[ks];
+        }
+        avgTyA[k] = sumTy * 0.2;
+        var kpc = loop ? (k - 1 + nS) % nS : Math.max(0, k - 1);
+        var knc = loop ? (k + 1) % nS : Math.min(nS - 1, k + 1);
+        var dtx = txA[knc] - txA[kpc], dtz = tzA[knc] - tzA[kpc];
+        curvA[k] = Math.min(1.5, Math.sqrt(dtx * dtx + dtz * dtz) / (2 * Math.max(0.2, dsSample)));
       }
     }
 
@@ -528,8 +606,16 @@
     var hasBad = Object.keys(bad).length > 0;
     var closedValid = !!(st && loop && !branch && !hasBad && trackTilesCount >= 4);
     var sim = closedValid
-      ? simulateCircuit(pxA, pyA, pzA, tyA, spA, nS, totalLen, stMidS, td, nodes, stTileLen)
-      : { ok: false, peakSpeed: 0, minSpeed: 0, reason: branch ? 'Track cannot branch or cross' : 'Drag track in a complete loop from one end of the station back to the other end' };
+      ? simulateCircuit(pxA, pyA, pzA, tyA, spA, liftA, avgTyA, curvA, nS, totalLen, stMidS, td, nodes, stTileLen)
+      : {
+          ok: false,
+          peakSpeed: 0,
+          minSpeed: 0,
+          stallSample: -1,
+          reason: branch ? 'Track cannot branch or cross'
+            : (loop && hasBad) ? 'No room for coaster supports under part of the track — clear obstacles under long spans'
+            : 'Drag track in a complete loop from one end of the station back to the other end'
+        };
 
     var specExc = 0, specInt = 0;
     for (var sid in specsCount) {
@@ -575,10 +661,15 @@
       loop: loop,
       branch: branch,
       bad: bad,
+      hasBad: hasBad,
       px: pxA, py: pyA, pz: pzA,
       tx: txA, ty: tyA, tz: tzA,
       ux: uxA, uy: uyA, uz: uzA,
       sSpec: spA,
+      sLift: liftA,
+      avgTy: avgTyA,
+      curv: curvA,
+      powered: !!(specsCount[1] || specsCount[2]),
       nS: nS,
       totalLen: totalLen,
       stMidS: stMidS,
@@ -756,6 +847,9 @@
     out.tx = t[0]; out.ty = t[1]; out.tz = t[2];
     out.ux = u[0]; out.uy = u[1]; out.uz = u[2];
     out.spec = L.sSpec[i0];
+    out.lift = L.sLift ? L.sLift[i0] : 0;
+    out.avgTy = L.avgTy ? L.avgTy[i0] : out.ty;
+    out.curv = L.curv ? L.curv[i0] : 0;
     out.s = s;
     return out;
   }
@@ -1557,74 +1651,83 @@
       return;
     }
 
-    // Running along closed loop with gravitational potential energy (-GRAV * sin(pitch)), rolling friction, air drag & specials
-    var pose = sample(L, rt.s);
-    var aGrav = -GRAV * pose.ty;
-    var signV = rt.v >= 0 ? 1 : -1;
-    var aDrag = -signV * (FRIC_ACCEL + AIR_DRAG * rt.v * rt.v);
-    var v = rt.v + (aGrav + aDrag) * dt;
+    // Running along closed loop with unified substepped physics (gravitational potential energy, drag, chain lift, boost & inversions)
+    var subSteps = 4, subDt = dt / subSteps;
+    var prevS = rt.s;
+    var peers = trainsOnStation(T.stationId);
+    var minGap = T.cars * (CD.carLen + CD.carGap) + 3.5;
 
-    if (pose.spec === 1) { // Motorized Chain Lift Hill
-      if (v < CHAIN_SPEED) v = Math.min(CHAIN_SPEED, Math.max(2.0, v) + 9.0 * dt);
-      rt.stalled = false;
-    } else if (pose.spec === 2) { // Launch Boost
-      v = Math.min(td.maxSpeed * 1.15, Math.max(4.0, v) + BOOST_ACCEL * dt);
-      rt.stalled = false;
-    } else if (pose.spec === 3) { // Water Splash
-      if (!rt.seenSplash) {
+    for (var ss = 0; ss < subSteps; ss++) {
+      var pose = sample(L, rt.s);
+      if (pose.spec === 3 && !rt.seenSplash) {
         rt.seenSplash = true;
         C.bus.emit('coasterSplash', { x: pose.x, y: pose.y, z: pose.z, trainId: T.id });
       }
-      v = Math.max(0, v - 2.5 * dt);
-    } else if (pose.spec === 4 || pose.spec === 5) { // Loop / Corkscrew
-      rt.seenLoop = true;
+      if (pose.spec >= 4 && pose.spec <= 7) rt.seenLoop = true;
+
+      var dsStep = Math.abs(rt.v) * subDt;
+      rt.v = stepCoasterPhysics(rt.v, dsStep, subDt, pose.avgTy, pose.spec, pose.lift, pose.curv, td, !!L.powered);
+
+      // Smoothly brake as the train enters the station platform approach before docking at L.stMidS
+      if (rt.leftStation && rt.v > 0) {
+        var distToSt = ((L.stMidS - rt.s) % L.totalLen + L.totalLen) % L.totalLen;
+        if (distToSt > 0 && distToSt < 6.5) {
+          var brakeTarget = Math.max(2.2, (distToSt / 6.5) * 6.0);
+          if (rt.v > brakeTarget) rt.v = Math.max(brakeTarget, rt.v - 18.0 * subDt);
+        }
+      }
+
+      if (rt.v <= 0.15) {
+        if (pose.avgTy > 0.015 && !pose.lift && pose.spec !== 2) {
+          // Unpowered uphill climb ran out of kinetic energy — roll backward naturally under gravity
+          rt.stalled = true;
+        } else if (L.energyOk && pose.avgTy <= 0.015) {
+          // Recover smoothly on flat or downhill track on a valid circuit
+          rt.v = Math.min(2.0, Math.max(0.4, rt.v) + 3.5 * subDt);
+          rt.stalled = false;
+        } else if (!L.energyOk) {
+          rt.stalled = true;
+        }
+      } else if (pose.lift || pose.spec === 2 || L.energyOk) {
+        rt.stalled = false;
+      }
+
+      // Prevent overtaking another train on the same coaster
+      for (var p = 0; p < peers.length; p++) {
+        var O = peers[p];
+        if (O.id === T.id) continue;
+        var ort = TR[O.id]; if (!ort) continue;
+        var gap = ((ort.s - rt.s) % L.totalLen + L.totalLen) % L.totalLen;
+        if (gap < minGap) {
+          rt.v = Math.min(rt.v, ort.v * 0.5);
+          if (gap < minGap * 0.75) rt.v = 0;
+        }
+      }
+
+      rt.s = ((rt.s + rt.v * subDt) % L.totalLen + L.totalLen) % L.totalLen;
     }
 
-    // Did the train run out of kinetic energy on a climb or an overly long unboosted track?
-    if (v <= 0.15) {
-      if (!L.energyOk) {
-        // Train physically stalls (and rolls back slightly if on an un-chained hill, then resets to station after a pause)
-        rt.stalled = true;
-        rt.v = T.v = pose.ty > 0.05 ? -1.5 : 0;
-        rt.stallT = (rt.stallT || 0) + dt;
-        if (rt.stallT > 4.0) {
-          // Winch train back to station safely
-          rt.stallT = 0; rt.stalled = false;
-          rt.s = T.s = L.stMidS; rt.v = T.v = 0;
-          rt.state = T.state = 'dwell'; rt.dwell = T.dwell = CD.dwell;
-          ejectAll(T, true);
-        } else {
-          rt.s = ((rt.s + rt.v * dt) % L.totalLen + L.totalLen) % L.totalLen;
-          T.s = rt.s;
-        }
+    if (rt.stalled) {
+      rt.stallT = (rt.stallT || 0) + dt;
+      if (rt.stallT > 4.0) {
+        rt.stallT = 0; rt.stalled = false;
+        rt.s = T.s = L.stMidS; rt.v = T.v = 0;
+        rt.state = T.state = 'dwell'; rt.dwell = T.dwell = CD.dwell;
+        ejectAll(T, true);
         placeRiders(T, L);
         return;
       }
-      v = 2.2;
-    }
-    rt.stallT = 0;
-    v = clamp(v, 0, td.maxSpeed * 1.18);
-
-    // Prevent overtaking another train on the same coaster
-    var peers = trainsOnStation(T.stationId);
-    for (var p = 0; p < peers.length; p++) {
-      var O = peers[p];
-      if (O.id === T.id) continue;
-      var ort = TR[O.id]; if (!ort) continue;
-      var gap = ((ort.s - rt.s) % L.totalLen + L.totalLen) % L.totalLen;
-      var minGap = T.cars * (CD.carLen + CD.carGap) + 3.5;
-      if (gap < minGap) { v = Math.min(v, ort.v * 0.5); if (gap < minGap * 0.75) v = 0; }
+    } else {
+      rt.stallT = 0;
     }
 
-    var prevS = rt.s;
-    rt.s = (rt.s + v * dt) % L.totalLen;
-    rt.v = T.v = v;
+    T.v = rt.v;
     T.s = rt.s;
 
     var distFromSt = Math.abs(rt.s - L.stMidS);
     if (distFromSt > 4.5 && distFromSt < L.totalLen - 4.5) rt.leftStation = true;
 
-    if (rt.leftStation) {
+    if (rt.leftStation && rt.v > 0) {
       var d0 = ((L.stMidS - prevS) % L.totalLen + L.totalLen) % L.totalLen;
       var d1 = ((rt.s - prevS) % L.totalLen + L.totalLen) % L.totalLen;
       if (d0 <= d1 + 0.05 && d0 < L.totalLen * 0.5) {
@@ -1762,6 +1865,7 @@
       stallReason: L ? L.stallReason : null,
       loop: !!(L && L.loop),
       branch: !!(L && L.branch),
+      hasBad: !!(L && L.hasBad),
       trackLen: L ? L.trackLen : 0,
       maxHeight: L ? L.maxHeight : 0,
       totalDrop: L ? L.totalDrop : 0,
