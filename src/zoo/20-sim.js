@@ -907,6 +907,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var t = x + y * N;
       if (S.terrain[t] === ti) continue;
       if (ti === WATER && (S.path[t] || (S.tileObj[t] && RT.oById.get(S.tileObj[t]) && RT.oById.get(S.tileObj[t]).type !== 'ice_floe'))) continue;
+      if (ti !== WATER && S.path[t] && D.paths[S.path[t] - 1].pontoon) continue;
       list.push(t); cost += D.terrain[ti].cost; n++;
       if (x < i0) i0 = x; if (y < j0) j0 = y; if (x > i1) i1 = x; if (y > j1) j1 = y;
     }
@@ -1229,7 +1230,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (W.path[t] !== op.nw) return 'The path has changed since, so this cannot be undone';
         if (op.old > 0) {
           if (W.occ[t]) return 'Something now stands on that tile';
-          if (W.terrain[t] === WATER) return 'That tile is now water';
+          if (W.terrain[t] === WATER && !D.paths[op.old - 1].pontoon) return 'That tile is now water';
           if (S.tileEnc[t]) return 'That tile is inside an enclosure now';
           if (slopeOfT(t, W.elev) > 2) return 'That ground is too steep now';
           var ti = t % N, tj = (t - ti) / N;
@@ -5171,6 +5172,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   };
 
   Z.boatsCtx = {
+    releaseClaims: releaseClaims,
     getS: function () { return S; },
     getRT: function () { return RT; },
     getN: function () { return N; },

@@ -232,7 +232,7 @@
     var N = C.getN(), from = s.ti, di = Math.abs((t % N) - (from % N)), dj = Math.abs(Math.floor(t / N) - Math.floor(from / N));
     if (di + dj <= 1) { s.hop = null; s.absY = null; return false; }
     var e = edges[from + '>' + t];
-    if (!e) { s.ti = t; s.x = C.cxOf(t); s.z = C.czOf(t); s.ri++; s.hop = null; return true; }
+    if (!e) { C.releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; s.x = C.cxOf(from); s.z = C.czOf(from); s.hop = null; s.absY = null; return true; }
     var tr = s.hop;
     if (!tr || tr.from !== from || tr.to !== t) {
       var pts;

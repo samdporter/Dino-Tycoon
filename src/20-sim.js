@@ -175,7 +175,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function rebuildNav() {
     var nb = RT.nb, pt = RT.pathTiles; pt.length = 0;
     var pp = RT.navP || (RT.navP = new Uint8Array(NN)), E = S.elev;
-    for (var q = 0; q < NN; q++) pp[q] = S.path[q] && slopeOfT(q, E) < 3 ? 1 : 0;   // cliff tiles are impassable
+    for (var q = 0; q < NN; q++) pp[q] = S.path[q] && (slopeOfT(q, E) < 3 || D.paths[S.path[q] - 1].pontoon) ? 1 : 0;   // cliff tiles are impassable
     for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) {
       var t = i + j * N, m = 0;
       if (pp[t]) {
@@ -967,6 +967,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (seaMask()[t]) continue;   // the open sea cannot be painted over
       if (ti === WATER && S.ditch[t]) continue;   // fill a ditch in before flooding it
       if (ti === WATER && (S.path[t] || (S.tileObj[t] && RT.oById.get(S.tileObj[t]) && RT.oById.get(S.tileObj[t]).type !== 'ice_floe'))) continue;
+      if (ti !== WATER && S.path[t] && D.paths[S.path[t] - 1].pontoon) continue;
       list.push(t); cost += D.terrain[ti].cost; n++;
       if (x < i0) i0 = x; if (y < j0) j0 = y; if (x > i1) i1 = x; if (y > j1) j1 = y;
     }
@@ -1318,7 +1319,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (W.path[t] !== op.nw) return 'The path has changed since, so this cannot be undone';
         if (op.old > 0) {
           if (W.occ[t]) return 'Something now stands on that tile';
-          if (W.terrain[t] === WATER && seaMask()[t]) return 'That tile is now sea';
+          if (W.terrain[t] === WATER && seaMask()[t] && !D.paths[op.old - 1].pontoon) return 'That tile is now sea';
           if (S.tileEnc[t]) return 'That tile is inside an enclosure now';
           if (slopeOfT(t, W.elev) > 2) return 'That ground is too steep now';
           var ti = t % N, tj = (t - ti) / N;
