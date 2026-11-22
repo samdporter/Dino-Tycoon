@@ -1,16 +1,34 @@
 name: Test game and saves
 on:
   push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  probe:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: |
+      - name: Simulation, storage and lifecycle tests
+        run: node --test tests/*.test.cjs
+      - name: HTTP server tests
+        run: python -m unittest discover -s tests -p test_server.py
+      - name: Install browser test dependencies
+        run: |
           python -m pip install -r tests/requirements.txt
-          python -m playwright install --with-deps chromium
-          which chromium chromium-browser google-chrome || true
-          python .github/ci-probe/fps.py "$PWD"
+          python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Browser tests
+        env:
+          TEST_BROWSER: ${{ matrix.browser }}
+        run: python -m pytest -q tests/test_browser.py

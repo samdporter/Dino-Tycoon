@@ -72,9 +72,9 @@ def browser(server, request):
         ini_engine = request.config.getini("junit_suite_name").lower()
         engine = (os.environ.get("TEST_BROWSER") or (ini_engine if ini_engine in ("chromium", "webkit", "firefox") else "chromium")).lower()
         browser_type = getattr(p, engine)
+        # Only use a system Chromium when asked: GitHub's Ubuntu runners ship /usr/bin/chromium,
+        # which renders far slower than Playwright's bundled build and made CI time out.
         executable = os.environ.get("CHROMIUM_EXECUTABLE_PATH") if engine == "chromium" else None
-        if not executable and engine == "chromium":
-            executable = shutil.which("chromium") or shutil.which("chromium-browser")
         kwargs = {"headless": True}
         if executable:
             kwargs["executable_path"] = executable
