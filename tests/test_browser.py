@@ -77,11 +77,14 @@ def browser(server, request):
         kwargs = {"headless": True}
         if executable:
             kwargs["executable_path"] = executable
-        if engine == "chromium" and (executable or os.environ.get("CI")):
+        if engine == "chromium" and executable:
             kwargs["args"] = ["--no-sandbox", "--enable-unsafe-swiftshader"]
         elif engine == "chromium":
-            # The headless shell blocks the main thread on WebGL on macOS; full Chromium in new headless mode does not.
+            # The headless shell blocks its main thread on WebGL frames (macOS hangs, CI times out under xdist);
+            # full Chromium in new headless mode does not.
             kwargs["channel"] = "chromium"
+            if os.environ.get("CI"):
+                kwargs["args"] = ["--no-sandbox", "--enable-unsafe-swiftshader"]
         b = browser_type.launch(**kwargs)
         yield b
         b.close()
@@ -1248,10 +1251,10 @@ def test_zoo_play_timer_app(browser, mobile):
         assert js(page, "Z.UI.PlayTimer.state().alertDismissed") is True
 
         # Reset (confirm two-step when >= 5s)
-        pop.get_by_role("button", name="Reset").click()
-        assert "Reset?" in pop.locator(".pt-actions button").nth(2).inner_text()
-        pop.get_by_role("button", name="Reset?").click()
-        assert js(page, "Z.UI.PlayTimer.elapsed() < 60") is True
+        # Both clicks in one evaluate: the confirm disarms after 3s, which a slow runner can exceed between Playwright clicks
+        armed = js(page, "(() => { const b = document.querySelectorAll('#timerpop .pt-actions button')[2]; b.click(); const t = b.innerText; b.click(); return t; })()")
+        assert "Reset?" in armed
+        assert js(page, "Z.UI.PlayTimer.elapsed() < 5") is True
 
         # Close via close button, then reopen and close via Escape key
         pop.get_by_role("button", name="Close play timer").click()
