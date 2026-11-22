@@ -218,6 +218,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var gc = RT.gateComps || [];
     for (var k = 0; k < gc.length; k++) RT.reachComp[gc[k]] = 1;
     if (Z.Monorail && Z.Monorail.markReachable) Z.Monorail.markReachable(RT.reachComp, RT.comp);
+    if (Z.Boats) Z.Boats.markReachable(RT.reachComp, RT.comp);   // boats package: guest piers join the paths on the same water
   }
   function isParkConnected(t) {
     if (t < 0 || t >= NN) return false;
@@ -229,7 +230,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var tc = toT >= 0 && toT < NN ? RT.comp[toT] : 0;
     if (!fc || !tc) return false;
     if (fc === tc) return true;
-    return !!(Z.Monorail && Z.Monorail.canReachComp && Z.Monorail.canReachComp(fc, tc, RT.comp));
+    return !!(Z.Monorail && Z.Monorail.canReachComp && Z.Monorail.canReachComp(fc, tc, RT.comp)) || !!(Z.Boats && Z.Boats.canReachComp(fc, tc));
   }
 
   function bfs(sources) {
@@ -320,7 +321,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // generic BFS route over path tiles (staff). pred(tile) -> bool. returns array of tiles (excluding start) or null
-  function findRoute(from, pred, maxDepth) {
+  function findRoute(from, pred, maxDepth, withinComp) {
     if (!S.path[from]) return null;
     if (pred(from)) return [];
     var st = ++RT.stampN, stamp = RT.stamp, q = RT.queue, prev = RT.prev, nb = RT.nb, h = 0, tl = 0;
@@ -336,7 +337,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (pred(n)) { found = n; h = tl; break; }
       }
     }
-    if (found < 0) return null;
+    if (found < 0) return Z.Boats && !withinComp ? Z.Boats.linkRoute(from, pred, function (f, p) { return findRoute(f, p, maxDepth, true); }) : null;   // boats package: staff cross between components over piers and helipads
     var route = [], c = found;
     while (c !== from) { route.push(c); c = prev[c]; }
     route.reverse();
@@ -909,6 +910,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       rebuildObjects();
       RT.fields = {};
       if (Z.Monorail && Z.Monorail.updateGraph) Z.Monorail.updateGraph();   // monorail graph before reach/facilities
+      if (Z.Boats) Z.Boats.updateGraph();   // boats package: water bodies and pier/helipad links before reach/facilities
       refreshReach();
       refreshFacilities();
       if (Z.Power) Z.Power.update();   // power package: nodes, generators, consumers, coverage (before moats and enclosures: pumps & electric fences read it)
@@ -1071,10 +1073,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var pid = PI_[pathId]; if (!pid) return fail('Unknown path type');
     if (!inMap(i, j)) return fail('Outside your land');
     if (Z.Realms && D.paths[pid - 1].walk) return fail('Use the Marine, Aviary or Tagging build tabs for that walkway');   // realms package
-    var t = i + j * N, bridge = Z.Moats ? Z.Moats.bridgeCheck(i, j) : null;   // moats package: a path over a ditch or fresh water is a bridge (max span, higher cost)
+    var pontoon = D.paths[pid - 1].pontoon;
+    if (pontoon && S.terrain[i + j * N] !== WATER) return fail('Pontoons float on water');
+    var t = i + j * N, bridge = Z.Moats && !pontoon ? Z.Moats.bridgeCheck(i, j) : null;   // moats package: a path over a ditch or fresh water is a bridge (max span, higher cost)
     if (bridge && bridge.msg) return fail(bridge.msg);
-    if (S.terrain[t] === WATER && !bridge) return fail('Needs flat dry land');
-    if (cliffT(t) && !bridge) return fail('Too steep \u2014 level the ground first');
+    if (S.terrain[t] === WATER && !bridge && !pontoon) return fail('Needs flat dry land');
+    if (cliffT(t) && !bridge && !pontoon) return fail('Too steep \u2014 level the ground first');
     if (S.tileObj[t]) return fail('Something is in the way');
     if (S.tileEnc[t]) return fail("Can't lay paths inside an enclosure");
     if (S.path[t] === pid) return fail('Already paved');
@@ -1185,6 +1189,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!footprintFlat(fp, def.realm === 'gallery' ? 3.2 : 1)) return fail('Too steep \u2014 level the ground first');
       if (inEnc) return fail("Buildings can't go inside an enclosure");
       if (!def.utility && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
+      if (def.boats && Z.Boats) { var bt = Z.Boats.placeCheck(type, fp); if (bt && bt.msg) return fail(bt.msg); }   // boats package: piers touch water, every pier and pad needs a path at its entrance
       if (def.mono && Z.Monorail) { var mn = Z.Monorail.placeCheck(type, fp); if (mn && mn.msg) return fail(mn.msg); if (mn && mn.warn) warn = mn.warn; }   // monorail package: a station needs a path at its entrance
       if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp, rot); if (cr) return fail(cr); }   // coaster package: buildings cannot overlap coaster track
       if (def.moat && Z.Moats) { var mc = Z.Moats.placeCheck(type, fp); if (mc && mc.msg) return fail(mc.msg); if (mc && mc.warn) warn = mc.warn; }   // moats package: pump beside water, ditch contact
@@ -1891,15 +1896,15 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     g.prettyE = 0.3; g.nbuy = 0; g.done = 0; g.strollNext = 0; g.idle = 0; g.gAge = 0; g.ix = g.x; g.iz = g.z; g.glide = 0; g.sx = g.x; g.sz = g.z; g.spot = 0; g.lm = 0; g.wat = 0;
   }
 
-  function spawnGuest(group, first) {
+  function spawnGuest(group, first, at) {   // at: arrive on this path tile (VIP helipad) instead of through the gate
     gxGrid();
-    var gi = GATE_I0 + (rng.chance(0.5) ? 1 : 0), t = gi + GATE_J * N;
-    if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
+    var gi = GATE_I0 + (rng.chance(0.5) ? 1 : 0), t = at === undefined ? gi + GATE_J * N : at;
+    if (!S.path[t]) { if (at !== undefined) return null; t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
     var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12), hr = gxHr();
     // spending money for the visit (after the ticket): varied, a few big spenders, a few tight wallets
     var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating);
     var g = {
-      id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: N * TILE + rng.range(0.3, 1.4),
+      id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: at === undefined ? N * TILE + rng.range(0.3, 1.4) : czOf(t) + rng.range(-0.5, 0.5),
       heading: PI, speed: 0, state: 'walk', hunger: rng.range(6, 38), thirst: rng.range(4, 36), bladder: rng.range(0, 34), energy: rng.range(72, 100),
       happiness: 70, money: Math.round(budget), thought: '', thoughtT: 0, seen: {}, group: group,
       ti: t, ni: t, px: cxOf(t), pz: czOf(t), lo: rng.range(-0.7, 0.7), lo2: rng.range(-0.5, 0.5), bs: rng.range(2.6, 3.4),
@@ -1907,11 +1912,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       stay: 60, pv: RT.pathVer, last: 0, bid: 0, fleeT: 0, nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0
     };
     g.px += g.lo * 0.5; g.pz = czOf(t);
-    var pay = S.ticketPrice;
+    var pay = at === undefined ? S.ticketPrice : 0;
     gxPlan(g, hr, pay);
     if (Z.News) Z.News.tagGuest(g);   // news package: thrill-seekers vs families
     S.guests.push(g); RT.gById.set(g.id, g);
-    earn(pay, 'tickets', g.x, N * TILE - 1);
+    if (at === undefined) earn(pay, 'tickets', g.x, N * TILE - 1);
     S.stats.guestsTotal++; S.stats.guestsToday = (S.stats.guestsToday || 0) + 1;
     if (!RT.groupLead.has(group)) RT.groupLead.set(group, g.id);
     bus.emit('guestAdded', g);
@@ -1922,6 +1927,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'ride' && g.sfv && Z.Safari) Z.Safari.release(g);   // safari package: step off the truck or boat
     else if (g.state === 'ride' && g.coasterTrain && Z.Coaster) Z.Coaster.release(g);   // coaster package: step off the train
     else if (g.state === 'ride' && g.rtr && Z.Monorail) Z.Monorail.release(g);   // monorail package: step off the train (alights at the nearest path)
+    if (g.state === 'boat' && Z.Boats) Z.Boats.release(g);   // boats package: leave the boat trip
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -1942,6 +1948,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'leave') return;
     releaseGuest(g);
     g.thoughtT = 0; g.tcool = 0; say(g, 'leaving');
+    if (g.vip && Z.Boats && Z.Boats.leaveByHeli(g)) return;   // boats package: VIPs fly home from the helipad
     var fx = getField('exit');
     if (fx && fx[g.ti] < INF) {
       g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
@@ -2063,6 +2070,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (t < 0) return false;
     var f = getField('t' + t);
     if (Z.Monorail && Z.Monorail.shortcut(g, t, e, f)) return true;   // monorail package: a long walk is replaced by a ride
+    if (Z.Boats && Z.Boats.shortcut(g, t, e, f)) return true;   // boats package: no walkable way, so take a boat
     if (!f || !(f[g.ti] < INF)) return false;
     g.gt = 'enc'; g.gid = e.id; g.dk = 't' + t; g.spot = t; g.ni = -1; g.gAge = 0; RT.gtarg[t]++;
     return true;
@@ -2080,6 +2088,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (gc) {
       if (Z.Monorail && Z.Monorail.reachableComps) reachMap = Z.Monorail.reachableComps(gc, RT.comp);
       else { reachMap = {}; reachMap[gc] = true; }
+      if (Z.Boats) Z.Boats.addReachable(gc, reachMap);   // boats package: components a guest pier serves
     }
     for (k = 0; k < encs.length; k++) {
       var e = encs[k], E = RT.encx[e.id], wt = 0;
@@ -2282,6 +2291,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var o = RT.oById.get(g.gid);
       if (!o) { g.gt = ''; return; }
       if (BD[o.type].safari && Z.Safari) { Z.Safari.arrive(g, o); return; }   // safari package: queue at the depot or jetty
+      if (BD[o.type].boats && Z.Boats) { Z.Boats.arrive(g, o); return; }   // boats package: board the boat or the helicopter
       if (BD[o.type].mono && Z.Monorail) { Z.Monorail.arrive(g, o); return; }   // monorail package: queue on the platform
       if (BD[o.type].coasterStation && Z.Coaster) { if (!Z.Coaster.arrive(g, o)) { g.gt = ''; g.dk = ''; } return; }   // coaster package: queue at the station
       var q = RT.bq[o.id] || (RT.bq[o.id] = { use: 0, q: [] }), def = BD[o.type];
@@ -2424,7 +2434,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function revalidateGuest(g) {
     g.pv = RT.pathVer;
     var t = tileOf(g.x, g.z);
-    if (g.gt === 'out' || g.state === 'sit' || g.state === 'ride') return;
+    if (g.gt === 'out' || g.state === 'sit' || g.state === 'ride' || g.state === 'boat') return;
     if (S.path[t]) { if (g.ti !== t && g.ni < 0) g.ti = t; if (g.ni >= 0 && !S.path[g.ni]) g.ni = -1; if (!S.path[g.ti]) g.ti = t; g.ni = g.ni >= 0 && S.path[g.ni] ? g.ni : -1; return; }
     // nearest path tile
     var i = t % N, j = (t - i) / N, best = -1, bd = 1e9;
@@ -2464,7 +2474,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.bladder > 60) pen += (g.bladder - 60) * 0.6;
     if (g.energy < 35) pen += (35 - g.energy) * 0.6;
     if (g.fun < 30) pen += (30 - g.fun) * 0.35;
-    var target = 44 + 22 * frac + 9 * g.prettyE + Math.min(6, (g.nsp || 0) * 1.2) + g.mood - pen;
+    var target = 44 + 22 * frac + 9 * g.prettyE + Math.min(6, (g.nsp || 0) * 1.2) + g.mood - pen - (g.vip ? D.boats.vip.demand : 0);   // boats package: VIPs expect more
     // guides nearby
     for (k = 0; k < RT.guides.length; k++) {
       var gd = RT.guides[k], dx = gd.x - g.x, dz = gd.z - g.z;
@@ -2486,6 +2496,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!anyCover || rng.chance(0.2)) g.stay = Math.min(g.stay, hr * rng.range(0.1, 0.7));
       }
     } else { g.wxd = 0; g.cov = 0; }
+    if (g.state === 'boat') return;   // boats package: aboard a boat or helicopter
     if (g.state === 'ride') {
       if (g.sfv) { if (Z.Safari) Z.Safari.rideTick(g, a); }
       else if (g.coasterTrain) { if (Z.Coaster) Z.Coaster.rideTick(g, a); }
@@ -2689,7 +2700,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length && k < nxt.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
-      if (s === 'ride') continue;   // monorail package: riders are up in the carriages
+      if (s === 'ride' || s === 'boat') continue;   // boats package: aboard a boat or helicopter; monorail package: riders are up in the carriages
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -3617,6 +3628,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
     var t = r[s.ri], tx = cxOf(t) + s.lo * (((t % N) & 1) ? 1 : -1), tz = czOf(t) + s.lo * 0.5;
+    var gap = Math.abs(t - s.ti); if (Z.Boats && gap > 1 && gap !== N && Z.Boats.staffJump(s, s.ti, t)) return false;   // boats package: a pier or helipad link is a hop between two path tiles
     var dx = tx - s.x, dz = tz - s.z, d = Math.sqrt(dx * dx + dz * dz), spd = staffSpeed(s), step = spd * dt;
     s.state = 'walk';
     if (d <= step + 0.01) { s.x = tx; s.z = tz; s.ti = t; s.ri++; s.speed = spd; }
@@ -3823,7 +3835,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function encReachesComp(e, c) {
     if (!c) return true;
-    for (var k = 0; k < e.viewTiles.length; k++) if (RT.comp[e.viewTiles[k]] === c) return true;
+    var linked = Z.Boats && Z.Boats.staffComps(c);   // boats package: components staff reach over piers and helipads
+    for (var k = 0; k < e.viewTiles.length; k++) if (RT.comp[e.viewTiles[k]] === c || (linked && linked[RT.comp[e.viewTiles[k]]])) return true;
     return false;
   }
 
@@ -3886,6 +3899,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function staffStep(s, dt) {
     if (s.type === 'scientist') { scientistStep(s, dt); return; }
+    if (Z.Boats && Z.Boats.staffTravelling(s)) return;   // boats package: aboard a boat or helicopter
     var tk = s.tk, a, enc, E;
     if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.speed = 0; s.state = 'idle'; s.task = 'Off sick'; return; }
     if (tk && s.type === 'security' && RT.escaped.length && (tk.k === 'patrol' || tk.k === 'tour')) { s.tk = null; tk = null; s.wt = 0; }
@@ -4719,6 +4733,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Monorail) Z.Monorail.step(dt);   // monorail package: trains, boarding, riders
     if (Z.Coaster) Z.Coaster.step(dt);   // coaster package: trains, boarding, riders, physics
     if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
+    if (Z.Boats) Z.Boats.step(dt);   // boats package: boat trips, helicopters, VIP arrivals
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
     separateAnimals(dt);
@@ -5427,7 +5442,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, fail: fail, okr: okr, dryOf: dryOf, say: say, plural: plural, lc: lc,
     jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, seaMask: seaMask, heightAt: heightAt, cliffT: cliffT,
     objFootprint: objFootprint, footprint: footprint, frontPathTiles: frontPathTiles, encById: encById, aDanger: aDanger, tileOf: tileOf, cxOf: cxOf, czOf: czOf, getField: getField, INF: INF,
-    startLeaving: startLeaving, gxPlace: gxPlace, gxHr: gxHr, objCentre: objCentre, removeGuest: removeGuest, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
+    startLeaving: startLeaving, spawnGuest: spawnGuest, gxPlace: gxPlace, gxHr: gxHr, objCentre: objCentre, removeGuest: removeGuest, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
     openNow: openNow, WX: function () { return WX; }, isUnlocked: function (k, id) { return isUnlocked(k, id); },
     enclosureCrowded: function (id) { var e = encById(id); return !!e && enclosureSpaceComfort(e, RT.encx[id]) < 1; },
     isParkConnected: isParkConnected, compOf: function (t) { return RT.comp[t]; }, gateComps: function () { return RT.gateComps; }, refreshConnectivity: refreshConnectivity
@@ -5886,6 +5901,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Moats) Z.Moats.afterLoad ? Z.Moats.afterLoad(true) : Z.Moats.update();   // moats package: fresh ditch/water state
     recomputeEnclosures();
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package
+    if (Z.Boats) Z.Boats.afterLoad();   // boats package
     if (Z.Coaster) Z.Coaster.afterLoad();   // coaster package
     if (Z.Realms) { Z.Realms.reset(); Z.Realms.update(); }   // realms package
     if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
@@ -5991,6 +6007,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < S.staff.length; k++) { var s = S.staff[k]; s.tk = null; s.route = null; s.ri = 0; s.wt = rng.next(); s.speed = 0; s.state = 'idle'; s.ti = tileOf(s.x, s.z); }
     if (Z.Monorail) Z.Monorail.afterLoad();   // monorail package: default fields of old saves, relink riders, derive the track graph
+    if (Z.Boats) Z.Boats.afterLoad();   // boats package: default fields of old saves, derive links
     if (Z.Coaster) Z.Coaster.afterLoad();   // coaster package: default fields of old saves, relink riders, derive the track graph
     if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
     if (Z.Safari) Z.Safari.afterLoad();   // safari package: riders relink, derived routes and zones (after realms and enclosures)

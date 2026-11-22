@@ -1096,6 +1096,31 @@ window.Z.DATA.donors = [
   D.guestThoughts.monorailQueue = ["Where is the monorail?", "I hope the train is not far off.", "Standing on a platform in the rain..."];
 })(window.Z.DATA);
 
+// ===== boats package (floating pontoons, guest and service piers, VIP and staff helipads) =====
+(function (D) {
+  D.boats = {
+    fare: 6, fareMax: 25, fareRef: 6,                      // default boat fare, slider maximum, fare guests consider "standard"
+    speed: 5, minTrip: 8,                                  // boat speed (units/s); shortest trip length counted (units)
+    airSpeed: 14, airAlt: 14,                              // staff helicopter hop: speed (units/s), cruising height
+    vip: { fee: 150, every: [50, 110], spend: 5, demand: 8, flyIn: 7, flyOut: 6 }   // arrival fee, seconds between arrivals (before rating), spending multiple, happiness they demand, rotor times
+  };
+  D.paths.push(
+    { id: 'pontoon', name: 'Floating pontoon', cost: 60, colour: '#b08a5a', speed: 1.0, pontoon: true, blurb: 'A floating deck. Goes on any water, fresh or sea, with no span limit.' }
+  );
+  D.buildings.push(
+    { id: 'guest_pier', name: 'Guest pier', emoji: '⛴️', cost: 3200, upkeep: 20, type: 'transport', price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 1, boats: 'guest',
+      info: 'A landing for guest boats. It must touch the shore with a path at its entrance. Piers on the same water carry guests between separate parts of the park.' },
+    { id: 'service_pier', name: 'Service pier', emoji: '🚤', cost: 2400, upkeep: 12, type: 'transport', price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 2, boats: 'service',
+      info: 'A staff-only landing. Keepers, vets, cleaners and mechanics use it to reach paths that cannot be walked to. Guests never use it.' },
+    { id: 'staff_helipad', name: 'Staff helipad', emoji: '🚁', cost: 4500, upkeep: 25, type: 'transport', price: 0, capacity: 0, w: 3, h: 3, satisfies: {}, star: 2, boats: 'staff',
+      info: 'A small pad for staff transfers. Any two staff helipads link their paths for staff, over land or water.' },
+    { id: 'vip_helipad', name: 'VIP helipad', emoji: '🚁', cost: 28000, upkeep: 180, type: 'transport', price: 0, capacity: 0, w: 5, h: 5, satisfies: {}, star: 3, boats: 'vip',
+      info: 'VIP guests fly in and out by helicopter, pay a large arrival fee, spend much more and expect more. The pad must have a path at its entrance.' }
+  );
+  D.guestThoughts.boat = ['What a lovely little boat trip!', 'Much nicer than walking round the lake.', 'I can see the whole shoreline from here.', 'Smooth sailing!'];
+  D.guestThoughts.vip = ['I expect better service for this price.', 'Is there anywhere quieter to view the animals?', 'The helicopter ride was the best part.'];
+})(window.Z.DATA);
+
 // ===== power & news package (power grid, electric fences, generators, mechanics, news stories and their consequences) =====
 (function (D) {
   D.power = {

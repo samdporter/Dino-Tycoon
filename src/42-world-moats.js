@@ -106,7 +106,7 @@
   // ---------------------------------------------------------------- bridges
   var runOf = new Int16Array(NN).fill(-1), runs = [];
   function isSpanTile(s, t) {
-    var pd = D.paths[s.path[t] - 1]; if (pd && pd.walk) return false;
+    var pd = D.paths[s.path[t] - 1]; if (pd && (pd.walk || pd.pontoon)) return false;
     if (s.ditch[t] > 0) return true;
     if (s.terrain[t] === WI()) {
       if (Z.Sim && Z.Sim.isSea && Z.Sim.isSea(t % N, (t / N) | 0)) return false;

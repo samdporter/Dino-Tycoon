@@ -343,7 +343,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { msg: tooLong ? 'Too wide to bridge (a bridge spans at most ' + MD.bridge.maxSpan + ' tiles)' : 'A bridge needs solid ground at both ends' };
   };
   M.bridgeCost = function (pid) { return Math.round(D.paths[pid - 1].cost * MD.bridge.mult + MD.bridge.flat); };
-  M.isBridge = function (i, j) { var s = S(), t = i + j * N; if (!inb(i, j) || !s.path[t]) return false; return s.ditch[t] > 0 || (s.terrain[t] === WI() && !C.seaMask()[t]); };
+  M.isBridge = function (i, j) { var s = S(), t = i + j * N; if (!inb(i, j) || !s.path[t] || D.paths[s.path[t] - 1].pontoon) return false; return s.ditch[t] > 0 || (s.terrain[t] === WI() && !C.seaMask()[t]); };
 
   // ============================================================ pumps and boreholes
   function ringHasWater(fp) {
