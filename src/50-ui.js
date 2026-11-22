@@ -47,6 +47,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     radar: 'M12 12m-2 0a2 2 0 104 0 2 2 0 10-4 0M7 7a7 7 0 000 10M17 7a7 7 0 010 10M4 4a11 11 0 000 16M20 4a11 11 0 010 16',
     ditch: 'M2 8h5l2 10h6l2-10h5M4 21h16',   // moats package icon
     monorail: 'M5 4h14a2 2 0 012 2v7H3V6a2 2 0 012-2zM7 8h3.500M13.500 8H17M3 16h18M7 16v5M17 16v5',   // monorail package icon
+    boat: 'M3 15h18l-2.500 4h-13zM12 3v9M12 4l6 7h-6M3 21c3-1.500 5 1.500 9 0s6-1.500 9 0',   // boats package icon
     safari: 'M3 15h2.500l1.500-4h8l2 4H21v3H3zM8 18.500a1.500 1.500 0 100 .1M16 18.500a1.500 1.500 0 100 .1M9 11V8h5',   // safari package icon
     menu: 'M4 7h16M4 12h16M4 17h16', close: 'M6 6l12 12M18 6L6 18', check: 'M5 12.5l5 5L19 7',
     pause: 'M8 5v14M16 5v14',

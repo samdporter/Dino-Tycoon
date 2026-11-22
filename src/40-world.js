@@ -1543,6 +1543,7 @@ function buildPathChunk(ci, cj) {
   for (var j = j0; j < j1; j++) for (var i = i0; i < i1; i++) {
     var pv = pth[i + j * N]; if (!pv) continue;
     if (Z.MoatsWorld && Z.MoatsWorld.isBridge(i, j)) continue;   // moats package draws its own bridge decks
+    if (D.paths[pv - 1] && D.paths[pv - 1].pontoon) continue;   // boats package draws floating pontoons
     if (Z.RealmsWorld && Z.RealmsWorld.isWalk(i, j)) continue;   // realms package draws tunnels, mesh walks, piers and skywalks itself
     any = true;
     var pt = types[pv - 1] || types[0], kind = pathKind(pt, pv);
@@ -2331,6 +2332,7 @@ function updateEntities(dt, dtGame) {
             eyOff = 0;
           }
         }
+        if (Z.BoatsWorld) { var pdy = Z.BoatsWorld.deckY(x, z); if (pdy !== null) gy = pdy; }   // boats package: floating pontoons
         if (Z.RealmsWorld) { var rdy = Z.RealmsWorld.deckY(x, z); if (rdy !== null && e.state !== 'swim' && e.wb === undefined) gy = rdy; }   // realms package: piers carry guests and staff
         if (e.wb !== undefined && e.wb !== null && e.wb !== false) gy = e.wb;   // realms package: sea animals hang from the water surface of their tank or pen
         rec.gy = gy + eyOff; rec.gy0 = gy;
@@ -3167,6 +3169,7 @@ function svBounds() {
 function svGround(x, z) {
   var y = groundY(x, z), s = Z.state, ti = Math.floor(x / T), tj = Math.floor(z / T);
   if (Z.MoatsWorld) { var bdy = Z.MoatsWorld.deckY(x, z); if (bdy !== null) return bdy + 0.05; }
+  if (Z.BoatsWorld) { var pdy2 = Z.BoatsWorld.deckY(x, z); if (pdy2 !== null) return pdy2 + 0.05; }   // boats package: floating pontoons
   if (Z.RealmsWorld) { var rdy2 = Z.RealmsWorld.deckY(x, z); if (rdy2 !== null) return rdy2 + 0.05; }   // realms package: pier decks
   if (Z.RealmsWorld) { var rty = Z.RealmsWorld.tunnelY(x, z); if (rty !== null) return rty + 0.05; }   // realms package: the floor of an acrylic tunnel
   if (Z.MonoWorld) { var mny = Z.MonoWorld.svY(x, z); if (mny !== null) return mny; }   // monorail package: ride-along stands on the carriage floor
