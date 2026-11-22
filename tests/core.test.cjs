@@ -60,6 +60,117 @@ test('v3 island maps, moats, power, realms, monorail, safari and DNA persist acr
   assert.equal(z.state.map.id, 'fern_meadow');
   assert.equal(Boolean(z.Sim.isIsland()), true);
 });
+for (const [startRow, endRow, departureFrames] of [
+  [18, 26, [0, 60]], [17, 26, [0, 60]], [15, 26, [0, 60]], [17, 26, [90, 60, 30, 0]], [15, 29, [0, 60]],
+]) {
+  test(`${departureFrames.length} safari trucks cycle the airlocks on an out-and-back route from row ${startRow} to ${endRow}`, () => {
+    const z = game();
+    const sim = z.Sim;
+    const safari = sim.safari;
+    sim.newGame({ seed: 42, money: 100000 });
+    z.state.unlocked.star = 3;
+    z.state.elev.fill(0);
+    z.DATA.safari.breakdownPerHour = 0;
+    for (let j = startRow - 2; j <= endRow; j++) {
+      for (let i = 12; i <= 14; i++) {
+        sim.bulldoze(i, j);
+        z.state.terrain[i + j * z.N] = 0;
+      }
+    }
+
+    assert.equal(fenceRect(z, 10, 20, 17, 27, 'reinforced'), 32);
+    const gateRows = endRow > 28 ? [20, 28] : [20];
+    for (const j of gateRows) assert.equal(sim.placeFence({ axis: 'x', i: 13, j }, 'safari_gate').ok, true);
+    assert.equal(sim.placePath(13, startRow - 2, 'paved').ok, true);
+    const depot = sim.placeObject('safari_depot', 12, startRow - 1, 2);
+    assert.equal(depot.ok, true, depot.msg);
+    const tiles = Array.from({ length: endRow - startRow + 1 }, (_, i) => 13 + (startRow + i) * z.N);
+    const route = safari.buildRoute(depot.id, tiles);
+    assert.equal(route.ok, true, route.msg);
+    assert.equal(route.loop, false);
+    assert.equal(safari.gatesPowered(), true);
+
+    const trucks = departureFrames.map(() => {
+      const order = safari.buyVehicle(depot.id);
+      assert.equal(order.ok, true, order.msg);
+      return safari.vehicle(order.id);
+    });
+    const gates = gateRows.map(j => safari.gateState(`x13,${j}`));
+    const entryDoors = new Map(trucks.map(truck => [truck.id, new Set()]));
+    const returned = new Set();
+    for (let frame = 0; frame < 1800; frame++) {
+      for (const [i, truck] of trucks.entries()) if (frame === departureFrames[i]) truck.st = 'run';
+      safari.step(0.1);
+      assert.equal(safari.doorMaxBoth(), 0);
+      for (const [i, gate] of gates.entries()) {
+        if (gate.phase === 2 && gate[gate.first] > 0.9) entryDoors.get(gate.owner).add(`${gateRows[i]} ${gate.first}`);
+      }
+      for (const truck of trucks) if (truck.st === 'board') returned.add(truck.id);
+      if (returned.size === trucks.length && gates.every(gate => gate.owner === 0)) break;
+    }
+
+    assert.equal(returned.size, trucks.length, 'Every truck should return to the depot');
+    for (const doors of entryDoors.values()) assert.deepEqual(doors, new Set(gateRows.flatMap(j => [`${j} out`, `${j} in`])));
+    assert.ok(gates.every(gate => gate.owner === 0));
+  });
+}
+test('manual safari rescue opens an unpowered geofence portal for a stranded truck', () => {
+  const z = game();
+  const sim = z.Sim;
+  const safari = sim.safari;
+  sim.newGame({ seed: 42, map: 'fern_meadow', money: 100000 });
+  z.state.unlocked.star = 3;
+  z.state.elev.fill(0);
+  z.DATA.safari.breakdownPerHour = 0;
+
+  const zoneTiles = [];
+  for (let j = 13; j <= 27; j++) {
+    for (let i = 11; i <= 18; i++) {
+      sim.bulldoze(i, j);
+      const tile = i + j * z.N;
+      z.state.terrain[tile] = 0;
+      if (j >= 20) zoneTiles.push(tile);
+    }
+  }
+  const zone = sim.realms.place('virtual', 'land', zoneTiles);
+  assert.equal(zone.ok, true, zone.msg);
+  assert.equal(sim.placeObject('substation', 16, 16, 0).ok, true);
+  const portal = sim.placeObject('safari_portal', 13, 19, 0);
+  assert.equal(portal.ok, true, portal.msg);
+  assert.equal(sim.placePath(13, 13, 'paved').ok, true);
+  const depot = sim.placeObject('safari_depot', 12, 14, 2);
+  assert.equal(depot.ok, true, depot.msg);
+  const tiles = Array.from({ length: 14 }, (_, i) => 13 + (13 + i) * z.N);
+  const route = safari.buildRoute(depot.id, tiles);
+  assert.equal(route.ok, true, route.msg);
+  const order = safari.buyVehicle(depot.id);
+  assert.equal(order.ok, true, order.msg);
+
+  assert.equal(z.Power.objPowered(portal.id), true);
+  z.Power.cut('storm', 4);
+  assert.equal(z.Power.objPowered(portal.id), false);
+  const truck = safari.vehicle(order.id);
+  safari.vehRt(truck.id).pax.push({ state: 'ride', sfv: truck.id, sfs: 0 });
+  truck.st = 'run';
+  for (let frame = 0; frame < 100 && truck.st !== 'stuck'; frame++) safari.step(0.1);
+  assert.equal(truck.st, 'stuck');
+  assert.equal(safari.callRescue(truck.id).ok, true);
+
+  const crossing = safari.route(truck.route).gates[0];
+  const gate = safari.gateState(crossing.key);
+  let opened = false;
+  for (let frame = 0; frame < 350; frame++) {
+    safari.step(0.1);
+    if (gate.owner === truck.id && gate.out > 0.9) opened = true;
+    if (opened && gate.owner === 0) break;
+  }
+  assert.equal(opened, true, 'The rescue crew should open the barrier while power is out');
+  assert.ok(truck.s > crossing.sB, 'The stranded truck should clear the crossing');
+  assert.equal(gate.owner, 0);
+  assert.equal(gate.out, 0);
+  assert.equal(gate.manual, 0);
+  assert.equal(z.Power.objPowered(portal.id), false);
+});
 test('legacy v2 save without v3 arrays loads cleanly and keeps inland map', () => {
   const z = game();
   z.Sim.newGame({ seed: 101 });

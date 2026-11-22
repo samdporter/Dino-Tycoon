@@ -38,7 +38,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   var X = { ver: 0, gates: {}, gateList: [], portals: [], routes: {}, zones: {}, field: null, rangers: [] };
   var VR = {};          // vehicle runtime: {pax:[], x,z,y,h, ov:[], ovT, blk, nudgeT, stuckT, rescueT}
-  var GS = {};          // gate controller runtime by key: {out:0..1, 'in':0..1, owner, phase, manual}
+  var GS = {};          // gate controller runtime by key: {out:0..1, 'in':0..1, owner, crossing, phase, manual}
   var W = { list: [], by: {}, seq: 1000000, acc: 0, bt: 0, spawnT: 0, today: 0 };
   A.wildList = function () { return W.list; };
   A.wildById = function (id) { return W.by[id] || null; };
@@ -53,7 +53,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var p = Z.Power.status(); return !!(p.supply > 0 || p.onBattery || p.backup === true && !p.outage);
   }
   function gateKeyOf(axis, i, j) { return (axis === 'x' ? 'x' : 'z') + i + ',' + j; }
-  function portalPowered(o) { return !Z.Power || Z.Power.objPowered(o.id); }
+  function portalCanOpen(o, gs) { return gs.manual > 0 || !Z.Power || Z.Power.objPowered(o.id); }
   function gatePowered(g) { var gs = GS[g.key]; return mainsOK() || (gs && gs.manual > 0); }
   A.gatesPowered = function () { return mainsOK(); };
   function zonePowered(enc) {
@@ -346,12 +346,18 @@ window.Z = window.Z || {}; var Z = window.Z;
   function stepGates(dt) {
     var gt = SD.gateTime, list = X.gateList, k, g, gs, pw;
     function mv(cur, tg) { var d = tg - cur, m = dt / gt; return Math.abs(d) <= m ? tg : cur + (d > 0 ? m : -m); }
+    for (var key in GS) {
+      gs = GS[key];
+      if (!gs.owner || gs.phase === 6) continue;
+      var v = vehById(gs.owner), P = v && X.routes[v.route];
+      if (!P || !P.ok || v.st === 'idle' || v.st === 'board' ||
+          !P.gates.some(function (c) { return c.key === key && c.sg === gs.crossing; })) gs.phase = 6;
+    }
     for (k = 0; k < list.length; k++) {
       g = list[k]; gs = GS[g.key]; if (!gs) continue; pw = gatePowered(g);
       gate(gs, pw, false, mv);
     }
-    for (k = 0; k < X.portals.length; k++) { var p = X.portals[k], key = 'p' + p.id; gs = GS[key] || (GS[key] = { out: 0, 'in': 0, owner: 0, phase: 0, manual: 0, t: 0 }); gate(gs, portalPowered(p.o) || gs.manual > 0, true, mv); }
-    for (var key2 in GS) { var gg = GS[key2]; if (gg.owner && !vehById(gg.owner)) { gg.owner = 0; gg.phase = 0; } }
+    for (k = 0; k < X.portals.length; k++) { var p = X.portals[k]; key = 'p' + p.id; gs = GS[key] || (GS[key] = { out: 0, 'in': 0, owner: 0, phase: 0, manual: 0, t: 0 }); gate(gs, portalCanOpen(p.o, gs), true, mv); }
   }
   function gate(gs, pw, single, mv) {
     var first = gs.first || 'out', second = first === 'out' ? 'in' : 'out', tF = 0, tS = 0, ph = gs.phase;
@@ -365,7 +371,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (ph === 1 && gs[first] >= 0.99) gs.phase = 2;
     else if (ph === 3 && gs[first] <= 0.01) gs.phase = single ? 0 : 4;
     else if (ph === 4 && gs[second] >= 0.99) gs.phase = 5;
-    else if (ph === 6 && (single ? gs[first] <= 0.01 : gs[second] <= 0.01)) { gs.phase = 0; gs.owner = 0; gs.manual = 0; }
+    else if (ph === 6 && gs.out === 0 && gs['in'] === 0) { gs.phase = 0; gs.owner = 0; gs.manual = 0; }
     if (gs.phase === 0 && (gs.out > 0.01 || gs['in'] > 0.01)) { gs.out = mv(gs.out, 0); gs['in'] = mv(gs['in'], 0); }
     if (single && ph === 6) { gs[first] = mv(gs[first], 0); }
   }
@@ -427,14 +433,18 @@ window.Z = window.Z || {}; var Z = window.Z;
         v.v = 0; v.brk -= dt; rt.stuckT += dt; if (v.brk <= 0) { v.st = 'run'; v.why = ''; rt.stuckT = 0; C.msg('The ' + vName(v) + ' is moving again.', 'good', false); }
       } else {
         // ---- running
-        var tgtV = cruise(v), lim = Infinity, why = '', stuck = false, gsLim = gateLimit(v, P, rt);
-        if (gsLim.lim < lim) { lim = gsLim.lim; why = gsLim.why; stuck = gsLim.stuck; }
+        var tgtV = cruise(v), trafficLimit = Infinity, lim = Infinity, why = '', stuck = false;
         // vehicles ahead
         for (k = 0; k < o.veh.length; k++) {
           var w = o.veh[k]; if (w === v || w.route !== v.route || w.st === 'idle') continue;
-          var dd = fd(v.s, w.s, L); if (w.st === 'board' && w.s === 0) dd = fd(v.s, L, L) || L;
-          if (dd > 0 && dd < 12) { var l2 = v.s + dd - 5.4; if (l2 < lim) { lim = l2; why = 'Queuing behind another vehicle'; stuck = false; } }
+          // At a gated depot, incoming and outgoing traffic can be waiting for the same lock.
+          var dd = P.gates.length ? w.s - v.s : fd(v.s, w.s, L);
+          if (w.st === 'board' && w.s === 0) dd = L - v.s;
+          if (dd > 0) trafficLimit = Math.min(trafficLimit, v.s + dd - 5.4);
         }
+        if (trafficLimit < v.s + 12 - 5.4) { lim = trafficLimit; why = 'Queuing behind another vehicle'; }
+        var gsLim = gateLimit(v, P, trafficLimit);
+        if (gsLim.lim < lim) { lim = gsLim.lim; why = gsLim.why; stuck = gsLim.stuck; }
         // animals on the road
         rt.blkT -= dt;
         if (rt.blkT <= 0) { rt.blkT = 0.25; rt.blk = blockers(v, P, pose, rt); }
@@ -505,34 +515,41 @@ window.Z = window.Z || {}; var Z = window.Z;
     an.tx = an.x + dx / l * 7; an.tz = an.z + dz / l * 7; if (an.wild) { an.state = 'run'; an.fleeT = 2.5; } else { an.tg = 'wander'; an.state = 'walk'; }
   }
   // gate logic for a vehicle: returns {lim (route position the vehicle may not pass), why, stuck}
-  function gateLimit(v, P, rt) {
-    var out = { lim: Infinity, why: '', stuck: false }, L = P.len;
-    function R(x) { return v.s + sd(v.s, x, L); }
+  function gateLimit(v, P, trafficLimit) {
+    var out = { lim: Infinity, why: '', stuck: false };
     for (var k = 0; k < P.gates.length; k++) {
       var g = P.gates[k], key = g.key; if (key === 'v') continue;
       var gs = GS[key]; if (!gs) { if (key.charAt(0) === 'p') gs = GS[key] = { out: 0, 'in': 0, owner: 0, phase: 0, manual: 0, t: 0 }; else continue; }
-      var single = key.charAt(0) === 'p', hold = g.sA - 2.2, d = sd(v.s, hold, L);
-      if (d > 16 || d < -(g.sB - g.sA) - 7) continue;
-      var G = single ? null : X.gates[key], pw = single ? portalPowered(objById(+key.slice(1)) || {}) : gatePowered(G) || gs.manual > 0;
-      if (gs.owner && gs.owner !== v.id && !vehById(gs.owner)) { gs.owner = 0; gs.phase = 0; }
-      if (gs.owner !== v.id) {
-        if (d < -(g.sB - g.sA) - 1.5) continue;       // already through
-        var inCh = d < -1.2;
-        if (!gs.owner && pw && d < 12) { gs.owner = v.id; gs.first = single ? 'out' : (g.ent ? 'out' : 'in'); gs.phase = inCh ? (single ? 2 : 4) : 1; }
-        if (gs.owner !== v.id) { var l1 = inCh ? v.s : R(hold); if (l1 < out.lim) { out.lim = l1; out.why = pw ? 'Waiting for the airlock' : 'Gates locked: no power'; out.stuck = !pw; } continue; }
+      var single = key.charAt(0) === 'p', hold = g.sA - 2.2, d = hold - v.s;
+      // An out-and-back route uses the same controller for two distinct crossings.
+      var ownsCrossing = gs.owner === v.id && gs.crossing === g.sg;
+      if (gs.owner === v.id && !ownsCrossing && (g.sg < gs.crossing || gs.phase !== 6)) continue;
+      if (!ownsCrossing && (d > 16 || v.s >= g.sB)) continue;
+      var pw = single ? portalCanOpen(objById(+key.slice(1)) || {}, gs) : gatePowered(X.gates[key]);
+      if (!ownsCrossing) {
+        if (!gs.owner && pw && d < 12 && trafficLimit >= g.sg) {
+          gs.owner = v.id;
+          gs.crossing = g.sg;
+          gs.first = single ? 'out' : (g.ent ? 'out' : 'in');
+          gs.phase = v.s >= g.sg ? (single ? 2 : 4) : 1;
+        }
+        else {
+          if (hold < out.lim) { out.lim = hold; out.why = pw ? 'Waiting for the airlock' : 'Gates locked: no power'; out.stuck = !pw; }
+          continue;
+        }
       }
       // we own this gate
       var ph = gs.phase, first = gs.first || 'out', second = first === 'out' ? 'in' : 'out', lim, why = '', stk = false;
       if (single) {
-        lim = ph <= 1 ? R(hold) : Infinity; if (ph <= 1) { why = pw ? 'Opening the barrier' : 'Barrier locked: no power'; stk = !pw; } else if (sd(v.s, g.sg + 1.8, L) <= 0) { gs.phase = 6; }
-        if (ph >= 2 && gs.out < 0.9 && sd(v.s, g.sg + 1, L) > 0) { lim = R(hold); why = 'Barrier locked: no power'; stk = !pw; }
+        lim = ph <= 1 ? hold : Infinity; if (ph <= 1) { why = pw ? 'Opening the barrier' : 'Barrier locked: no power'; stk = !pw; } else if (v.s >= g.sg + 1.8) { gs.phase = 6; }
+        if (ph >= 2 && gs.out < 0.9 && v.s < g.sg + 1) { lim = hold; why = 'Barrier locked: no power'; stk = !pw; }
       } else {
-        if (ph <= 1) { lim = R(hold); why = pw ? 'Waiting for the airlock' : 'Gates locked: no power'; stk = !pw; }
-        else if (ph === 2) { lim = gs[first] >= 0.9 ? R(g.sg) : R(hold); if (gs[first] < 0.9) { why = 'Gates locked: no power'; stk = !pw; } if (sd(v.s, g.sg, L) <= 0.25 && v.v < 0.35) gs.phase = 3; }
-        else if (ph === 3 || ph === 4) { lim = R(g.sg); why = ph === 3 ? 'Airlock cycling' : 'Airlock cycling'; }
-        else if (ph === 5) { lim = gs[second] >= 0.9 ? Infinity : R(g.sg); if (gs[second] < 0.9) { why = pw ? 'Airlock cycling' : 'Gates locked: no power'; stk = !pw; } if (sd(v.s, g.sB + 2.4, L) <= 0) gs.phase = 6; }
+        if (ph <= 1) { lim = hold; why = pw ? 'Waiting for the airlock' : 'Gates locked: no power'; stk = !pw; }
+        else if (ph === 2) { lim = gs[first] >= 0.9 ? g.sg : hold; if (gs[first] < 0.9) { why = 'Gates locked: no power'; stk = !pw; } if (g.sg - v.s <= 0.25 && v.v < 0.35) gs.phase = 3; }
+        else if (ph === 3 || ph === 4) { lim = g.sg; why = 'Airlock cycling'; }
+        else if (ph === 5) { lim = gs[second] >= 0.9 ? Infinity : g.sg; if (gs[second] < 0.9) { why = pw ? 'Airlock cycling' : 'Gates locked: no power'; stk = !pw; } if (v.s >= g.sB + 2.4) gs.phase = 6; }
         else { lim = Infinity; }
-        if (ph >= 1 && ph <= 5 && !pw && !(gs.manual > 0)) { why = 'Gates locked: no power'; stk = true; if (lim === Infinity) lim = R(g.sg); }
+        if (ph >= 1 && ph <= 5 && !pw) { why = 'Gates locked: no power'; stk = true; if (lim === Infinity) lim = g.sg; }
       }
       if (lim < out.lim) { out.lim = lim; out.why = why; out.stuck = stk; }
     }
