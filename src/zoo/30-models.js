@@ -1934,47 +1934,73 @@ function earBall(g, x, y, z, r, col, inner) {
 
 // ---- PURPLE DRAGON & HYBRIDS (PUGON, DRASSY)
 (function () {
-  var PR = 0x6b28aa, PR_DK = 0x451478, PR_LT = 0x924dd6, BELLY = 0xc97cf5, HORN = 0x241432, FANG = 0xf6eed8, WING = 0x561a86, WING_LT = 0x8232ba, SPINE = 0x2c0e4a;
+  var PR = 0x6b28aa, PR_DK = 0x451478, PR_LT = 0x924dd6, BELLY = 0xc97cf5, HORN = 0x241432, BONE = 0xd9ccb4, FANG = 0xf6eed8, WING = 0x561a86, WING_LT = 0x8232ba, SPINE = 0x2c0e4a;
   var OR = 0xe0842c, STR = 0xb05414, CR = 0xf7e3c4, BT = 0x261810, BT2 = 0x3a2518, HAT = 0x221a18, GD = 0xf2c94c, CP = 0xb8222a, CP2 = 0x82141a;
-  var bc = function (x, y, z, nx, ny) {
-    if (ny < -0.42) return fract(z * 3.5) < 0.25 ? shade(BELLY, 0.85) : BELLY;
-    var h = hash3(Math.floor(x * 4), Math.floor(y * 4), Math.floor(z * 4));
-    return h > 0.65 ? PR_DK : (h < 0.25 ? PR_LT : PR);
-  };
+  // overlapping scale pattern (cs = scales per unit), pale ventral plates
+  function mkScale(cs) {
+    return function (x, y, z, nx, ny) {
+      if (ny < -0.42) return fract(z * cs * 0.8) < 0.22 ? shade(BELLY, 0.8) : BELLY;
+      var c = cellInfo(x, y, z, cs), col = mixHex(PR, PR_DK, sstep(0.4, 0.68, c[0]));
+      col = mixHex(col, PR_LT, sstep(0.2, 0.9, ny) * 0.3);
+      return shade(col, 0.88 + c[1] * 0.26);
+    };
+  }
+  var bc = mkScale(4.2), bcS = mkScale(9), bcH = mkScale(6.5);
+  var plateCol = function (f, x, y, z) { return mixHex(PR_DK, SPINE, 0.2 + 0.7 * f); };
+  var hornCol = function (x, y, z, nx, ny, nz, t) { return mixHex(HORN, BONE, sstep(0.25, 1, t) * 0.85); };
+  // row of swept dorsal plates riding the loft profile
+  function dorsalPlates(g, K, z0, z1, n, rx, rz, h0, h1, lean) {
+    for (var i = 0; i < n; i++) {
+      var f = i / (n - 1), z = lerp(z0, z1, f), p = profAt(K, z), h = lerp(h0, h1, f);
+      bump(g, 0, p[2] + p[1] * 0.97, z, rx, rz, h, plateCol, lean, 5);
+    }
+  }
   function dragonWing(k, r) {
     var g = B(), s = r ? -1 : 1, th = max(0.024, 0.045 * k);
     var sh = [0, 0, 0], el = [s * 1.25 * k, 0.85 * k, -0.15 * k], wr = [s * 2.55 * k, 1.12 * k, -0.30 * k];
     var f1 = [s * 4.0 * k, 0.62 * k, -0.62 * k], f2 = [s * 3.55 * k, -0.18 * k, -1.16 * k], f3 = [s * 2.65 * k, -0.78 * k, -1.36 * k], f4 = [s * 1.45 * k, -0.84 * k, -1.26 * k], rt = [0, -0.42 * k, -0.95 * k];
-    // heavy curved dragon wing arm, wrist claw & curved finger spars
-    g.tube([sh, el, wr], [0.18 * k, 0.125 * k, 0.068 * k], PR, { seg: 7, steps: 2 });
-    g.tube([wr, [s * 2.62 * k, 1.38 * k, -0.14 * k], [s * 2.52 * k, 1.48 * k, 0.02 * k]], [0.055 * k, 0.032 * k, 0.005 * k], HORN, { seg: 5, steps: 2 });
-    g.tube([wr, f1], [0.062 * k, 0.02 * k], PR_DK, { seg: 5 });
-    g.tube([wr, f2], [0.055 * k, 0.018 * k], PR_DK, { seg: 5 });
-    g.tube([wr, f3], [0.05 * k, 0.018 * k], PR_DK, { seg: 5 });
-    g.tube([el, f4], [0.06 * k, 0.02 * k], PR_DK, { seg: 5 });
-    // true double-walled cambered bat-wing membranes stretched between skeletal spars with scalloped trailing edges
-    var wCol = function (x, y, z) { return fract(abs(x / k) * 1.5 + (z / k) * 1.2) < 0.22 ? WING_LT : WING; };
-    g.wingMembrane([[wr, f1], [wr, f2], [wr, f3], [el, f4], [sh, rt]], th, wCol, { camber: 0.09, scallop: 0.24, uSteps: 3, vSteps: 2 });
+    // finger bone passing through a bowed midpoint, and the matching bezier control for the membrane edge
+    var bone = function (a, b, bow) { return [a, [(a[0] + b[0]) / 2 + bow[0] * k, (a[1] + b[1]) / 2 + bow[1] * k, (a[2] + b[2]) / 2 + bow[2] * k], b]; };
+    var ctrl = function (bn) { var a = bn[0], m = bn[1], b = bn[2]; return [a, [2 * m[0] - (a[0] + b[0]) / 2, 2 * m[1] - (a[1] + b[1]) / 2, 2 * m[2] - (a[2] + b[2]) / 2], b]; };
+    var b1 = bone(wr, f1, [0, 0.16, 0.06]), b2 = bone(wr, f2, [0, 0.1, -0.06]), b3 = bone(wr, f3, [0, 0.08, -0.1]), b4 = bone(el, f4, [0, 0.1, -0.08]);
+    // muscular arm: shoulder mass, forearm, then wrist knuckle with a hooked thumb claw
+    g.tube([sh, [s * 0.5 * k, 0.4 * k, -0.04 * k], el, [s * 1.9 * k, 1.0 * k, -0.22 * k], wr], [0.24 * k, 0.2 * k, 0.12 * k, 0.1 * k, 0.07 * k], PR, { seg: 8, steps: 2 });
+    g.sph(0.1 * k, 0.1 * k, 0.1 * k, wr[0], wr[1], wr[2], PR_DK, { s: [6, 5] });
+    g.tube([wr, [s * 2.64 * k, 1.36 * k, -0.2 * k], [s * 2.5 * k, 1.5 * k, 0.04 * k]], [0.06 * k, 0.036 * k, 0.005 * k], HORN, { seg: 5, steps: 2 });
+    var fc = function (bn, r0) { g.tube(bn, [r0 * k, r0 * 0.6 * k, 0.014 * k], PR_DK, { seg: 5, steps: 2 }); };
+    fc(b1, 0.065); fc(b2, 0.058); fc(b3, 0.052); fc(b4, 0.062);
+    for (var q = 0; q < 4; q++) { var fp = [f1, f2, f3, f4][q]; g.cone(0.028 * k, 0.12 * k, fp[0], fp[1], fp[2] - 0.04 * k, HORN, { seg: 4, rot: [-PI / 2 - 0.3, 0, 0] }); }
+    var wCol = function (x, y, z) {
+      var edge = sstep(0.1 * k, 1.35 * k, -z), vein = fract(abs(x / k) * 1.6 + (z / k) * 1.3) < 0.09;
+      return vein ? shade(PR_DK, 1.1) : mixHex(mixHex(WING, WING_LT, edge * 0.7), PR, sstep(0.9, 0.0, abs(x / k)) * 0.5);
+    };
+    g.wingMembrane([ctrl(b1), ctrl(b2), ctrl(b3), ctrl(b4), [sh, rt]], th, wCol, { camber: 0.09, scallop: 0.22, uSteps: 3, vSteps: 2 });
     return g.build();
   }
   function dragonHeadBase(g, k, col, lowHorns) {
-    // sculpted armored dragon skull, horned brow arches, snout, jaw & fangs
-    g.loft([[-0.22 * k, 0.34 * k, 0.3 * k, 0.04 * k], [0.18 * k, 0.41 * k, 0.35 * k, 0.04 * k], [0.64 * k, 0.27 * k, 0.22 * k, -0.02 * k], [1.05 * k, 0.2 * k, 0.16 * k, -0.03 * k], [1.2 * k, 0.11 * k, 0.1 * k, -0.04 * k]], { rings: 12, seg: 10, cap0: true, cap1: true, ridge: 0.14 }, function (zc, ca, sa, x, y, z) { return typeof col === 'function' ? col(x, y, z, sa, ca) : col; });
-    g.loft([[0.15 * k, 0.24 * k, 0.12 * k, -0.2 * k], [0.62 * k, 0.22 * k, 0.12 * k, -0.21 * k], [1.04 * k, 0.15 * k, 0.08 * k, -0.2 * k]], { rings: 8, seg: 8, cap0: true, cap1: true }, PR_LT);
-    // flared nasal horn & sculpted curved brow ridges
-    g.tube([[0, 0.09 * k, 0.92 * k], [0, 0.22 * k, 1.02 * k], [0, 0.34 * k, 0.99 * k]], [0.075 * k, 0.042 * k, 0.008 * k], HORN, { seg: 6, steps: 2 });
-    for (var s = -1; s <= 1; s += 2) {
-      g.tube([[s * 0.08 * k, 0.21 * k, 0.52 * k], [s * 0.28 * k, 0.28 * k, 0.32 * k], [s * 0.38 * k, 0.25 * k, 0.08 * k]], [0.045 * k, 0.072 * k, 0.04 * k], PR_DK, { seg: 6, steps: 2 });
-      g.cone(0.042 * k, 0.16 * k, s * 0.15 * k, -0.16 * k, 0.94 * k, FANG, { seg: 5, rot: [PI - 0.1, 0, 0] });
-      g.cone(0.036 * k, 0.14 * k, s * 0.13 * k, -0.15 * k, 0.72 * k, FANG, { seg: 5, rot: [PI - 0.08, 0, 0] });
-      if (lowHorns) {
-        g.tube([[s * 0.13, 0.10, -0.02], [s * 0.25, 0.19, -0.20], [s * 0.31, 0.28, -0.37]], [0.054, 0.032, 0.006], HORN, { seg: 6, steps: 2 });
-      } else {
-        g.tube([[s * 0.22 * k, 0.24 * k, 0.04 * k], [s * 0.42 * k, 0.68 * k, -0.45 * k], [s * 0.54 * k, 1.0 * k, -1.14 * k]], [0.13 * k, 0.082 * k, 0.012 * k], HORN, { seg: 7, steps: 3 });
+    var sc = function (K) { return K.map(function (a) { return [a[0] * k, a[1] * k, a[2] * k, a[3] * k]; }); }, cf = function (zc, ca, sa, x, y, z) { return col(x, y, z, sa, ca); }, i, s;
+    var UK = sc([[-0.3, 0.3, 0.28, 0.04], [0.0, 0.38, 0.34, 0.05], [0.3, 0.31, 0.26, 0.0], [0.6, 0.23, 0.18, -0.03], [0.9, 0.2, 0.14, -0.06], [1.1, 0.2, 0.12, -0.08], [1.22, 0.14, 0.09, -0.085], [1.3, 0.05, 0.04, -0.085]]);
+    var JK = sc([[0.1, 0.26, 0.09, -0.22], [0.5, 0.2, 0.08, -0.2], [0.95, 0.15, 0.06, -0.17], [1.15, 0.09, 0.04, -0.15], [1.22, 0.03, 0.02, -0.15]]);
+    g.loft(UK, { rings: 12, seg: 10, cap0: true, cap1: true, ridge: 0.12 }, cf);
+    g.loft(JK, { rings: 12, seg: 12, cap1: true }, function (zc, ca, sa, x, y, z) { return ca < 0.1 ? mixHex(BELLY, PR_LT, 0.3) : col(x, y, z, sa, ca); });
+    for (i = 0; i < 6; i++) {
+      var z = (0.32 + i * 0.13) * k, pu = profAt(UK, z), pj = profAt(JK, z), big = i === 4 ? 1.7 : 1;
+      for (s = -1; s <= 1; s += 2) {
+        g.cone(0.024 * k * big, 0.11 * k * big, s * pu[0] * 0.86, pu[2] - pu[1] * 0.45 - 0.05 * k * big, z, FANG, { seg: 4, rot: [PI, 0, 0] });
+        if (i % 2) g.cone(0.02 * k, 0.08 * k, s * pj[0] * 0.8, pj[2] + pj[1] * 0.5 + 0.04 * k, z + 0.04 * k, FANG, { seg: 4 });
       }
-      g.tube([[s * 0.32 * k, 0.02 * k, 0.06 * k], [s * 0.45 * k, 0.04 * k, -0.16 * k], [s * 0.52 * k, 0.08 * k, -0.36 * k]], [0.068 * k, 0.04 * k, 0.008 * k], PR_DK, { seg: 5, steps: 2 });
     }
-    g.cone(0.07 * k, 0.24 * k, 0, -0.30 * k, 0.68 * k, HORN, { seg: 5, rot: [PI - 0.35, 0, 0] });
+    for (s = -1; s <= 1; s += 2) {
+      // swept ridged horns, brow horns, cheek spikes
+      spiralHorn(g, s * 0.2 * k, 0.24 * k, 0.0, s * 0.3, 0.42, -0.85, (lowHorns ? 0.7 : 1.35) * k, (lowHorns ? 0.09 : 0.13) * k, 5, 1.2, hornCol, 0.22);
+      spiralHorn(g, s * 0.24 * k, 0.27 * k, 0.5 * k, s * 0.35, 0.8, -0.2, 0.34 * k, 0.05 * k, 0, 0, hornCol, 0.1);
+      spiralHorn(g, s * 0.3 * k, 0.0, 0.08 * k, s * 0.85, -0.1, -0.5, 0.5 * k, 0.07 * k, 0, 0, hornCol, 0.0);
+      g.tube([[s * 0.1 * k, 0.2 * k, 0.55 * k], [s * 0.27 * k, 0.29 * k, 0.4 * k], [s * 0.36 * k, 0.25 * k, 0.12 * k]], [0.05 * k, 0.07 * k, 0.04 * k], PR_DK, { seg: 6, steps: 2 });
+      g.sph(0.02 * k, 0.014 * k, 0.026 * k, s * 0.075 * k, 0.0, 1.27 * k, 0x180a24, { s: [4, 3] });
+      for (i = 0; i < 2; i++) bump(g, s * (0.32 - i * 0.03) * k, (0.02 + i * 0.01) * k, (0.12 + i * 0.1) * k, 0.05 * k, 0.05 * k, 0.04 * k, plateCol, 0.4, 5);
+    }
+    spiralHorn(g, 0, 0.1 * k, 0.96 * k, 0, 0.75, 0.55, 0.34 * k, 0.075 * k, 0, 0, hornCol, -0.15);
+    for (i = 0; i < 4; i++) bump(g, 0, (0.33 - i * 0.02) * k, (0.05 + i * 0.12) * k, 0.045 * k, 0.07 * k, 0.07 * k, plateCol, 0.6, 5);
   }
   function dragonHeadGlow(k) {
     return [
@@ -1990,24 +2016,17 @@ function earBall(g, x, y, z, r, col, inner) {
     ];
   }
 
+  var DK_BODY = [[-2.05, 0.3, 0.34, 2.04], [-1.9, 0.42, 0.46, 2.04], [-1.5, 0.6, 0.65, 2.06], [-1.1, 0.74, 0.8, 2.1], [-0.6, 0.7, 0.74, 2.1], [-0.1, 0.74, 0.8, 2.15], [0.5, 0.9, 1.0, 2.25], [1.0, 1.02, 1.1, 2.32], [1.45, 0.9, 1.0, 2.36], [1.8, 0.7, 0.8, 2.4], [2.0, 0.45, 0.52, 2.42], [2.1, 0.2, 0.25, 2.42]];
   QUADS.purple_dragon = {
     id: 'purple_dragon', cy: 2.25, hl: 2.1, hh: 0.9, height: 5.8, size: 4.2, walkA: 0.34, runA: 0.52, bend: 0.55, babyScale: 0.42, babyHead: 1.38, hopH: 1.1,
     body: function (g) {
-      g.torso({ z0: -2.0, z1: 1.8, n: 22, seg: 14, rxA: 0.80, rxB: 1.08, ryA: 0.76, ryB: 1.12, ycA: 2.02, ycB: 2.34 }, bc);
-      // broad chest keel & muscular shoulder plates
-      g.sph(0.98, 0.92, 0.86, 0, 2.28, 1.15, bc, { s: [10, 7] });
-      g.sph(0.68, 0.54, 0.85, 0, 1.56, 0.65, BELLY, { s: [8, 6] });
-      // dorsal ridge spines running down the back
-      for (var i = 0; i < 7; i++) {
-        var sz = 1.45 - i * 0.52, sy = 3.38 - Math.abs(sz) * 0.14, sh = 0.72 - i * 0.035;
-        g.cone(0.16, sh, 0, sy + sh * 0.35, sz, i % 2 ? SPINE : PR_DK, { seg: 5, rot: [-0.46, 0, 0] });
-      }
+      g.loft(DK_BODY, { rings: 22, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      dorsalPlates(g, DK_BODY, 1.5, -1.8, 16, 0.07, 0.26, 0.6, 0.3, 0.9);
     },
     bodyGlow: [
       {
         col: 0xff9a28, em: 0xc44200,
         build: function (g) {
-          // glowing molten belly & chest ember scales
           for (var i = 0; i < 6; i++) {
             var vz = 1.35 - i * 0.46, vy = 1.32 - Math.abs(vz - 0.3) * 0.06, vw = 0.44 - Math.abs(i - 2) * 0.04;
             g.sph(vw, 0.09, 0.16, 0, vy, vz, 0xffaa30, { s: [7, 4] });
@@ -2016,35 +2035,32 @@ function earBall(g, x, y, z, r, col, inner) {
       }
     ],
     neck: {
-      y: 2.65, z: 1.42, len: 1.72, up: 0.88, r0: 0.50, r1: 0.33, hs: 5, col: bc,
+      y: 2.65, z: 1.42, len: 1.72, up: 0.88, r0: 0.50, r1: 0.33, hs: 5, col: function (x, y, z, nx, ny) { return bc(x, y + 2.65, z + 1.42, nx, ny); },
       extra: function (g) {
-        for (var i = 0; i < 4; i++) {
-          var nz = 0.28 + i * 0.38;
-          g.sph(0.24 - i * 0.025, 0.14, 0.2, 0, -0.26 + i * 0.02, nz, BELLY, { s: [6, 4] });
-          g.cone(0.11, 0.48 - i * 0.04, 0, 0.36 - i * 0.02, nz, SPINE, { seg: 5, rot: [-0.55, 0, 0] });
+        for (var i = 0; i < 6; i++) {
+          var nz = 0.05 + i * 0.29, r = lerp(0.5, 0.33, nz / 1.72);
+          bump(g, 0, r * 1.08, nz, 0.06, 0.15, 0.4 - i * 0.025, plateCol, 0.9, 5);
         }
       }
     },
     hpitch: 0.72, eatY: 0.35,
-    head: function (g) { dragonHeadBase(g, 1.0, bc, false); },
+    head: function (g) { dragonHeadBase(g, 1.0, bcH, false); },
     headGlow: dragonHeadGlow(1.0),
     legs: {
       fx: 0.72, fy: 1.45, fz: 1.05, hy: 1.45, hz: -1.15, hx: 0.76, fLen: 1.45, hLen: 1.45,
       fr: [0.30, 0.22, 0.18], hr: [0.34, 0.24, 0.18], shoulder: [0.36, 0.42, 0.40], haunch: [0.42, 0.50, 0.48],
-      col: function (y, ny, front) { return y < -1.0 ? PR_DK : PR; },
+      col: function (y, ny, front, x, z) { return y < -1.0 ? PR_DK : bc(x || 0, y, z || 0, 0, 0.5); },
       foot: { type: 'paw', col: 0x1a1024, h: 0.16, pawCol: PR_DK, claws: true }
     },
     tail: {
-      y: 2.04, z: -1.92, n: 5, len: 4.5, r0: 0.44, r1: 0.06, seg: 7,
-      col: function (i, x, y, z, nx, ny) { return ny < -0.35 ? BELLY : (i % 2 ? PR_DK : PR); },
+      y: 2.04, z: -1.92, n: 5, len: 4.5, r0: 0.44, r1: 0.06, seg: 8,
+      col: function (i, x, y, z, nx, ny) { return bc(x, y + i * 0.5, z - i * 0.9, nx, ny); },
       up: -0.22, curl: 0.10,
-      each: function (g, i, sl, r0) {
-        g.cone(r0 * 0.45, 0.36 - i * 0.04, 0, r0 * 0.85, -sl * 0.5, SPINE, { seg: 5, rot: [-0.4, 0, 0] });
+      each: function (g, i, sl, r0, r1) {
+        for (var j = 0; j < 2; j++) { var f = (j + 0.5) / 2, r = lerp(r0, r1, f); bump(g, 0, r * 0.96, -sl * f, r * 0.14, sl * 0.18, r * 0.9 + 0.06, plateCol, 0.9, 5); }
       },
       tip: function (g, sl) {
-        // dramatic barbed spade tip
-        g.sph(0.28, 0.06, 0.36, 0, 0, -sl * 1.08, PR_DK, { s: [6, 4] });
-        g.cone(0.12, 0.46, 0, 0, -sl * 1.32, HORN, { seg: 5, rot: [-PI / 2, 0, 0] });
+        g.loft([[-0.02, 0.01, 0.05, 0], [0.12, 0.27, 0.05, 0], [0.3, 0.3, 0.04, 0], [0.5, 0.14, 0.03, 0], [0.62, 0.02, 0.015, 0]], { dir: -1, rings: 10, seg: 8, cap0: true, cap1: true, oz: -sl * 1.0 }, function (zc, ca, sa, x, y, z) { return mixHex(PR_DK, HORN, sstep(0.1, 0.6, zc)); });
       }
     },
     wingAt: [0.76, 2.95, 0.72],
@@ -2054,12 +2070,11 @@ function earBall(g, x, y, z, r, col, inner) {
 
   // ---- PUGON (male hybrid: small purple dragon + Puss's plumed hat, 4 boots, belt/cape & striped tabby tail)
   var capeCol = function (x, y, z, nx, ny) { return ny < 0 ? CP2 : CP; };
+  var PG_BODY = [[-0.94, 0.05, 0.08, 0.88], [-0.86, 0.16, 0.2, 0.88], [-0.6, 0.31, 0.34, 0.9], [-0.2, 0.385, 0.4, 0.92], [0.2, 0.4, 0.42, 0.95], [0.55, 0.44, 0.46, 1.0], [0.74, 0.38, 0.42, 1.02], [0.86, 0.22, 0.26, 1.02], [0.92, 0.07, 0.1, 1.02]];
   QUADS.pugon = {
     id: 'pugon', cy: 0.96, hl: 0.92, hh: 0.38, height: 2.15, size: 1.45, walkA: 0.42, runA: 0.68, bend: 0.65, babyScale: 0.48, babyHead: 1.38, hopH: 1.15,
     body: function (g) {
-      g.torso({ z0: -0.90, z1: 0.82, n: 20, seg: 14, rxA: 0.34, rxB: 0.44, ryA: 0.32, ryB: 0.45, ycA: 0.88, ycB: 1.00 }, bc);
-      g.sph(0.40, 0.38, 0.36, 0, 0.98, 0.50, bc, { s: [9, 6] });
-      g.sph(0.28, 0.22, 0.36, 0, 0.68, 0.26, BELLY, { s: [8, 5] });
+      g.loft(PG_BODY, { rings: 22, seg: 16, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bcS(x, y, z, sa, ca); });
       // leather waist belt & shiny gold buckles on flanks + curved flowing crimson capelet
       g.cyl(0.415, 0.415, 0.08, 0, 0.94, -0.04, BT, { seg: 14, rot: [PI / 2, 0, 0] });
       g.bevelBox(0.038, 0.11, 0.12, 0.012, 0.415, 0.94, -0.04, GD);
@@ -2069,11 +2084,7 @@ function earBall(g, x, y, z, r, col, inner) {
         g.sph(0.044, 0.044, 0.038, s * 0.22, 1.18, 0.66, GD, { s: [5, 4] });
         g.extrude([[0, 0.4], [0.22, 0.34], [0.36, -0.42], [0.16, -0.58], [-0.04, -0.48]], 0.032, s * 0.08, 1.28, 0.02, [0.22, s * 0.14, s * -0.44], capeCol, { axis: 'y', bev: 0.008, curveX: -0.25, sx: s });
       }
-      // purple dragon dorsal ridge spines rising cleanly along the spine
-      for (var i = 0; i < 6; i++) {
-        var sz = 0.46 - i * 0.24, sy = 1.36 - Math.abs(sz) * 0.12, sh = 0.28 - i * 0.015;
-        g.cone(0.075, sh, 0, sy + sh * 0.34, sz, i % 2 ? SPINE : PR_DK, { seg: 5, rot: [-0.46, 0, 0] });
-      }
+      dorsalPlates(g, PG_BODY, 0.5, -0.78, 8, 0.04, 0.12, 0.26, 0.14, 0.9);
     },
     bodyGlow: [
       {
@@ -2088,18 +2099,17 @@ function earBall(g, x, y, z, r, col, inner) {
       }
     ],
     neck: {
-      y: 1.16, z: 0.62, len: 0.62, up: 0.92, r0: 0.22, r1: 0.15, hs: 4, col: bc,
+      y: 1.16, z: 0.62, len: 0.62, up: 0.92, r0: 0.22, r1: 0.15, hs: 4, col: function (x, y, z, nx, ny) { return bcS(x, y + 1.16, z + 0.62, nx, ny); },
       extra: function (g) {
-        for (var i = 0; i < 3; i++) {
-          var nz = 0.14 + i * 0.16;
-          g.sph(0.11 - i * 0.012, 0.06, 0.09, 0, -0.12 + i * 0.01, nz, BELLY, { s: [5, 4] });
-          g.cone(0.052, 0.22 - i * 0.02, 0, 0.16 - i * 0.01, nz, SPINE, { seg: 5, rot: [-0.55, 0, 0] });
+        for (var i = 0; i < 4; i++) {
+          var nz = 0.06 + i * 0.15, r = lerp(0.22, 0.15, nz / 0.62);
+          bump(g, 0, r * 1.08, nz, 0.03, 0.07, 0.2 - i * 0.02, plateCol, 0.9, 5);
         }
       }
     },
     hpitch: 0.75, eatY: 0.22,
     head: function (g) {
-      dragonHeadBase(g, 0.52, bc, true);
+      dragonHeadBase(g, 0.52, bcS, true);
       // iconic wide-brimmed cavalier hat, gold band & sweeping golden feather plume
       g.cyl(0.30, 0.32, 0.028, 0.012, 0.19, 0.04, HAT, { seg: 14, rot: [-0.08, 0, -0.13] });
       g.cyl(0.145, 0.165, 0.16, 0.022, 0.275, 0.035, HAT, { seg: 12, rot: [-0.08, 0, -0.13] });
@@ -2111,7 +2121,7 @@ function earBall(g, x, y, z, r, col, inner) {
     legs: {
       fx: 0.32, fy: 0.68, fz: 0.48, hy: 0.68, hz: -0.52, hx: 0.34, fLen: 0.68, hLen: 0.68, kf: 0.45,
       fr: [0.135, 0.10, 0.082], hr: [0.15, 0.105, 0.082], shoulder: [0.16, 0.19, 0.18], haunch: [0.19, 0.23, 0.22],
-      col: function (y) { return y < -0.25 ? PR_DK : PR; },
+      col: function (y, ny, front, x, z) { return y < -0.25 ? PR_DK : bcS(x || 0, y, z || 0, 0, 0.5); },
       foot: { type: 'boot', col: BT, cuffCol: BT2, buckleCol: GD, h: 0.085 }
     },
     tail: {
@@ -2132,33 +2142,26 @@ function earBall(g, x, y, z, r, col, inner) {
     if (ny < -0.44 || (z > 1.02 && ny < 0.08)) return CR;
     return fract(z * 4.2 + sin(y * 3.5 + x * 2) * 0.4) < 0.28 ? STR : OR;
   };
+  var DR_BODY = [[-1.38, 0.03, 0.05, 1.14], [-1.3, 0.14, 0.2, 1.14], [-1.1, 0.28, 0.4, 1.15], [-0.8, 0.34, 0.47, 1.15], [-0.4, 0.3, 0.43, 1.14], [0.0, 0.28, 0.4, 1.15], [0.4, 0.34, 0.46, 1.18], [0.8, 0.38, 0.5, 1.23], [1.05, 0.35, 0.46, 1.25], [1.2, 0.26, 0.36, 1.26], [1.3, 0.12, 0.2, 1.26], [1.34, 0.03, 0.05, 1.26]];
   QUADS.drassy = {
     id: 'drassy', cy: 1.18, hl: 1.24, hh: 0.42, height: 2.55, size: 1.95, walkA: 0.45, runA: 0.80, bend: 0.88, babyScale: 0.46, babyHead: 1.38, hopH: 1.05,
     body: function (g) {
-      g.torso({ z0: -1.35, z1: 1.25, n: 22, seg: 14, rxA: 0.36, rxB: 0.42, ryA: 0.42, ryB: 0.49, ycA: 1.14, ycB: 1.24 }, catBody);
-      // subtle purple dragon dorsal spines & ridge crest along the cat's spine
-      for (var i = 0; i < 7; i++) {
-        var sz = 0.88 - i * 0.31, sy = 1.66 - Math.abs(sz) * 0.07, sh = 0.30 - i * 0.016;
-        g.sph(0.07, 0.055, 0.13, 0, sy - 0.02, sz, PR_DK, { s: [5, 4] });
-        g.cone(0.075, sh, 0, sy + sh * 0.34, sz, i % 2 ? SPINE : PR, { seg: 5, rot: [-0.52, 0, 0] });
-      }
+      g.loft(DR_BODY, { rings: 28, seg: 18, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return catBody(x, y, z, sa, ca); });
+      dorsalPlates(g, DR_BODY, 0.9, -1.0, 8, 0.04, 0.13, 0.3, 0.16, 0.9);
     },
     neck: {
       y: 1.38, z: 0.94, len: 0.56, up: 0.72, r0: 0.25, r1: 0.19, hs: 4,
       col: function (x, y, z, nx, ny) {
-        if (z < 0.20) return ny < -0.4 ? CR : (fract(z * 6.5) < 0.28 ? STR : OR);
+        if (z < 0.20) return ny < -0.4 ? CR : (fract((z + 0.94) * 4.2 + sin((y + 1.38) * 3.5 + x * 2) * 0.4) < 0.28 ? STR : OR);
         if (z < 0.34) return mixHex(ny < -0.4 ? CR : OR, ny < -0.4 ? BELLY : PR, (z - 0.20) / 0.14);
-        return ny < -0.4 ? BELLY : PR;
+        return ny < -0.4 ? BELLY : bcH(x, y + 1.38, z + 0.94, nx, ny);
       },
       extra: function (g) {
-        for (var i = 0; i < 3; i++) {
-          var nz = 0.16 + i * 0.14;
-          g.cone(0.055, 0.22 - i * 0.02, 0, 0.18 - i * 0.01, nz, i % 2 ? PR : SPINE, { seg: 5, rot: [-0.55, 0, 0] });
-        }
+        for (var i = 0; i < 3; i++) bump(g, 0, lerp(0.25, 0.19, (0.18 + i * 0.14) / 0.56) * 1.08, 0.18 + i * 0.14, 0.03, 0.07, 0.2 - i * 0.02, plateCol, 0.9, 5);
       }
     },
     hpitch: 0.65, eatY: 0.26,
-    head: function (g) { dragonHeadBase(g, 0.62, bc, false); },
+    head: function (g) { dragonHeadBase(g, 0.62, bcH, false); },
     headGlow: dragonHeadGlow(0.62),
     legs: {
       hs: 4, fx: 0.19, fy: 0.90, fz: 0.72, hy: 0.88, hz: -0.84, hx: 0.20, fLen: 0.90, hLen: 0.88,
@@ -2766,7 +2769,7 @@ function dispLoft(g, K, R, S, col, disp) {
 // curved, tapered, spirally fluted horn from a base point along dir; flutes = number of spiral ridges
 function spiralHorn(g, bx, by, bz, dx, dy, dz, len, r, flutes, turns, col, curve) {
   var dir = new T.Vector3(dx, dy, dz).normalize(), q = new T.Quaternion().setFromUnitVectors(new T.Vector3(0, 0, 1), dir), v = new T.Vector3();
-  meshGrid(g, 14, 12, function (t, a) {
+  meshGrid(g, 10, 8, function (t, a) {
     var rr = r * Math.pow(1 - t, 0.85) * (1 + (flutes ? 0.13 * cos(a * flutes - t * turns * TAU) : 0));
     if (t > 0.97) rr *= 0.2;
     v.set(rr * cos(a), rr * sin(a) + (curve || 0) * len * t * t, t * len).applyQuaternion(q);
@@ -2795,6 +2798,16 @@ function furTail(g, i, n, sl, R, col, fl) {
   if (last) { var rT = R(1); K.push([zl - rT * 0.9, rT * 0.15, rT * 0.15, 0], [zl - rT * 0.45, rT * 0.78, rT * 0.78, 0]); }
   for (j = 0; j <= m; j++) { var z = lerp(zl, ov, j / m), r = R(tt(z)); K.push([z, r, r, 0]); }
   dispLoft(g, K, 9, 12, function (x, y, z) { return col(tt(z), x, y, z); }, function (x, y, z) { return (vnoise(x * 16, y * 16, z * 16) * 2 - 0.8) * fl; });
+}
+// nearest feature point of a scatter on a 3D grid: [distance in cell units, cell hash]; for scale and plate patterns
+function cellInfo(x, y, z, scale) {
+  var X = x * scale, Y = y * scale, Z = z * scale, ix = Math.floor(X), iy = Math.floor(Y), iz = Math.floor(Z), d1 = 9, h1 = 0;
+  for (var a = -1; a <= 1; a++) for (var b = -1; b <= 1; b++) for (var c = -1; c <= 1; c++) {
+    var cx = ix + a, cy = iy + b, cz = iz + c, px = cx + hash3(cx, cy, cz), py = cy + hash3(cx + 7, cy, cz), pz = cz + hash3(cx, cy + 5, cz + 3);
+    var d = (px - X) * (px - X) + (py - Y) * (py - Y) + (pz - Z) * (pz - Z);
+    if (d < d1) { d1 = d; h1 = hash3(cx + 1.3, cy + 2.1, cz + 3.7); }
+  }
+  return [Math.sqrt(d1), h1];
 }
 
 // ================================================================ SHARED STATE WEIGHTS (non-quad rigs)
