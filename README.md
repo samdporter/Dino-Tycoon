@@ -48,6 +48,8 @@ python3 -m pytest -q tests/test_browser.py
 TEST_BROWSER=webkit python3 -m pytest -q tests/test_browser.py
 ```
 
+Add `-n 4` to run the browser tests in parallel locally. CI runs them serially, because parallel WebGL games overload its software-rendered runners.
+
 On Windows, activate with `.venv\Scripts\activate`. On Linux, add `--with-deps` to the Playwright install command if browser system dependencies are missing.
 
 See [architecture and save contracts](docs/ARCHITECTURE.md) and [test results and limitations](docs/TESTING.md).
