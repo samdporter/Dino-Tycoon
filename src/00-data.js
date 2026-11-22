@@ -1365,10 +1365,10 @@ window.Z.DATA.donors = [
     trackCost: 5, waterTrackCost: 7, refund: 0.5,            // per route tile (dirt track) / per buoyed tile at sea; removal refunds 50%
     truckCost: 7500, boatCost: 6200, balloonCost: 9800, upkeep: { land: 24, sea: 20, air: 26 }, refundVeh: 0.6,
     capacity: { land: 8, sea: 10, air: 6 }, maxVeh: 4,   // seats, vehicles per depot / harbour
-    speed: { land: 3.0, sea: 3.4, air: 1.6 }, accel: 1.8, dwell: 6,   // units per second
+    speed: { land: 4.2, sea: 3.4, air: 1.6 }, accel: 1.8, dwell: 6,   // units per second
     fare: 6, fareMax: 25, fareRef: 6,
     minZone: 36, minInside: 7, viewR: 15, closeR: 5,         // smallest zone (tiles), tiles of route inside the zone, view radius / close-encounter radius (world units)
-    gateTime: 1.6, nudgeChance: 0.0012, strandHours: 2.2, injuryChance: 0.00045,
+    gateTime: 0.9, nudgeChance: 0.0012, strandHours: 2.2, injuryChance: 0.00045,
     breakdownPerHour: 0.01, fixTime: [20, 60],
     wild: { cap: { land: 7, sea: 4, air: 5 }, perHour: 1.1, stayHours: [5, 14], pingerMul: 0.3, scareMul: 0.35, fearR: 9, corridorFee: 0, pingerUp: 4, scareUp: 3 },
     escape: { shutterSec: 140, lockdownCost: 600, rangerBonus: 0.6, reconCost: 6500, reconDays: 3, finePer: 1800, closeDays: 2, mainlandLossRep: 12 }

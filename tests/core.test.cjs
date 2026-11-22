@@ -60,41 +60,54 @@ test('v3 island maps, moats, power, realms, monorail, safari and DNA persist acr
   assert.equal(z.state.map.id, 'fern_meadow');
   assert.equal(Boolean(z.Sim.isIsland()), true);
 });
+function gatedSafariRoute(startRow, endRow) {
+  const z = game();
+  const sim = z.Sim;
+  const safari = sim.safari;
+  sim.newGame({ seed: 42, money: 100000 });
+  z.state.unlocked.star = 3;
+  z.state.elev.fill(0);
+  z.DATA.safari.breakdownPerHour = 0;
+  for (let j = startRow - 2; j <= endRow; j++) {
+    for (let i = 12; i <= 14; i++) {
+      sim.bulldoze(i, j);
+      z.state.terrain[i + j * z.N] = 0;
+    }
+  }
+
+  assert.equal(fenceRect(z, 10, 20, 17, 27, 'reinforced'), 32);
+  const gateRows = endRow > 28 ? [20, 28] : [20];
+  for (const j of gateRows) assert.equal(sim.placeFence({ axis: 'x', i: 13, j }, 'safari_gate').ok, true);
+  assert.equal(sim.placePath(13, startRow - 2, 'paved').ok, true);
+  const depot = sim.placeObject('safari_depot', 12, startRow - 1, 2);
+  assert.equal(depot.ok, true, depot.msg);
+  const tiles = Array.from({ length: endRow - startRow + 1 }, (_, i) => 13 + (startRow + i) * z.N);
+  const route = safari.buildRoute(depot.id, tiles);
+  assert.equal(route.ok, true, route.msg);
+  assert.equal(route.loop, false);
+  assert.equal(safari.gatesPowered(), true);
+  return { z, safari, depot, gateRows };
+}
+
+function buySafariTruck(safari, depot) {
+  const order = safari.buyVehicle(depot.id);
+  assert.equal(order.ok, true, order.msg);
+  return safari.vehicle(order.id);
+}
+
+function safariAnimalAt(z, species, x, depth) {
+  const animal = z.Sim.spawnAnimal(species, Math.floor(x / z.TILE), Math.floor(depth / z.TILE), { sex: 'F' });
+  animal.x = x;
+  animal.z = depth;
+  return animal;
+}
+
 for (const [startRow, endRow, departureFrames] of [
   [18, 26, [0, 60]], [17, 26, [0, 60]], [15, 26, [0, 60]], [17, 26, [90, 60, 30, 0]], [15, 29, [0, 60]],
 ]) {
   test(`${departureFrames.length} safari trucks cycle the airlocks on an out-and-back route from row ${startRow} to ${endRow}`, () => {
-    const z = game();
-    const sim = z.Sim;
-    const safari = sim.safari;
-    sim.newGame({ seed: 42, money: 100000 });
-    z.state.unlocked.star = 3;
-    z.state.elev.fill(0);
-    z.DATA.safari.breakdownPerHour = 0;
-    for (let j = startRow - 2; j <= endRow; j++) {
-      for (let i = 12; i <= 14; i++) {
-        sim.bulldoze(i, j);
-        z.state.terrain[i + j * z.N] = 0;
-      }
-    }
-
-    assert.equal(fenceRect(z, 10, 20, 17, 27, 'reinforced'), 32);
-    const gateRows = endRow > 28 ? [20, 28] : [20];
-    for (const j of gateRows) assert.equal(sim.placeFence({ axis: 'x', i: 13, j }, 'safari_gate').ok, true);
-    assert.equal(sim.placePath(13, startRow - 2, 'paved').ok, true);
-    const depot = sim.placeObject('safari_depot', 12, startRow - 1, 2);
-    assert.equal(depot.ok, true, depot.msg);
-    const tiles = Array.from({ length: endRow - startRow + 1 }, (_, i) => 13 + (startRow + i) * z.N);
-    const route = safari.buildRoute(depot.id, tiles);
-    assert.equal(route.ok, true, route.msg);
-    assert.equal(route.loop, false);
-    assert.equal(safari.gatesPowered(), true);
-
-    const trucks = departureFrames.map(() => {
-      const order = safari.buyVehicle(depot.id);
-      assert.equal(order.ok, true, order.msg);
-      return safari.vehicle(order.id);
-    });
+    const { safari, depot, gateRows } = gatedSafariRoute(startRow, endRow);
+    const trucks = departureFrames.map(() => buySafariTruck(safari, depot));
     const gates = gateRows.map(j => safari.gateState(`x13,${j}`));
     const entryDoors = new Map(trucks.map(truck => [truck.id, new Set()]));
     const returned = new Set();
@@ -114,6 +127,50 @@ for (const [startRow, endRow, departureFrames] of [
     assert.ok(gates.every(gate => gate.owner === 0));
   });
 }
+test('a short safari through a powered airlock completes in about one park hour', () => {
+  const { z, safari, depot } = gatedSafariRoute(18, 26);
+  const truck = buySafariTruck(safari, depot);
+  truck.st = 'run';
+  const maxSeconds = z.Sim.DAY_SECONDS / 24 * 1.1;
+  for (let elapsed = 0; elapsed < maxSeconds && truck.st !== 'board'; elapsed += 0.05) {
+    safari.step(0.05);
+    assert.equal(safari.doorMaxBoth(), 0);
+  }
+  assert.equal(truck.st, 'board');
+});
+test('a safari truck gets past a resting animal directly on the track', () => {
+  const { z, safari, depot } = gatedSafariRoute(18, 26);
+  const truck = buySafariTruck(safari, depot);
+  const route = safari.route(truck.route);
+  truck.s = route.gates[0].sg + 6;
+  truck.st = 'run';
+  const point = safari.sample(route.id, truck.s + 4.5);
+  const animal = safariAnimalAt(z, 'dryosaurus', point.x, point.z);
+  animal.state = 'sleep';
+  const enclosure = animal.enc;
+  assert.ok(enclosure);
+
+  safari.step(0.1);
+  assert.equal(truck.st, 'wait', 'The truck should yield to the animal first');
+  assert.equal(animal.x, point.x);
+  for (let frame = 0; frame < 280 && truck.st !== 'board'; frame++) safari.step(0.1);
+  assert.equal(truck.st, 'board', 'The truck should return after clearing the track');
+  assert.equal(z.state.tileEnc[z.monoCtx.tileOf(animal.x, animal.z)], enclosure);
+});
+test('a nearby predator can pause an occupied safari truck once per tour', () => {
+  const { z, safari, depot } = gatedSafariRoute(18, 26);
+  const truck = buySafariTruck(safari, depot);
+  const route = safari.route(truck.route);
+  truck.s = route.gates[0].sg + 6;
+  truck.st = 'run';
+  const point = safari.sample(route.id, truck.s + 2);
+  safariAnimalAt(z, 'tyrannosaurus', point.x - 3.2, point.z);
+  safari.vehRt(truck.id).pax.push({ state: 'ride', sfv: truck.id, sfs: 0, mood: 50 });
+  z.DATA.safari.nudgeChance = 1; // Force any eligible encounter to trigger.
+  for (let frame = 0; frame < 280 && truck.st !== 'board'; frame++) safari.step(0.1);
+  assert.equal(safari.stats().nudges, 1);
+  assert.equal(truck.st, 'board');
+});
 test('manual safari rescue opens an unpowered geofence portal for a stranded truck', () => {
   const z = game();
   const sim = z.Sim;
