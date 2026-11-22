@@ -2191,14 +2191,14 @@ function spotDist(x, y, z, scale) {
 // ---- JAGUAR
 (function () {
   var GW = 0xd89b3c, CTR = 0xb06a1e, BL = 0xf2d9a8, DK = 0x221812, NOSE = 0x3a2420;
-  // broken black rosettes around a darker tan centre, plus small solid dots between them
+  // small dense rosettes: broken dark ring around a lighter orange centre, sometimes a dot inside
   var coat = function (x, y, z, nx, ny) {
-    if (ny < -0.45) return mixHex(BL, DK, sstep(0.26, 0.16, spotDist(x, y, z, 5.5)));
-    var d = spotDist(x, y, z, 3.0), n = vnoise(x * 12, y * 12, z * 12);
+    if (ny < -0.45) return mixHex(BL, DK, sstep(0.26, 0.16, spotDist(x, y, z, 7)) * 0.8);
+    var d = spotDist(x, y, z, 7);
     var c = mixHex(GW, shade(GW, 1.07), sstep(0.55, 0.75, vnoise(x * 9, y * 9, z * 9)));
-    c = mixHex(c, CTR, sstep(0.18, 0.12, d) * 0.9);
-    var ring = sstep(0.12, 0.2, d) * sstep(0.44, 0.34, d) * sstep(0.05, 0.2, n);
-    var dot = sstep(0.17, 0.1, spotDist(x + 3.1, y + 1.7, z + 5.3, 5.5));
+    c = mixHex(c, 0xeab25c, sstep(0.24, 0.18, d) * 0.9);
+    var ring = sstep(0.2, 0.26, d) * sstep(0.4, 0.34, d) * sstep(0.05, 0.15, vnoise(x * 9, y * 9, z * 9));
+    var dot = sstep(0.07, 0.04, d) * sstep(0.45, 0.55, vnoise(x * 5 + 3, y * 5, z * 5));
     return mixHex(c, DK, max(ring, dot));
   };
   var BK = [[-0.97, 0.025, 0.04, 0.8], [-0.92, 0.09, 0.12, 0.8], [-0.78, 0.17, 0.25, 0.8], [-0.55, 0.2, 0.31, 0.78], [-0.25, 0.17, 0.29, 0.77], [0.0, 0.15, 0.28, 0.765], [0.25, 0.19, 0.335, 0.785], [0.5, 0.215, 0.375, 0.8], [0.7, 0.2, 0.34, 0.82], [0.84, 0.14, 0.25, 0.83], [0.92, 0.07, 0.14, 0.83], [0.95, 0.02, 0.04, 0.83]];
@@ -2208,22 +2208,26 @@ function spotDist(x, y, z, scale) {
     neck: { y: 0.90, z: 0.62, len: 0.26, up: 0.42, r0: 0.165, r1: 0.15, hs: 3, col: function (x, y, z, nx, ny) { return coat(x, y + 0.9, z + 0.62, nx, ny); } },
     hpitch: 0.3, eatY: 0.18,
     head: function (g) {
-      var hc = function (zc, ca, sa, x, y, z) {
-        if (z > 0.27 && ca > -0.1) return NOSE;
-        if (z > 0.15 && ca < 0.35) return mixHex(BL, shade(GW, 0.6), sstep(0.24, 0.16, spotDist(x, y, z, 30)));
-        if (z > 0.1 && ca < 0.55 && ca > -0.2) return mixHex(BL, GW, 0.4);
-        return mixHex(GW, DK, sstep(0.22, 0.14, spotDist(x, y, z, 11)));
+      var hc = function (x, y, z, nx, ny) {
+        var ax = abs(x);
+        if (z > 0.27) return (ny < 0.3 || y < -0.035) ? BL : mixHex(GW, DK, sstep(0.3, 0.2, spotDist(x, y, z, 24)));
+        if (y < -0.04 && z > 0.05) return BL;
+        if (z > 0.1 && ax > 0.05 && y < 0.0) return BL;
+        return mixHex(GW, DK, sstep(0.3, 0.2, spotDist(x, y, z, 17)));
       };
-      felidHead(g, { cw: 0.17, ch: 0.15, ml: 0.32, mw: 0.098, mh: 0.078, jaw: 0.042, nose: -0.03, rings: 22, seg: 20 }, hc, function (zc, ca, sa, x, y, z) { return ca < 0.4 ? BL : mixHex(BL, GW, 0.5); });
-      eyePair(g, 0.092, 0.05, 0.17, 0.024, 0xc89a20);
+      g.loft([[-0.12, 0.15, 0.14, 0.02], [0.02, 0.21, 0.17, 0.0], [0.12, 0.22, 0.165, -0.015], [0.2, 0.16, 0.12, -0.03], [0.25, 0.12, 0.09, -0.04], [0.285, 0.095, 0.07, -0.045], [0.31, 0.05, 0.035, -0.045]],
+        { rings: 14, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return hc(x, y, z, sa, ca); });
+      g.sph(0.036, 0.02, 0.016, 0, -0.018, 0.3, 0xb8695a, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) for (var r = 0; r < 3; r++) g.cone(0.05 - r * 0.01, 0.1 - r * 0.02, s * 0.15, -0.06 - r * 0.025, 0.06 - r * 0.04, BL, { seg: 5, rot: [0.2, 0, -s * (1.25 + r * 0.12)] });
+      eyePair(g, 0.115, 0.055, 0.17, 0.024, 0xc89a20);
     },
     earAt: [0, 0.09, 0.0], ears: function (g) {
-      for (var s = -1; s <= 1; s += 2) earCup(g, s * 0.12, 0.12, -0.005, 0.058, 0.07, 0.022, 0.25, -0.1, GW, DK, 0xd8a898, 0);
+      for (var s = -1; s <= 1; s += 2) earCup(g, s * 0.16, 0.135, -0.01, 0.05, 0.055, 0.022, 0.5, -0.1, GW, DK, 0xd8a898, 0);
     },
     legs: {
       hs: 4, fx: 0.14, fy: 0.56, fz: 0.44, hy: 0.55, hz: -0.52, hx: 0.15, fLen: 0.56, hLen: 0.55,
       fr: [0.105, 0.078, 0.066], hr: [0.115, 0.076, 0.064], haunch: [0.13, 0.17, 0.19],
-      col: function (y, ny, front, x, z) { return y < -0.45 ? mixHex(GW, BL, 0.3) : (spotDist(x || 0, y, z || 0, 9.0) < 0.2 ? DK : GW); },
+      col: function (y, ny, front, x, z) { return mixHex(mixHex(GW, DK, sstep(0.28, 0.2, spotDist(x || 0, y, z || 0, 15))), mixHex(GW, BL, 0.3), sstep(-0.35, -0.5, y)); },
       foot: { type: 'paw', col: 0x222222, h: 0.065, pawCol: mixHex(GW, BL, 0.3) }
     },
     tail: {
@@ -2242,14 +2246,14 @@ function spotDist(x, y, z, scale) {
   var spots = function (x, y, z, ny) {
     var c = mixHex(TAN, shade(TAN, 1.06), sstep(0.5, 0.75, vnoise(x * 8, y * 8, z * 8)));
     if (ny < -0.45) return mixHex(BL, DK, sstep(0.2, 0.12, spotDist(x, y, z, 7)) * 0.7);
-    return mixHex(c, DK, sstep(0.3, 0.2, spotDist(x, y, z, 6.2)));
+    return mixHex(c, DK, sstep(0.26, 0.18, spotDist(x, y, z, 11)));
   };
   var BK = [[-0.92, 0.02, 0.04, 0.9], [-0.87, 0.08, 0.11, 0.89], [-0.72, 0.15, 0.22, 0.9], [-0.5, 0.17, 0.27, 0.9], [-0.2, 0.14, 0.25, 0.89], [0.0, 0.12, 0.235, 0.89], [0.25, 0.15, 0.29, 0.91], [0.5, 0.17, 0.335, 0.93], [0.7, 0.16, 0.31, 0.94], [0.82, 0.11, 0.22, 0.95], [0.9, 0.06, 0.12, 0.95], [0.93, 0.02, 0.04, 0.95]];
   // black tear line from the inner eye corner down the muzzle side
   var tear = function (x, y, z) {
     var ey = 0.03, ez = 0.15, my = -0.04, mz = 0.2, l2 = (my - ey) * (my - ey) + (mz - ez) * (mz - ez), t = clamp(((y - ey) * (my - ey) + (z - ez) * (mz - ez)) / l2, 0, 1);
     var dy = y - lerp(ey, my, t), dz = z - lerp(ez, mz, t), d = Math.sqrt(dy * dy + dz * dz);
-    return abs(x) > 0.025 ? sstep(0.026, 0.013, d) * (1 - sstep(0.07, 0.1, abs(x))) : 0;
+    return abs(x) > 0.025 ? sstep(0.014, 0.007, d) * (1 - sstep(0.07, 0.1, abs(x))) : 0;
   };
   QUADS.cheetah = {
     id: 'cheetah', cy: 0.90, hl: 0.85, hh: 0.28, height: 1.45, size: 0.92, walkA: 0.46, runA: 0.92, bend: 0.95, babyScale: 0.5, babyHead: 1.38,
@@ -2258,21 +2262,25 @@ function spotDist(x, y, z, scale) {
     hpitch: 0.4, eatY: 0.18,
     head: function (g) {
       var hc = function (zc, ca, sa, x, y, z) {
-        if (z > 0.205 && ca > -0.15) return NOSE;
-        var c = (z > 0.1 && ca < 0.3) ? BL : (z > 0.1 ? mixHex(TAN, BL, 0.18) : TAN);
-        if (z < 0.14 && ca > -0.3) c = mixHex(c, DK, sstep(0.22, 0.14, spotDist(x, y, z, 15)));
+        var ax = abs(x);
+        if (z > 0.2 && ca > -0.15) return BL;
+        var c = (z > 0.1 && (ca < 0.3 || ax > 0.03)) ? BL : TAN;
+        if (z < 0.14 && ca > -0.3) c = mixHex(c, DK, sstep(0.24, 0.17, spotDist(x, y, z, 24)));
         return mixHex(c, DK, tear(x, y, z));
       };
-      felidHead(g, { cw: 0.112, ch: 0.105, ml: 0.225, mw: 0.056, mh: 0.05, jaw: 0.028, nose: -0.025, rings: 22, seg: 22 }, hc, function (zc, ca) { return BL; });
-      eyePair(g, 0.062, 0.04, 0.128, 0.02, 0xc88a18);
+      g.loft([[-0.09, 0.1, 0.095, 0.01], [0.02, 0.118, 0.105, 0.0], [0.1, 0.115, 0.1, -0.01], [0.16, 0.08, 0.07, -0.02], [0.2, 0.06, 0.052, -0.028], [0.225, 0.045, 0.04, -0.03], [0.242, 0.025, 0.02, -0.03]],
+        { rings: 14, seg: 14, cap0: true, cap1: true }, hc);
+      g.sph(0.02, 0.012, 0.01, 0, -0.01, 0.238, 0xb8695a, { s: [6, 4] });
+      for (var s = -1; s <= 1; s += 2) for (var r = 0; r < 2; r++) g.cone(0.03 - r * 0.008, 0.06 - r * 0.01, s * 0.1, -0.04 - r * 0.02, 0.05 - r * 0.03, BL, { seg: 5, rot: [0.2, 0, -s * (1.25 + r * 0.12)] });
+      eyePair(g, 0.07, 0.04, 0.11, 0.019, 0xc88a18);
     },
     earAt: [0, 0.08, 0.0], ears: function (g) {
-      for (var s = -1; s <= 1; s += 2) earCup(g, s * 0.092, 0.1, -0.01, 0.042, 0.05, 0.018, 0.3, -0.1, TAN, DK, 0xe8c4b0, 0);
+      for (var s = -1; s <= 1; s += 2) earCup(g, s * 0.1, 0.098, -0.01, 0.036, 0.042, 0.016, 0.45, -0.1, TAN, DK, 0xe8c4b0, 0);
     },
     legs: {
       hs: 5, fx: 0.125, fy: 0.72, fz: 0.45, hy: 0.72, hz: -0.52, hx: 0.135, fLen: 0.72, hLen: 0.72,
       fr: [0.075, 0.05, 0.042], hr: [0.09, 0.055, 0.042], haunch: [0.11, 0.16, 0.17],
-      col: function (y, ny, front, x, z) { return y < -0.58 ? mixHex(TAN, BL, 0.3) : mixHex(TAN, DK, sstep(0.24, 0.15, spotDist(x || 0, y, z || 0, 9))); },
+      col: function (y, ny, front, x, z) { return mixHex(mixHex(TAN, DK, sstep(0.24, 0.17, spotDist(x || 0, y, z || 0, 14))), mixHex(TAN, BL, 0.3), sstep(-0.5, -0.62, y)); },
       foot: { type: 'paw', col: 0x222222, h: 0.055, pawCol: mixHex(TAN, BL, 0.3) }
     },
     tail: {
@@ -2405,7 +2413,7 @@ function spotDist(x, y, z, scale) {
 // ---- TORTOISE
 (function () {
   var PL = 0x9e926e, SK = 0x6c6852, SK_DK = 0x524f3e, SH_HI = 0x9a8650, SH_LO = 0x4a4228, GROOVE = 0x2e2a1a;
-  var SX = 0.94, SZ = 1.15, PROF = [[0.48, 0.24], [0.515, 0.29], [0.47, 0.42], [0.39, 0.58], [0.26, 0.72], [0.1, 0.79], [0.0, 0.81]];
+  var SX = 0.94, SZ = 1.15, PROF = [[0.48, 0.24], [0.515, 0.29], [0.47, 0.42], [0.39, 0.58], [0.26, 0.72], [0.13, 0.78], [0.05, 0.805], [0.0, 0.81]];
   function prof(t) {
     var f = t * (PROF.length - 1), i = Math.min(PROF.length - 2, Math.floor(f)), u = f - i, a = PROF[i], b = PROF[i + 1], p = PROF[Math.max(0, i - 1)], q = PROF[Math.min(PROF.length - 1, i + 2)], u2 = u * u, u3 = u2 * u, o = [0, 0];
     for (var c = 0; c < 2; c++) o[c] = 0.5 * (2 * a[c] + (-p[c] + b[c]) * u + (2 * p[c] - 5 * a[c] + 4 * b[c] - q[c]) * u2 + (-p[c] + 3 * a[c] - 3 * b[c] + q[c]) * u3);
@@ -2516,7 +2524,7 @@ function spotDist(x, y, z, scale) {
     legs: {
       fx: 0.155, fy: 0.30, fz: 0.33, hy: 0.31, hz: -0.36, hx: 0.165, fLen: 0.30, hLen: 0.31,
       fr: [0.075, 0.057, 0.05], hr: [0.09, 0.06, 0.05], haunch: [0.10, 0.13, 0.14],
-      col: function (y) { return y < -0.2 ? DK : BR; },
+      col: function (y) { return mixHex(BR, DK, sstep(-0.1, -0.3, y)); },
       foot: { type: 'toes', col: 0x3b2818, h: 0.04 }
     },
     fold: { roll: 0.08, hp: 0.55, hy: 0.5 }
@@ -2607,8 +2615,8 @@ function spotDist(x, y, z, scale) {
     legs: {
       fx: 0.065, fy: 0.23, fz: 0.20, hy: 0.23, hz: -0.22, hx: 0.068, fLen: 0.23, hLen: 0.23,
       fr: [0.035, 0.024, 0.02], hr: [0.042, 0.024, 0.02], haunch: [0.055, 0.075, 0.075],
-      col: function (y) { return y < -0.14 ? CR : SD; },
-      foot: { type: 'paw', col: CR, h: 0.025, pawCol: CR }
+      col: function (y) { return mixHex(SD, CR, sstep(-0.1, -0.2, y) * 0.5); },
+      foot: { type: 'paw', col: CR, h: 0.025, pawCol: mixHex(SD, CR, 0.5) }
     },
     tail: {
       y: 0.33, z: -0.32, n: 2, len: 0.44, r0: 0.03, r1: 0.03, col: SD, up: -0.42, curl: 0.14,
