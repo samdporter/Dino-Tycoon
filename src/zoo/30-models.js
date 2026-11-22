@@ -1775,8 +1775,8 @@ function earBall(g, x, y, z, r, col, inner) {
     body: function (g) {
       g.loft(BK, { rings: 24, seg: 16, cap0: true, cap1: true, flatBot: 0.78 }, function (zc, ca, sa, x, y, z) { return skin(x, y, z, sa, ca); });
       // staggered rows of keeled osteoderms along the back
-      for (var c = 0; c < 4; c++) for (var j = 0; j < 14; j++) {
-        var z = -0.86 + j * 0.125 + (c % 2) * 0.06, p = profAt(BK, z), u = (0.045 + c * 0.095) * p[0] / 0.38, sz = p[0] / 0.38;
+      for (var c = 0; c < 3; c++) for (var j = 0; j < 12; j++) {
+        var z = -0.86 + j * 0.145 + (c % 2) * 0.07, p = profAt(BK, z), u = (0.045 + c * 0.095) * p[0] / 0.38, sz = p[0] / 0.38;
         var y = p[2] + p[1] * Math.sqrt(max(0, 1 - (u / p[0]) * (u / p[0]))) - 0.012, h = (0.058 - c * 0.009) * sz;
         for (var s = -1; s <= 1; s += 2) { if (c === 0 && s > 0) continue; bump(g, s * u * (c === 0 ? 0 : 1), y, z, 0.034 * sz, 0.05 * sz, h, scuteCol, 0.55, 4); }
       }
@@ -1828,36 +1828,27 @@ function earBall(g, x, y, z, r, col, inner) {
 (function () {
   var PW = 0xfaf7ff, SH = 0xe8e2f5, MN = 0xe9a6d8, MN2 = 0xd284c8, MN3 = 0xf6c6eb, GD = 0xf0c642, GD2 = 0xd69f24;
   var bc = function (x, y, z, nx, ny) { return ny < -0.5 ? SH : PW; };
+  var BK = [[-1.0, 0.05, 0.08, 1.12], [-0.92, 0.2, 0.3, 1.14], [-0.7, 0.3, 0.4, 1.16], [-0.3, 0.3, 0.37, 1.1], [0.1, 0.3, 0.38, 1.1], [0.5, 0.31, 0.42, 1.14], [0.78, 0.26, 0.38, 1.2], [0.92, 0.14, 0.22, 1.22], [0.97, 0.04, 0.07, 1.22]];
   var mcol = function (i) { return i % 3 === 0 ? MN3 : (i % 3 === 1 ? MN : MN2); };
   QUADS.unicorn = {
     id: 'unicorn', cy: 1.12, hl: 0.95, hh: 0.38, height: 2.05, size: 1.4, walkA: 0.42, runA: 0.68, bend: 0.85, babyScale: 0.5, babyHead: 1.38, hopH: 1.2,
     body: function (g) {
-      g.torso({ z0: -0.98, z1: 0.92, n: 20, seg: 14, rxA: 0.33, rxB: 0.32, ryA: 0.38, ryB: 0.41, ycA: 1.12, ycB: 1.15 }, bc);
+      g.loft(BK, { rings: 28, seg: 18, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 1.32, z: 0.72, len: 0.72, up: 0.95, r0: 0.19, r1: 0.12, hs: 6, col: PW,
       extra: function (g) {
-        for (var i = 0; i < 8; i++) {
-          var z = 0.04 + i * 0.09, r = lerp(0.19, 0.12, z / 0.72);
-          g.sph(0.055, 0.11, 0.075, 0, r + 0.04, z, mcol(i), { s: [5, 4], rot: [0.3, 0, 0] });
-          g.sph(0.045, 0.09, 0.06, (i % 2 ? 0.045 : -0.045), r - 0.01, z + 0.02, mcol(i + 1), { s: [4, 3] });
+        for (var i = 0; i < 9; i++) {
+          var z = 0.02 + i * 0.085, r = lerp(0.19, 0.12, z / 0.72), sd = i % 2 ? 1 : -1;
+          g.tube([[0, r + 0.01, z], [sd * 0.08, r + 0.05, z - 0.01], [sd * 0.15, r - 0.1, z - 0.05]], [0.04, 0.032, 0.006], mcol(i), { seg: 5, steps: 3 });
         }
       } },
     hpitch: 0.95, eatY: 0.2,
     head: function (g) {
-      g.sph(0.11, 0.125, 0.17, 0, 0, 0.1, PW, { s: [8, 6] });
-      g.sph(0.082, 0.085, 0.19, 0, -0.065, 0.29, PW, { s: [8, 6] });
-      g.sph(0.078, 0.078, 0.065, 0, -0.075, 0.42, 0xf2d0dc, { s: [6, 4] });
+      g.loft([[-0.08, 0.09, 0.11, 0.03], [0.05, 0.11, 0.13, 0.03], [0.18, 0.085, 0.1, -0.01], [0.3, 0.065, 0.075, -0.045], [0.4, 0.062, 0.07, -0.07], [0.46, 0.05, 0.055, -0.075], [0.485, 0.02, 0.025, -0.075]], { rings: 16, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.4 ? mixHex(PW, 0xe6b8c8, sstep(0.4, 0.47, z)) : PW; });
       // flowing forelock
       g.sph(0.05, 0.075, 0.07, 0.03, 0.11, 0.09, MN, { s: [5, 4], rot: [0.3, 0, 0.2] });
       g.sph(0.04, 0.065, 0.06, -0.02, 0.09, 0.13, MN3, { s: [5, 4], rot: [0.35, 0, -0.15] });
-      // spiraled golden horn projecting forward & up from forehead
-      for (var k = 0; k < 5; k++) {
-        var f0 = k / 5, f1 = (k + 1) / 5, len = 0.46;
-        var y0 = 0.09 + f0 * len * 0.86, z0 = 0.14 + f0 * len * 0.51;
-        var y1 = 0.09 + f1 * len * 0.86, z1 = 0.14 + f1 * len * 0.51;
-        g.limb(0, y0, z0, 0, y1, z1, lerp(0.042, 0.008, f0), lerp(0.042, 0.008, f1), k % 2 ? GD : GD2, { seg: 6 });
-        g.sph(lerp(0.046, 0.012, f0), lerp(0.022, 0.008, f0), lerp(0.046, 0.012, f0), 0, y0, z0, GD, { s: [5, 3], rot: [0.54, 0, 0] });
-      }
+      spiralHorn(g, 0, 0.12, 0.17, 0, 0.62, 0.78, 0.5, 0.042, 4, 5, function (x, y, z, nx, ny, nz, t) { return mixHex(GD2, GD, sstep(0.2, 0.9, t)); }, 0);
       eyePair(g, 0.095, 0.06, 0.16, 0.028, 0x2a1a42);
       g.sph(0.014, 0.022, 0.01, 0.028, -0.06, 0.47, 0xd8a8ba, { s: [4, 3] });
       g.sph(0.014, 0.022, 0.01, -0.028, -0.06, 0.47, 0xd8a8ba, { s: [4, 3] });
