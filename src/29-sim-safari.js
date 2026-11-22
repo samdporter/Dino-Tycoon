@@ -369,7 +369,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     gs[first] = mv(gs[first] || 0, tF);
     if (!single) gs[second] = mv(gs[second] || 0, tS); else gs[second] = 0;
     if (ph === 1 && gs[first] >= 0.99) gs.phase = 2;
-    else if (ph === 3 && gs[first] <= 0.01) gs.phase = single ? 0 : 4;
+    else if (ph === 3 && gs[first] === 0) gs.phase = single ? 0 : 4;
     else if (ph === 4 && gs[second] >= 0.99) gs.phase = 5;
     else if (ph === 6 && gs.out === 0 && gs['in'] === 0) { gs.phase = 0; gs.owner = 0; gs.manual = 0; }
     if (gs.phase === 0 && (gs.out > 0.01 || gs['in'] > 0.01)) { gs.out = mv(gs.out, 0); gs['in'] = mv(gs['in'], 0); }
@@ -388,7 +388,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var w = C.WX(), wk = ({ storm: 0.6, rain: 0.85, fog: 0.8 })[S().weather && S().weather.type] || 1;
     return SD.speed[v.kind] * wk;
   }
-  function blockers(v, P, pose, rt) {
+  function blockers(v, P) {
     // anything standing on the track just ahead (animals cross the road; the truck waits)
     var s = S(), ahead = [3.4, 6.2], k, hit = null, tmp = {}, pts = [];
     for (k = 0; k < ahead.length; k++) { sample(P, v.s + ahead[k], tmp); pts.push({ x: tmp.x, z: tmp.z }); }
@@ -412,7 +412,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var o = ST(); if (!o.veh.length) return;
     var open = C.openNow(), L, k;
     for (var vi = 0; vi < o.veh.length; vi++) {
-      var v = o.veh[vi], P = X.routes[v.route], rt = vrt(v), pose = rt;
+      var v = o.veh[vi], P = X.routes[v.route], rt = vrt(v);
       if (!P || !P.ok) { if (v.st !== 'idle') ejectAll(v); v.st = 'idle'; v.v = 0; poseOf(v, P, rt); continue; }
       L = P.len;
       var q = RT().bq[P.depot.id], qn = q ? q.q.length : 0;
@@ -426,7 +426,9 @@ window.Z = window.Z || {}; var Z = window.Z;
           rt.alight = false;
           if (rt.bT <= 0 && rt.pax.length < SD.capacity[v.kind] && boardOne(v, P)) rt.bT = 0.4;
           var full = rt.pax.length >= SD.capacity[v.kind], pend = pendingQ(P);
-          if (rt.pax.length && v.dw >= SD.dwell && (full || pend === 0 || v.dw >= SD.dwell + 14) && routeGo(P)) { v.st = 'run'; v.v = 0.2; v.why = ''; }
+          if (rt.pax.length && v.dw >= SD.dwell && (full || pend === 0 || v.dw >= SD.dwell + 14) && routeGo(P)) {
+            v.st = 'run'; v.v = 0.2; v.why = ''; rt.nudged = false; rt.nudgeT = 0;
+          }
           else if (!rt.pax.length && (v.dw >= SD.dwell + 6 && pend === 0 || !open || o.lockdown)) { v.st = 'idle'; }
         }
       } else if (v.st === 'broken') {
@@ -447,11 +449,15 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (gsLim.lim < lim) { lim = gsLim.lim; why = gsLim.why; stuck = gsLim.stuck; }
         // animals on the road
         rt.blkT -= dt;
-        if (rt.blkT <= 0) { rt.blkT = 0.25; rt.blk = blockers(v, P, pose, rt); }
+        if (rt.blkT <= 0) {
+          rt.blkT = 0.25;
+          var blocker = blockers(v, P);
+          if (blocker !== rt.blk) { rt.blk = blocker; rt.blkWait = 0; rt.blkSide = 0; }
+        }
         if (rt.nudgeT > 0) { rt.nudgeT -= dt; tgtV = 0; why = 'A ' + C.lc(SP()[rt.nudgeSp || 'trex'] ? SP()[rt.nudgeSp].name : 'animal') + ' is investigating the vehicle'; }
         else if (rt.blk) {
           tgtV = 0; why = 'Waiting for ' + (rt.blk.name || 'a wild animal') + ' to cross'; rt.blkWait = (rt.blkWait || 0) + dt;
-          if (rt.blkWait > 6) pushAside(rt.blk, rt, dt, P, v);
+          if (rt.blkWait > 1.5) pushAside(rt.blk, rt, dt, P, v);
           if (rt.blkWait > 12) { shoo(rt.blk, P, v); rt.blkWait = 6; }
         } else rt.blkWait = 0;
         // brake for the limit
@@ -470,7 +476,11 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (v.s < s0 - L / 2) { v.s = 0; v.st = 'board'; v.v = 0; v.dw = 0; rt.aT = 0; rt.bT = 0.8; rt.alight = rt.pax.length > 0; }
         // breakdowns (a game hour is DAY_SECONDS/24 s)
         if (rng.next() < SD.breakdownPerHour * dt / (C.DAY_SECONDS / 24) && v.st === 'run') { v.st = 'broken'; v.brk = rng.range(SD.fixTime[0], SD.fixTime[1]); v.why = 'Broken down: engineers on the way'; rt.stuckT = 0; }
-        rt.nudgeChk = (rt.nudgeChk || 0) - dt; if (rt.nudgeChk <= 0) { rt.nudgeChk = 0.5; nudgeCheck(v, rt, P); }
+        rt.nudgeChk = (rt.nudgeChk || 0) - dt;
+        if (rt.nudgeChk <= 0) {
+          rt.nudgeChk = 0.5;
+          if (v.st === 'run' && v.v >= 0.05 && !rt.blk) nudgeCheck(rt);
+        }
       }
       poseOf(v, P, rt);
       for (var pq = 0; pq < rt.pax.length; pq++) placeRider(v, rt, rt.pax[pq]);
@@ -504,11 +514,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     g.x = rt.x + ch * lx + sh * lz; g.z = rt.z - sh * lx + ch * lz;
     g.y = rt.y + sy - C.heightAt(g.x, g.z); g.heading = rt.h + (lx > 0 ? PI / 2 : -PI / 2); g.hd = g.heading; g.speed = 0;
   }
-  function pushAside(an, rt, dt, P, v) {   // the horn: a big animal on the track slides off it
-    var tmp = {}; sample(P, v.s + 4.5, tmp); var dx = an.x - tmp.x, dz = an.z - tmp.z, l = Math.sqrt(dx * dx + dz * dz) || 1;
-    var nx = an.x + dx / l * 1.6 * dt, nz = an.z + dz / l * 1.6 * dt, t = C.tileOf(nx, nz), s = S();
-    if (an.wild || s.tileEnc[t] === an.enc) { an.x = nx; an.z = nz; }
-    an.st = Math.max(an.st || 0, 2);
+  function pushAside(an, rt, dt, P, v) {   // the horn encourages the animal to move out of the lane
+    var road = sample(P, v.s + 4.5, {}), rx = Math.cos(road.h), rz = -Math.sin(road.h);
+    var offset = (an.x - road.x) * rx + (an.z - road.z) * rz;
+    var side = rt.blkSide || (offset < 0 ? -1 : 1);
+    for (var tries = 0; tries < 2; tries++, side = -side) {
+      var nx = an.x + rx * side * 2.4 * dt, nz = an.z + rz * side * 2.4 * dt;
+      if (v.kind === 'sea' && !isWater(C.tileOf(nx, nz))) continue;
+      if (!X0.canGo(an, an.x, an.z, nx, nz)) continue;
+      an.x = nx; an.z = nz; rt.blkSide = side;
+      return;
+    }
   }
   function shoo(an, P, v) {
     var rt = vrt(v), dx = an.x - rt.x, dz = an.z - rt.z, l = Math.sqrt(dx * dx + dz * dz) || 1;
@@ -690,11 +706,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   function nearestDepot(g) { var best = null; S().objects.forEach(function (o) { var d = BD()[o.type]; if (d && d.safari && !best) best = o; }); return best; }
 
   // ------------------------------------------------------------------ nudges, strandings, injuries
-  function nudgeCheck(v, rt, P) {
-    if (!rt.pax.length || !rt.ov.length) return;
+  function nudgeCheck(rt) {
+    if (rt.nudged || !rt.pax.length || !rt.ov.length) return;
     for (var k = 0; k < rt.ov.length; k++) {
       var it = rt.ov[k]; if (it.wild || it.danger < 2 || it.d > 4.2) continue;
       if (rng.next() < SD.nudgeChance * 60 * 0.5) {
+        rt.nudged = true;
         rt.nudgeT = rng.range(2.5, 4.5); rt.nudgeSp = it.sp; ST().stats.nudges++;
         rt.pax.forEach(function (g) { g.mood += 4; if (rng.chance(0.6)) C.say(g, 'safariDanger', it.sp); });
         if (Z.News && rng.chance(0.3)) { var s2 = Z.News.post({ kind: 'safari_nudge', severity: 1, data: { species: it.sp } }); if (s2) Z.News.addEffect('thrill', 1.05, 3, 'Viral safari clip', true); }

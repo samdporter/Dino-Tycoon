@@ -5435,6 +5435,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   Z.safariCtx = {   // safari package: what the sim needs beyond Z.monoCtx
     removeAnimal: removeAnimal, hurtGuest: hurtGuest, doEscape: doEscape, recapture: recapture, onEscape: onEscape, newId: newId, isNight: isNight, refreshEncAnimals: refreshEncAnimals, encStats: encStats,
+    canGo: canGo,
     addBack: function (an) { S.animals.push(an); RT.aById.set(an.id, an); }, addAnimal: addAnimal, cliffT: cliffT, cxOf: cxOf, czOf: czOf, fxOf: fxOf, spawnGuestHook: null, lc: lc, gateTile: function () { return GATE_I0 + GATE_J * N; }
   };
 
