@@ -302,6 +302,7 @@ test('Dino Coasters: guests ride, earn revenue, breakdowns stop all trains, engi
   z.Sim._rt().gById.set(g.id, g);
   const stObj = z.state.objects.find(o => o.id === stRes.id);
   assert.equal(z.Coaster.arrive(g, stObj), true);
+  assert.equal(z.Sim.ratingBreakdown().attractionBonus, 0, 'Queueing earns no rating credit');
 
   let sawRiding = false, maxY = -1;
   for (let step = 0; step < 300; step++) {
@@ -315,6 +316,7 @@ test('Dino Coasters: guests ride, earn revenue, breakdowns stop all trains, engi
   assert.ok(maxY > 1.5, `Riding guest absY should exceed 1.5m, got ${maxY}`);
   assert.ok(z.state.stats.ridesTaken >= 1, 'stats.ridesTaken should increment');
   assert.ok(z.state.coaster.stats.income > 0, 'coaster.stats.income should increase');
+  assert.ok(z.Sim.ratingBreakdown().attractionBonus > 0, 'Completing the circuit earns attraction credit');
 
   // Breakdown stops ALL trains on the station; emergency callEngineer repairs it
   const train1Id = z.state.coaster.trains[0].id;
@@ -322,6 +324,7 @@ test('Dino Coasters: guests ride, earn revenue, breakdowns stop all trains, engi
   assert.equal(z.Coaster.breakdown(train1Id), true);
   assert.equal(z.Coaster.stationInfo(stRes.id).broken, true);
   assert.equal(z.Coaster.stationReady(stRes.id), false);
+  assert.equal(z.Sim.ratingBreakdown().attractionBonus, 0, 'A broken station stops contributing');
   assert.equal(z.Coaster.trainInfo(train1Id).state, 'broken');
   assert.equal(z.Coaster.trainInfo(train2Id).state, 'broken', 'All trains on the station must stop on breakdown');
   assert.equal(z.Coaster.trainInfo(train1Id).speed, 0);

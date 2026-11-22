@@ -62,6 +62,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       dangerEsc: 0, hunters: {}, resAcc: 0, labOnline: false, undoBusy: false,
       allLabs: [], allHatch: [], allBunkers: [], allPlat: [], sea: null, seaNear: null,
       rides: [], arcades: [], coasters: [],
+      attractionDemand: new Map(),
       comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: [], inWorld: false
     };
   }
@@ -1169,6 +1170,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function removeObjectInternal(o) {
+    RT.attractionDemand.delete(o.id);
     var k = S.objects.indexOf(o); if (k >= 0) S.objects.splice(k, 1);
     // release guests tied to it
     for (var g = 0; g < S.guests.length; g++) {
@@ -1628,7 +1630,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     n = Math.round(+n * 100) / 100; if (!(n >= 0)) return fail('Invalid price');
     var def = BD[o.type]; n = Math.min(n, Math.max(10, def.price * 8));
     if (dryOf(arguments)) return okr(0);
+    if (o.price !== n) RT.attractionDemand.delete(objectId);
     o.price = n; return okr(0);
+  }
+  // Keep the current and previous two in-game hours of observed choices.
+  function attractionHour() { return Math.floor((S.day + S.time) * 24); }
+  function recordAttractionDemand(id, field) {
+    var now = attractionHour(), buckets = RT.attractionDemand.get(id);
+    if (!buckets) { buckets = []; RT.attractionDemand.set(id, buckets); }
+    var bucket = buckets[buckets.length - 1];
+    if (!bucket || bucket.hour !== now) {
+      while (buckets.length && buckets[0].hour < now - 2) buckets.shift();
+      bucket = { hour: now, selected: 0, priceRejected: 0, queueRejected: 0 };
+      buckets.push(bucket);
+    }
+    bucket[field]++;
+  }
+  function attractionDemand(id) {
+    var out = { selected: 0, priceRejected: 0, queueRejected: 0 }, buckets = RT && RT.attractionDemand.get(id);
+    if (!buckets) return out;
+    var oldest = attractionHour() - 2;
+    buckets.forEach(function (b) {
+      if (b.hour < oldest) return;
+      out.selected += b.selected; out.priceRejected += b.priceRejected; out.queueRejected += b.queueRejected;
+    });
+    return out;
   }
   var MAX_LOAN = 100000;
   function ensureLoans() {
@@ -1749,7 +1775,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       else if (S.animals.length) { var an = S.animals[Math.floor(rng.next() * S.animals.length)]; nm = lc(plural(SP[an.species])); }
       text = text.replace(/\{animal\}/g, nm);
     }
-    g.thought = text; g.thoughtT = 4.5; g.tcool = 7;
+    g.thought = text; g.thoughtKey = key; g.thoughtT = 4.5; g.tcool = 7;
   }
 
   function arrivalValue() {
@@ -1757,14 +1783,29 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!seen[a.species] && a.enc) { seen[a.species] = 1; spCount++; } }
     RT.speciesCount = spCount;
     var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) ap += aAppeal(q); } RT.appeal = ap;
-    var rideCount = 0, arcadeCount = 0;
-    if (RT.rides) for (k = 0; k < RT.rides.length; k++) if (buildingConnected(RT.rides[k])) rideCount++;
-    if (RT.arcades) for (k = 0; k < RT.arcades.length; k++) if (buildingConnected(RT.arcades[k])) arcadeCount++;
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + Math.min(6, rideCount * 1.2 + arcadeCount * 0.45) + (Z.Monorail ? Z.Monorail.valueBonus() : 0) + (Z.Coaster ? Z.Coaster.valueBonus() : 0);   // monorail, theme park & coaster packages: working rides add to what a ticket is worth
+    var attr = gxAttractionInfo(true), rideCount = attr.rides, arcadeCount = attr.arcades;
+    var coasterValue = Z.Coaster ? Z.Coaster.valueBonus() : 0;
+    var rideRaw = rideCount * 0.8 + arcadeCount * 0.35 + coasterValue;
+    var rideValue = 4.5 * (1 - Math.exp(-rideRaw / 4.5));
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + rideValue + (Z.Monorail ? Z.Monorail.valueBonus() : 0);
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
   function gxHr() { return DAY_SECONDS / 24; }       // real seconds in one game hour
+  function gxRideOperating(o) {
+    var d = BD[o.type];
+    if (!buildingConnected(o) || o.paused || o.broken) return false;
+    if (d.coasterStation) return !!(Z.Coaster && Z.Coaster.stationReady(o.id));
+    return !(Z.Power && !Z.Power.usable(o));
+  }
+  function gxAttractionInfo(force) {
+    if (!force && RT.gxAttrInfo && Math.abs(S.time - RT.gxAttrStamp) < 1 / DAY_SECONDS) return RT.gxAttrInfo;
+    var n = 0, rides = 0, arcades = 0, coaster = false, k;
+    if (RT.rides) for (k = 0; k < RT.rides.length; k++) if (gxRideOperating(RT.rides[k])) { n++; if (BD[RT.rides[k].type].coasterStation) coaster = true; else rides++; }
+    if (RT.arcades) for (k = 0; k < RT.arcades.length; k++) if (gxRideOperating(RT.arcades[k])) { n++; arcades++; }
+    RT.gxAttrStamp = S.time; RT.gxAttrInfo = { count: n, rides: rides, arcades: arcades, coaster: coaster };
+    return RT.gxAttrInfo;
+  }
   function gxGrid() {
     if (RT.gocc) return;
     RT.gocc = new Uint8Array(NN); RT.gstand = new Uint8Array(NN); RT.gtarg = new Uint8Array(NN); RT.ghead = new Int16Array(NN).fill(-1); RT.gnext = new Int16Array(MAX_GUESTS + 16); RT.gaesInit = 0;
@@ -1792,7 +1833,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   // plan for a visit: how long, how much to spend, what to see. Also used to patch guests from old saves.
   function gxPlan(g, hr, ticket) {
     var left = Math.max(0, (CLOSE_T - S.time) * DAY_SECONDS);
-    var hasTP = (RT.rides && RT.rides.length) || (RT.arcades && RT.arcades.length);
+    var attr = gxAttractionInfo(), hasTP = attr.count > 0;
     var h = rng.range(4.0, 5.6); if (rng.chance(0.2)) h += rng.range(0.6, 1.6);
     if (hasTP) h += rng.range(1.2, 2.2);
     g.stay0 = Math.min(h * hr, Math.max(hr * 0.5, left - rng.range(0.3, 3.2) * hr));
@@ -1805,7 +1846,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       drink: rng.chance(0.97) ? 1 + (rng.chance(0.5) ? 1 : 0) : 0,
       treat: hasTP ? (rng.chance(0.55) ? 1 + (rng.chance(0.25) ? 1 : 0) : 0) : (rng.chance(0.2) ? 1 : 0),
       shop: rng.chance(0.13) ? 1 : 0,
-      act: hasTP ? (2 + (rng.chance(0.55) ? 1 : 0) + (RT.coasters && RT.coasters.length ? 1 : 0)) : (rng.chance(0.25) ? 1 : 0)
+      act: hasTP ? (2 + (rng.chance(0.55) ? 1 : 0) + (attr.coaster ? 1 : 0)) : (rng.chance(0.25) ? 1 : 0)
     };
     g.seenEnc = g.seenEnc || {}; g.seenB = g.seenB || {};
     g.spent = g.spent || 0; g.paid = ticket || 0; g.nSeen = 0; g.nView = 0;
@@ -1818,11 +1859,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
     var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12), hr = gxHr();
     // spending money for the visit (after the ticket): varied, a few big spenders, a few tight wallets
-    var tpRideC = 0, tpArcC = 0, rk;
-    if (RT.rides) for (rk = 0; rk < RT.rides.length; rk++) if (buildingConnected(RT.rides[rk])) tpRideC++;
-    if (RT.arcades) for (rk = 0; rk < RT.arcades.length; rk++) if (buildingConnected(RT.arcades[rk])) tpArcC++;
-    var tpBonus = (tpRideC || tpArcC) ? (Math.min(4, tpRideC) * 7 + Math.min(4, tpArcC) * 2.5) * rng.range(0.75, 1.35) : 0;
-    var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating) + tpBonus;
+    var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating);
     var g = {
       id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: N * TILE + rng.range(0.3, 1.4),
       heading: PI, speed: 0, state: 'walk', hunger: rng.range(6, 38), thirst: rng.range(4, 36), bladder: rng.range(0, 34), energy: rng.range(72, 100),
@@ -1911,7 +1948,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // choose a building of the wanted kind. `kind` is the purchase kind (meal/treat/drink/toilet/shop/act) or 'cover' (shelter from the weather)
-  function pickBuilding(g, list, kind) {
+  function pickBuilding(g, list, kind, bargainMin) {
+    var bargainOnly = bargainMin !== undefined, bestAttraction = false;
     var best = null, bs = 1e9, k, rejected = 0, cand = 0, tolE = g.tol * clamp(WX.spend, 0.5, 1.6), ft = null;
     for (k = 0; k < list.length; k++) {
       var o = list[k], def = BD[o.type];
@@ -1920,29 +1958,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (Z.Power && !Z.Power.usable(o)) continue;   // power package: dark shops and stopped rides lose their customers
       if (def.coasterStation) { if (!Z.Coaster || !Z.Coaster.stationReady(o.id)) continue; }
       if (kind === 'act' && g.seenB[o.id]) continue;
+      var attraction = kind === 'act' && (def.type === 'ride' || def.type === 'arcade');
+      if (attraction && (o.paused || o.broken)) continue;
       var price = o.price === undefined ? def.price : o.price;
       var refPrice = (def.coasterStation && Z.Coaster) ? Z.Coaster.recommendedPrice(o.id) : def.price;
+      var discount = attraction && refPrice > 0 ? clamp(1 - price / refPrice, 0, 1) : 0;
+      if (bargainOnly && (discount <= 0 || discount <= bargainMin)) continue;
       if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
       var f = getField('b' + o.id);
       if (!f || !(f[g.ti] < INF)) continue;
       cand++;
-      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.7) || (refPrice > 0 && price > refPrice * tolE))) { rejected++; continue; }
+      if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.7) || (refPrice > 0 && price > refPrice * tolE))) {
+        rejected++;
+        if (attraction && !bargainOnly) recordAttractionDemand(o.id, 'priceRejected');
+        continue;
+      }
       var q = RT.bq[o.id], ql = q ? q.q.length : 0;
       var cap = Math.max(5, Math.ceil(def.capacity * 1.5) + 2);
-      if (ql >= cap) continue;
+      if (ql >= cap) {
+        if (attraction && !bargainOnly) recordAttractionDemand(o.id, 'queueRejected');
+        continue;
+      }
       var sc = f[g.ti] * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 6 : 0);
       var effThrill = (def.coasterStation && Z.Coaster) ? Z.Coaster.stationExcitement(o.id) * 0.7 : (def.thrill || 0);
-      if (kind === 'act') sc -= effThrill * 1.8 + (def.type === 'ride' ? 7 : 1);
-      if (sc < bs) { bs = sc; best = o; }
+      if (kind === 'act') sc -= effThrill * 1.8 + (def.type === 'ride' ? 7 : 1) + discount * 4;
+      if (sc < bs) { bs = sc; best = o; bestAttraction = attraction; }
     }
     if (!best) {
-      if (cand > 0 && rejected === cand && kind !== 'cover') {            // all too dear: they forgo it
+      if (!bargainOnly && cand > 0 && rejected === cand && kind !== 'cover') {            // all too dear: they forgo it
         say(g, 'expensive'); g.mood -= 1.5;
         if (g.al[kind] !== undefined) g.al[kind] = 0;
       }
-      g.nbuy = gxHr() * 0.35;
+      if (!bargainOnly) g.nbuy = gxHr() * 0.35;
       return false;
     }
+    if (bestAttraction) recordAttractionDemand(best.id, 'selected');
     g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = kind;
     return true;
   }
@@ -2083,12 +2133,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // bad weather: head for somewhere under cover
     if (WX.shelter && !g.cov) { g.cov = 1; if (rng.chance(0.5) && pickBuilding(g, bt.food.concat(bt.fun), 'cover')) return; }
     if (g.nbuy <= 0) {
-      var hasTP = (RT.rides && RT.rides.length) || (RT.arcades && RT.arcades.length);
+      var hasTP = gxAttractionInfo().count > 0;
       var sawEx = g.nSeen > 0 || !RT.speciesCount;
       // souvenir near the end of the visit, a treat when they are enjoying themselves
       if (al.shop > 0 && (g.done || g.stay < 1.4 * hr || rng.chance(0.06)) && pickBuilding(g, bt.fun, 'shop')) return;
       if (al.treat > 0 && g.happiness > (hasTP ? 50 : 55) && rng.chance(hasTP ? (sawEx ? 0.24 : 0.12) : 0.12) && pickBuilding(g, bt.food, 'treat')) return;
-      if ((al.act > 0 || rng.chance(0.1)) && rng.chance(hasTP ? (sawEx ? 0.5 : 0.25) : 0.3) && pickBuilding(g, bt.fun, 'act')) return;
+      if (al.act > 0 || rng.chance(0.1)) {
+        var baseActChance = hasTP ? (sawEx ? 0.5 : 0.25) : 0.3, actRoll = rng.next();
+        var bargainChance = 0.12; // A free ride can add at most 12 percentage points to this decision.
+        if (actRoll < baseActChance) {
+          if (pickBuilding(g, bt.fun, 'act')) return;
+        } else if (hasTP && actRoll < baseActChance + bargainChance &&
+          pickBuilding(g, bt.fun, 'act', (actRoll - baseActChance) / bargainChance)) return;
+      }
     }
     if (Z.Monorail && Z.Monorail.choose(g)) return;   // monorail package: tour ride
     if (Z.Safari && Z.Safari.choose(g)) return;   // safari package: truck or boat ride
@@ -2162,6 +2219,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       S.stats.ridesTaken = (S.stats.ridesTaken || 0) + (def.type === 'ride' ? 1 : 0);
       S.stats.arcadePlayed = (S.stats.arcadePlayed || 0) + (def.type === 'arcade' ? 1 : 0);
     }
+    if (def.type === 'ride' || def.type === 'arcade') recordRatingRide(o.id, def.type === 'ride' ? (def.thrill || 4) : 4);
     if (def.type === 'info' && RT.hasEdu) g.mood += 2;
     if (def.type === 'science') { g.fun = Math.min(100, g.fun + 25); g.mood += 3; }
     if (o.type === 'research_lab' || o.type === 'hatchery' || o.type === 'education_centre') {
@@ -3911,6 +3969,70 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== RATING / GOALS / DAY ======================
+  function demandReference() {
+    var history = Array.isArray(S.ratingDemandDays) ? S.ratingDemandDays : [];
+    var recent = history.filter(function (v) { return isFinite(v) && v >= 0; }).slice(-3);
+    var avg = recent.length ? recent.reduce(function (a, b) { return a + b; }, 0) / recent.length : 0;
+    return Math.max(S.guests.length, avg, S.ratingTodayPeak || 0, 20);
+  }
+  function ratingServices(ref) {
+    var b = { food: 0, drink: 0, toilet: 0, bench: 0, bin: 0, fun: 0 }, bt = RT.byType;
+    function add(key, list, unit, operating) {
+      for (var i = 0; i < list.length; i++) {
+        var o = list[i], def = BD[o.type] || SC[o.type] || {};
+        if (o.paused || o.broken || !buildingConnected(o) || (operating && !operating(o))) continue;
+        var capacity = def.capacity || unit;
+        if (def.coasterStation) {
+          var station = Z.Coaster.stationInfo(o.id);
+          capacity = station.trains.reduce(function (seats, train) { return seats + train.cars * station.typeDef.capacity; }, 0);
+        }
+        b[key] += capacity / unit;
+      }
+    }
+    add('food', bt.food.filter(function (o) { var f = BD[o.type].satisfies || {}; return (f.hunger || 0) > 0.25; }), 4, function (o) { return !Z.Power || Z.Power.usable(o); });
+    add('drink', bt.drink, 4, function (o) { return !Z.Power || Z.Power.usable(o); });
+    add('toilet', bt.toilet, 8, function (o) { return !Z.Power || Z.Power.usable(o); });
+    add('bench', bt.bench, 1);
+    add('bin', bt.bin, 1, function (o) { return (o.fill || 0) < 15; });
+    add('fun', bt.fun.filter(function (o) { var d = BD[o.type]; return d.type === 'ride' || d.type === 'arcade' || d.type === 'shop' || d.type === 'info'; }), 4, function (o) {
+      var d = BD[o.type]; if (d.coasterStation) return !!(Z.Coaster && Z.Coaster.stationReady(o.id));
+      if (d.mono) return !!(Z.Monorail && Z.Monorail.funCount());
+      return !Z.Power || Z.Power.usable(o);
+    });
+    if (Z.Monorail && Z.Monorail.funCount) b.fun += Z.Monorail.funCount();
+    var needed = { food: Math.ceil(ref / 40), drink: Math.ceil(ref / 50), toilet: Math.ceil(ref / 40), bench: Math.ceil(ref / 30), bin: Math.ceil(ref / 25), fun: 1 + Math.floor(ref / 80) };
+    var out = {}, sum = 0;
+    Object.keys(b).forEach(function (key) { out[key] = { capacity: b[key], needed: needed[key] }; sum += Math.min(1, b[key] / needed[key]); });
+    return { services: out, facilities: sum / 6 };
+  }
+  function recordRatingRide(venueId, quality) {
+    if (!S || !isFinite(quality) || !venueId) return;
+    var rows = Array.isArray(S.ratingRideDays) ? S.ratingRideDays : (S.ratingRideDays = []), day = S.day || 1;
+    var row = rows.length && rows[rows.length - 1].day === day ? rows[rows.length - 1] : null;
+    if (!row) { row = { day: day, rides: [] }; rows.push(row); }
+    row.rides = Array.isArray(row.rides) ? row.rides : [];
+    var ride = row.rides.filter(function (r) { return r.venue === venueId; })[0];
+    if (!ride) { ride = { venue: venueId, count: 0, quality: 0 }; row.rides.push(ride); }
+    ride.count = Math.min(10000, (ride.count || 0) + 1); ride.quality = Math.min(10000, (ride.quality || 0) + clamp(quality, 0, 10));
+    row.rides = row.rides.slice(-100);
+    S.ratingRideDays = rows.filter(function (r) { return r.day >= day - 2 && r.day <= day; }).slice(-3);
+  }
+  function attractionRatingBonus(ref) {
+    var rows = Array.isArray(S.ratingRideDays) ? S.ratingRideDays : [], weightedRiders = 0, day = S.day || 1;
+    for (var i = 0; i < rows.length; i++) if (rows[i].day >= day - 2 && rows[i].day <= day) {
+      var rides = rows[i].rides || [];
+      for (var j = 0; j < rides.length; j++) {
+        var venue = RT.oById.get(rides[j].venue), def = venue && BD[venue.type];
+        if (!venue || !def || (def.type !== 'ride' && def.type !== 'arcade') || venue.paused || venue.broken || !buildingConnected(venue) || (Z.Power && !Z.Power.usable(venue)) || (def.coasterStation && (!Z.Coaster || !Z.Coaster.stationReady(venue.id)))) continue;
+        var count = rides[j].count || 0;
+        var quality = clamp((rides[j].quality || 0) / 8, 0, count);
+        weightedRiders += 0.35 * count + 0.65 * quality;
+      }
+    }
+    var completion = Math.min(1, weightedRiders / (ref * 0.35));
+    return 0.35 * (1 - Math.exp(-2.2 * completion)) / (1 - Math.exp(-2.2));
+  }
+  var RATING_WEIGHTS = Object.freeze({ animals: 0.42, welfare: 0.13, guests: 0.13, facilities: 0.12, cleanliness: 0.08, scenery: 0.10 });
   function computeRating() {
     var k, nSp = 0, seen = {}, A = 0, hs = 0, n = S.animals.length;
     for (k = 0; k < n; k++) {
@@ -3922,9 +4044,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var welfare = n ? clamp((hs / n - 40) / 50, 0, 1) : 0;
     var gNow = S.guests.length > 5 ? (S.guestHappiness || 65) : RT.ghEMA;
     var guests = clamp(((gNow * 0.5 + RT.ghEMA * 0.5) - 40) / 50, 0, 1);
-    var ref = Math.max(20, S.stats.peakGuests || 0), bt = RT.byType;
-    var fac = (Math.min(1, bt.food.length / Math.ceil(ref / 40)) + Math.min(1, bt.drink.length / Math.ceil(ref / 50)) + Math.min(1, bt.toilet.length / Math.ceil(ref / 40)) +
-      Math.min(1, bt.bench.length / Math.ceil(ref / 30)) + Math.min(1, bt.bin.length / Math.ceil(ref / 25)) + Math.min(1, (bt.fun.length + (Z.Monorail ? Z.Monorail.funCount() : 0)) / (1 + Math.floor(ref / 80)))) / 6;   // monorail package: a working line counts as a ride
+    var ref = demandReference(), facility = ratingServices(ref), fac = facility.facilities;
     var pathN = RT.pathTiles.length, dirtyFrac = RT.dirtyCount / Math.max(8, pathN * 0.3);
     var cleanP = 1 - Math.min(1, dirtyFrac), cleanE = 1, ce = 0;
     for (k = 0; k < S.enclosures.length; k++) { var e = S.enclosures[k]; if (e.animals.length) { cleanE += 0; ce += clamp(1 - e.poop / (e.area / 3 + 3), 0, 1); } }
@@ -3932,9 +4052,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var clean = nEncA ? 0.5 * cleanP + 0.5 * ce / nEncA : cleanP;
     var aes = (Z.Moats ? Z.Moats.aesthetic() : 0) + (Z.Power ? Z.Power.aesthetic() : 0); for (k = 0; k < S.objects.length; k++) { var o = S.objects[k]; if (o.kind === 'scenery') aes += SC[o.type].aesthetic; }
     var scenery = Math.min(1, aes / 120);
-    var stars = 5 * (0.42 * animalsC + 0.13 * welfare + 0.13 * guests + 0.12 * fac + 0.08 * clean + 0.10 * scenery);
-    stars -= 0.6 * (S.panic || 0);
-    return { animals: animalsC, welfare: welfare, guests: guests, facilities: fac, cleanliness: clean, scenery: scenery, panic: S.panic || 0, stars: clamp(stars, 0, 5), rating: S.rating };
+    var w = RATING_WEIGHTS, baseStars = 5 * (w.animals * animalsC + w.welfare * welfare + w.guests * guests + w.facilities * fac + w.cleanliness * clean + w.scenery * scenery), attractionBonus = attractionRatingBonus(ref);
+    var stars = baseStars + attractionBonus - 0.6 * (S.panic || 0);
+    return { animals: animalsC, welfare: welfare, guests: guests, facilities: fac, cleanliness: clean, scenery: scenery, panic: S.panic || 0, stars: clamp(stars, 0, 5), rating: S.rating,
+      weights: w, baseStars: baseStars, collectionCap: null, attractionBonus: attractionBonus,
+      speciesCount: nSp, animalCount: n, serviceDemand: ref, services: facility.services,
+      cleanPaths: cleanP, cleanEnclosures: nEncA ? ce / nEncA : 1 };
   }
   function ratingBreakdown() { return computeRating(); }
 
@@ -4282,6 +4405,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     RT.dirtyCount = dc;
     var gs = S.guests, hsum = 0; for (k = 0; k < gs.length; k++) hsum += gs[k].happiness;
     S.guestHappiness = gs.length ? hsum / gs.length : RT.ghEMA;
+    S.ratingTodayPeak = Math.max(S.ratingTodayPeak || 0, gs.length);
     RT.guestCrowd = gs.length / (RT.pathTiles.length * 1.2 + 30);
     if (gs.length > S.stats.peakGuests) S.stats.peakGuests = gs.length;
     RT.value = arrivalValue(); RT.rate = arrivalRate();
@@ -4385,6 +4509,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function newDay() {
     var k, a, up = 0;
+    S.ratingDemandDays = Array.isArray(S.ratingDemandDays) ? S.ratingDemandDays : [];
+    S.ratingDemandDays.push(Math.max(0, S.ratingTodayPeak || S.guests.length || 0));
+    if (S.ratingDemandDays.length > 3) S.ratingDemandDays.shift();
+    S.ratingTodayPeak = 0;
     // costs
     for (k = 0; k < S.animals.length; k++) up += (SP[S.animals[k].species] ? SP[S.animals[k].species].upkeep : 10) * (S.animals[k].baby ? 0.5 : 1) * fxOf(S.animals[k]).upkeep;
     for (k = 0; k < S.objects.length; k++) if (S.objects[k].kind === 'building') up += BD[S.objects[k].type].upkeep;
@@ -5275,7 +5403,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     cornerElev: cornerElev, heightAt: heightAt,
     footprint: footprint, buildingConnected: buildingConnected,
     encById: encById, gxHr: gxHr, gxPlace: gxPlace,
-    earn: earn, spend: spend, msg: msg, say: say,
+    earn: earn, spend: spend, msg: msg, say: say, recordRatingRide: recordRatingRide,
     jBegin: jBegin, jOp: jOp, jEnd: jEnd,
     afterWorldChange: afterWorldChange,
     fail: fail, okr: okr, dryOf: dryOf
@@ -5923,6 +6051,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (def.moat && Z.Moats) { var mi = Z.Moats.objectInfo(o.id); if (mi) { moatInfo = mi; for (var mk = 0; mk < mi.issues.length; mk++) issues.push(mi.issues[mk]); } }
       if (o.type === 'hatchery' && S.research.eggs.length) issues.push(S.research.eggs.length + ' egg(s) incubating');
     }
+    if (o.type === 'bench' || o.type === 'bin') {
+      connected = buildingConnected(o);
+      if (!connected) issues.push('Not connected to a path');
+    }
     var q = RT.bq[o.id], thriving = null, thrivesOn = null, hereName = null;
     if (o.kind === 'scenery' && def.terrains) {
       thriving = plantThrives(o, def); thrivesOn = def.terrains.map(function (id) { return D.terrain[TI[id]].name; });
@@ -5983,7 +6115,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke, research: researchAPI,
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, rangerCoverage: rangerCoverage,
-    setTicketPrice: setTicketPrice, setPrice: setPrice, takeLoan: takeLoan, repayLoan: repayLoan, loanQuote: loanQuote, loanSummary: loanSummary, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
+    setTicketPrice: setTicketPrice, setPrice: setPrice, attractionDemand: attractionDemand, takeLoan: takeLoan, repayLoan: repayLoan, loanQuote: loanQuote, loanSummary: loanSummary, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
     // extras
     lockdown: function () { return !!(RT && RT.lockdown); },

@@ -982,8 +982,10 @@
     for (k = 0; k < X.lines.length; k++) {
       var L = X.lines[k];
       if (!L.station) continue;
-      if (L.loop && !L.branch && trainsOnStation(L.station.obj.id).length === 0) {
-        spawnTrainInternal(L.station.obj.id, L.typeDef.minCars);
+      if (L.loop && !L.branch && trainsOnStation(L.station.obj.id).length === 0 && !L.station.obj.starterTrainGranted) {
+        var starter = spawnTrainInternal(L.station.obj.id, L.typeDef.minCars);
+        if (starter) starter.starter = true;
+        L.station.obj.starterTrainGranted = true;
         autoSpawned = true;
         if (L.ready) {
           C.msg(L.typeDef.name + ' circuit complete! Excitement ' + L.excitement.toFixed(1) + '/10 — first train launched!', 'good');
@@ -1271,6 +1273,7 @@
     if (dry) return C.okr(cost);
     C.spend(cost, 'construction');
     var T = spawnTrainInternal(stationId, cars);
+    if (T) T.starter = false;
     if (existing.length > 0 && T) {
       var off = (L.totalLen / (existing.length + 1)) * existing.length;
       T.s = (L.stMidS + off) % L.totalLen;
@@ -1315,6 +1318,7 @@
     }
     if (!placed) g.ti = C.tileOf(g.x, g.z);
     if (!emergency && L) {
+      if (C.recordRatingRide) C.recordRatingRide(st && st.obj ? st.obj.id : T.stationId, L.excitement || 4);
       var exc = L.excitement || 4;
       g.fun = Math.min(100, g.fun + 40 + exc * 6);
       g.mood = Math.min(35, g.mood + 4 + exc * 0.9);
@@ -1334,10 +1338,13 @@
     for (var k = 0; k < s.coaster.trains.length; k++) if (s.coaster.trains[k].id === trainId) { idx = k; break; }
     if (idx < 0) return C.fail('Train not found');
     var T = s.coaster.trains[idx], td = TYPES[T.type] || TYPES.wooden;
-    var refund = Math.floor((td.trainCost + (T.cars - td.minCars) * td.carCost) * CD.refundTrain);
+    var baseRefund = T.starter === true ? 0 : td.trainCost;
+    var refund = Math.floor((baseRefund + (T.cars - td.minCars) * td.carCost) * CD.refundTrain);
     if (dry) return C.okr(-refund);
     ejectAll(T, true);
     s.coaster.trains.splice(idx, 1);
+    var station = s.objects.find(function (o) { return o.id === T.stationId; });
+    if (station) station.starterTrainGranted = true;
     delete TR[T.id];
     C.earn(refund, 'construction');
     C.bus.emit('coasterChanged', X.ver);
@@ -1823,22 +1830,26 @@
     var up = 0;
     for (var k = 0; k < s.coaster.trains.length; k++) {
       var T = s.coaster.trains[k], td = TYPES[T.type] || TYPES.wooden;
-      up += td.trainUpkeep + T.cars * td.carUpkeep;
+      var L = lineForStation(T.stationId);
+      var circuitUpkeep = L ? Math.min(24, Math.max(0, (L.trackLen || 0) - 14) * 0.6) : 0;
+      up += td.trainUpkeep + T.cars * td.carUpkeep + circuitUpkeep;
     }
     var DIFF = C.getDIFF();
-    up = Math.round(up * (DIFF.costs || 1));
+    // Train operation costs scale with the length of the in-game day.
+    up = Math.round(up * (C.DAY_SECONDS / 150) * (DIFF.costs || 1));
     if (up > 0) C.spend(up, 'upkeep');
   }
 
   function valueBonus() {
-    var bonus = 0;
+    var bonus = 0, active = 0;
     for (var k = 0; k < X.lines.length; k++) {
       var L = X.lines[k];
-      if (L.ready && L.station && C.buildingConnected(L.station.obj) && trainsOnStation(L.station.obj.id).length > 0) {
-        bonus += 0.8 + L.excitement * 0.25;
+      if (L.ready && L.station && stationReady(L.station.obj.id) && C.buildingConnected(L.station.obj)) {
+        bonus += (0.7 + L.excitement * 0.15) / (1 + active * 0.7);
+        active++;
       }
     }
-    return Math.min(8, bonus);
+    return Math.min(5, bonus);
   }
 
   function updateGraph() {

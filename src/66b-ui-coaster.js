@@ -9,6 +9,26 @@
   var h = UI.h, fmt = UI.fmt, ic = UI.ic;
   var DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0];
 
+  function coasterDemandReason(info, fare, demand) {
+    if (info.broken) return 'Check the ride’s repair status to reopen it.';
+    if (info.paused) return 'Resume the ride to let guests board.';
+    if (!info.connected) return 'Connect the station entrance to the main paths so guests can reach it.';
+    if (!info.ready) return info.stallReason || (info.branch ? 'Remove the track branches to open the ride.' : 'Complete the track circuit to open the ride.');
+    if (!info.trains.length) return 'Add a train so guests can board.';
+    if (info.queueLen >= 20) return info.queueLen + ' guests are waiting. Check train capacity.';
+    var selected = demand && demand.selected || 0;
+    var priceRejected = demand && demand.priceRejected || 0;
+    var queueRejected = demand && demand.queueRejected || 0;
+    if (priceRejected >= 3 && priceRejected > queueRejected) {
+      return 'Recent price checks ruled out the ' + fmt(fare) + ' fare ' + priceRejected + ' times. Try lowering it.';
+    }
+    if (queueRejected >= 3 && queueRejected > priceRejected) {
+      return 'Recent checks ruled out this ride ' + queueRejected + ' times because the queue was full.';
+    }
+    if (selected + priceRejected + queueRejected < 5) return 'Too few recent choices to assess demand.';
+    return selected + ' recent choices to visit this ride.';
+  }
+
   if (typeof document !== 'undefined' && document.head) {
     var st = document.createElement('style');
     st.setAttribute('data-coaster', '1');
@@ -341,7 +361,7 @@
     var kit = UI.Panel.kit;
     var f = kit.frame(kit.thumbBox('building', o.type, 96, def.emoji), def.name, 'Custom Rollercoaster');
     var b = f.body;
-    var statusEl = h('div'), statsEl = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
+    var statusEl = h('div'), demandEl = h('div', { style: 'font-size:12px;color:var(--ink2);margin:4px 0' }), statsEl = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
     var trainsEl = h('div', { style: 'margin-top:8px;display:flex;flex-direction:column;gap:4px' });
     var buyEl = h('div', { style: 'margin-top:6px;display:flex;flex-wrap:wrap;gap:4px' });
 
@@ -349,11 +369,13 @@
 
     var maxP = CD.fareMax || 35;
     var pv = h('b.num');
-    var slider = h('input', { type: 'range', min: '0', max: String(maxP), step: '1', value: String(o.price || def.price), 'aria-label': 'Ticket price' });
+    var slider = h('input', { type: 'range', min: '0', max: String(maxP), step: '1', value: String(typeof o.price === 'number' ? o.price : def.price), 'aria-label': 'Ticket price' });
     var hint = h('div', { style: 'font-size:12px;color:var(--ink2)' });
     function syncPrice() {
       var info = Z.Coaster.stationInfo(o.id);
       var rec = info ? info.recPrice : def.price;
+      var price = typeof o.price === 'number' ? o.price : def.price;
+      slider.value = String(price);
       pv.textContent = fmt(+slider.value);
       slider.style.setProperty('--p', (+slider.value / maxP * 100) + '%');
       hint.textContent = 'Recommended: ' + fmt(rec) + ' (based on excitement)';
@@ -363,6 +385,7 @@
     b.appendChild(slider);
     b.appendChild(hint);
     syncPrice();
+    b.appendChild(demandEl);
 
     b.appendChild(statsEl);
     b.appendChild(trainsEl);
@@ -402,10 +425,12 @@
             }
           }
         }
-        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.hasBad, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
+        var demand = Z.Sim && Z.Sim.attractionDemand ? Z.Sim.attractionDemand(o.id) : null;
+        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.hasBad, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.price, demand, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
         if (key === lastKey) return true;
         lastKey = key;
         syncPrice();
+        demandEl.textContent = coasterDemandReason(info, typeof o.price === 'number' ? o.price : def.price, demand);
 
         statusEl.innerHTML = '';
         if (info.broken) {

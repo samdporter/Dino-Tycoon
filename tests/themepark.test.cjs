@@ -208,7 +208,7 @@ test('Dino Theme Park guests ride coasters, play arcade stands, eat candy floss,
   assert.ok(coaster.ok && duck.ok && rifle.ok && floss.ok, `Failed placing test objects: coaster=${coaster.why||coaster.msg}, duck=${duck.why||duck.msg}, rifle=${rifle.why||rifle.msg}, floss=${floss.why||floss.msg}`);
 
   const boostedVal = z.Sim._rt().value;
-  assert.ok(boostedVal >= baseVal + 2.0, `Connected coaster + arcades should boost arrivalValue (${baseVal} -> ${boostedVal})`);
+  assert.ok(boostedVal > baseVal && boostedVal <= baseVal + 4.5, `Operating rides should add bounded admission value (${baseVal} -> ${boostedVal})`);
 
   // Goal completion check after secondly/checkGoals cycle (runs every 2s)
   const moneyBeforeGoal = z.state.money;
@@ -280,6 +280,7 @@ test('Dino UI Theme Park tab, Guests group, sub-filters, goalProgress, and inspe
     let _html = '', _text = '';
     const node = {
       nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      get firstChild() { return children[0] || null; },
       classList: {
         add(...a) { a.forEach(c => c && cls.add(c)); }, remove(...a) { a.forEach(c => c && cls.delete(c)); },
         toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
@@ -409,6 +410,26 @@ test('Dino UI Theme Park tab, Guests group, sub-filters, goalProgress, and inspe
 
   z.UI.Panel.open('object', duck.id);
   assert.match(z.UI.el.panel.textContent, /Arcade & game stall/);
+
+  z.Sim.ratingBreakdown = () => ({ animals: 0.5, welfare: 0.8, guests: 0.6, facilities: 0.4, cleanliness: 0.7, scenery: 0.9,
+    stars: 3.9, rating: 2.1, weights: { animals: 0.31, welfare: 0.19, guests: 0.17, facilities: 0.13, cleanliness: 0.11, scenery: 0.09 },
+    baseStars: 3.72, collectionCap: 3.71, attractionBonus: 0.18, speciesCount: 1, animalCount: 2,
+    serviceDemand: 50, services: { food: { capacity: 10, needed: 30 }, drink: { capacity: 50, needed: 30 }, toilet: { capacity: 50, needed: 30 }, bench: { capacity: 50, needed: 30 }, bin: { capacity: 50, needed: 30 }, fun: { capacity: 50, needed: 30 } } });
+  z.state.rating = 2.1;
+  z.UI.openModal('ov');
+  const overview = z.UI.el.mbody.textContent;
+  assert.match(overview, /2\.1/);
+  assert.match(overview, /3\.9/);
+  assert.match(overview, /base 3\.71/);
+  assert.match(overview, /attractions 0\.18/);
+  assert.match(overview, /31%/);
+  assert.match(overview, /Collection ceiling/);
+  assert.match(overview, /Food capacity is short/);
+
+  z.state.animals.push({ id: 12345, name: 'Bramble', species: 'dryosaurus', state: 'escaped', x: 24, z: 30 });
+  z.UI.closeModal();
+  z.UI.openModal('ov');
+  assert.match(z.UI.el.mbody.textContent, /Bramble has escaped/);
 });
 
 test('Dino Theme Park 3D Models, Footprints, Finite Geometry & 1,000-frame Animation Stress Test with real THREE', () => {

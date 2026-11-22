@@ -1638,6 +1638,8 @@ test('predator vs predator fights: larger predator wins more often while smaller
   z.Sim.newGame({ seed: 1105, map: 'fern_meadow', money: 300000 });
   setupFlatZone(z, 18, 22, 28, 32);
   fenceRect(z, 20, 23, 26, 29, 'reinforced');
+  // Isolate fight rolls from guest arrivals consuming the same random stream.
+  z.Sim.setOpen(false);
 
   let rexWins = 0;
   let carnoWins = 0;

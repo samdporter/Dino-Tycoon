@@ -1266,7 +1266,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     return 0.0025 + 0.0004 * Math.min(10, riders) + 0.0004 * Math.min(3, n);
   };
   M.funCount = function () {
-    var n = 0; for (var k = 0; k < X.lines.length; k++) { var L = X.lines[k]; if (L.ok && L.trains.some(function (t) { return t.st !== 'idle'; })) n += Math.min(2, L.stops.length); }
+    if (!linePowered()) return 0;
+    var n = 0; for (var k = 0; k < X.lines.length; k++) { var L = X.lines[k]; if (L.ok && !L.paused && L.trains.some(function (t) { return t.st !== 'idle'; })) n += Math.min(2, L.stops.length); }
     return n;
   };
   M.valueBonus = function () {

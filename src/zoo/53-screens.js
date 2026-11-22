@@ -56,37 +56,128 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ------------------------------------------------------------------ overview
   function ovTab(b) {
-    var S = Z.state, top = h('div.box'), starsHolder = h('div'), ratingTxt = h('div.big'), sub = h('div', { style: 'font-size:13px;color:var(--ink2)' });
-    top.appendChild(h('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' }, h('div', starsHolder, sub), ratingTxt));
+    var top = h('div.box'), starsHolder = h('div'), ratingTxt = h('div.big'), sub = h('div', { style: 'font-size:13px;color:var(--ink2)' });
+    var status = h('div', { style: 'font-size:12.5px;color:var(--ink2);margin-top:4px' });
+    top.appendChild(h('div', { style: 'display:flex;align-items:center;gap:12px;flex-wrap:wrap' }, h('div', starsHolder, sub, status), ratingTxt));
     var openBtn = h('button.btn.sm', { on: { click: function () { Z.Sim.setOpen(!Z.state.open); UI.snd('click'); upd(); } } });
     top.appendChild(h('div.btnrow', openBtn));
-    var parts = h('div.box'), tips = { animals: 'More species and more appealing animals.', welfare: 'Happy, healthy animals: read the enclosure reports.', guests: 'Keep guests fed, watered, amused and not charged too much.', facilities: 'Food, drinks, toilets, benches and bins to match the crowds.', cleanliness: 'Cleaners sweep paths; keepers clean enclosures.', scenery: 'Trees, flowers, fountains and statues.' };
-    var names = { animals: 'Animal collection (38%)', welfare: 'Animal welfare (16%)', guests: 'Guest happiness (16%)', facilities: 'Facilities (12%)', cleanliness: 'Cleanliness (10%)', scenery: 'Scenery (8%)' };
-    parts.appendChild(h('h4', { text: 'How your rating is made' })); var rows = {};
-    Object.keys(names).forEach(function (k) { var bb = bar(0), tip = h('div', { style: 'font-size:11.5px;color:var(--ink3);display:none' }), v = h('b.num'); var r = h('div', { style: 'display:flex;flex-direction:column;gap:3px' }, h('div.kv', h('span', { text: names[k] }), v), bb, tip); rows[k] = { bb: bb, v: v, tip: tip }; parts.appendChild(r); });
-    var next = h('div.box'), stats = h('div.box');
-    b.appendChild(top); b.appendChild(parts); b.appendChild(next); b.appendChild(stats);
+    var parts = h('div.box');
+    var keys = ['animals', 'welfare', 'guests', 'facilities', 'cleanliness', 'scenery'];
+    var rows = {};
+    parts.appendChild(h('h4', { text: 'How your rating is made' }));
+    keys.forEach(function (k) {
+      var bb = bar(0), v = h('b.num'), label = h('span');
+      var r = h('div', { style: 'display:flex;flex-direction:column;gap:3px' }, h('div.kv', label, v), bb);
+      rows[k] = { bb: bb, v: v, label: label }; parts.appendChild(r);
+    });
+    var next = h('div.box'), actions = h('div.box'), stats = h('div.box');
+    b.appendChild(top); b.appendChild(parts); b.appendChild(actions); b.appendChild(next); b.appendChild(stats);
+    var labels = { animals: 'Animal collection', welfare: 'Animal welfare', guests: 'Guest happiness', facilities: 'Facilities', cleanliness: 'Cleanliness', scenery: 'Scenery' };
+    var advice = { animals: 'Add a new species or improve animal appeal.', welfare: 'Open the enclosure report to address animal needs.', guests: 'Check guest needs, value and access.', facilities: 'Add capacity for the services guests need.', cleanliness: 'Assign cleaners to paths and keepers to enclosures.', scenery: 'Add scenery near guest routes and viewing areas.' };
     function upd() {
-      var S2 = Z.state, rb = Z.Sim.ratingBreakdown();
-      starsHolder.innerHTML = ''; starsHolder.appendChild(starRow(S2.rating, 32)); ratingTxt.textContent = S2.rating.toFixed(1);
+      var S2 = Z.state, rb = Z.Sim.ratingBreakdown(), weights = rb.weights || {};
+      var calculated = Number.isFinite(rb.stars) ? rb.stars : (Number.isFinite(rb.rating) ? rb.rating : S2.rating);
+      var current = Number.isFinite(S2.rating) ? S2.rating : (Number.isFinite(rb.rating) ? rb.rating : calculated);
+      starsHolder.innerHTML = ''; starsHolder.appendChild(starRow(current, 32)); ratingTxt.textContent = current.toFixed(1);
       sub.textContent = 'Zoo rating - ' + S2.unlocked.star + '-star unlocks active';
+      var bonus = Number.isFinite(rb.attractionBonus) ? rb.attractionBonus : 0, panic = Number.isFinite(rb.panic) ? rb.panic : (Number.isFinite(S2.panic) ? S2.panic : 0);
+      var shownBase = Number.isFinite(rb.baseStars) && Number.isFinite(rb.collectionCap) ? Math.min(rb.baseStars, rb.collectionCap) : rb.baseStars;
+      status.textContent = 'Calculated ' + calculated.toFixed(2) + (calculated > current + 0.05 ? ' · catching up' : calculated < current - 0.05 ? ' · recalculating' : ' · up to date') + (Number.isFinite(shownBase) ? ' · base ' + shownBase.toFixed(2) : '') + ' + attractions ' + bonus.toFixed(2) + ' − panic ' + (panic * 0.6).toFixed(2);
+      var mp = S2.map && D.maps && UI.byId(D.maps, S2.map.id), df = S2.difficulty && D.difficulties && UI.byId(D.difficulties, S2.difficulty);
+      if (mp || df) sub.textContent += ' - ' + [mp && mp.name, df && df.name].filter(function (x) { return x; }).join(', ');
       openBtn.innerHTML = ic(S2.open ? 'lock' : 'play') + (S2.open ? 'Close the zoo to visitors' : 'Open the zoo to visitors'); openBtn.className = 'btn sm ' + (S2.open ? 'alt' : '');
-      var low = null; Object.keys(rows).forEach(function (k) { var v = rb[k]; setBar(rows[k].bb, v); rows[k].v.textContent = Math.round(v * 100) + '%'; if (!low || v < rb[low]) low = k; });
-      Object.keys(rows).forEach(function (k) { rows[k].tip.style.display = (k === low && rb[k] < 0.8) ? 'block' : 'none'; rows[k].tip.textContent = 'Tip: ' + tips[k]; });
-      var ns = Math.floor(S2.rating) + 1, ul = [];
+      keys.forEach(function (k) {
+        var v = Number.isFinite(rb[k]) ? rb[k] : 0, w = Number.isFinite(weights[k]) ? weights[k] : 0;
+        rows[k].label.textContent = labels[k] + (Number.isFinite(weights[k]) ? ' (' + Math.round(w * 100) + '%)' : '');
+        setBar(rows[k].bb, v); rows[k].v.textContent = Math.round(v * 100) + '%';
+      });
+      var hints = [];
+      function hint(text, weight, kind, id, x, z, category) { hints.push({ text: text, weight: weight || 0, kind: kind, id: id, x: x, z: z, category: category || 'other' }); }
+      var escaped = (S2.animals || []).find(function (a) { return a.state === 'escaped'; });
+      if (escaped) {
+        hint(escaped.name + ' has escaped. Secure the enclosure and send security to recapture them.', 2, 'animal', escaped.id, escaped.x, escaped.z, 'safety');
+      } else if (panic > 0.01) {
+        hint('Recent panic is still lowering the rating. Keep animals secure while guests settle.', 0.6 * panic, null, null, null, null, 'safety');
+      }
+      var collectionCap = Number.isFinite(rb.collectionCap) ? rb.collectionCap : null, speciesCount = rb.speciesCount, animalCount = rb.animalCount;
+      if (!Number.isFinite(speciesCount)) { var foundSpecies = {}; (S2.animals || []).forEach(function (a) { foundSpecies[a.species] = 1; }); speciesCount = Object.keys(foundSpecies).length; }
+      if (!Number.isFinite(animalCount)) animalCount = (S2.animals || []).length;
+      if (collectionCap !== null && Number.isFinite(rb.baseStars) && rb.baseStars >= collectionCap) hint('Collection ceiling ' + collectionCap.toFixed(2) + ' stars · ' + speciesCount + ' species, ' + animalCount + ' animals. Add species or maintain larger groups.', 1, null, null, null, null, 'animals');
+      else if (rb.animals < 0.8) hint(advice.animals + (rb.speciesCount != null ? ' You have ' + rb.speciesCount + ' species and ' + (rb.animalCount || 0) + ' animals.' : ''), (weights.animals || 0) * (1 - rb.animals), null, null, null, null, 'animals');
+      if (rb.welfare < 0.8) {
+        var troubled = null;
+        (S2.enclosures || []).some(function (e) { var report = Z.Sim.enclosureReport(e.id); if (report && report.issues && report.issues.length) { troubled = { e: e, issue: report.issues[0] }; return true; } return false; });
+        hint(troubled ? troubled.e.name + ': ' + troubled.issue : advice.welfare, (weights.welfare || 0) * (1 - rb.welfare), troubled ? 'enclosure' : null, troubled && troubled.e.id, troubled ? troubled.e.cx : undefined, troubled ? troubled.e.cz : undefined, 'welfare');
+      }
+      var serviceNames = { food: 'Food', drink: 'Drink', toilet: 'Toilet', bench: 'Bench', bin: 'Bin', fun: 'Entertainment' };
+      var services = rb.services || {}, serviceShort = false;
+      Object.keys(serviceNames).forEach(function (k) { var svc = services[k]; if (svc && Number.isFinite(svc.needed) && Number.isFinite(svc.capacity) && svc.needed > svc.capacity) { serviceShort = true; hint(serviceNames[k] + ' capacity is short: ' + Math.ceil(svc.needed - svc.capacity) + ' typical units.', (weights.facilities || 0) * (1 - rb.facilities) * ((svc.needed - svc.capacity) / svc.needed), null, null, null, null, 'services'); } });
+      var guests = S2.guests || [], demand = rb.serviceDemand;
+      if (guests.length) {
+        var avg = function (key) { return guests.reduce(function (sum, g) { return sum + (Number.isFinite(g[key]) ? g[key] : 0); }, 0) / guests.length; };
+        if ((avg('hunger') > 55 || avg('thirst') > 55 || avg('bladder') > 55)) {
+          var need = avg('hunger') >= avg('thirst') && avg('hunger') >= avg('bladder') ? 'hunger' : avg('thirst') >= avg('bladder') ? 'thirst' : 'toilets';
+          hint(need === 'hunger' ? 'Guests are hungry on average (' + Math.round(avg('hunger')) + '%). Check food capacity and prices.' : need === 'thirst' ? 'Guests are thirsty on average (' + Math.round(avg('thirst')) + '%). Check drink capacity and prices.' : 'Guest comfort is low: average toilet need is ' + Math.round(avg('bladder')) + '%.', (weights.guests || 0) * (1 - rb.guests), null, null, null, null, 'guests');
+        }
+      } else if (!serviceShort && Number.isFinite(demand) && demand > 0 && (rb.guests < 0.8 || rb.facilities < 0.8)) hint('Service demand is based on about ' + Math.round(demand) + ' guests; compare facility capacity with that crowd.', (weights.facilities || 0) * (1 - rb.facilities), null, null, null, null, 'facilities');
+      var thoughtCounts = {};
+      guests.forEach(function (g) { if (g.thoughtKey && g.thought && (g.thoughtT === undefined || g.thoughtT > 0)) thoughtCounts[g.thoughtKey] = (thoughtCounts[g.thoughtKey] || 0) + 1; });
+      if (guests.length >= 5) {
+        var thoughtKeys = Object.keys(thoughtCounts).filter(function (k) { return thoughtCounts[k] >= 3; }).sort(function (a, b) { return thoughtCounts[b] - thoughtCounts[a]; });
+        if (thoughtKeys.length) {
+          var causeByThought = { expensive: 'Guests repeatedly decline purchases as too expensive. Check venue prices.', hungry: 'Several guests are hungry. Add food capacity or lower prices.', thirsty: 'Several guests are thirsty. Add drink capacity or lower prices.', toilet: 'Several guests need toilets. Add toilet capacity.', noBench: 'Several guests cannot find a bench. Add seating along busy paths.', cantSee: 'Several guests cannot see animals. Improve viewing access.' };
+          var recognizedThoughts = thoughtKeys.filter(function (k) { return !!causeByThought[k]; });
+          var causeText = recognizedThoughts.length ? causeByThought[recognizedThoughts[0]] : '';
+          if (causeText) hint(causeText, (weights.guests || 0) * (1 - rb.guests), null, null, null, null, 'guests');
+        }
+      }
+      (S2.objects || []).forEach(function (o) {
+        if (o.kind !== 'building' && o.type !== 'bin' && o.type !== 'bench') return;
+        var r = Z.Sim.objectReport && Z.Sim.objectReport(o.id);
+        if (!r) return;
+        var coaster = o.kind === 'building' && Z.Coaster && Z.Coaster.stationInfo ? Z.Coaster.stationInfo(o.id) : null;
+        var cause = '';
+        if (r.connected === false) cause = ' needs a path connected to the entrance.';
+        else if (Z.Power && r.needsPower && !Z.Power.usable(o)) cause = ' has lost power. Check its supply.';
+        else if (o.broken) cause = ' is broken. Check its repair status.';
+        else if (o.paused) cause = ' is paused. Reopen it when ready.';
+        else if (coaster && !coaster.ready) cause = coaster.stallReason ? '. ' + coaster.stallReason : ' needs a complete track loop.';
+        else if (coaster && !coaster.trains.length) cause = ' has no train. Add one to open the ride.';
+        else if (coaster && coaster.queueLen > 12) cause = ' has ' + coaster.queueLen + ' guests waiting. Check train capacity.';
+        else if (o.type === 'bin' && (o.fill || 0) >= 15) cause = ' is full. Check cleaner coverage.';
+        if (!cause) return;
+        var fp = Z.Sim.footprint && Z.Sim.footprint(o.type, o.i, o.j, o.rot);
+        hint(r.name + cause, (weights.facilities || 0) * (1 - rb.facilities), 'object', o.id, fp ? fp.cx : NaN, fp ? fp.cz : NaN, 'access');
+      });
+      if (rb.cleanliness < 0.8) {
+        if (Number.isFinite(rb.cleanPaths) && rb.cleanPaths < 0.8) hint('Paths are dirty: assign cleaners to sweep guest routes.', (weights.cleanliness || 0) * (1 - rb.cleanliness), null, null, null, null, 'cleanliness');
+        if (Number.isFinite(rb.cleanEnclosures) && rb.cleanEnclosures < 0.8) {
+          var dirty = (S2.enclosures || []).filter(function (e) { return Number.isFinite(e.poop) && e.poop > 0; }).sort(function (a, b) { return b.poop - a.poop; } )[0];
+          hint(dirty ? dirty.name + ' needs cleaning. Assign or reposition a keeper.' : 'Enclosure cleanliness is low. Check keeper coverage.', (weights.cleanliness || 0) * (1 - rb.cleanliness), dirty ? 'enclosure' : null, dirty && dirty.id, dirty ? dirty.cx : undefined, dirty ? dirty.cz : undefined, 'cleanliness');
+        }
+        if (!Number.isFinite(rb.cleanPaths) && !Number.isFinite(rb.cleanEnclosures)) hint(advice.cleanliness, (weights.cleanliness || 0) * (1 - rb.cleanliness), null, null, null, null, 'cleanliness');
+      }
+      if (rb.scenery < 0.8) hint(advice.scenery, (weights.scenery || 0) * (1 - rb.scenery), null, null, null, null, 'scenery');
+      hints.sort(function (a, b) { return b.weight - a.weight; });
+      var seenCats = {}; hints = hints.filter(function (item) { if (seenCats[item.category]) return false; seenCats[item.category] = true; return true; });
+      actions.innerHTML = ''; actions.appendChild(h('h4', { text: 'What to improve next' }));
+      if (hints.length) hints.slice(0, 3).forEach(function (item) {
+        var node = item.kind ? h('button.btn.sm.alt', { style: 'width:100%;text-align:left;white-space:normal;margin:2px 0', text: item.text, on: { click: function () { jump(item.kind, item.id, item.x, item.z); } } }) : h('div.fact', { text: item.text });
+        actions.appendChild(node);
+      });
+      else actions.appendChild(h('div.fact', { text: 'No clear rating bottleneck right now. Keep the park accessible and services matched to demand.' }));
+      var ns = (S2.unlocked && Number.isFinite(S2.unlocked.star) ? S2.unlocked.star : Math.floor(current)) + 1, ul = [];
       D.animals.forEach(function (a) { if (a.star === ns) ul.push(a.name); }); D.buildings.forEach(function (a) { if (a.star === ns) ul.push(a.name); });
       next.innerHTML = ''; next.appendChild(h('h4', { text: ns <= 5 ? 'At ' + ns + ' stars you unlock' : 'You have unlocked everything' }));
       if (ns <= 5) next.appendChild(h('div.chips', ul.length ? ul.map(function (n) { return h('span.chip', { text: n }); }) : [h('span.chip', { text: 'Bragging rights' })]));
       var sp = {}; S2.animals.forEach(function (a) { sp[a.species] = 1; });
       stats.innerHTML = ''; stats.appendChild(h('h4', { text: 'Your zoo' }));
       var stList = [['Day', S2.day], ['Animals', S2.animals.length + ' (' + Object.keys(sp).length + ' species)'], ['Guests in the zoo', S2.guests.length], ['Guests so far', S2.stats.guestsTotal.toLocaleString('en-GB')], ['Babies born', S2.stats.babiesBorn], ['Staff', S2.staff.length]];
+      if (collectionCap !== null && rb.baseStars < collectionCap) stList.push(['Base collection ceiling', collectionCap.toFixed(2) + ' stars']);
       var rt2 = Z.Sim._rt();
       if ((S2.stats && S2.stats.ridesTaken > 0) || (rt2 && rt2.rides && rt2.rides.length)) stList.push(['Rides taken', (S2.stats && S2.stats.ridesTaken) || 0]);
       if ((S2.stats && S2.stats.arcadePlayed > 0) || (rt2 && rt2.arcades && rt2.arcades.length)) stList.push(['Arcade games played', (S2.stats && S2.stats.arcadePlayed) || 0]);
-      if (UI.PlayTimer && UI.PlayTimer.formatted) stList.push(['Session play time', UI.PlayTimer.formatted()]);
-      if (S2.panic > 0) stList.push(['Park panic', Math.round(S2.panic * 100) + '%']);
-      if (S2.stats && S2.stats.injuries) stList.push(['Guest injuries', S2.stats.injuries]);
-      if (S2.stats && S2.stats.compensation) stList.push(['Compensation paid', fmt(S2.stats.compensation)]);
+      if (UI.PlayTimer && UI.PlayTimer.formatted) stList.push(['Session play time', UI.PlayTimer.formatted()]); if (S2.panic > 0) stList.push(['Park panic', Math.round(S2.panic * 100) + '%']); if (S2.stats && S2.stats.injuries) stList.push(['Guest injuries', S2.stats.injuries]); if (S2.stats && S2.stats.compensation) stList.push(['Compensation paid', fmt(S2.stats.compensation)]);
       stList.forEach(function (r) { stats.appendChild(h('div.kv', h('span', { text: r[0] }), h('b', { text: String(r[1]) }))); });
     }
     upd(); return upd;

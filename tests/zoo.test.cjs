@@ -1974,7 +1974,7 @@ test('Zoo Theme Park guests ride coasters, play arcade stands, eat candy floss, 
   assert.ok(coaster.ok && duck.ok && rifle.ok && floss.ok);
 
   const boostedVal = z.Sim._rt().value;
-  assert.ok(boostedVal >= baseVal + 2.0, `Connected coaster + arcades should boost arrivalValue (${baseVal} -> ${boostedVal})`);
+  assert.ok(boostedVal > baseVal, `Connected operating coaster + arcades should boost arrivalValue (${baseVal} -> ${boostedVal})`);
 
   // Goal completion check after secondly/checkGoals cycle (runs every 2s)
   const moneyBeforeGoal = z.state.money;
@@ -2045,7 +2045,7 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
     const attrs = {}, children = [], cls = new Set(), listeners = {}, style = { setProperty() {} };
     let _html = '', _text = '';
     const node = {
-      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children,
+      nodeType: 1, tagName: String(tag || 'div').toUpperCase(), style, children, value: '',
       classList: {
         add(...a) { a.forEach(c => c && cls.add(c)); }, remove(...a) { a.forEach(c => c && cls.delete(c)); },
         toggle(c, f) { const on = f === undefined ? !cls.has(c) : !!f; if (on) cls.add(c); else cls.delete(c); return on; },
@@ -2070,7 +2070,7 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
       get innerHTML() { return _html; },
       set textContent(v) { _text = String(v == null ? '' : v); _html = ''; children.length = 0; },
       get textContent() { return children.length ? children.map(c => c.textContent).join(' ') : (_text || _html.replace(/<[^>]+>/g, ' ')); },
-      setAttribute(k, v) { if (k === 'class') node.className = v; else attrs[k] = String(v); },
+      setAttribute(k, v) { if (k === 'class') node.className = v; else { attrs[k] = String(v); if (k === 'value') node.value = String(v); } },
       getAttribute(k) { return k === 'class' ? node.className : (attrs[k] ?? null); },
       removeAttribute(k) { delete attrs[k]; },
       appendChild(c) { if (c) { c.parentNode = node; children.push(c); } return c; },
@@ -2192,6 +2192,14 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
   assert.match(z.UI.el.panel.textContent, /Rollercoaster/);
   assert.match(z.UI.el.panel.textContent, /Thrill rating.*★★★/);
 
+  const custom = z.Sim.placeObject('coaster_wooden', 37, 35, 0);
+  assert.ok(custom.ok);
+  z.Sim.setPrice(custom.id, 0);
+  z.UI.Panel.open('object', custom.id);
+  assert.equal(z.UI.el.panel.querySelector('input[type=\"range\"]')?.getAttribute('value'), '0', 'zero fare should remain selected when the panel opens');
+  z.UI.Panel.hide();
+  z.UI.Panel.open('object', custom.id);
+  assert.equal(z.UI.el.panel.querySelector('input[type=\"range\"]')?.getAttribute('value'), '0', 'zero fare should remain selected when the panel reopens');
   z.UI.Panel.open('object', duck.id);
   assert.match(z.UI.el.panel.textContent, /Arcade & game stall/);
 });
@@ -2934,6 +2942,7 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   z.state.guests.push(g);
   z.Sim._rt().gById.set(g.id, g);
   assert.equal(z.Coaster.arrive(g, z.state.objects.find(o => o.id === stRes.id)), true);
+  assert.equal(z.Sim.ratingBreakdown().attractionBonus, 0, 'Queueing earns no rating credit');
 
   // Step simulation until guest boards, rides, and finishes the circuit
   let sawRiding = false, maxY = -1;
@@ -2948,6 +2957,7 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   assert.ok(maxY > 1.5, `Riding guest should be elevated on track, got absY=${maxY}`);
   assert.ok(z.state.coaster.stats.boardings >= 1, 'Boardings counter should increment');
   assert.ok(z.state.coaster.stats.income > 0, 'Coaster ticket revenue should be earned');
+  assert.ok(z.Sim.ratingBreakdown().attractionBonus > 0, 'Completing the circuit earns attraction credit');
 
   // Test breakdown stops the ENTIRE rollercoaster (station + all trains) & emergency mechanic repair
   const trainId = z.state.coaster.trains[0].id;
@@ -2955,6 +2965,7 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   assert.equal(z.Coaster.breakdown(trainId), true);
   assert.equal(z.Coaster.stationInfo(stRes.id).broken, true, 'Station should be marked broken');
   assert.equal(z.Coaster.stationReady(stRes.id), false, 'Broken coaster should stop accepting guests');
+  assert.equal(z.Sim.ratingBreakdown().attractionBonus, 0, 'A broken station stops contributing');
   assert.equal(z.Coaster.trainInfo(trainId).state, 'broken');
   assert.equal(z.Coaster.trainInfo(train2Id).state, 'broken', 'All trains on the coaster should stop on breakdown');
   assert.equal(z.Coaster.trainInfo(trainId).speed, 0);
