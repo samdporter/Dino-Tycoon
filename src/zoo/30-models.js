@@ -1842,7 +1842,7 @@ function earBall(g, x, y, z, r, col, inner) {
 (function () {
   var PW = 0xfaf7ff, SH = 0xe8e2f5, MN = 0xe9a6d8, MN2 = 0xd284c8, MN3 = 0xf6c6eb, GD = 0xf0c642, GD2 = 0xd69f24;
   // withers, short back, rounded croup, tucked flank, deep girth and a pectoral bulge
-  var BK = [[-1.0, 0.05, 0.08, 1.14], [-0.94, 0.17, 0.2, 1.2], [-0.84, 0.28, 0.3, 1.2], [-0.66, 0.32, 0.34, 1.19], [-0.42, 0.27, 0.3, 1.2], [-0.15, 0.25, 0.29, 1.2], [0.1, 0.28, 0.33, 1.17], [0.32, 0.3, 0.41, 1.16], [0.5, 0.29, 0.47, 1.13], [0.7, 0.28, 0.4, 1.1], [0.86, 0.22, 0.3, 1.06], [0.95, 0.12, 0.18, 1.06], [0.98, 0.04, 0.07, 1.06]];
+  var BK = [[-1.0, 0.05, 0.08, 1.16], [-0.95, 0.2, 0.24, 1.22], [-0.85, 0.33, 0.36, 1.21], [-0.68, 0.36, 0.38, 1.19], [-0.48, 0.3, 0.33, 1.23], [-0.22, 0.26, 0.31, 1.23], [0.0, 0.28, 0.34, 1.21], [0.2, 0.3, 0.415, 1.145], [0.38, 0.31, 0.47, 1.11], [0.58, 0.3, 0.46, 1.14], [0.74, 0.29, 0.42, 1.09], [0.88, 0.25, 0.34, 1.03], [0.96, 0.14, 0.2, 1.0], [0.99, 0.05, 0.08, 1.0]];
   var bc = function (x, y, z, nx, ny) {
     var crease = Math.exp(-Math.pow((z - 0.36) / 0.035, 2)) * 0.5 + Math.exp(-Math.pow((z + 0.5) / 0.04, 2)) * 0.4;
     return shade(ny < -0.5 ? SH : PW, 1 - 0.05 * crease * sstep(0.1, 0.3, abs(x)) * sstep(0.7, 1.1, y));
@@ -1852,7 +1852,7 @@ function earBall(g, x, y, z, r, col, inner) {
   QUADS.unicorn = {
     id: 'unicorn', cy: 1.12, hl: 0.95, hh: 0.38, height: 2.05, size: 1.4, walkA: 0.42, runA: 0.68, bend: 0.85, babyScale: 0.5, babyHead: 1.38, hopH: 1.2,
     body: function (g) {
-      g.loft(BK, { rings: 36, seg: 20, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
+      g.loft(BK, { rings: 40, seg: 20, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return bc(x, y, z, sa, ca); });
     },
     neck: { y: 1.32, z: 0.72, len: 0.72, up: 0.95, r0: 0.24, r1: 0.12, hs: 6, col: PW,
       extra: function (g) {
@@ -1879,7 +1879,7 @@ function earBall(g, x, y, z, r, col, inner) {
       eyePair(g, 0.095, 0.06, 0.16, 0.028, 0x2a1a42);
     },
     earAt: [0, 0.1, -0.01], ears: function (g) { earCone(g, 0.07, 0.19, 0.0, 0.042, 0.16, 0.14, PW, 0xf6c8da); earCone(g, -0.07, 0.19, 0.0, 0.042, 0.16, 0.14, PW, 0xf6c8da); },
-    legs: { fx: 0.16, fy: 0.86, fz: 0.5, hy: 0.88, hz: -0.58, hx: 0.17, fLen: 0.86, hLen: 0.88, fr: [0.09, 0.055, 0.037], hr: [0.105, 0.06, 0.038], haunch: [0.13, 0.2, 0.2], shoulder: [0.12, 0.2, 0.18],
+    legs: { fx: 0.16, fy: 0.86, fz: 0.5, hy: 0.88, hz: -0.58, hx: 0.17, fLen: 0.86, hLen: 0.88, fr: [0.098, 0.06, 0.037], hr: [0.115, 0.068, 0.038], haunch: [0.13, 0.2, 0.2], shoulder: [0.12, 0.2, 0.18],
       hs: 8, hipY: true, col: function (y) { return y < -0.74 ? SH : PW; }, foot: { type: 'hoof', col: GD, h: 0.075 } },
     tail: { y: 1.15, z: -0.92, n: 3, len: 0.95, r0: 0.05, r1: 0.025, col: function (i) { return mcol(i); }, up: -0.75, curl: -0.18,
       each: function (g, i, sl) {
