@@ -1235,6 +1235,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       viewing = true;
       var visF = Math.max(0.85, Math.min(1, E.vis / Math.max(1, E.nAn)));     // from above nothing hides behind a tree
       q = ((E.happy / 100) * 0.6 + 0.4 * visF) * (0.65 + 0.55 * item.w) * D0.viewMul;
+      if (C.enclosureCrowded(e.id)) { q *= 0.65; g.mood -= 0.8 * a; C.say(g, 'enclosureCrowded', e.species[0]); }
       g.fun = Math.min(100, g.fun + 7 * a * q); g.mood += 2.4 * a * q;
       st.viewSec += a;
       g.wat = (g.wat || 0) + a;

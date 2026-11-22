@@ -1053,6 +1053,8 @@ def test_zoo_adopt_centre_and_camera_resilience(browser):
 
         # Adopt new animal via species sheet (previously focused on undefined en.cx/cz -> blue screen)
         js(page, "Z.UI.Panel.species('meerkat')")
+        page.get_by_text("Minimum space", exact=True).wait_for()
+        page.get_by_text("64 tiles free").wait_for()
         page.locator("#sheet button.btn:not(.dis)", has_text="Adopt").first.click()
         page.wait_for_function("Z.state.animals.length === 1")
         page.wait_for_timeout(250)
@@ -1067,6 +1069,7 @@ def test_zoo_adopt_centre_and_camera_resilience(browser):
 
         # Enclosure Centre button
         js(page, f"Z.UI.Panel.open('enclosure', {enc['id']})")
+        page.get_by_text("1 / 64 tiles used", exact=True).wait_for()
         page.get_by_role("button", name="Centre").click()
         page.wait_for_timeout(150)
         _assert_world_rendered(page)
@@ -1111,8 +1114,30 @@ def test_dino_new_animal_hatch_follow_and_camera_resilience(browser):
 
         # Hatch flow -> Lay egg -> Hatch -> Follow across land, sea, and air species
         js(page, "Z.UI.Panel.species('dryosaurus')")
+        page.get_by_text("Minimum space", exact=True).wait_for()
+        page.get_by_text("49 tiles free", exact=True).wait_for()
         page.locator("#sheet button.btn:not(.dis)", has_text="Hatch").first.click()
+        page.get_by_text("4 tiles for this hatchling", exact=True).wait_for()
         page.locator("#sheet button.btn:not(.dis)", has_text="Lay egg").click()
+        land = next(enc for enc in encs if enc["kind"] == "land")
+        js(page, f"Z.UI.Panel.open('enclosure', {land['id']})")
+        page.get_by_text("0 / 49 tiles used · 4 reserved", exact=True).wait_for()
+
+        # Existing overcrowding is visible and a booked egg waits until the habitat can fit it.
+        crowded_ids = js(page, f"""(() => {{
+          const a = Z.Sim.spawnAnimal('brachiosaurus', 12, 12);
+          const b = Z.Sim.spawnAnimal('brachiosaurus', 14, 14);
+          Z.UI.Panel.open('enclosure', {land['id']});
+          return [a.id, b.id];
+        }})()""")
+        page.locator(".issues li", has_text="Overcrowded").first.wait_for()
+        js(page, "Z.UI.Panel.species('dryosaurus')")
+        full = page.locator("#sheet .sp-row", has=page.get_by_text("0 tiles free", exact=True))
+        assert full.get_by_role("button", name="Hatch").is_disabled()
+        js(page, """Z.UI.Panel.closeSheet(); Z.Sim.forceNext('hatch', true);
+          Z.state.research.eggs[0].t = 0; Z.Sim._step(0.1);""")
+        assert js(page, "Z.state.research.eggs[0]?.waiting === true")
+        js(page, f"{crowded_ids}.forEach(id => Z.Sim.sellAnimal(id))")
         page.wait_for_timeout(150)
         _assert_world_rendered(page)
 

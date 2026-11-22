@@ -767,7 +767,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       iss.push('Prefers ' + (D.terrain[TI[top]] ? D.terrain[TI[top]].name.toLowerCase() : top) + ' terrain');
     }
     // space
-    var per = Math.max(0, area - E.blocked * 0.5 - (E.cliffs || 0)) / n, space = clamp(per / sp.space, 0, 1);
+    var space = enclosureSpaceComfort(enc, E);
+    if (space < 1) iss.push('Enclosure is overcrowded');
     if (space < 0.8) iss.push(space < 0.5 ? 'Needs a much bigger enclosure' : 'Needs a bigger enclosure');
     var m = animalMetrics(sp);
     if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) {
@@ -820,13 +821,54 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return { value: v, terrain: terrain, space: space, foliage: foliage, water: water, shelter: shelter, rocks: rocks, social: social, clean: clean, carcass: carc, enrichment: enrich, minFence: mf, issues: iss };
   }
 
+  function animalSpaceRequirement(speciesId) {
+    var sp = typeof speciesId === 'string' ? SP[speciesId] : speciesId;
+    if (!sp) return null;
+    var sea = (sp.realm || 'land') === 'sea';
+    var depth = sea && Z.Realms ? Z.Realms.needs(sp).depth : 1;
+    return { amount: sp.space * depth, unit: sea ? 'water units' : 'tiles' };
+  }
+  function enclosureCapacity(enc, E) {
+    if (enc.realm === 'sea') return Math.max(0, enc.vol || 0);
+    return Math.max(0, enc.area - ((E && E.blocked) || 0) * 0.5 - ((E && E.cliffs) || 0));
+  }
+  function liveEnclosureDemand(enc, E) {
+    if (E && E.liveSpace !== undefined) return E.liveSpace;
+    var total = 0;
+    for (var k = 0; k < enc.animals.length; k++) {
+      var a = RT.aById.get(enc.animals[k]), req = a && animalSpaceRequirement(a.species);
+      if (req) total += req.amount;
+    }
+    return total;
+  }
+  function reservedEnclosureDemand(enc) {
+    var total = 0, k, req;
+    for (k = 0; k < S.research.eggs.length; k++) {
+      var egg = S.research.eggs[k]; if (S.tileEnc[egg.i + egg.j * N] !== enc.id) continue;
+      req = animalSpaceRequirement(egg.species);
+      if (req && (!Z.Realms || Z.Realms.realmOK(enc, egg.species))) total += req.amount;
+    }
+    return total;
+  }
+  function enclosureSpaceComfort(enc, E) {
+    var capacity = enclosureCapacity(enc, E), demand = liveEnclosureDemand(enc, E);
+    return demand > capacity + 1e-9 ? capacity / demand : 1;
+  }
+  function spaceCheck(enc, speciesId) {
+    var E = RT.encx[enc.id], req = animalSpaceRequirement(speciesId);
+    if (!req) return 'Unknown species';
+    if (liveEnclosureDemand(enc, E) + reservedEnclosureDemand(enc) + req.amount > enclosureCapacity(enc, E) + 1e-9) return 'Too cramped for another ' + lc(SP[speciesId].name);
+    return null;
+  }
+
   function encStats(enc) {
     var E = RT.encx[enc.id]; if (!E) return;
     var bySp = {}, k;
-    E.vis = 0; E.babies = 0; E.appeal = 0; E.happy = 0; E.nAn = 0; E.pred = 0; E.tr = {};
+    E.vis = 0; E.babies = 0; E.appeal = 0; E.happy = 0; E.nAn = 0; E.pred = 0; E.tr = {}; E.liveSpace = 0;
     for (k = 0; k < enc.animals.length; k++) {
       var a = RT.aById.get(enc.animals[k]); if (!a) continue;
       bySp[a.species] = (bySp[a.species] || 0) + 1;
+      var sr = animalSpaceRequirement(a.species); if (sr) E.liveSpace += sr.amount;
       if (isPredator(SP[a.species])) E.pred++;
       if (a.traits && a.traits.length) { var tt = E.tr[a.species] || (E.tr[a.species] = {}); for (var q = 0; q < a.traits.length; q++) tt[a.traits[q]] = (tt[a.traits[q]] || 0) + 1; }
       E.nAn++; E.happy += a.happiness; E.appeal += aAppeal(a);
@@ -1464,20 +1506,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function adultAge(sp) { return clamp(sp.lifespan * 0.02, 3, 10) * 0.5; }   // days are 2.8x longer than the original 150 s, so maturity takes half as many days
 
   // can a new animal of this species be put on tile t (enclosure rules only)?
-  function animalSpotCheck(sp, t, ignoreId) {
+  function animalSpotCheck(sp, t) {
     var enc = encOfTile(t);
     if (!enc) return 'Dinosaurs must be placed inside a fenced enclosure';
     if (RT.block[t]) return 'Something is in the way';
-    if (Z.Realms) { var rsc = Z.Realms.spotCheck(sp, enc, t); if (rsc !== undefined) return rsc; }   // realms package: sea/air/virtual rules replace the land rules
+    if (Z.Realms) { var rsc = Z.Realms.spotCheck(sp, enc, t); if (rsc !== undefined) return rsc || spaceCheck(enc, sp.id); }   // realm placement rules still share the capacity check
     if (cliffT(t)) return 'Too steep for dinosaurs';
     if (S.terrain[t] === WATER && !sp.needsWater) return "That dinosaur can't swim";
     var bad = compatible(enc, sp.id); if (bad) return bad;
     var m = animalMetrics(sp);
     if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return 'Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)';
-    var n = 0, k; for (k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === sp.id) n++;
-    for (k = 0; k < S.research.eggs.length; k++) { var eg = S.research.eggs[k]; if (eg.species === sp.id && S.tileEnc[eg.i + eg.j * N] === enc.id) n++; }
-    if (enc.area / (n + 1) < sp.space * 0.5) return 'Too cramped for another ' + lc(sp.name);
-    return null;
+    return spaceCheck(enc, sp.id);
   }
   function eggCost(sp) { return Math.round(sp.cost * RC.eggCostMul / 10) * 10; }
   function genomeOf(spId) { return (S.research && S.research.genomes[spId]) || 0; }
@@ -1562,10 +1601,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var bad = compatible(enc, a.species); if (bad) return fail(bad);
       var m = animalMetrics(sp, a);
       if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return fail('Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)');
-      var n = 0; for (var k = 0; k < enc.animals.length; k++) if (RT.aById.get(enc.animals[k]).species === a.species) n++;
-      if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped');
       var cwn = compatibleWarn(enc, a.species); if (cwn) extra.warn = cwn;
     }
+    if (enc.id !== a.enc) { var spaceError = spaceCheck(enc, sp.id); if (spaceError) return fail(spaceError); }
     if (dry) return okr(0, extra.warn ? extra : undefined);
     stripFromFights(a.id);
     var oldE = a.enc ? encById(a.enc) : null;
@@ -2579,6 +2617,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (see < 0.35) { say(g, 'cantSee'); g.mood -= 1.2 * a; g.wt = Math.min(g.wt, 2); return; }
     var q = (E.happy / 100) * 0.6 + 0.4 * Math.min(1, E.vis / Math.max(1, E.nAn));
     q *= 0.6 + 0.4 * see;
+    if (enclosureSpaceComfort(e, E) < 1) { q *= 0.65; g.mood -= 0.8 * a; say(g, 'enclosureCrowded', e.species[0]); }
     if (onPlat) { q = Math.min(1.3, q * 1.3); g.mood += 1.2 * a; }
     if (Z.Realms && e.kind) { q = Math.min(1.8, q * Z.Realms.viewMul(e, E, g)); Z.Realms.watchThought(g, e, E); }   // realms package: tunnels, galleries, zones
     g.fun = Math.min(100, g.fun + 7 * a * q); g.mood += 2.4 * a * q;
@@ -4475,8 +4514,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     for (k = 0; k < births.length; k++) {
       a = births[k]; sp = SP[a.species]; e = RT.eMap[a.enc]; if (!e) continue;
-      var n = 0; for (var q = 0; q < e.animals.length; q++) if (RT.aById.get(e.animals[q]).species === a.species) n++;
-      if (e.area / (n + 1) < sp.space * 0.7) { a.pregnant = 1; continue; }
+      if (spaceCheck(e, a.species)) { a.pregnant = 1; continue; }
       var sire = null;
       for (var q3 = 0; q3 < e.animals.length; q3++) { var cand = RT.aById.get(e.animals[q3]); if (cand.species === a.species && cand.sex === 'm' && !cand.baby) { sire = cand; break; } }
       var bq = Math.round(((aQ(a) + (sire ? aQ(sire) : aQ(a))) / 2) * 10) / 10;
@@ -5200,15 +5238,23 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return { chance: guaranteed ? 1 : round3(chance), hours: hours, cost: eggCost(sp), canStart: !why, why: why, breakdown: bd, guaranteed: guaranteed, genome: g, slots: RT.hatcheries.length * RC.eggSlots, eggs: R.eggs.length };
   }
   function hatchEgg(eg) {
-    var R = S.research, sp = SP[eg.species], t = eg.i + eg.j * N, enc = encOfTile(t), ok = true;
-    var bad = enc ? (compatible(enc, eg.species) || (RT.block[t] ? 'blocked' : null)) : 'no enclosure';
-    if (bad) {
+    var R = S.research, sp = SP[eg.species], t = eg.i + eg.j * N, enc = encOfTile(t);
+    var E = enc && RT.encx[enc.id];
+    // Count this hatchling once, alongside the residents it will join.
+    var noRoom = enc && liveEnclosureDemand(enc, E) + animalSpaceRequirement(sp).amount > enclosureCapacity(enc, E) + 1e-9;
+    var wrongHome = enc && Z.Realms && !Z.Realms.realmOK(enc, eg.species);
+    var conflict = enc && compatible(enc, eg.species);
+    if (!enc || noRoom || wrongHome || conflict || RT.block[t]) {
       // try another tile in the same original enclosure, else wait
       var alt = -1;
-      if (enc && !compatible(enc, eg.species)) alt = randomEncTile({ enc: enc.id, species: eg.species }, enc, 0);
+      if (enc && !noRoom && !wrongHome && !conflict) alt = randomEncTile({ enc: enc.id, species: eg.species }, enc, 0);
       if (alt >= 0) { eg.i = alt % N; eg.j = Math.floor(alt / N); t = alt; }
       else {
-        if (!eg.waiting) { eg.waiting = true; eg.wait = 0; msg('The ' + sp.name + ' egg is ready to hatch, but its enclosure is no longer suitable! Fix it within a day and a half.', 'bad'); }
+        if (!eg.waiting) {
+          eg.waiting = true; eg.wait = 0;
+          var reason = noRoom ? 'its enclosure needs more space' : 'its enclosure is no longer suitable';
+          msg('The ' + sp.name + ' egg is ready to hatch, but ' + reason + '! Fix it within a day and a half.', 'bad');
+        }
         eg.t = 0; return false;
       }
     }
@@ -5358,7 +5404,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     objFootprint: objFootprint, encById: encById, encOfTile: encOfTile, fxOf: fxOf, aDanger: aDanger, aMinFence: aMinFence, tileOf: tileOf, cxOf: cxOf, czOf: czOf, plural: plural, lc: lc,
     WX: function () { return WX; }, isNight: isNight, DAY_SECONDS: DAY_SECONDS, turn: turn, newId: newId, say: say, hurtGuest: hurtGuest, removeAnimal: removeAnimal,
     recapture: recapture, doEscape: doEscape, onEscape: onEscape, compatible: compatible, refreshEncAnimals: refreshEncAnimals, encStats: encStats,
-    animalMetrics: animalMetrics, pushFromWalls: pushFromWalls
+    animalMetrics: animalMetrics, pushFromWalls: pushFromWalls,
+    enclosureSpaceComfort: enclosureSpaceComfort
   };
 
   // Context for the power and news packages (src/25-sim-power.js, src/27-sim-news.js). Hooks into this file are marked "power package" / "news package".
@@ -5382,6 +5429,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     objFootprint: objFootprint, footprint: footprint, frontPathTiles: frontPathTiles, encById: encById, aDanger: aDanger, tileOf: tileOf, cxOf: cxOf, czOf: czOf, getField: getField, INF: INF,
     startLeaving: startLeaving, gxPlace: gxPlace, gxHr: gxHr, objCentre: objCentre, removeGuest: removeGuest, DAY_SECONDS: DAY_SECONDS, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T,
     openNow: openNow, WX: function () { return WX; }, isUnlocked: function (k, id) { return isUnlocked(k, id); },
+    enclosureCrowded: function (id) { var e = encById(id); return !!e && enclosureSpaceComfort(e, RT.encx[id]) < 1; },
     isParkConnected: isParkConnected, compOf: function (t) { return RT.comp[t]; }, gateComps: function () { return RT.gateComps; }, refreshConnectivity: refreshConnectivity
   };
 
@@ -5962,11 +6010,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var E = RT.encx[e.id], out = { id: e.id, name: e.name, area: e.area, minFence: e.minFence, see: e.see, poop: e.poop, foodLevel: e.foodLevel, waterLevel: e.waterLevel,
       species: {}, suitability: {}, issues: [], animals: e.animals.length, viewTiles: e.viewTiles.length,
       relief: E.relief || 0, cliffTiles: E.cliffs || 0, plantsThriving: E.thrive || 0, plantsStruggling: E.struggle || 0 };
+    var extraReq = extraSpecies && animalSpaceRequirement(extraSpecies);
+    var used = liveEnclosureDemand(e, E) + (extraReq ? extraReq.amount : 0), reserved = reservedEnclosureDemand(e);
+    var capacity = enclosureCapacity(e, E);
+    out.space = { used: used, available: capacity, reserved: reserved, overcrowded: used > capacity + 1e-9, reservationOverflow: reserved > 0 && used + reserved > capacity + 1e-9, unit: e.realm === 'sea' ? 'water units' : 'tiles' };
+    if (out.space.overcrowded) out.issues.push('Overcrowded: reduce animal numbers or increase usable enclosure space.');
+    else if (out.space.reservationOverflow) out.issues.push('Pending eggs reserve more space than this enclosure can provide. Improve the habitat before hatching.');
     var bySp = {}, k; for (k in E.bySp) bySp[k] = E.bySp[k];
-    if (extraSpecies && SP[extraSpecies] && !bySp[extraSpecies]) bySp[extraSpecies] = 0;
-    if (extraSpecies && bySp[extraSpecies] !== undefined && E.bySp[extraSpecies]) bySp[extraSpecies] = E.bySp[extraSpecies] + 1;
+    if (extraSpecies && SP[extraSpecies]) bySp[extraSpecies] = (bySp[extraSpecies] || 0) + 1;
+    var forecastE = Object.assign({}, E, { liveSpace: used });
     for (var sp in bySp) {
-      var r = suitFor(e, E, sp, bySp[sp] || 1), name = SP[sp].name;
+      var r = suitFor(e, forecastE, sp, bySp[sp] || 1), name = SP[sp].name;
       out.species[sp] = { suitability: r.value, count: E.bySp[sp] || 0, breakdown: { terrain: r.terrain, space: r.space, foliage: r.foliage, water: r.water, shelter: r.shelter, rocks: r.rocks, social: r.social, clean: r.clean, carcass: r.carcass, enrichment: r.enrichment }, issues: r.issues };
       out.suitability[sp] = r.value;
       for (k = 0; k < r.issues.length; k++) out.issues.push(name + ': ' + r.issues[k]);
@@ -6104,9 +6158,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var fp = footprint(dk.def, i, j, rot || 0);
     return { i0: fp.i0, j0: fp.j0, w: fp.w, h: fp.h, rot: fp.rot, cx: (fp.i0 + fp.w / 2) * TILE, cz: (fp.j0 + fp.h / 2) * TILE, front: frontList(fp) };
   }
-  function suitabilityFor(encId, speciesId) {
+  function suitabilityFor(encId, speciesId, movingId) {
     var e = encById(encId), E = e && RT.encx[encId]; if (!e || !SP[speciesId]) return null;
-    return suitFor(e, E, speciesId, (E.bySp[speciesId] || 0) + 1);
+    var n = E.bySp[speciesId] || 0, moving = movingId && RT.aById.get(movingId);
+    if (moving && moving.enc === e.id && moving.species === speciesId) return suitFor(e, E, speciesId, n);
+    var live = liveEnclosureDemand(e, E) + animalSpaceRequirement(speciesId).amount;
+    return suitFor(e, Object.assign({}, E, { liveSpace: live }), speciesId, n + 1);
   }
 
   Z.Sim = {
@@ -6117,6 +6174,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, rangerCoverage: rangerCoverage,
     setTicketPrice: setTicketPrice, setPrice: setPrice, attractionDemand: attractionDemand, takeLoan: takeLoan, repayLoan: repayLoan, loanQuote: loanQuote, loanSummary: loanSummary, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
+    animalSpaceRequirement: animalSpaceRequirement,
     // extras
     lockdown: function () { return !!(RT && RT.lockdown); },
     forceNext: function (kind, v) { RT.force = RT.force || {}; RT.force[kind] = v; },

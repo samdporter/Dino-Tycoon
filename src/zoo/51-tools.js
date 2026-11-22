@@ -375,12 +375,16 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { spec: spec, ok: r.ok, cost: r.cost || 0, msg: r.ok ? '' : failMsg(r), warn: warn, label: '',
       run: function () { var rr = Z.Sim.placeObject(t.id, r0.i, r0.j, t.rot); if (rr.ok) { rerollRot(); if (rr.warn) UI.toast(rr.warn + ' - lay a path next to it.', 'info'); } return { n: rr.ok ? 1 : 0, cost: rr.cost || 0 }; } };
   };
-  function forecastFor(species, i, j) {
+  function forecastFor(species, i, j, movingId) {
     var enc = Z.Sim.enclosureAt(i, j); if (!enc) return null;
-    var f = Z.Sim.suitabilityFor(enc.id, species); if (!f) return null;
+    var moving = movingId && Z.state.animals.filter(function (a) { return a.id === movingId; })[0];
+    var sameHome = moving && moving.enc === enc.id;
+    var capacity = Z.Sim.enclosureReport(enc.id, sameHome ? null : species);
+    var f = sameHome ? capacity.species[species] : Z.Sim.suitabilityFor(enc.id, species); if (!f) return null;
+    if (sameHome) f = { value: f.suitability, issues: f.issues };
     var iss = f.issues ? f.issues.slice() : [];
     iss.sort(function (a, b) { return (/narrow|cramped|bigger/i.test(b) ? 1 : 0) - (/narrow|cramped|bigger/i.test(a) ? 1 : 0); });
-    return { enc: enc, value: f.value, issues: iss };
+    return { enc: enc, value: f.value, issues: iss, usedSpace: capacity.usedSpace, availableSpace: capacity.availableSpace };
   }
   PLAN.animal = function (d) {
     var t = UI.tool, gp = d.b || d.a, r = Z.Sim.addAnimal(t.id, gp.i, gp.j, { dry: true }), f = forecastFor(t.id, gp.i, gp.j);
@@ -403,7 +407,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   PLAN.animalmove = function (d) {
     var t = UI.tool, gp = d.b || d.a, a = Z.state.animals.filter(function (x) { return x.id === t.aid; })[0];
     if (!a) return { spec: null, ok: false, msg: 'Animal not found', cost: 0 };
-    var r = Z.Sim.moveAnimal(a.id, gp.i, gp.j, { dry: true }), f = forecastFor(a.species, gp.i, gp.j);
+    var r = Z.Sim.moveAnimal(a.id, gp.i, gp.j, { dry: true }), f = forecastFor(a.species, gp.i, gp.j, a.id);
     return { spec: { type: 'object', kind: 'animal', id: a.species, i: gp.i, j: gp.j, rot: 0, ok: r.ok }, ok: r.ok, cost: 0, msg: r.ok ? '' : failMsg(r), forecast: f, label: 'Move here', free: true,
       run: function () { var rr = Z.Sim.moveAnimal(a.id, gp.i, gp.j); if (rr.ok) { UI.toast(a.name + ' has settled in.', 'good'); setTimeout(function () { Tools.cancel(); UI.Panel.open('animal', a.id); }, 50); } return { n: rr.ok ? 1 : 0, cost: 0 }; } };
   };
@@ -467,13 +471,14 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (el.forecast) {
       var f = plan.forecast;
       if (f) {
-        var sizeErr = !plan.ok && plan.msg && /narrow|cramped/i.test(plan.msg);
-        var pct = Math.round(f.value * 100), col = sizeErr ? 'var(--bad)' : pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)';
-        el.forecast.classList.add('on'); el.forecast.firstChild.textContent = pct + '%'; el.forecast.firstChild.style.color = col;
-        el.forecast.lastChild.innerHTML = sizeErr
-          ? '<b>' + f.enc.name + '</b>: ' + plan.msg + '.'
-          : '<b>' + f.enc.name + '</b> would suit it ' + (pct >= 70 ? 'well' : pct >= 45 ? 'so-so' : 'poorly') + (f.issues.length ? '. ' + f.issues.slice(0, 2).join('. ') + '.' : '. Lovely!');
-      } else { el.forecast.classList.add('on'); el.forecast.firstChild.textContent = '--'; el.forecast.firstChild.style.color = ''; el.forecast.lastChild.textContent = (!plan.ok && plan.msg && /narrow|cramped/i.test(plan.msg)) ? plan.msg : 'Not inside an enclosure. Fence an area first.'; }
+        var pct = Math.round(f.value * 100), col = !plan.ok ? 'var(--bad)' : pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)';
+        el.forecast.classList.add('on'); el.forecast.firstChild.textContent = plan.ok ? pct + '%' : '--'; el.forecast.firstChild.style.color = col;
+        var detail = el.forecast.lastChild;
+        detail.textContent = '';
+        detail.appendChild(h('b', { text: f.enc.name }));
+        var space = (Math.round(f.usedSpace * 10) / 10) + ' / ' + (Math.round(f.availableSpace * 10) / 10) + ' tiles';
+        detail.append(!plan.ok ? ' · ' + plan.msg : ' would suit it ' + (pct >= 70 ? 'well' : pct >= 45 ? 'so-so' : 'poorly') + ' · ' + space + (f.issues.length ? '. ' + f.issues.slice(0, 2).join('. ') + '.' : '. Lovely!'));
+      } else { el.forecast.classList.add('on'); el.forecast.firstChild.textContent = '--'; el.forecast.firstChild.style.color = ''; el.forecast.lastChild.textContent = plan.msg || 'Fence an area first.'; }
     }
   }
   function refreshPlan() { if (UI.tool && (drag || hover)) applyPlan(planFor(drag || hover), (drag || hover).cx, (drag || hover).cy, (drag || hover).touch); }

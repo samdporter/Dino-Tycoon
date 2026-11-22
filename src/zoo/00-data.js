@@ -763,6 +763,11 @@ window.Z.DATA = {
       "That {animal} needs more space.",
       "I don't think the {animal} is happy."
     ],
+    enclosureCrowded: [
+      "Those animals look crowded in there.",
+      "I hope they have enough room to roam.",
+      "That enclosure seems too full."
+    ],
     expensive: [
       "Tickets are a bit steep.",
       "That's a lot for a burger.",

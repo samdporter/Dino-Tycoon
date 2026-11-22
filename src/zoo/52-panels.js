@@ -122,7 +122,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
 
   // ------------------------------------------------------------------ enclosure
-  var COMPS = [['terrain', 'Ground'], ['space', 'Space'], ['foliage', 'Plants'], ['water', 'Water'], ['shelter', 'Shelter'], ['rocks', 'Rocks'], ['social', 'Company'], ['clean', 'Clean']];
+  var COMPS = [['terrain', 'Ground'], ['space', 'Minimum space'], ['foliage', 'Plants'], ['water', 'Water'], ['shelter', 'Shelter'], ['rocks', 'Rocks'], ['social', 'Company'], ['clean', 'Clean']];
   function openEnc(id) {
     var e = find(Z.state.enclosures, id); if (!e) return false;
     var f = frame(h('div', { html: ic('fence'), style: 'width:28px;height:28px;color:var(--moss)' }), e.name, ''), b = f.body;
@@ -132,6 +132,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var env = bars([['clean', 'Cleanliness'], ['food', 'Food'], ['water', 'Water']]); b.appendChild(env.el);
     var fenceTxt = h('div.kv'); b.appendChild(fenceTxt);
     var encTypeTxt = h('div.kv'); b.appendChild(encTypeTxt);
+    var spaceTxt = h('div.kv'); b.appendChild(spaceTxt);
     var spBox = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(spBox);
     var iss = h('div'); b.appendChild(iss); var issKey = [], spKey = '';
     b.appendChild(rn);
@@ -150,7 +151,9 @@ window.Z = window.Z || {}; var Z = window.Z;
         fenceTxt.innerHTML = '<span>Weakest fence strength</span><b style="color:' + (en.minFence < worst ? 'var(--bad)' : 'inherit') + '">' + en.minFence + (worst ? ' / needs ' + worst : '') + '</b>';
         var needCage = en.species.some(function (s) { return UI.sp(s).needsCage; });
         encTypeTxt.innerHTML = '<span>Enclosure type</span><b style="color:' + (needCage && !en.isCage ? 'var(--bad)' : 'inherit') + '">' + (en.isCage ? 'Roofed cage' : (needCage ? 'Open (needs roofed cage)' : 'Open-top')) + '</b>';
-        var key = en.species.join(',') + '|' + en.animals.length + '|' + Object.keys(r.species).map(function (s) { return s + Math.round(r.species[s].suitability * 100); }).join(',');
+        var spaceValue = Math.round(r.usedSpace * 10) / 10, availableValue = Math.round(r.availableSpace * 10) / 10;
+        spaceTxt.innerHTML = '<span>Enclosure space</span><b style="color:' + (r.usedSpace > r.availableSpace ? 'var(--bad)' : 'inherit') + '">' + spaceValue + ' / ' + availableValue + ' tiles used</b>';
+        var key = en.species.join(',') + '|' + en.animals.length + '|' + Math.ceil(r.usedSpace) + '/' + Math.floor(r.availableSpace) + '|' + Object.keys(r.species).map(function (s) { return s + Math.round(r.species[s].suitability * 100); }).join(',');
         if (key !== spKey) {
           spKey = key; spBox.innerHTML = '';
           if (!en.species.length) spBox.appendChild(h('div.fact', { text: 'No animals live here yet. Choose an animal from the Animals tab and adopt it into this enclosure.' }));
@@ -327,7 +330,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     row('Ground', tp);
     var fl = h('div.chips'); sp.foliage.forEach(function (s) { var sd = UI.byId(D.scenery, s); fl.appendChild(h('span.chip', { text: sd ? sd.name : s })); }); row('Plants', fl);
     var spM = Z.Sim.animalMetrics ? Z.Sim.animalMetrics(id, false) : null;
-    row('Space', h('span', { text: sp.space + ' tiles each (' + (sp.space * 4) + ' m²)' + (spM && spM.minSpan >= 4 ? ' · Min width: ' + spM.minSpan + '×' + spM.minSpan : '') }));
+    row('Minimum space', h('span', { text: sp.space + ' tiles each (' + (sp.space * 4) + ' m²)' + (spM && spM.minSpan >= 4 ? ' · Min width: ' + spM.minSpan + '×' + spM.minSpan : '') }));
     row('Company', h('span', { text: sp.social[0] === sp.social[1] ? 'Lives alone' : 'In groups of ' + sp.social[0] + (sp.social[1] > 20 ? '+' : ' to ' + sp.social[1]) }));
     if (sp.companion) {
       var compSp = UI.sp(sp.companion);
@@ -354,7 +357,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     encs.forEach(function (en) {
       var f = Z.Sim.suitabilityFor(en.id, id), pct = f ? Math.round(f.value * 100) : 0;
       var spot = findSpot(en, id), money = S.money >= sp.cost;
-      var btn = h('button.btn.sm' + (spot.ok && money && canBuy ? '' : '.dis'), { text: breedOnly ? 'Breed only' : atMax ? 'Owned' : 'Adopt', on: { click: function () {
+      var space = Z.Sim.enclosureReport(en.id), freeSpace = Math.max(0, space.availableSpace - space.usedSpace);
+      var adoptable = spot.ok && money && canBuy;
+      var btn = h('button.btn.sm' + (adoptable ? '' : '.dis'), { disabled: !adoptable, text: breedOnly ? 'Breed only' : atMax ? 'Owned' : 'Adopt', on: { click: function () {
         if (breedOnly) { UI.toast('Breed Puss in Boots + Purple Dragon to get ' + sp.name + '.', 'info'); return; }
         if (atMax) { UI.toast('You can only have ' + sp.maxCount + ' ' + sp.name + ' in the zoo at a time.', 'bad'); return; }
         var r = Z.Sim.addAnimal(id, spot.i, spot.j);
@@ -362,7 +367,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         else UI.toast(r.msg || 'Cannot adopt here', 'bad');
       } } });
       var msg = locked ? 'Needs a ' + sp.star + '-star zoo' : breedOnly ? 'Breed Puss in Boots + Purple Dragon' : atMax ? 'Owned (Max ' + sp.maxCount + ')' : !spot.ok ? spot.msg : !money ? 'Not enough money' : (f && f.issues.length ? f.issues[0] : 'A fine home');
-      list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, h('small', { text: msg })),
+      list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, h('small', { text: msg + ' · ' + (Math.round(freeSpace * 10) / 10) + ' tiles free' })),
         h('div', { style: 'min-width:62px;text-align:center' }, h('div.num', { style: 'font:700 17px var(--serif);color:' + (pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)'), text: pct + '%' }), bar(f ? f.value : 0)), btn));
     });
     box.appendChild(list);

@@ -2439,7 +2439,7 @@ function updateBuildings(dtGame) {
 function entityRec(kind, id) { var m = ents[kind]; return m ? m.get(id) : null; }
 
 /* --------------------------------------------- overlays: bubbles, floaters */
-var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋', coaster: '🎢', arcade: '🎯', candyFloss: '🍭' };
+var EMOJI = { happy: '😊', hungry: '🍔', thirsty: '🥤', toilet: '🚻', bored: '😐', tired: '😴', dirty: '🗑️', animalsUnhappy: '😟', enclosureCrowded: '😟', expensive: '💸', cheap: '👍', crowded: '👥', escaped: '❗', baby: '🍼', greatExhibit: '🤩', cantSee: '🙈', noBench: '🪑', leaving: '👋', coaster: '🎢', arcade: '🎯', candyFloss: '🍭' };
 var BUB = {}, EMO = {}, bubSprites = [], floaters = [], emotes = [], thoughtCache = {};
 var thoughtIdx = null;
 function mkSpriteMat(canvas) {

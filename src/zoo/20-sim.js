@@ -710,6 +710,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   var HW = { terrain: 0.22, space: 0.2, foliage: 0.12, water: 0.14, shelter: 0.1, rocks: 0.06, social: 0.1, clean: 0.06 };
+  function usableEncSpace(enc, E) { return Math.max(0, enc.area - E.blocked * 0.5); }
+  function encSpaceDemand(enc, extraSpecies, E) {
+    E = E || RT.encx[enc.id];
+    return (E ? E.usedSpace || 0 : 0) + (extraSpecies && SP[extraSpecies] ? SP[extraSpecies].space || 0 : 0);
+  }
   var ISSUE_TERR = {};
   function animalMetrics(sp, a) {
     if (typeof sp === 'string') sp = SP[sp];
@@ -722,7 +727,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var minSpan = sp.size >= 3.6 ? 6 : sp.size >= 2.2 ? 4 : sp.size >= 1.0 ? 3 : 2;
     return { bodyRad: bodyRad, sepRad: sepRad, halfLen: halfLen, prefClear: prefClear, minSpan: minSpan };
   }
-  function suitFor(enc, E, spId, n) {
+  function suitFor(enc, E, spId, n, projectedDemand) {
     var sp = SP[spId], area = enc.area, k, iss = [];
     if (n < 1) n = 1;
     // terrain
@@ -743,7 +748,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       iss.push('Prefers ' + (D.terrain[TI[top]] ? D.terrain[TI[top]].name.toLowerCase() : top) + ' terrain');
     }
     // space
-    var per = Math.max(0, area - E.blocked * 0.5) / n, space = clamp(per / sp.space, 0, 1);
+    var available = usableEncSpace(enc, E), demand = projectedDemand === undefined ? E.usedSpace : projectedDemand;
+    var space = demand > 0 ? clamp(available / demand, 0, 1) : 1;
+    if (demand > available) iss.push('Enclosure is overcrowded');
     if (space < 0.8) iss.push(space < 0.5 ? 'Needs a much bigger enclosure' : 'Needs a bigger enclosure');
     var m = animalMetrics(sp);
     if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) {
@@ -802,10 +809,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function encStats(enc) {
     var E = RT.encx[enc.id]; if (!E) return;
     var bySp = {}, k;
-    E.vis = 0; E.babies = 0; E.appeal = 0; E.happy = 0; E.nAn = 0;
+    E.vis = 0; E.babies = 0; E.appeal = 0; E.happy = 0; E.nAn = 0; E.usedSpace = 0;
     for (k = 0; k < enc.animals.length; k++) {
       var a = RT.aById.get(enc.animals[k]); if (!a) continue;
       bySp[a.species] = (bySp[a.species] || 0) + 1;
+      E.usedSpace += (SP[a.species] && SP[a.species].space) || 0;
       E.nAn++; E.happy += a.happiness; E.appeal += a.appeal || (SP[a.species] ? SP[a.species].appeal * (a.baby ? 1.5 : 1) : 30);
       if (a.baby) E.babies++;
       if (a.state !== 'sleep' && a.state !== 'sick' && !RT.shelter[tileOf(a.x, a.z)]) E.vis++;
@@ -1427,8 +1435,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (badComp) return fail(badComp);
     var m = animalMetrics(sp, opts && opts.baby);
     if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return fail('Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)');
-    var n = 0; for (var ak = 0; ak < enc.animals.length; ak++) if (RT.aById.get(enc.animals[ak]).species === sp.id) n++;
-    if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped for another ' + lc(sp.name));
+    var used = encSpaceDemand(enc, speciesId), available = usableEncSpace(enc, RT.encx[enc.id]);
+    if (used > available) return fail('This enclosure does not have enough space for another ' + lc(sp.name) + ' (' + Math.ceil(used - available) + ' tiles over capacity)');
     var warn = mixWarn(enc, speciesId);
     var cost = sp.cost;
     if (S.money < cost) return fail('Not enough money');
@@ -1482,8 +1490,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (enc.id !== a.enc) {
       var m = animalMetrics(sp, a);
       if (enc.inscribedSpan !== undefined && enc.inscribedSpan < m.minSpan) return fail('Enclosure is too narrow for ' + lc(sp.name) + ' (needs at least ' + m.minSpan + '×' + m.minSpan + ' open tiles)');
-      var n = 0; for (var ak = 0; ak < enc.animals.length; ak++) if (RT.aById.get(enc.animals[ak]).species === a.species) n++;
-      if (enc.area / (n + 1) < sp.space * 0.5) return fail('Too cramped for another ' + lc(sp.name));
+      var used = encSpaceDemand(enc, a.species), available = usableEncSpace(enc, RT.encx[enc.id]);
+      if (used > available) return fail('This enclosure does not have enough space for another ' + lc(sp.name) + ' (' + Math.ceil(used - available) + ' tiles over capacity)');
     }
     var warn = mixWarn(enc, a.species);
     if (dry) return okr(0, warn ? { warn: warn } : undefined);
@@ -2348,6 +2356,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (see < 0.35) { say(g, 'cantSee'); g.mood -= 1.2 * a; g.wt = Math.min(g.wt, 2); return; }
     var q = (E.happy / 100) * 0.6 + 0.4 * Math.min(1, E.vis / Math.max(1, E.nAn));
     q *= 0.6 + 0.4 * see;
+    var overCapacity = encSpaceDemand(e, null, E) > usableEncSpace(e, E);
+    if (overCapacity) { q *= 0.55; say(g, 'enclosureCrowded', e.species[0]); g.mood -= 2.5 * a; }
     g.fun = Math.min(100, g.fun + 7 * a * q); g.mood += 2.4 * a * q;
     g.wat += a;
     if (!g.seenEnc[e.id] && g.wat >= 1.5) { g.seenEnc[e.id] = 1; g.nSeen++; g.mood += 4; }
@@ -2355,7 +2365,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var sp = e.species[s];
       if (!g.seen[sp]) { g.seen[sp] = 1; g.nsp = (g.nsp || 0) + 1; g.mood += 3; if (rng.chance(0.5)) say(g, 'happy', sp); }
     }
-    if (E.happy < 35) { say(g, 'animalsUnhappy', e.species[0]); g.mood -= 2.5 * a; }
+    if (E.happy < 35) { if (!overCapacity) say(g, 'animalsUnhappy', e.species[0]); g.mood -= 2.5 * a; }
     else {
       if (E.babies > 0 && rng.chance(0.12)) say(g, 'baby', e.species[0]);
       if (q > 0.7) {
@@ -4353,12 +4363,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       a = births[k]; sp = SP[a.species]; e = RT.eMap[a.enc]; if (!e) continue;
       var babySpId = a.species === 'purple_dragon' ? (rng.chance(0.5) ? 'pugon' : 'drassy') : a.species;
       var babySp = SP[babySpId] || sp;
-      var n = 0;
-      for (var q = 0; q < e.animals.length; q++) {
-        var anq = RT.aById.get(e.animals[q]);
-        if (anq && anq.species === babySpId) n++;
-      }
-      if (e.area / (n + 1) < babySp.space * 0.7) { a.pregnant = 1; continue; }
+      if (encSpaceDemand(e, babySpId) > usableEncSpace(e, RT.encx[e.id])) { a.pregnant = 1; continue; }
       var baby = makeAnimal(babySpId, e, a.x + rng.range(-0.8, 0.8), a.z + rng.range(-0.8, 0.8), true);
       var bt = tileOf(baby.x, baby.z);
       if (bt < 0 || !aok(baby, bt)) { baby.x = a.x; baby.z = a.z; }
@@ -4997,10 +5002,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       species: {}, suitability: {}, issues: [], animals: e.animals.length, viewTiles: e.viewTiles.length,
       relief: E.relief || 0, cliffTiles: E.cliffs || 0, plantsThriving: E.thrive || 0, plantsStruggling: E.struggle || 0, badPlants: E.struggle || 0 };
     var bySp = {}, k; for (k in E.bySp) bySp[k] = E.bySp[k];
-    if (extraSpecies && SP[extraSpecies] && !bySp[extraSpecies]) bySp[extraSpecies] = 0;
-    if (extraSpecies && bySp[extraSpecies] !== undefined && E.bySp[extraSpecies]) bySp[extraSpecies] = E.bySp[extraSpecies] + 1;
+    out.usedSpace = encSpaceDemand(e, extraSpecies); out.availableSpace = usableEncSpace(e, E);
+    if (out.usedSpace > out.availableSpace) out.issues.push('Overcrowded: animals need ' + (Math.round(out.usedSpace * 10) / 10) + ' tiles, with ' + (Math.round(out.availableSpace * 10) / 10) + ' available. Expand the enclosure or move animals.');
+    if (extraSpecies && SP[extraSpecies]) bySp[extraSpecies] = (bySp[extraSpecies] || 0) + 1;
     for (var sp in bySp) {
-      var r = suitFor(e, E, sp, bySp[sp] || 1), name = SP[sp].name;
+      var r = suitFor(e, E, sp, bySp[sp], out.usedSpace), name = SP[sp].name;
       out.species[sp] = { suitability: r.value, count: E.bySp[sp] || 0, breakdown: { terrain: r.terrain, space: r.space, foliage: r.foliage, water: r.water, shelter: r.shelter, rocks: r.rocks, social: r.social, clean: r.clean }, issues: r.issues };
       out.suitability[sp] = r.value;
       for (k = 0; k < r.issues.length; k++) out.issues.push(name + ': ' + r.issues[k]);
@@ -5102,7 +5108,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function suitabilityFor(encId, speciesId) {
     var e = encById(encId), E = e && RT.encx[encId]; if (!e || !SP[speciesId]) return null;
-    return suitFor(e, E, speciesId, (E.bySp[speciesId] || 0) + 1);
+    return suitFor(e, E, speciesId, (E.bySp[speciesId] || 0) + 1, encSpaceDemand(e, speciesId, E));
   }
 
   Z.coasterCtx = {

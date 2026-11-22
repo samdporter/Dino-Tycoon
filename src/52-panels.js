@@ -51,6 +51,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return ul;
   }
   function sameList(a, b) { return a.length === b.length && a.every(function (x, i) { return x === b[i]; }); }
+  function spaceNumber(n) { return Math.round(n * 100) / 100; }
   function confirmBtn(label, ask, fn, cls) {
     var b = h('button.btn.sm' + (cls ? '.' + cls : ''), { html: label }), t = 0, armed = false;
     b.addEventListener('click', function () {
@@ -141,6 +142,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     var rn = h('div.btnrow', { style: 'display:none' }), inp = h('input.txt', { type: 'text', maxlength: '28', value: e.name, 'aria-label': 'Enclosure name' });
     rn.appendChild(inp); rn.appendChild(h('button.btn.sm', { html: ic('check') + 'Save', on: { click: function () { var r = Z.Sim.renameEnclosure(id, inp.value); if (r.ok) { f.title.textContent = inp.value.trim(); UI.toast('Enclosure renamed', 'good'); } rn.style.display = 'none'; UI.snd('click'); } } }));
     var env = bars([['clean', 'Cleanliness'], ['food', 'Food'], ['water', 'Water']]); b.appendChild(env.el);
+    var spaceTxt = h('b');
+    b.appendChild(h('div.kv', h('span', { text: 'Enclosure space' }), spaceTxt));
     var fenceTxt = h('div.kv'); b.appendChild(fenceTxt);
     var moatBox = UI.Moats ? UI.Moats.encBlock(id) : null; if (moatBox) b.appendChild(moatBox.el);
     var rlBox = UI.Realms ? UI.Realms.encBlock(id) : null; if (rlBox) b.appendChild(rlBox.el);   // realms package
@@ -158,6 +161,9 @@ window.Z = window.Z || {}; var Z = window.Z;
         var en = find(Z.state.enclosures, id); if (!en) return false;
         var r = Z.Sim.enclosureReport(id); if (!r) return false;
         f.sub.textContent = en.animals.length + ' animal' + (en.animals.length === 1 ? '' : 's') + ' · ' + en.area + ' tiles' + (en.viewTiles && en.viewTiles.length ? '' : ' · not visible from a path');
+        var space = r.space;
+        spaceTxt.textContent = spaceNumber(space.used) + ' / ' + spaceNumber(space.available) + ' ' + space.unit + ' used' + (space.reserved ? ' · ' + spaceNumber(space.reserved) + ' reserved' : '');
+        spaceTxt.style.color = space.overcrowded || space.reservationOverflow ? 'var(--bad)' : '';
         env.set('clean', 1 - UI.clamp(en.poop / (en.area / 3 + 3), 0, 1)); env.set('food', en.foodLevel); env.set('water', en.waterLevel);
         var fn = D.fences.filter(function (x) { return x.strength === en.minFence; })[0];
         var worst = 0; en.species.forEach(function (s) { worst = Math.max(worst, UI.sp(s).minFence); });
@@ -411,8 +417,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     var tp = h('div.chips'); Object.keys(sp.terrainPrefs).sort(function (a, b) { return sp.terrainPrefs[b] - sp.terrainPrefs[a]; }).forEach(function (t) { var td = UI.byId(D.terrain, t); tp.appendChild(h('span.chip', { html: '<i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + td.colour + ';border:1px solid rgba(0,0,0,.4);margin-right:4px"></i>' + td.name })); });
     row('Ground', tp);
     var fl = h('div.chips'); sp.foliage.forEach(function (s) { var sd = UI.byId(D.scenery, s); fl.appendChild(h('span.chip', { text: sd ? sd.name : s })); }); row('Plants', fl);
-    var spM = Z.Sim && Z.Sim.animalMetrics ? Z.Sim.animalMetrics(id, false) : null;
-    row('Space', h('span', { text: sp.space + ' tiles each' + (spM && spM.minSpan >= 4 ? ' · Min width: ' + spM.minSpan + '×' + spM.minSpan : '') }));
+    var space = Z.Sim.animalSpaceRequirement(id), spM = Z.Sim.animalMetrics(id);
+    var width = ' · ' + spM.minSpan + '×' + spM.minSpan + ' open tiles';
+    row('Minimum space', h('span', { text: spaceNumber(space.amount) + ' ' + space.unit + ' per animal' + width }));
     row('Company', h('span', { text: sp.social[0] === sp.social[1] ? 'Lives alone' : 'In groups of ' + sp.social[0] + (sp.social[1] > 20 ? '+' : ' to ' + sp.social[1]) }));
     var fn = D.fences.slice().sort(function (a, b) { return a.cost - b.cost; }).filter(function (x) { return x.strength >= sp.minFence; })[0];
     row('Fence', h('span', { text: 'Strength ' + sp.minFence + '+ (' + (fn ? fn.name.toLowerCase() : 'strong') + (sp.minFence > 1 ? ' or stronger' : '') + ')' }));
@@ -436,9 +443,11 @@ window.Z = window.Z || {}; var Z = window.Z;
       encs.forEach(function (en) {
         var f = Z.Sim.suitabilityFor(en.id, id), pct = f ? Math.round(f.value * 100) : 0;
         var spot = findSpot(en, id);
-        var btn = h('button.btn.sm' + (spot.ok ? '' : '.dis'), { text: 'Hatch', on: { click: function () { Panel.confirmEgg(id, spot.i, spot.j, function () { Panel.closeSheet(); focusEnc(en, Math.min(Z.World.cam.dist, 45)); }); } } });
+        var btn = h('button.btn.sm' + (spot.ok ? '' : '.dis'), { text: 'Hatch', disabled: !spot.ok, on: { click: function () { Panel.confirmEgg(id, spot.i, spot.j, function () { Panel.closeSheet(); focusEnc(en, Math.min(Z.World.cam.dist, 45)); }); } } });
         var msg = !spot.ok ? spot.msg : (f && f.issues.length ? f.issues[0] : 'A fine home');
-        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, h('small', { text: msg })),
+        var cap = Z.Sim.enclosureReport(en.id).space;
+        var free = cap.unit === space.unit ? h('small', { text: spaceNumber(Math.max(0, cap.available - cap.used - cap.reserved)) + ' ' + cap.unit + ' free' }) : null;
+        list.appendChild(h('div.sp-row', { style: 'padding:7px 8px' }, h('div.sm', en.name, free, h('small', { text: msg })),
           h('div', { style: 'min-width:62px;text-align:center' }, h('div.num', { style: 'font:700 17px var(--serif);color:' + (pct >= 70 ? 'var(--good)' : pct >= 45 ? '#c88a10' : 'var(--bad)'), text: pct + '%' }), bar(f ? f.value : 0)), btn));
       });
       box.appendChild(list);
@@ -459,6 +468,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     var lv2 = Z.Realms && Z.Realms.live(sp);
     box.appendChild(h('div.kv', h('span', { text: lv2 ? 'Gestation cost' : 'Egg cost' }), h('b', { text: fmt(dry.cost !== undefined ? dry.cost : ho.cost) })));
     box.appendChild(h('div.kv', h('span', { text: lv2 ? 'Gestation' : 'Incubation' }), h('b', { text: Math.round(dry.hours || ho.hours) + ' game hours' })));
+    var space = Z.Sim.animalSpaceRequirement(id);
+    box.appendChild(h('div.kv', h('span', { text: 'Space reserved' }), h('b', { text: spaceNumber(space.amount) + ' ' + space.unit + ' for this hatchling' })));
     box.appendChild(h('div.fact', { text: 'A failed egg refunds 30% of its cost. The hatchling will carry your ' + Math.round(R.genomeInfo(id).genome) + '% genome quality.' }));
     if (dry.ok && dry.warn) box.appendChild(h('div.bn.alert', { style: 'padding:8px;margin:4px 0;animation:none', text: 'Warning: ' + dry.warn }));
     if (!dry.ok) {
@@ -466,7 +477,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var fx = WHY_FIX[dry.code]; if (fx) box.appendChild(h('button.btn.sm.gold', { text: fx[0], on: { click: fx[1] } }));
     }
     box.appendChild(h('div.btnrow', { style: 'margin-top:6px' },
-      h('button.btn' + (dry.ok ? '.gold' : '.dis'), { html: ic('egg') + (Z.Realms && Z.Realms.live(sp) ? 'Start' : 'Lay egg'), on: { click: function () {
+      h('button.btn' + (dry.ok ? '.gold' : '.dis'), { html: ic('egg') + (lv2 ? 'Start' : 'Lay egg'), disabled: !dry.ok, on: { click: function () {
         Z.Sim.beginStroke('egg'); var r = Z.Sim.addAnimal(id, i, j); Z.Sim.endStroke();
         if (r.ok) { UI.snd('cash'); UI.toast((Z.Realms && Z.Realms.live(sp) ? 'Gestation started. Birth in about ' : 'Egg laid. It hatches in about ') + Math.round(r.hours) + ' h.', 'good'); Panel.closeSheet(); if (done) done(r); }
         else { UI.snd('bad'); UI.toast(r.msg || 'Cannot lay an egg here', 'bad'); }
@@ -481,7 +492,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (k = 0; k < tiles.length; k++) {
       var i = tiles[k] % N, jj = (tiles[k] / N) | 0, r = Z.Sim.addAnimal(species, i, jj, { dry: true });
       if (r.ok) return { ok: true, i: i, j: jj };
-      if (r.msg && r.msg !== 'Something is in the way' && r.msg.indexOf("can't swim") < 0) { fail = r.msg; if (r.code === 'money' || r.code === 'genome' || r.code === 'no_hatchery' || r.code === 'no_slot') break; }
+      if (r.msg && r.msg !== 'Something is in the way' && r.msg.indexOf("can't swim") < 0) { fail = r.msg; if (r.code === 'money' || r.code === 'genome' || r.code === 'no_hatchery' || r.code === 'no_slot' || /cramped/i.test(r.msg)) break; }
     }
     return { ok: false, msg: fail };
   }

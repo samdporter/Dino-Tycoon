@@ -727,6 +727,11 @@ window.Z.DATA = {
       "It's packed.",
       "Mind your elbows."
     ],
+    enclosureCrowded: [
+      "There are too many animals in that enclosure.",
+      "Those animals look cramped.",
+      "I hope the park gives them more room."
+    ],
     escaped: [
       "Did you hear? The {animal} got out!",
       "Run! The {animal} is loose!",

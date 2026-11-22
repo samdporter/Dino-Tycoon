@@ -363,10 +363,6 @@ window.Z = window.Z || {}; var Z = window.Z;
     var cmp = C.compatible(enc, sp.id); if (cmp) return cmp;
     var am = C.animalMetrics(sp);
     if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am.minSpan) return 'Enclosure is too narrow for ' + nm + ' (needs at least ' + am.minSpan + '×' + am.minSpan + ' open tiles)';
-    var cnt = 0, k; for (k = 0; k < enc.animals.length; k++) if (RT().aById.get(enc.animals[k]).species === sp.id) cnt++;
-    for (k = 0; k < S().research.eggs.length; k++) { var eg = S().research.eggs[k]; if (eg.species === sp.id && S().tileEnc[eg.i + eg.j * N] === enc.id) cnt++; }
-    var roomNeed = rl === 'sea' ? sp.space * n.depth * 0.5 : sp.space * 0.5, have = rl === 'sea' ? (enc.vol || enc.area) / (cnt + 1) : enc.area / (cnt + 1);
-    if (have < roomNeed) return 'Too cramped for another ' + nm;
     if (rl === 'air' && kind === 'dome' && enc.H < n.needH * 0.55) return 'The dome is too low for ' + nm;
     if (kind !== 'virtual' && strengthOf(enc) < Math.max(sp.minFence, n.minStr) - 1) return 'The ' + (kind === 'dome' ? 'mesh' : kind === 'tank' ? 'tank wall' : 'net') + ' is far too weak for ' + nm + ' (strength ' + Math.max(sp.minFence, n.minStr) + ' needed)';
     if (rl === 'sea' && kind === 'pen' && S().terrain[t] !== wi()) return 'Pick a water tile of the pen';
@@ -637,11 +633,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (n >= mn && n <= mx) social = 1;
     else if (n < mn) { social = 0.4 + 0.6 * (n / mn); iss.push('Needs more of its own kind (at least ' + mn + ')'); }
     else { social = Math.max(0.3, 1 - 0.2 * (n - mx)); iss.push('Too many of this species (max ' + mx + ')'); }
-    var out;
+    var out, space = C.enclosureSpaceComfort(enc, E);
+    if (space < 1) iss.push('Enclosure is overcrowded');
     if (rl === 'sea') {
       var depth = clamp((enc.depth || 0.5) / nd.depth, 0, 1);
       if (depth < 0.85) iss.push('Needs deeper water (about ' + metres(nd.depth) + ' m, this is ' + metres(enc.depth || 0.5) + ' m)');
-      var volPer = (enc.vol || area) / n, room = clamp(volPer / (sp.space * nd.depth), 0, 1);
+      var room = space;
       if (room < 0.8) iss.push(room < 0.5 ? 'Needs far more water (volume per animal)' : 'Needs more water volume per animal');
       var am = C.animalMetrics(sp);
       if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am.minSpan) {
@@ -670,7 +667,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     } else {
       var H = enc.H || 6, hs = clamp(H / nd.needH, 0, 1);
       if (hs < 0.85) iss.push('The dome is too low (about ' + metres(nd.needH) + ' m wanted)');
-      var rm = clamp((area / n) / sp.space, 0, 1);
+      var rm = space;
       if (rm < 0.8) iss.push(rm < 0.5 ? 'Needs a much bigger aviary' : 'Needs a bigger aviary');
       var am2 = C.animalMetrics(sp);
       if (enc.inscribedSpan !== undefined && enc.inscribedSpan < am2.minSpan) {

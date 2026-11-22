@@ -134,6 +134,87 @@ function setupFlatZone(z, i0, j0, i1, j1) {
   }
 }
 
+test('enclosure reports shared adult-space capacity in habitat units', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 421, difficulty: 'easy' });
+  setupFlatZone(z, 10, 10, 15, 15);
+  for (let i = 10; i <= 13; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'reinforced');
+  }
+  for (let j = 10; j < 14; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 10, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 14, j }, 'reinforced');
+  }
+  const dino = z.Sim.spawnAnimal('dryosaurus', 11, 11);
+  const report = z.Sim.enclosureReport(dino.enc);
+  assert.deepEqual(JSON.parse(JSON.stringify(z.Sim.animalSpaceRequirement('dryosaurus'))), { amount: 4, unit: 'tiles' });
+  assert.equal(report.space.used, 4);
+  assert.equal(report.space.available, 16);
+  assert.equal(report.space.reserved, 0);
+  assert.equal(report.space.overcrowded, false);
+  assert.equal(report.space.unit, 'tiles');
+});
+
+test('animal placement rejects an addition that exceeds shared capacity across species', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 422, difficulty: 'easy' });
+  setupFlatZone(z, 10, 10, 16, 16);
+  for (let i = 10; i <= 14; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'reinforced');
+  }
+  for (let j = 10; j < 15; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 10, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 14, j }, 'reinforced');
+  }
+  z.state.research.genomes.triceratops = 100;
+  z.state.research.genomes.dryosaurus = 100;
+  const trike = z.Sim.spawnAnimal('triceratops', 11, 11);
+  const result = z.Sim.addAnimal('dryosaurus', 12, 12, { dry: true });
+  assert.equal(z.Sim.enclosureReport(trike.enc).space.available, 16);
+  assert.equal(result.ok, false);
+  assert.match(result.why, /cramped/i);
+});
+
+test('egg bookings reserve shared adult space for future hatchlings', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 423, difficulty: 'easy' });
+  setupFlatZone(z, 10, 10, 16, 16);
+  for (let i = 10; i <= 14; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 14 }, 'reinforced');
+  }
+  for (let j = 10; j < 15; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 10, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 14, j }, 'reinforced');
+  }
+  z.state.research.genomes.triceratops = 100;
+  const first = z.Sim.addAnimal('triceratops', 11, 11);
+  assert.equal(first.ok, true, first.why);
+  const report = z.Sim.enclosureReport(z.state.tileEnc[11 + 11 * z.N]);
+  assert.equal(report.space.used, 0);
+  assert.equal(report.space.reserved, z.Sim.animalSpaceRequirement('triceratops').amount);
+  assert.equal(report.space.overcrowded, false);
+});
+
+test('air realm admissions include pending eggs in shared area capacity', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 424, map: 'green', money: 500000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 10, 10, 16, 16);
+  const tiles = [];
+  for (let j = 10; j < 14; j++) for (let i = 10; i < 14; i++) tiles.push(i + j * z.N);
+  assert.equal(z.Sim.realms.place('dome', 'air', tiles, { lvl: 2, mesh: 2 }).ok, true);
+  z.state.research.genomes.pteranodon = 100;
+  z.state.research.genomes.rhamphorhynchus = 100;
+  const egg = z.Sim.addAnimal('pteranodon', 11, 11);
+  assert.equal(egg.ok, true, egg.why);
+  const next = z.Sim.addAnimal('rhamphorhynchus', 12, 12, { dry: true });
+  assert.equal(next.ok, false);
+  assert.match(next.why, /cramped/i);
+});
+
 test('monorail train leaves station and completes laps on a 1-station ring network', () => {
   const z = game();
   z.Sim.newGame({ seed: 42, map: 'fern_meadow', difficulty: 'easy' });

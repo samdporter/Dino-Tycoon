@@ -658,6 +658,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (it.wild && !g.sfw[it.e.id]) { g.sfw[it.e.id] = 1; st.wildSeen++; if (rng.chance(0.5)) C.say(g, 'safariWild', it.sp); }
     }
     var q = nsp ? clamp(0.45 + 0.2 * nsp + (danger >= 2 ? 0.55 : 0), 0, 2.4) : 0.12;
+    var crowdedItem = list.find(function (it) { return !it.wild && it.e.enc && C.enclosureCrowded(it.e.enc); });
+    if (crowdedItem) { q *= 0.65; g.mood -= 0.8 * a; C.say(g, 'enclosureCrowded', crowdedItem.sp); }
     g.fun = Math.min(100, g.fun + 6 * a * q); g.mood += 1.8 * a * q;
     if (danger >= 2) {
       var okA = !(v.st === 'stuck' && rt.stuckT > 30); g.mood += (okA ? 1.5 : -0.5) * danger * a;

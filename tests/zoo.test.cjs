@@ -899,9 +899,9 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
       assert.equal(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, kind).ok, true);
     }
   };
-  fenceBox(14, 18, 22, 26, 'reinforced');
-  fenceBox(25, 18, 33, 26, 'reinforced');
-  fenceBox(14, 28, 22, 35, 'reinforced');
+  fenceBox(14, 16, 25, 29, 'reinforced');
+  fenceBox(27, 18, 36, 27, 'reinforced');
+  fenceBox(14, 31, 23, 37, 'reinforced');
 
   const fantasyTerrains = ['enchanted', 'misty_moor', 'starlight_sand', 'lava'];
   const fantasyScenery = ['enchanted_tree', 'glowing_mushroom', 'crystal_cluster', 'standing_stones', 'rainbow_arch', 'wizard_shelter', 'castle'];
@@ -1359,6 +1359,75 @@ test('Zoo roofed cage enclosure detection, perimeter downgrade, and primate suit
   );
 });
 
+test('Zoo uses shared adult-equivalent enclosure capacity across species', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 900, map: 'meadow', money: 500000 });
+  z.state.unlocked.star = 3;
+  const N = z.N;
+  for (let j = 10; j <= 18; j++) for (let i = 10; i <= 18; i++) {
+    z.Sim.bulldoze(i, j);
+    z.Sim.terraform(i, j, 'level', 0, { sharp: true, target: 0 });
+  }
+  const fenceBox = (i0, j0, i1, j1) => {
+    for (let i = i0; i <= i1; i++) {
+      z.Sim.placeFence({ axis: 'x', i, j: j0 }, 'reinforced');
+      z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, 'reinforced');
+    }
+    for (let j = j0; j <= j1; j++) {
+      z.Sim.placeFence({ axis: 'z', i: i0, j }, 'reinforced');
+      z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, 'reinforced');
+    }
+  };
+  fenceBox(10, 10, 15, 15);
+  fenceBox(18, 10, 23, 15);
+  const mixed = z.Sim.enclosureAt(12, 12), rhinos = z.Sim.enclosureAt(20, 12);
+  assert.ok(mixed && rhinos);
+  for (let k = 0; k < 2; k++) assert.equal(z.Sim.addAnimal('rhino', 12, 12).ok, true);
+  for (let k = 0; k < 10; k++) assert.equal(z.Sim.addAnimal('meerkat', 12, 12).ok, true);
+  assert.equal(z.Sim.addAnimal('rhino', 20, 12).ok, true);
+  assert.equal(z.Sim.addAnimal('rhino', 20, 12).ok, true);
+  assert.equal(z.Sim.addAnimal('rhino', 20, 12).ok, true);
+  assert.equal(z.Sim.addAnimal('rhino', 20, 12).ok, false);
+  const report = z.Sim.enclosureReport(mixed.id);
+  assert.equal(report.usedSpace, 30);
+  assert.equal(report.availableSpace, 36);
+  mixed.area = 29; // legacy save or later enclosure edits may leave residents overcrowded
+  const crowded = z.Sim.enclosureReport(mixed.id);
+  assert.ok(crowded.issues.some(issue => /Overcrowded/.test(issue)));
+  assert.ok(crowded.species.rhino.issues.some(issue => /overcrowded/i.test(issue)));
+  const before = z.state.animals.length;
+  const dry = z.Sim.addAnimal('rhino', 12, 12, { dry: true });
+  assert.equal(dry.ok, false);
+  assert.equal(z.state.animals.length, before, 'failed capacity previews do not mutate animals');
+  assert.equal(z.Sim.moveAnimal(z.state.animals[0].id, 20, 12, { dry: true }).ok, false);
+  assert.equal(z.Sim.moveAnimal(z.state.animals[0].id, 12, 12, { dry: true }).ok, true, 'same enclosure moves remain allowed');
+
+  assert.equal(z.Sim.placePath(12, 16, 'paved').ok, true);
+  z.Sim.setOpen(true);
+  z.state.time = 0.45;
+  const runtime = z.Sim._rt();
+  runtime.arrAcc = 1;
+  z.Sim._step(0.05);
+  const guest = z.state.guests[0];
+  assert.ok(guest);
+  const exhibit = z.Sim.enclosureAt(12, 12);
+  function watch(area) {
+    exhibit.area = area;
+    Object.assign(guest, {
+      state: 'watch', gid: exhibit.id, x: 25, z: 33, ti: 12 + 16 * N, ni: -1,
+      wt: 4, nt: 0, acc: 0.95, fun: 35, mood: 0, happiness: 70, stay: 80,
+      thought: '', thoughtKey: '', thoughtT: 0, tcool: 0, glide: 0,
+      seen: { rhino: 1, meerkat: 1 }, seenEnc: { [exhibit.id]: 1 }
+    });
+    z.Sim._step(0.05);
+    return { fun: guest.fun, mood: guest.mood, thoughtKey: guest.thoughtKey };
+  }
+  const roomyVisit = watch(36), crowdedVisit = watch(29);
+  assert.ok(crowdedVisit.fun < roomyVisit.fun);
+  assert.ok(crowdedVisit.mood < roomyVisit.mood);
+  assert.equal(crowdedVisit.thoughtKey, 'enclosureCrowded');
+});
+
 test('Zoo vine_perch scenery and star-tier unlocking for all new species', () => {
   const { z } = zoo();
   z.Sim.newGame({ seed: 707, map: 'meadow', money: 1000000 });
@@ -1388,7 +1457,7 @@ test('Zoo vine_perch scenery and star-tier unlocking for all new species', () =>
   fenceBox(35, 12, 38, 15, 'reinforced'); // hyena
   fenceBox(25, 17, 28, 20, 'reinforced'); // cheetah
   fenceBox(30, 17, 33, 20, 'reinforced'); // komodo_dragon
-  fenceBox(35, 17, 38, 20, 'reinforced'); // puss_in_boots
+  fenceBox(40, 16, 45, 20, 'reinforced'); // puss_in_boots
 
   // vine_perch can be placed inside an enclosure
   assert.equal(z.Sim.placeObject('vine_perch', 14, 14, 0).ok, true);
@@ -1406,7 +1475,7 @@ test('Zoo vine_perch scenery and star-tier unlocking for all new species', () =>
     { id: 'cheetah', star: 3, i: 26, j: 18 },
     { id: 'orangutan', star: 3, i: 20, j: 15 },
     { id: 'komodo_dragon', star: 3, i: 31, j: 18 },
-    { id: 'puss_in_boots', star: 4, i: 36, j: 18 }
+    { id: 'puss_in_boots', star: 4, i: 41, j: 18 }
   ];
 
   for (let star = 0; star <= 4; star++) {
