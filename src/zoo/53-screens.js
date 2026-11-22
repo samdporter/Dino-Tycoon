@@ -185,7 +185,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function setBar(b, frac) { var f = UI.clamp(frac, 0, 1); b.className = 'bar' + (f > 0.6 ? '' : f > 0.35 ? ' mid' : ' low'); b.firstChild.style.width = Math.round(f * 100) + '%'; }
 
   // ------------------------------------------------------------------ finances
-  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops, rides & arcade', donations: 'Donations', animals: 'Animals bought/sold', construction: 'Construction', upkeep: 'Animal & building upkeep', wages: 'Wages', marketing: 'Marketing', other: 'Loans, hiring & other' };
+  var CATN = { tickets: 'Tickets', food: 'Food & drink', shops: 'Shops, rides & arcade', boats: 'Boat fares', donations: 'Donations', animals: 'Animals bought/sold', construction: 'Construction', upkeep: 'Animal & building upkeep', wages: 'Wages', marketing: 'Marketing', other: 'Loans, hiring & other' };
   function finTab(b) {
     var S = Z.state;
     var cashBox = h('div.box'), table = h('table.tbl'), chart = h('canvas.chart'), loanBox = h('div.box'), ticketBox = h('div.box'), mkBox = h('div.box');

@@ -32,7 +32,8 @@ window.Z.DATA = {
   paths: [
     { id: "dirt_path", name: "Dirt path", cost: 5, colour: "#9c7a52", speed: 1.0 },
     { id: "paved", name: "Paved path", cost: 15, colour: "#c9c5be", speed: 1.2 },
-    { id: "cobble", name: "Cobbled path", cost: 25, colour: "#8d8780", speed: 1.1 }
+    { id: "cobble", name: "Cobbled path", cost: 25, colour: "#8d8780", speed: 1.1 },
+    { id: "pontoon", name: "Floating pontoon", cost: 45, colour: "#a07a4c", speed: 1.0, pontoon: true, info: "A floating deck. Can only be laid on water, and joins any path beside it." }
   ],
 
   animals: [
@@ -636,6 +637,14 @@ window.Z.DATA = {
       info: "Keeper dispatch hub: speeds up Keeper care park-wide and adds a 48-tile fast-response station zone. Entrance must touch a path." },
     { id: "vet_clinic", name: "Vet clinic", emoji: "🏥", cost: 3500, upkeep: 50, type: "staff", price: 0, capacity: 4, w: 2, h: 2, satisfies: {}, star: 1,
       info: "Veterinary clinic & triage hub: speeds up Vet treatment park-wide and adds a 48-tile full-recovery zone. Entrance must touch a path." },
+    { id: "guest_pier", name: "Guest pier", emoji: "⚓", cost: 1800, upkeep: 14, type: "transport", boatPier: "guest", price: 5, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0,
+      info: "Shoreline boat landing. Guests ride between piers on the same water to reach paths they cannot walk to, paying a fare. Needs water beside it and a path in front." },
+    { id: "service_pier", name: "Service pier", emoji: "🛥️", cost: 900, upkeep: 6, type: "transport", boatPier: "service", price: 0, capacity: 0, w: 1, h: 2, satisfies: {}, star: 1,
+      info: "Staff-only landing. Keepers, vets, cleaners and mechanics use it, free, to reach path networks they cannot walk to. Guests never use it." },
+    { id: "staff_helipad", name: "Staff helipad", emoji: "🚁", cost: 1500, upkeep: 12, type: "transport", helipad: "staff", price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 2,
+      info: "Staff-only helipad. Any two staff helipads link their path networks for keepers, vets, cleaners and mechanics. Must touch a path." },
+    { id: "vip_helipad", name: "VIP helipad", emoji: "🚁", cost: 16000, upkeep: 160, type: "transport", helipad: "vip", price: 60, capacity: 0, w: 4, h: 4, satisfies: {}, star: 3,
+      info: "Wealthy VIP guests fly in by helicopter and pay a premium arrival fee. They spend more, expect more and fly out from the pad. Must touch a path." },
     { id: "education_centre", name: "Education centre", emoji: "🎓", cost: 5000, upkeep: 60, type: "info", price: 3, capacity: 40, w: 2, h: 2, satisfies: { fun: 0.5 }, star: 2 },
     { id: "emergency_bunker", name: "Emergency Shelter", icon: "bunker", emoji: "🚨", cost: 850, upkeep: 25, type: "info", price: 0, capacity: 30, w: 2, d: 2, h: 2, color: 0x6a7882, roof: 0xd8623b, appeal: 4, satisfies: {}, star: 1, info: "Reinforced guest shelter used during dangerous animal escapes and park lockdowns." },
     { id: "wooden_coaster", name: "Wooden Rollercoaster", emoji: "🎢", cost: 7500, upkeep: 95, type: "ride", rideKind: "coaster", thrill: 3, price: 10, capacity: 16, w: 3, h: 3, satisfies: { fun: 0.95 }, star: 2, themepark: true, legacyCoaster: true, info: "Classic timber rollercoaster with rattling lift hill, camelback drops and screaming guests." },

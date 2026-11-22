@@ -59,6 +59,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     paw: 'M7 10a1.900 2.400 0 100-4.800 1.900 2.400 0 000 4.800zM17 10a1.900 2.400 0 100-4.800 1.900 2.400 0 000 4.800zM3.500 14.500a1.800 2.200 0 100-.01zM20.500 14.500a1.800 2.200 0 100-.01zM12 12c-3.200 0-5.500 3.400-5.500 5.800C6.500 20 8.800 20.200 12 20.200s5.500-.2 5.500-2.400C17.500 15.400 15.200 12 12 12z',
     tree: 'M12 22v-6M12 16c-4.200 0-6.500-3.200-5.200-6.200C4.800 8 5.800 3.800 9.200 4c1.200-2 5.400-2 6.600 0 3.400-.2 4.400 4 2.400 5.800 1.300 3-1 6.200-5.200 6.200z',
     fence: 'M5 21V6M12 21V6M19 21V6M3 10h18M3 16h18',
+    boat: 'M3 15h18l-2.500 4h-13zM12 15V4l6 9M11 6l-5 7h5',
     path: 'M8 21l1.500-18M16 21l-1.500-18M12 20v-3M12 13v-3M12 6V4',
     mount: 'M2 20l7-12 4 6 3-4 6 10z',
     house: 'M3 11.500L12 4l9 7.500M5.500 10v10h13V10M10 20v-6h4v6',
@@ -565,6 +566,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'coasters', name: 'Coasters', icon: 'coaster', items: function () {
         return UI.Coaster && UI.Coaster.items ? UI.Coaster.items(bd) : bd(['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'], 'stations')();
       } },
+      { id: 'transport', name: 'Transport', icon: 'boat', items: bd(['guest_pier', 'service_pier', 'staff_helipad', 'vip_helipad']), hint: 'Lay pontoons on water in the Paths tab. Piers go on the shore with a path in front; helipads must touch a path.' },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign', 'themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }

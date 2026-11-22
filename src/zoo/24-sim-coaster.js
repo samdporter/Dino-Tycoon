@@ -1504,7 +1504,7 @@
       if (claimedFn && claimedFn('c' + o.id, staff)) continue;
       var pts = adjPathTilesForStation(st);
       for (var i = 0; i < pts.length; i++) {
-        if (!sc0 || !RT.comp || RT.comp[pts[i]] === sc0) return true;
+        if (!sc0 || !RT.scomp || RT.scomp[pts[i]] === sc0) return true;
       }
     }
     return false;
@@ -1523,7 +1523,7 @@
       var pts = adjPathTilesForStation(st);
       var reach = [];
       for (var i = 0; i < pts.length; i++) {
-        if (!sc0 || !RT.comp || RT.comp[pts[i]] === sc0) reach.push(pts[i]);
+        if (!sc0 || !RT.scomp || RT.scomp[pts[i]] === sc0) reach.push(pts[i]);
       }
       if (!reach.length) continue;
       var dist = Math.abs(o.i - (staff.ti % C.getN())) + Math.abs(o.j - Math.floor(staff.ti / C.getN()));
