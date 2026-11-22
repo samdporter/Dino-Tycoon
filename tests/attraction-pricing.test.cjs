@@ -1,15 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript } = require('./game-scripts.cjs');
 
 function park(zoo) {
-  const dir = path.join(__dirname, '../src', zoo ? 'zoo' : '');
   const ctx = vm.createContext({});
-  const files = ['00-data.js', '10-core.js', '20-sim.js', zoo ? '24-sim-coaster.js' : '21-sim-coaster.js'];
+  const files = ['00-data.js', zoo ? 'zoo-config.js' : 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'];
   for (const file of files) {
-    let source = fs.readFileSync(path.join(dir, file), 'utf8');
+    let source = readScript(file, zoo);
     if (file === '20-sim.js') {
       // Exercise the live decision functions with matched guests and random draws.
       source = source.replace('  function pickBuilding(',
@@ -90,5 +88,20 @@ test('ride demand expires and fare changes clear the previous fare observations'
     Sim._rt().bq[ride.id] = { q: Array(40).fill(-1), use: 0 };
     assert.equal(consider(), false);
     assert.equal(Sim.attractionDemand(ride.id).queueRejected, 1);
+  }
+});
+
+test('coaster mechanics only target stations in their reachable staff network', () => {
+  for (const zoo of [false, true]) {
+    const { z, venues, guest } = park(zoo);
+    const station = venues[0], staff = { ti: guest().ti };
+    const rt = z.coasterCtx.getRT();
+    const staffNetwork = rt.scomp || rt.comp;
+    station.broken = true;
+    const comp = staffNetwork[staff.ti];
+    assert.ok(comp > 0);
+    assert.equal(z.Coaster.pickMechanicTarget(staff, comp).station.id, station.id);
+    assert.equal(z.Coaster.pickMechanicTarget(staff, comp + z.N * z.N), null);
+    assert.equal(z.Coaster.hasUrgentMechanicWork(staff, comp + z.N * z.N), false);
   }
 });

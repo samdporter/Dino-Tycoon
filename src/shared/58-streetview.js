@@ -1,6 +1,6 @@
 // ===== 58-streetview.js =====
 window.Z = window.Z || {}; var Z = window.Z;
-/* Wild Acres Zoo - street view UI: slim overlay bar, controls routing (look / walk / tap-to-walk), jump list. World side: Z.World.setStreetView. */
+/* Shared street view UI: slim overlay bar, controls routing (look / walk / tap-to-walk), jump list. World side: Z.World.setStreetView. */
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N, T = Z.TILE;

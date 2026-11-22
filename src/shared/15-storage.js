@@ -1,11 +1,12 @@
-/* Browser persistence. Cache is session-only; success requires a completed disk write.
- * Keep the original v2 key/payload so hosted legacy games migrate automatically. */
+/* Shared browser persistence. Storage identifiers come from the explicit game config. */
 window.Z = window.Z || {};
 (function () {
   'use strict';
   var Z = window.Z;
   var cache = {}, candidates = {}, db = null, ready = null;
-  var keys = ['amberacres.save.v2', 'amberacres.settings.v1'];
+  var config = Z.GameConfig && Z.GameConfig.storage;
+  if (!config) throw new Error('Game config must load before shared storage');
+  var keys = [config.saveKey, config.settingsKey];
   var lastStatus = 'No save written this session';
   function localRead(key) {
     try { return { value: localStorage.getItem(key), updatedAt: +(localStorage.getItem(key + '.time') || 0) }; }
@@ -23,7 +24,7 @@ window.Z = window.Z || {};
       var done = false, timer = setTimeout(function () { finish(null); }, 2000);
       function finish(value) { if (!done) { done = true; clearTimeout(timer); resolve(value); } else if (value) value.close(); }
       try {
-        var req = indexedDB.open('amberacres', 1);
+        var req = indexedDB.open(config.database, 1);
         req.onupgradeneeded = function () { req.result.createObjectStore('saves'); };
         req.onsuccess = function () { finish(req.result); };
         req.onerror = req.onblocked = function () { finish(null); };

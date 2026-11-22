@@ -1,4 +1,4 @@
-// Wild Acres Zoo — Custom Rollercoaster 3D World Renderer (Zoo Tycoon only)
+// Custom Rollercoaster 3D World Renderer
 // Renders themed coaster stations with launch/return arrows, continuous stitched twin-rail 3D splines
 // (with smooth Bezier corners, hills, vertical loops & corkscrews), visible animated Chain Lift Hills
 // (chain trough, moving chain links, sprocket wheels & catwalk), trestle/steel supports, trains & Ride Along.
@@ -10,6 +10,13 @@
   var CD = D.coaster;
   var TYPES = CD.types;
   var TILE = Z.TILE || 2;
+  var COASTER_STATIONS = {
+    coaster_wooden: 'wooden',
+    coaster_mine: 'mine',
+    coaster_flume: 'flume',
+    coaster_steel: 'steel',
+    coaster_hyper: 'hyper'
+  };
 
   var grp = null;
   var trackGrp = null;
@@ -19,7 +26,7 @@
   var ovGrp = null;
   var builtVer = -1;
   var trainMeshes = {};
-  var chainSegs = [];   // [{ x0,y0,z0, dx,dy,dz, ux,uy,uz, rx,ry,rz, len }]
+  var chainSegs = [];   // [{ stationId, x,y,z, fx,fy,fz, ux,uy,uz, rx,ry,rz, len }]
   var chainMeshes = []; // pool of moving chain link meshes
   var splashes = [];
   var rideTrainId = 0;
@@ -30,7 +37,7 @@
   var _vR = new THREE.Vector3(), _vU = new THREE.Vector3(), _vF = new THREE.Vector3();
   var _pr = { x: 0, y: 0, w: 0, vis: false };
 
-  // ---- 1. Hook Z.Models.createBuilding for the 5 custom coaster stations ----
+  // ---- 1. Hook Z.Models.createBuilding & Z.Models.buildingFootprint for the 5 custom coaster stations ----
   var _stArrowGeo = null, _stLaunchMat = null, _stReturnMat = null, _stRailMat = null, _stDarkMat = null;
   function getStationShared() {
     if (!_stArrowGeo) {
@@ -143,6 +150,7 @@
       var pitchGeo = makeSideExtrudeGeo([[-1.45, 0], [0, 1.15], [1.45, 0], [1.30, -0.10], [0, 0.96], [-1.30, -0.10]], 7.8, 0.03);
       var mRoofMesh = new THREE.Mesh(pitchGeo, mRoof);
       mRoofMesh.position.set(0, deckY + 2.42, -0.78); mRoofMesh.castShadow = true; g.add(mRoofMesh);
+      // Corrugation ribs & A-truss headframe peaks
       var ribGeo = new THREE.BoxGeometry(0.08, 0.08, 2.9);
       for (var cr = -3.4; cr <= 3.45; cr += 0.85) {
         var rib = new THREE.Mesh(ribGeo, mDark);
@@ -162,6 +170,7 @@
       wheel.rotation.y = Math.PI * 0.5;
       wheel.position.set(0, deckY + 3.92, -0.78);
       g.add(wheel);
+      // Hanging warm lanterns
       var mLant = new THREE.MeshBasicMaterial({ color: 0xffd670 });
       [-2.2, 0, 2.2].forEach(function (lx) {
         var cord = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.42, 5), mDark);
@@ -169,6 +178,7 @@
         var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 5), mLant);
         bulb.position.set(lx, deckY + 2.02, 0.12); g.add(bulb);
       });
+      // Ore chute framing next to booth
       var chute = new THREE.Mesh(makeSideExtrudeGeo([[-0.45, 0], [0.45, 0.45], [0.45, 0.65], [-0.45, 0.22]], 0.72, 0.02), mTie);
       chute.position.set(-0.15, 0.9, 1.25); g.add(chute);
     } else if (typeId === 'flume') {
@@ -185,6 +195,7 @@
       archRoof.position.set(0, deckY + 2.40, -0.78); archRoof.castShadow = true; g.add(archRoof);
       var ridgeBeam = new THREE.Mesh(new THREE.BoxGeometry(8.0, 0.16, 0.18), mTie);
       ridgeBeam.position.set(0, deckY + 3.44, -0.78); g.add(ridgeBeam);
+      // Lifebuoy rings on front dock posts
       var mBuoy = new THREE.MeshLambertMaterial({ color: 0xe85a30 });
       var buoyGeo = new THREE.TorusGeometry(0.24, 0.07, 6, 12);
       [-2.2, 2.2].forEach(function (bx) {
@@ -235,6 +246,7 @@
       ], 7.8, 0.05);
       var wingRoof = new THREE.Mesh(wingGeo, mRoof);
       wingRoof.position.set(0, deckY + 2.48, -0.78); wingRoof.castShadow = true; g.add(wingRoof);
+      // Launch gate arch (+x exit)
       var gateGeo = new THREE.TorusGeometry(1.12, 0.11, 8, 18, Math.PI);
       gateGeo.rotateY(Math.PI * 0.5);
       var gate = new THREE.Mesh(gateGeo, mAcc);
@@ -256,6 +268,7 @@
       var gableGeo = makeSideExtrudeGeo([[-1.42, 0], [0, 1.08], [1.42, 0], [1.26, -0.08], [0, 0.88], [-1.26, -0.08]], 7.8, 0.04);
       var gRoof = new THREE.Mesh(gableGeo, mRoof);
       gRoof.position.set(0, deckY + 2.44, -0.78); gRoof.castShadow = true; g.add(gRoof);
+      // King-post truss tie beams
       [-3.35, 0, 3.35].forEach(function (tx) {
         var tieB = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 2.5), mTie);
         tieB.position.set(tx, deckY + 2.42, -0.78); g.add(tieB);
@@ -303,13 +316,20 @@
     if (!Z.Models || Z.Models._coasterHooked) return;
     Z.Models._coasterHooked = true;
     var origCreate = Z.Models.createBuilding;
+    var origFootprint = Z.Models.buildingFootprint;
     Z.Models.createBuilding = function (id) {
-      if (id === 'coaster_wooden') return makeStationModel('wooden');
-      if (id === 'coaster_mine') return makeStationModel('mine');
-      if (id === 'coaster_flume') return makeStationModel('flume');
-      if (id === 'coaster_steel') return makeStationModel('steel');
-      if (id === 'coaster_hyper') return makeStationModel('hyper');
+      var typeId = COASTER_STATIONS[id];
+      if (typeId) {
+        var g = makeStationModel(typeId);
+        g.userData.buildingId = id;
+        g.userData.footprint = { w: 4, h: 2 };
+        return g;
+      }
       return origCreate ? origCreate.apply(this, arguments) : null;
+    };
+    Z.Models.buildingFootprint = function (id) {
+      if (COASTER_STATIONS[id]) return { w: 4, h: 2 };
+      return origFootprint ? origFootprint.apply(this, arguments) : { w: 2, h: 2 };
     };
   }
 
@@ -376,54 +396,56 @@
     return { addBox: addBox, addBeamSeg: addBeamSeg, build: build };
   }
 
-  var markerAssets = null;
-  function ensureMarkerAssets() {
-    if (markerAssets) return markerAssets;
-    markerAssets = {
-      openRingGeo: new THREE.TorusGeometry(0.68, 0.09, 8, 20),
-      openStemGeo: new THREE.CylinderGeometry(0.06, 0.06, 1.35, 8),
-      openConeGeo: new THREE.ConeGeometry(0.36, 0.72, 8),
-      openMat: new THREE.MeshBasicMaterial({ color: 0xff5a1f }),
-      openStemMat: new THREE.MeshBasicMaterial({ color: 0xffc438 }),
-      warnRingGeo: new THREE.TorusGeometry(0.76, 0.10, 8, 20),
-      warnStemGeo: new THREE.CylinderGeometry(0.07, 0.07, 1.45, 8),
-      warnConeGeo: new THREE.ConeGeometry(0.40, 0.78, 8),
-      warnMat: new THREE.MeshBasicMaterial({ color: 0xff2424 })
-    };
-    return markerAssets;
+  var _beaconRes = null;
+  function getBeaconRes() {
+    if (!_beaconRes) {
+      _beaconRes = {
+        openRingGeo: new THREE.TorusGeometry(0.62, 0.08, 6, 18),
+        badRingGeo: new THREE.TorusGeometry(0.76, 0.09, 6, 20),
+        stemGeo: new THREE.CylinderGeometry(0.06, 0.06, 1.3, 8),
+        coneGeo: new THREE.ConeGeometry(0.36, 0.72, 8),
+        openMat: new THREE.MeshBasicMaterial({ color: 0xff6a1a }),
+        openRingMat: new THREE.MeshBasicMaterial({ color: 0xffb030 }),
+        warnMat: new THREE.MeshBasicMaterial({ color: 0xff2222 })
+      };
+    }
+    return _beaconRes;
   }
 
-  function addTrackMarkerMesh(geo, mat, x, y, z, rotX) {
-    var m = new THREE.Mesh(geo, mat);
-    m.position.set(x, y, z);
-    if (rotX) m.rotation.x = rotX;
-    m.userData.shared = true;
-    trackGrp.add(m);
-  }
+  function addBeacon(x, y, z, isWarn) {
+    var R = getBeaconRes();
+    var ring = new THREE.Mesh(R.openRingGeo, isWarn ? R.warnMat : R.openRingMat);
+    ring.rotation.x = Math.PI * 0.5;
+    ring.position.set(x, y + 0.08, z);
+    ring.userData.shared = true;
+    trackGrp.add(ring);
 
-  function addOpenBeacon(x, y, z) {
-    var a = ensureMarkerAssets();
-    addTrackMarkerMesh(a.openRingGeo, a.openMat, x, y + 0.14, z, Math.PI * 0.5);
-    addTrackMarkerMesh(a.openStemGeo, a.openStemMat, x, y + 0.82, z, 0);
-    addTrackMarkerMesh(a.openConeGeo, a.openMat, x, y + 1.82, z, Math.PI);
-  }
+    var stem = new THREE.Mesh(R.stemGeo, isWarn ? R.warnMat : R.openMat);
+    stem.position.set(x, y + 0.75, z);
+    stem.userData.shared = true;
+    trackGrp.add(stem);
 
-  function addWarnBeacon(x, y, z) {
-    var a = ensureMarkerAssets();
-    addTrackMarkerMesh(a.warnRingGeo, a.warnMat, x, y + 0.14, z, Math.PI * 0.5);
-    addTrackMarkerMesh(a.warnStemGeo, a.warnMat, x, y + 0.86, z, 0);
-    addTrackMarkerMesh(a.warnConeGeo, a.warnMat, x, y + 1.92, z, Math.PI);
+    var cone = new THREE.Mesh(R.coneGeo, isWarn ? R.warnMat : R.openMat);
+    cone.rotation.x = Math.PI;
+    cone.position.set(x, y + 1.65, z);
+    cone.userData.shared = true;
+    trackGrp.add(cone);
   }
 
   function addBadRing(x, y, z) {
-    var a = ensureMarkerAssets();
-    addTrackMarkerMesh(a.warnRingGeo, a.warnMat, x, y + 0.14, z, Math.PI * 0.5);
+    var R = getBeaconRes();
+    var ring = new THREE.Mesh(R.badRingGeo, R.warnMat);
+    ring.rotation.x = Math.PI * 0.5;
+    ring.position.set(x, y + 0.08, z);
+    ring.userData.shared = true;
+    trackGrp.add(ring);
   }
 
   function clearGroup(g) {
     while (g.children.length) {
       var ch = g.children[g.children.length - 1];
       g.remove(ch);
+      if (ch.children && ch.children.length) clearGroup(ch);
       if (!ch.userData || !ch.userData.shared) {
         if (ch.geometry) ch.geometry.dispose();
         if (ch.material && ch.material.dispose) ch.material.dispose();
@@ -489,7 +511,6 @@
         var sp = L.sSpec[i];
         var spPrev = i > 0 ? L.sSpec[i - 1] : 0;
         var spNext = L.sSpec[j];
-        var halfL = segLen * 0.52;
 
         if (td.id === 'flume') {
           // Stitched U-shaped water chute trough + flowing water
@@ -524,7 +545,8 @@
         }
 
         // ---- Special Track Elements ----
-        if (sp === 1 || (L.sLift && L.sLift[i] === 1)) {
+        var isLiftSeg = sp === 1 || (L.sLift && L.sLift[i] === 1);
+        if (isLiftSeg) {
           // CHAIN LIFT HILL:
           // 1) Raised dark-steel chain guide trough down the exact center between the twin rails (+U * 0.09)
           gb.addBeamSeg(x0, y0, z0, r0x, r0y, r0z, u0x, u0y, u0z, x1, y1, z1, r1x, r1y, r1z, u1x, u1y, u1z, 0, 0.08, 0.11, 0.055, 0x262b33);
@@ -542,7 +564,7 @@
             );
           }
           // 4) Toothed sprocket wheel housing at the start and end of every chain lift section
-          var liftPrev = spPrev === 1 || (L.sLift && i > 0 && L.sLift[i - 1] === 1);
+          var liftPrev = i > 0 && (spPrev === 1 || (L.sLift && L.sLift[i - 1] === 1));
           var liftNext = spNext === 1 || (L.sLift && L.sLift[j] === 1);
           if (!liftPrev || !liftNext) {
             gb.addBox(
@@ -587,58 +609,60 @@
           gb.addBox(py.x, midY - 0.1, py.z, 0.17, Math.max(0.1, ht * 0.5 - 0.1), 0.17, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
           gb.addBox(py.x, py.yTop - 0.08, py.z, gauge + 0.06, 0.08, 0.14, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
           gb.addBox(py.x, py.yBot + 0.16, py.z, 0.34, 0.16, 0.34, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0x5c626a);
-          if ((py.spec || 0) >= 4) {
-            // Reinforced angled steel A-frame / arch support struts bracing loops & corkscrews
-            var invH = py.spec === 6 ? 5.2 : py.spec === 7 ? 3.2 : py.spec === 4 ? 2.6 : 1.6;
-            var baseY = py.yTop - 0.08, topY = py.yTop + invH;
-            var baseSpread = py.spec === 6 ? 2.1 : py.spec === 7 ? 2.9 : py.spec === 4 ? 1.3 : 1.7;
-            var topSpread = py.spec === 6 ? 1.45 : py.spec === 7 ? 2.1 : py.spec === 4 ? 0.85 : 1.25;
-            gb.addBox(py.x, baseY, py.z, baseSpread + 0.14, 0.09, 0.14, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
-            gb.addBox(py.x, topY, py.z, topSpread + 0.16, 0.10, 0.12, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, col.support);
-            for (var sSide = -1; sSide <= 1; sSide += 2) {
-              var bpx = py.x + prx * sSide * baseSpread, bpz = py.z + prz * sSide * baseSpread;
-              var tpx = py.x + prx * sSide * topSpread, tpz = py.z + prz * sSide * topSpread;
-              var sdx = tpx - bpx, sdy = topY - baseY, sdz = tpz - bpz;
-              var slen = Math.sqrt(sdx * sdx + sdy * sdy + sdz * sdz) || 1;
-              var sx = sdx / slen, sy = sdy / slen, sz = sdz / slen;
-              var sux = sy * pfz, suy = sz * pfx - sx * pfz, suz = -sy * pfx;
-              gb.addBeamSeg(bpx, baseY, bpz, pfx, 0, pfz, sux, suy, suz, tpx, topY, tpz, pfx, 0, pfz, sux, suy, suz, 0, 0, 0.09, 0.09, col.support);
+          if (py.spec >= 4) {
+            // Reinforced angled steel A-frame / arch support towers bracing loops & corkscrews
+            var archTop = py.yTop + (py.spec === 6 ? 5.2 : py.spec === 7 ? 3.2 : py.spec === 4 ? 2.6 : 1.6);
+            var baseSpread = py.spec === 6 ? 3.0 : py.spec === 7 ? 4.2 : py.spec === 4 ? 2.0 : 2.6;
+            var topSpread = py.spec === 6 ? 2.2 : py.spec === 7 ? 3.5 : py.spec === 4 ? 1.45 : 2.1;
+            var foreSpread = py.spec >= 6 ? 1.35 : 0.9;
+            for (var sgn = -1; sgn <= 1; sgn += 2) {
+              var tx = py.x + prx * (sgn * topSpread), tz = py.z + prz * (sgn * topSpread);
+              var bx = py.x + prx * (sgn * baseSpread), bz = py.z + prz * (sgn * baseSpread);
+              gb.addBeamSeg(bx - pfx * foreSpread, py.yBot, bz - pfz * foreSpread, prx, 0, prz, pfx, 0, pfz, tx, archTop, tz, prx, 0, prz, pfx, 0, pfz, 0, 0, 0.08, 0.08, col.support);
+              gb.addBeamSeg(bx + pfx * foreSpread, py.yBot, bz + pfz * foreSpread, prx, 0, prz, pfx, 0, pfz, tx, archTop, tz, prx, 0, prz, pfx, 0, pfz, 0, 0, 0.08, 0.08, col.support);
+              gb.addBox(bx - pfx * foreSpread, py.yBot + 0.12, bz - pfz * foreSpread, 0.24, 0.12, 0.24, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, 0x5c626a);
+              gb.addBox(bx + pfx * foreSpread, py.yBot + 0.12, bz + pfz * foreSpread, 0.24, 0.12, 0.24, prx, 0, prz, 0, 1, 0, pfx, 0, pfz, 0x5c626a);
             }
           }
         }
       }
 
-      // ---- 4. Incomplete-circuit & failure beacons ----
-      var lineTiles = L.nodes || L.tiles;
-      if (!L.loop && lineTiles && lineTiles.length && L.nS > 0) {
-        var t0 = lineTiles[0], t1 = lineTiles[lineTiles.length - 1];
-        if (!X.stAt || X.stAt[t0] < 0) addOpenBeacon(L.px[0], L.py[0], L.pz[0]);
-        if (t1 !== t0 && (!X.stAt || X.stAt[t1] < 0)) addOpenBeacon(L.px[L.nS - 1], L.py[L.nS - 1], L.pz[L.nS - 1]);
+      // ---- 4. 3D Indicators for Open Track Ends, Stall Points & Blocked Supports ----
+      if (!L.loop && L.nodes && L.nodes.length >= 2 && n >= 1) {
+        var firstT = L.nodes[0];
+        if (!X.stAt || X.stAt[firstT] < 0) addBeacon(L.px[0], L.py[0], L.pz[0], false);
+        var lastT = L.nodes[L.nodes.length - 1];
+        if ((!X.stAt || X.stAt[lastT] < 0) && (lastT !== firstT || n > 1)) {
+          addBeacon(L.px[n - 1], L.py[n - 1], L.pz[n - 1], false);
+        }
       }
-      if (L.loop && !L.energyOk && L.stallSample >= 0 && L.stallSample < L.nS) {
-        addWarnBeacon(L.px[L.stallSample], L.py[L.stallSample], L.pz[L.stallSample]);
+      if (L.loop && !L.energyOk && L.stallSample >= 0 && L.stallSample < n) {
+        var ss = L.stallSample;
+        addBeacon(L.px[ss], L.py[ss], L.pz[ss], true);
       }
       if (L.bad) {
-        for (var btKey in L.bad) {
-          var bt = +btKey;
-          var bi = bt % N, bj = (bt - bi) / N;
-          var bx = (bi + 0.5) * TILE, bz = (bj + 0.5) * TILE;
-          var by = (Z.World && Z.World.groundY ? Z.World.groundY(bx, bz) : 0) + CD.clearance + (elev[bt] || 0) * CD.elevStep;
+        for (var bt in L.bad) {
+          var bTile = +bt;
+          var bti = bTile % N, btj = (bTile - bti) / N;
+          var bcx = (bti + 0.5) * TILE, bcz = (btj + 0.5) * TILE;
+          var bgy = Z.World && Z.World.groundY ? Z.World.groundY(bcx, bcz) : 0;
+          var by = bgy + CD.clearance + (elev[bTile] || 0) * CD.elevStep;
           var bestD2 = 1e9;
-          for (i = 0; i < L.nS; i++) {
-            var ddx = L.px[i] - bx, ddz = L.pz[i] - bz, d2 = ddx * ddx + ddz * ddz;
-            if (d2 < bestD2) { bestD2 = d2; by = L.py[i]; }
+          for (i = 0; i < n; i++) {
+            var bdx = L.px[i] - bcx, bdz = L.pz[i] - bcz;
+            var bd2 = bdx * bdx + bdz * bdz;
+            if (bd2 < bestD2) { bestD2 = bd2; by = L.py[i]; }
           }
-          addBadRing(bx, by, bz);
+          addBadRing(bcx, by, bcz);
         }
       }
     }
 
-    // Single isolated 1-tile track stubs (not yet connected to a 2+ tile chain): render proper twin rails + ties too!
+    // Single isolated 1-tile track stubs (not yet connected to a 2+ tile chain): render proper twin rails + ties + open-end beacon!
     for (var t = 0; t < rail.length; t++) {
       if (!rail[t]) continue;
-      if (X.lineAt && X.lineAt[t] >= 0) continue;
       if (X.stAt && X.stAt[t] >= 0) continue;
+      if (X.lineAt && X.lineAt[t] >= 0) continue;
       var ti = t % N, tj = (t - ti) / N;
       var cx = (ti + 0.5) * TILE, cz = (tj + 0.5) * TILE;
       var gy = Z.World && Z.World.groundY ? Z.World.groundY(cx, cz) : 0;
@@ -651,7 +675,7 @@
       for (var so = -0.6; so <= 0.61; so += 0.6) {
         gb.addBox(cx + sfx * so, y + 0.01, cz + sfz * so, 0.65, 0.045, 0.085, srx, 0, srz, 0, 1, 0, sfx, 0, sfz, 0x6d421e);
       }
-      addOpenBeacon(cx, y, cz);
+      addBeacon(cx, y, cz, false);
     }
 
     var mesh = gb.build();
@@ -915,7 +939,7 @@
     }
   }
 
-  function updateTrains(dtReal) {
+  function updateTrains() {
     if (!Z.state || !Z.state.coaster || !Z.Coaster) return;
     syncTrains();
     var trains = Z.state.coaster.trains;
@@ -1053,6 +1077,9 @@
   function rideAlong(trainId) {
     var T = findTrain(trainId);
     if (!T) return false;
+    if (Z.World && Z.World.isStreetView && Z.World.isStreetView()) Z.World.setStreetView(false);
+    if (Z.MonoWorld) Z.MonoWorld.followId = 0;
+    if (Z.SafariWorld) Z.SafariWorld.followId = 0;
     rideTrainId = trainId;
     followTrainId = 0;
     if (Z.bus) Z.bus.emit('coasterRide', trainId);
@@ -1068,6 +1095,8 @@
   function follow(trainId) {
     rideTrainId = 0;
     followTrainId = trainId || 0;
+    if (Z.MonoWorld) Z.MonoWorld.followId = 0;
+    if (Z.SafariWorld) Z.SafariWorld.followId = 0;
     if (Z.bus) Z.bus.emit('coasterRide', 0);
   }
 
@@ -1116,18 +1145,27 @@
       }
     }
     updateChains(dtGame);
-    updateTrains(dtReal);
+    updateTrains();
     updateSplashes(dtReal);
   }
 
   function setOverlay(on) {
     overlayOn = !!on;
+    CW.overlayOn = overlayOn;
     ensureAttached();
     rebuildOverlay();
   }
 
+  if (Z.World && Z.World.pan) {
+    var opan = Z.World.pan;
+    Z.World.pan = function () { followTrainId = 0; return opan.apply(this, arguments); };
+  }
+
   if (Z.bus && Z.bus.on) {
     Z.bus.on('coasterSplash', spawnSplash);
+    Z.bus.on('streetview', function (on) { if (on) endRide(); });
+    Z.bus.on('monoRide', function (on) { if (on && (typeof on !== 'object' || on.on)) endRide(); });
+    Z.bus.on('safariRide', function (on) { if (on && (typeof on !== 'object' || on.on)) endRide(); });
     Z.bus.on('reset', function () {
       builtVer = -1;
       rideTrainId = 0;
@@ -1140,7 +1178,8 @@
   }
   hookModels();
 
-  Z.CoasterWorld = {
+  var CW = Z.CoasterWorld = {
+    overlayOn: false,
     frame: frame,
     applyCamera: applyCamera,
     pickTrain: pickTrain,

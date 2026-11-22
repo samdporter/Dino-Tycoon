@@ -2,7 +2,7 @@
 
 ## Dino Tycoon v3 integration
 
-Dino Tycoon v3 (`Dino_Tycoon_v3.html` / `Dino_Tycoon_v3_source.zip`) was ported into the multi-file repository layout (`index.html`, `styles/`, `src/00-data.js` through `src/90-main.js`, plus `src/15-storage.js`), preserving the dual-backend `Z.Storage` persistence service (`localStorage` + `IndexedDB`), Export/Import save backup controls, and the Dino Tycoon / Zoo Tycoon title switcher (`styles/tycoon-menu.css`).
+Dino Tycoon v3 (`Dino_Tycoon_v3.html` / `Dino_Tycoon_v3_source.zip`) was ported into the multi-file repository layout (`index.html`, `styles/`, and `src/`), preserving the dual-backend `Z.Storage` persistence service (`localStorage` + `IndexedDB`), Export/Import save backup controls, and the Dino Tycoon / Zoo Tycoon title switcher (`styles/tycoon-menu.css`). Both games now load `Z.Storage` from `src/shared/15-storage.js` with separate storage identifiers.
 
 - **Node logic, lifecycle, v3 systems and storage tests (`node --test tests/*.test.cjs`)**: 26 passed (including v3 island maps, moats, power grid, realms, monorail, safari, DNA lab, legacy v2 inland save compatibility, Dino and Zoo animal pathfinding/obstacle detouring, candidate fallback recovery, and Zoo save isolation).
 - **Headless v3 simulation suites (`simtest.js`, `examples-test.js`, `soak.js`)**: All passed against the integrated `src/` modules, including all four Masterclass scenarios (`careful`, `reckless`, `moats`, `lab`) and the 15-row build/undo/bulldoze matrix + multi-day soak tests.

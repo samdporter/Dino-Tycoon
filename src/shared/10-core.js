@@ -48,42 +48,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   // elevation: corner heights in levels (Int8Array, (N+1)^2), one level = ELEV_STEP world units
   Z.ELEV_STEP = 0.5;
   Z.eidx = function (i, j) { return i + j * (Z.N + 1); };
-  Z.setGridSize = function (n) {
+  function validGridSize(n, fallback) {
     n = Math.round(Number(n));
-    if (!isFinite(n) || n < 32 || n > 128) n = 56;
+    return isFinite(n) && n >= 32 && n <= 128 ? n : fallback;
+  }
+  Z.setGridSize = function (n) {
+    n = validGridSize(n, 56);
     N = n;
     Z.N = n;
     if (Z.bus && Z.bus.emit) Z.bus.emit('gridsize', n);
     return n;
   };
 
-  Z.newState = function () {
-    var n = Z.N || N;
-    return {
-      version: 2,
-      gridN: n,
-      mapSize: n === 40 ? 'small' : n === 72 ? 'large' : n === 88 ? 'huge' : 'medium',
-      money: 30000, loan: 0, loans: [], day: 1, time: 0.3, speed: 1, ticketPrice: 8,
-      rating: 1, reputation: 50, marketing: { active: false, daysLeft: 0 }, open: true,
-      elev: new Int8Array((n + 1) * (n + 1)), map: { id: 'fern_meadow', i0: 0, j0: 0, i1: n - 1, j1: n - 1 },
-      terrain: new Uint8Array(n * n), path: new Uint8Array(n * n),
-      fenceX: new Uint8Array(n * (n + 1)), fenceZ: new Uint8Array((n + 1) * n),
-      tileObj: new Int32Array(n * n), tileEnc: new Int16Array(n * n), dirt: new Uint8Array(n * n), ditch: new Uint8Array(n * n), moatTip: 0,
-      rail: new Uint8Array(n * n), mono: { trains: [], nextTrain: 1, stats: { riders: 0, income: 0, boardings: 0, viewSec: 0, breakdowns: 0, lightning: 0, danger: 0 }, powered: true },   // monorail package: track layer (N/E/S/W bits), trains, totals
-      coasterRail: new Uint8Array(n * n), coasterElev: new Int8Array(n * n), coasterSpec: new Uint8Array(n * n),
-      coaster: { trains: [], nextTrain: 1, stats: { riders: 0, income: 0, boardings: 0, breakdowns: 0, maxExcitement: 0 } },
-      safari: { routes: [], veh: [], nextRoute: 1, nextVeh: 1, zones: {}, away: [], lockdown: 0, cleanDays: 0, stats: { riders: 0, income: 0, sea: 0, air: 0, wildSeen: 0, wildIn: 0, kills: 0, seenKills: 0, injuries: 0, stranded: 0, nudges: 0, mainland: 0, returned: 0, lost: 0, close: 0, fed: 0, prot: {} } },   // safari package: routes, vehicles, per-zone settings, escapees away on the mainland
-      objects: [], enclosures: [], animals: [], guests: [], staff: [],
-      finance: { today: Z.emptyFinance(), history: [] },
-      goals: {}, stats: { guestsTotal: 0, babiesBorn: 0, escapes: 0, deaths: 0, births: 0, peakGuests: 0, donations: 0, injuries: 0, compensation: 0, predations: 0, fundingTotal: 0, ridesTaken: 0, arcadePlayed: 0 },
-      unlocked: { star: 0 }, messages: [], nextId: 1,
-      research: null, panic: 0,
-      difficulty: 'normal', weather: { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' }, activeEvents: [], eventAt: -1, debtWarn: 0
-    };
+  if (!Z.GameConfig || typeof Z.GameConfig.createState !== 'function') throw new Error('Game config must load before shared core');
+  Z.newState = function (seed, gridN) {
+    if (seed !== undefined) rng.seed(seed);
+    // Map previews can temporarily set Z.N without changing the live grid.
+    return Z.GameConfig.createState(validGridSize(gridN, Z.N || N));
   };
-  Z.emptyFinance = function () {
-    return { tickets: 0, food: 0, shops: 0, donations: 0, animals: 0, construction: 0, upkeep: 0, wages: 0, marketing: 0, research: 0, interest: 0, other: 0 };
-  };
+  Z.emptyFinance = Z.GameConfig.emptyFinance;
 
   // ---- compact typed-array (de)serialisation: byte RLE + base64 ----
   var B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -133,5 +116,3 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return arr;
   };
 })();
-
-

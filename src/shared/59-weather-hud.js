@@ -1,6 +1,6 @@
 // ===== 59-weather-hud.js =====
 window.Z = window.Z || {}; var Z = window.Z;
-/* Wild Acres Zoo - weather chip next to the clock + popover (effects, hours left, forecast, active events). Missing weather = clear. */
+/* Shared weather chip next to the clock + popover (effects, hours left, forecast, active events). Missing weather = clear. */
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, el = {}, key = '', pinned = false, FALL = {

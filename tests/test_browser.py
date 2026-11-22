@@ -421,6 +421,28 @@ def new_zoo_park(page, map_id="lakeland", difficulty="hard", expect_save=True):
         page.wait_for_function("!!localStorage.getItem('wildacres.save.v1')", timeout=10000)
 
 
+@pytest.mark.parametrize("zoo", [False, True], ids=["dino", "zoo"])
+def test_coaster_category_and_track_overlay(browser, zoo):
+    context, page, problems = open_game(browser, path="zoo.html" if zoo else "")
+    try:
+        if zoo:
+            new_zoo_park(page, map_id="meadow", difficulty="normal")
+        else:
+            new_park(page)
+            page.locator('button[data-grp="g_guest"]').click()
+        page.locator('button[data-cat="coasters"]').click()
+        assert page.locator('.card[data-id="coaster_wooden"]').is_visible()
+
+        overlay = page.locator('.card[data-id="cview"]')
+        overlay.click()
+        assert js(page, "Z.CoasterWorld.isOverlay()")
+        overlay.click()
+        assert not js(page, "Z.CoasterWorld.isOverlay()")
+        assert_no_browser_errors(problems)
+    finally:
+        context.close()
+
+
 def seed_zoo_backend_copies(page, older, newer, newest_backend):
     page.evaluate("""async ({older, newer, newestBackend}) => {
       const key = 'wildacres.save.v1', time = Date.now() + 1000;

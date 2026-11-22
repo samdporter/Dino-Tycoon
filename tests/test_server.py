@@ -27,7 +27,7 @@ class PublicServerTests(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def test_entrypoint_and_script(self):
-        for path in ['/', '/index.html', '/zoo.html', '/src/15-storage.js', '/styles/game.css']:
+        for path in ['/', '/index.html', '/zoo.html', '/src/shared/15-storage.js', '/styles/tycoon.css']:
             with self.subTest(path=path), urlopen(self.base + path) as response:
                 self.assertEqual(response.status, 200)
                 self.assertIn('no-cache', response.headers['Cache-Control'])
@@ -41,6 +41,18 @@ class PublicServerTests(unittest.TestCase):
                 with self.subTest(entry=entry, asset=asset), urlopen(self.base + '/' + asset) as response:
                     self.assertEqual(response.status, 200)
                     self.assertTrue(response.read())
+
+    def test_both_games_use_shared_engine_and_coaster_scripts(self):
+        shared = {
+            '10-core.js', '15-storage.js', '21-sim-coaster.js', '30-models-toilets.js',
+            '48-world-coaster.js', '58-streetview.js', '59-weather-hud.js',
+            '66b-ui-coaster.js',
+        }
+        for entry in ['/index.html', '/zoo.html']:
+            with self.subTest(entry=entry), urlopen(self.base + entry) as response:
+                html = response.read().decode('utf-8')
+                scripts = re.findall(r'<script defer src="src/shared/([^" ]+)"', html)
+                self.assertTrue(shared.issubset(scripts), shared.difference(scripts))
 
     def test_private_files_and_traversal_are_not_served(self):
         for path in ['/.git/config', '/README.md', '/server.py', '/tests/test_browser.py', '/%2e%2e/README.md', '/src/%2e%2e/README.md', '/src/']:

@@ -1,15 +1,14 @@
 // Zoo water transport and helipads. Run with: node --test tests/zoo-boats.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript } = require('./game-scripts.cjs');
 
 function game() {
   const ctx = vm.createContext({ console, btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary') });
   vm.runInContext('var window=globalThis', ctx);
-  for (const f of ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js', '25-sim-boats.js']) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
+  for (const f of ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js', '25-sim-boats.js']) {
+    vm.runInContext(readScript(f, true), ctx, { filename: f });
   }
   return ctx.Z;
 }

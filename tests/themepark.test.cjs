@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { gameScripts, readScript, simulationScripts } = require('./game-scripts.cjs');
 
 const root = path.resolve(__dirname, '..');
 
@@ -28,11 +29,9 @@ function game() {
     atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   vm.runInContext('var window=globalThis', ctx);
-  const simFiles = fs.readdirSync(path.join(root, 'src'))
-    .filter(f => /^(00|10|2\d)-.*\.js$/.test(f))
-    .sort();
+  const simFiles = simulationScripts();
   for (const f of simFiles) {
-    vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+    vm.runInContext(readScript(f), ctx, { filename: f });
   }
   return ctx.Z;
 }
@@ -353,11 +352,11 @@ test('Dino UI Theme Park tab, Guests group, sub-filters, goalProgress, and inspe
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const simFiles = fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
-  for (const f of simFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  const simFiles = simulationScripts();
+  for (const f of simFiles) vm.runInContext(readScript(f), ctx, { filename: f });
   ['50-ui.js', '51-tools.js', '52-panels.js', '53-screens.js', '66b-ui-coaster.js', '68-ui-power.js', '75-ui-groups.js'].forEach(f => {
-    const fullPath = path.join(root, 'src', f);
-    if (fs.existsSync(fullPath)) {
+    const fullPath = gameScripts().get(f);
+    if (fullPath) {
       vm.runInContext(fs.readFileSync(fullPath, 'utf8'), ctx, { filename: f });
     }
   });
@@ -510,9 +509,9 @@ test('Dino Theme Park 3D Models, Footprints, Finite Geometry & 1,000-frame Anima
   });
   ctx.window = ctx; ctx.self = ctx;
   vm.runInContext(fs.readFileSync(path.join(root, 'vendor/three.r128.min.js'), 'utf8'), ctx, { filename: 'three.r128.min.js' });
-  for (const f of ['00-data.js', '30-models.js', '40-world.js']) {
-    const fullPath = path.join(root, 'src', f);
-    if (fs.existsSync(fullPath)) {
+  for (const f of ['00-data.js', '30-models-toilets.js', '30-models.js', '40-world.js']) {
+    const fullPath = gameScripts().get(f);
+    if (fullPath) {
       vm.runInContext(fs.readFileSync(fullPath, 'utf8'), ctx, { filename: f });
     }
   }

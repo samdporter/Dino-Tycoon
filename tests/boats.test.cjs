@@ -1,14 +1,12 @@
 // Run with: node --test tests/*.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
-const root = path.resolve(__dirname, '..');
+const { readScript, simulationScripts } = require('./game-scripts.cjs');
 function game() {
   const ctx = vm.createContext({ console, btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary') });
-  const simFiles = fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d\w?)-.*\.js$/.test(f)).sort();
-  for (const f of simFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  const simFiles = simulationScripts(false, true);
+  for (const f of simFiles) vm.runInContext(readScript(f), ctx, { filename: f });
   return ctx.Z;
 }
 

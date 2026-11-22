@@ -1,4 +1,4 @@
-// Wild Acres Zoo — Custom Rollercoaster Simulation (Zoo Tycoon only)
+// Custom Rollercoaster Simulation
 // Track graph (traces all closed loops, open partial station tracks & standalone segments),
 // 3D centerline with smooth hills, Bezier corners, vertical loops & corkscrews,
 // gravitational potential energy + rolling friction/air-drag + chain-lift/boost physics,
@@ -22,14 +22,14 @@
   // 4-bit orthogonal connection masks: 1=N(-z), 2=E(+x), 4=S(+z), 8=W(-x)
   var DX = [0, 1, 0, -1], DZ = [-1, 0, 1, 0], BIT = [1, 2, 4, 8], OPP = [4, 8, 1, 2];
 
-  // Physics constants: gravitational acceleration, rolling friction, curve drag, air drag, station push & chain speed
+  // Physics constants: gravitational acceleration, rolling/curve friction, air drag, station push, chain speed & boost
   var GRAV = 18.0;          // m/s^2 along track slope
   var FRIC_ACCEL = 0.22;    // base rolling resistance (m/s^2)
-  var CURVE_DRAG = 0.28;    // extra flange/lateral-G friction in horizontal turns (m/s^2)
+  var CURVE_DRAG = 0.28;    // extra flange/lateral-G friction in horizontal turns
   var AIR_DRAG = 0.0018;    // quadratic aerodynamic drag coefficient (v^2)
   var CHAIN_SPEED = 4.2;    // deliberate, steady mechanical chain-lift climb speed (m/s)
-  var STATION_PUSH = 5.4;   // modest station dispatch push (m/s)
-  var BOOST_ACCEL = 24.0;   // strong launch boost linear thrust (m/s^2)
+  var STATION_PUSH = 5.4;   // modest station dispatch speed (m/s)
+  var BOOST_ACCEL = 24.0;   // launch boost linear thrust (m/s^2)
 
   // Derived graph + runtime train state (never serialized)
   var X = emptyX();
@@ -162,6 +162,7 @@
     if (x.stAt[t] >= 0) return false;
     if (s.tileObj[t]) return false;
     if (s.path[t]) return false;
+    if (s.ditch && s.ditch[t]) return false;
     if (isWater(s, t) && cmean(t) < -1.0) return false;
     return true;
   }
@@ -182,13 +183,14 @@
     return [ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx];
   }
 
-  // Shared unified coaster physics step used by both circuit validation (simulateCircuit) and live runtime trains (stepTrain)
+  // Unified per-step physics for both circuit energy simulation and live train stepping
   function stepCoasterPhysics(v, ds, dt, ty, sp, isLift, curv, td, poweredCircuit) {
     var dragMag = FRIC_ACCEL + CURVE_DRAG * (curv || 0) + AIR_DRAG * v * v;
     var signV = v >= 0 ? 1 : -1;
     var aDrag = -signV * dragMag;
 
     if (isLift === 1 && sp <= 1) {
+      // Chain Lift: ratchet freely if faster than chain, otherwise motor pulls steadily at CHAIN_SPEED
       if (v > CHAIN_SPEED) {
         var v2c = v * v + 2 * (-GRAV * ty + aDrag) * ds;
         v = Math.max(CHAIN_SPEED, v2c > 0 ? Math.sqrt(v2c) : CHAIN_SPEED);
@@ -196,23 +198,29 @@
         v = Math.min(CHAIN_SPEED, Math.max(1.8, v) + 7.5 * dt);
       }
     } else if (sp === 2) {
+      // Launch Boost linear thrust
       var v2b = v * v + 2 * (BOOST_ACCEL - GRAV * ty + aDrag) * ds;
       v = Math.min(td.maxSpeed * 1.15, Math.sqrt(Math.max(0, v2b)));
     } else if (sp === 3) {
+      // Water Splash hydrodynamic braking scoop
       var splashDrag = v > 3.8 ? (3.5 + 0.08 * v * v) : 0.35;
       var v2s = v * v + 2 * (-GRAV * ty - splashDrag) * ds;
       v = v2s > 0 ? Math.sqrt(v2s) : 0;
     } else if (sp >= 4 && sp <= 7) {
+      // Inversions (Loop-de-Loop 4, Corkscrew 5, Large Loop 6, Large Corkscrew 7)
       var Rinv = sp === 6 ? 4.5 : sp === 7 ? 2.45 : sp === 4 ? 2.4 : 1.2;
       if (!poweredCircuit) {
         var v2u = v * v + 2 * (-GRAV * ty + aDrag) * ds;
         v = v2u > 0 ? Math.sqrt(v2u) : 0;
       } else {
-        var aGrav = ty > 0 ? -Math.max(0.55, (0.32 * v * v) / Rinv) * ty : -(GRAV * 0.55) * ty;
+        var aGrav = ty > 0
+          ? -Math.max(0.55, (0.32 * v * v) / Rinv) * ty
+          : -(GRAV * 0.55) * ty;
         var v2i = v * v + 2 * (aGrav + aDrag * 0.45) * ds;
         v = v2i > 0 ? Math.sqrt(v2i) : 0;
       }
     } else {
+      // Normal Track / Unpowered Hills & Drops: pure Newtonian potential exchange + drag
       var aNet = -GRAV * ty + aDrag;
       if (v > 0.6 && ds > 0) {
         var v2n = v * v + 2 * aNet * ds;
@@ -225,7 +233,7 @@
     return Math.min(v, td.maxSpeed * 1.18);
   }
 
-  // Simulate gravitational potential energy + rolling/curve/air drag + chain lift/boost around a closed circuit
+  // Simulate gravitational potential energy + rolling friction/air drag + chain lift/boost around a closed circuit
   function simulateCircuit(pxA, pyA, pzA, tyA, spA, liftA, avgTyA, curvA, nS, totalLen, stMidS, td, nodes, stLen) {
     if (nS < 4 || totalLen <= 1) return { ok: false, peakSpeed: 0, minSpeed: 0, reason: 'Track is too short' };
     var ds = totalLen / nS;
@@ -236,7 +244,7 @@
     var hasHill = false, seenAnyLift = false, seenAnyBoost = false;
 
     for (var k = 0; k < nS; k++) {
-      if (spA[k] === 1) seenAnyLift = true;
+      if (spA[k] === 1 || liftA[k]) seenAnyLift = true;
       if (spA[k] === 2) seenAnyBoost = true;
     }
     var poweredCircuit = seenAnyLift || seenAnyBoost;
@@ -245,8 +253,8 @@
     for (var step = 0; step < nS; step++) {
       var i = (startIdx + step) % nS;
       var sp = spA[i];
-      var ty = avgTyA[i];
       var isLift = liftA[i];
+      var ty = avgTyA[i];
       var hRel = Math.max(0, pyA[i] - y0);
 
       if (hRel > 1.25) hasHill = true;
@@ -356,27 +364,27 @@
       }
     }
 
-    // Node-level Chain Lift active ramp: carries connected uphill nodes to crest, never across flat or into specials
+    // Node-level Chain Lift active ramp: carries a chain lift up its immediately connected uphill climb to the crest
     var nodeLift = new Uint8Array(m);
     for (k = 0; k < m; k++) {
       if (x.stAt[nodes[k]] < 0 && spec[nodes[k]] === 1) nodeLift[k] = 1;
     }
     for (k = 0; k < m; k++) {
-      if (x.stAt[nodes[k]] < 0 && spec[nodes[k]] === 1) {
-        for (var step = 1; step < m; step++) {
-          if (!loop && k + step >= m) break;
-          var nk3 = (k + step) % m;
-          if (x.stAt[nodes[nk3]] < 0 && (spec[nodes[nk3]] || 0) === 0 && h[nk3] > h[(nk3 - 1 + m) % m] + 0.03) {
-            nodeLift[nk3] = 1;
-          } else {
-            break;
-          }
+      if (x.stAt[nodes[k]] >= 0 || spec[nodes[k]] !== 1) continue;
+      for (var step = 1; step < m; step++) {
+        if (!loop && k + step >= m) break;
+        var nkLift = (k + step) % m;
+        var pkLift = (nkLift - 1 + m) % m;
+        if (x.stAt[nodes[nkLift]] < 0 && (spec[nodes[nkLift]] || 0) === 0 && h[nkLift] > h[pkLift] + 0.03) {
+          nodeLift[nkLift] = 1;
+        } else {
+          break;
         }
       }
     }
 
     // 3. Build 3D control points with Bezier corners + parametric Loops & Corkscrews
-    var pts = []; // { x, y, z, spec, lift, ux, uy, uz, hasUp, st }
+    var pts = []; // { x, y, z, spec, ux, uy, uz, hasUp, st, lift }
     var specsCount = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0 };
     var maxH = 0, totalDrop = 0;
 
@@ -403,8 +411,8 @@
       if (hasPrev && h[prevK] > hc) totalDrop += (h[prevK] - hc);
 
       var spc = isSt ? 0 : (spec[tc] || 0);
-      var lft = nodeLift[k] ? 1 : 0;
       if (spc && specsCount[spc] !== undefined) specsCount[spc]++;
+      var isLiftNode = nodeLift[k] ? 1 : 0;
 
       // Open line endpoints: extend out to the tile edge if only 1 neighbor, or tile center
       if (hasPrev && hasNext) {
@@ -420,7 +428,7 @@
               x: iu * iu * m1x + 2 * iu * u * cx + u * u * m2x,
               y: iu * iu * m1h + 2 * iu * u * hc + u * u * m2h,
               z: iu * iu * m1z + 2 * iu * u * cz + u * u * m2z,
-              spec: spc, lift: lft, hasUp: false, st: isSt
+              spec: spc, hasUp: false, st: isSt, lift: isLiftNode
             });
           }
           continue;
@@ -439,8 +447,7 @@
             if (spc === 4 || spc === 6) {
               var lin = -1.0 + 2.0 * (j / steps);
               var fwdOff = lin + R * Math.sin(th) * 0.85;
-              var latScale = spc === 6 ? 1.25 : 0.55;
-              var latOff = latScale * ((th / Math.PI) - 1) * Math.sin(th * 0.5);
+              var latOff = (spc === 6 ? 1.25 : 0.55) * ((th / Math.PI) - 1) * Math.sin(th * 0.5);
               px = cx + fx * fwdOff + rx * latOff;
               py = hc + R * (1 - Math.cos(th));
               pz = cz + fz * fwdOff + rz * latOff;
@@ -460,22 +467,22 @@
               px = cx + fx * fwdC + rx * latC;
               py = hc + R * (1 - Math.cos(th));
               pz = cz + fz * fwdC + rz * latC;
-              var nu3l = vecNorm(-(fx * 0.42 + rx * 0.91) * Math.sin(th), Math.cos(th), -(fz * 0.42 + rz * 0.91) * Math.sin(th));
-              ux = nu3l[0]; uy = nu3l[1]; uz = nu3l[2];
+              var nu3 = vecNorm(-(fx * 0.42 + rx * 0.91) * Math.sin(th), Math.cos(th), -(fz * 0.42 + rz * 0.91) * Math.sin(th));
+              ux = nu3[0]; uy = nu3[1]; uz = nu3[2];
             }
-            pushPt({ x: px, y: py, z: pz, spec: spc, lift: 0, ux: ux, uy: uy, uz: uz, hasUp: true, st: false });
+            pushPt({ x: px, y: py, z: pz, spec: spc, ux: ux, uy: uy, uz: uz, hasUp: true, st: false, lift: 0 });
           }
           continue;
         }
         // Subdivide straight segments at entry midpoint, center, and exit midpoint so vertical hills curve smoothly!
         var sm1x = (C.cxOf(tp) + cx) * 0.5, sm1z = (C.czOf(tp) + cz) * 0.5, sm1h = (h[prevK] + hc) * 0.5;
         var sm2x = (cx + C.cxOf(tn)) * 0.5, sm2z = (cz + C.czOf(tn)) * 0.5, sm2h = (hc + h[nextK]) * 0.5;
-        pushPt({ x: sm1x, y: sm1h, z: sm1z, spec: spc, lift: lft, hasUp: false, st: isSt });
-        pushPt({ x: cx, y: hc, z: cz, spec: spc, lift: lft, hasUp: false, st: isSt });
-        pushPt({ x: sm2x, y: sm2h, z: sm2z, spec: spc, lift: lft, hasUp: false, st: isSt });
+        pushPt({ x: sm1x, y: sm1h, z: sm1z, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
+        pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
+        pushPt({ x: sm2x, y: sm2h, z: sm2z, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
         continue;
       }
-      pushPt({ x: cx, y: hc, z: cz, spec: spc, lift: lft, hasUp: false, st: isSt });
+      pushPt({ x: cx, y: hc, z: cz, spec: spc, hasUp: false, st: isSt, lift: isLiftNode });
     }
 
     // 4. Resample uniformly along arc length at fine resolution (0.36m) for silky smooth curves & hills
@@ -517,8 +524,8 @@
       if (a0.hasUp || a1.hasUp) {
         var u0x = a0.hasUp ? a0.ux : 0, u0y = a0.hasUp ? a0.uy : 1, u0z = a0.hasUp ? a0.uz : 0;
         var u1x = a1.hasUp ? a1.ux : 0, u1y = a1.hasUp ? a1.uy : 1, u1z = a1.hasUp ? a1.uz : 0;
-        var nu3 = vecNorm(u0x + (u1x - u0x) * f, u0y + (u1y - u0y) * f, u0z + (u1z - u0z) * f);
-        uxA[k] = nu3[0]; uyA[k] = nu3[1]; uzA[k] = nu3[2];
+        var nu4 = vecNorm(u0x + (u1x - u0x) * f, u0y + (u1y - u0y) * f, u0z + (u1z - u0z) * f);
+        uxA[k] = nu4[0]; uyA[k] = nu4[1]; uzA[k] = nu4[2];
         hasUpA[k] = 1;
       }
     }
@@ -563,15 +570,15 @@
         avgTyA[k] = tyA[k];
         curvA[k] = 0;
       } else {
-        var tySum = 0;
-        for (var off = -2; off <= 2; off++) {
-          var ko = loop ? (k + off + nS) % nS : clamp(k + off, 0, nS - 1);
-          tySum += tyA[ko];
+        var sumTy = 0;
+        for (var sd = -2; sd <= 2; sd++) {
+          var ks = loop ? (k + sd + nS) % nS : clamp(k + sd, 0, nS - 1);
+          sumTy += tyA[ks];
         }
-        avgTyA[k] = tySum / 5;
-        var kpC = loop ? (k - 1 + nS) % nS : Math.max(0, k - 1);
-        var knC = loop ? (k + 1) % nS : Math.min(nS - 1, k + 1);
-        var dtx = txA[knC] - txA[kpC], dtz = tzA[knC] - tzA[kpC];
+        avgTyA[k] = sumTy * 0.2;
+        var kpc = loop ? (k - 1 + nS) % nS : Math.max(0, k - 1);
+        var knc = loop ? (k + 1) % nS : Math.min(nS - 1, k + 1);
+        var dtx = txA[knc] - txA[kpc], dtz = tzA[knc] - tzA[kpc];
         curvA[k] = Math.min(1.5, Math.sqrt(dtx * dtx + dtz * dtz) / (2 * Math.max(0.2, dsSample)));
       }
     }
@@ -606,16 +613,14 @@
     var sim = closedValid
       ? simulateCircuit(pxA, pyA, pzA, tyA, spA, liftA, avgTyA, curvA, nS, totalLen, stMidS, td, nodes, stTileLen)
       : {
-        ok: false,
-        peakSpeed: 0,
-        minSpeed: 0,
-        reason: branch
-          ? 'Track cannot branch or cross'
-          : (loop && hasBad)
-            ? 'No room for coaster supports under part of the track — clear obstacles under long spans'
-            : 'Drag track in a complete loop from one end of the station back to the other end',
-        stallSample: -1
-      };
+          ok: false,
+          peakSpeed: 0,
+          minSpeed: 0,
+          stallSample: -1,
+          reason: branch ? 'Track cannot branch or cross'
+            : (loop && hasBad) ? 'No room for coaster supports under part of the track — clear obstacles under long spans'
+            : 'Drag track in a complete loop from one end of the station back to the other end'
+        };
 
     var specExc = 0, specInt = 0;
     for (var sid in specsCount) {
@@ -1058,6 +1063,7 @@
     return C.okr(-refund, { tiles: rem });
   }
 
+  // Raise (+1) or Lower (-1) track height on existing track tiles (with smooth hill auto-ramping along connected track!)
   function snapshotLineReady() {
     var snap = {};
     for (var i = 0; i < X.lines.length; i++) {
@@ -1086,7 +1092,6 @@
     }
   }
 
-  // Raise (+1) or Lower (-1) track height on existing track tiles (with smooth hill auto-ramping along connected track!)
   function changeHeight(tiles, delta, opts) {
     var s = C.getS(); ensureArrays(s);
     var dry = opts && opts.dry;
@@ -1497,21 +1502,21 @@
   }
 
   function hasUrgentMechanicWork(staff, sc0, claimedFn) {
-    var RT = C.getRT();
+    var RT = C.getRT(), components = RT.scomp || RT.comp;
     for (var k = 0; k < X.stations.length; k++) {
       var st = X.stations[k], o = st.obj;
       if (!o.broken && (o.condition === undefined ? 100 : o.condition) >= 50) continue;
       if (claimedFn && claimedFn('c' + o.id, staff)) continue;
       var pts = adjPathTilesForStation(st);
       for (var i = 0; i < pts.length; i++) {
-        if (!sc0 || !RT.scomp || RT.scomp[pts[i]] === sc0) return true;
+        if (!sc0 || !components || components[pts[i]] === sc0) return true;
       }
     }
     return false;
   }
 
   function pickMechanicTarget(staff, sc0, claimedFn) {
-    var RT = C.getRT(), best = null, bestScore = 1e9;
+    var RT = C.getRT(), components = RT.scomp || RT.comp, best = null, bestScore = 1e9;
     for (var k = 0; k < X.stations.length; k++) {
       var st = X.stations[k], o = st.obj;
       var cond = o.condition === undefined ? 100 : o.condition;
@@ -1523,7 +1528,7 @@
       var pts = adjPathTilesForStation(st);
       var reach = [];
       for (var i = 0; i < pts.length; i++) {
-        if (!sc0 || !RT.scomp || RT.scomp[pts[i]] === sc0) reach.push(pts[i]);
+        if (!sc0 || !components || components[pts[i]] === sc0) reach.push(pts[i]);
       }
       if (!reach.length) continue;
       var dist = Math.abs(o.i - (staff.ti % C.getN())) + Math.abs(o.j - Math.floor(staff.ti / C.getN()));
@@ -1691,8 +1696,10 @@
       return;
     }
 
-    // Running along closed loop with unified substepped physics (gravitational potential, rolling/curve/air drag, chain lift, boost & inversions)
+    // Running along closed loop with unified substepped physics and station docking per substep.
     var subSteps = 4, subDt = dt / subSteps;
+    var peers = trainsOnStation(T.stationId);
+    var minGap = T.cars * (CD.carLen + CD.carGap) + 3.5;
     for (var si = 0; si < subSteps; si++) {
       var pose = sample(L, rt.s);
       if (pose.spec === 3 && !rt.seenSplash) {
@@ -1706,7 +1713,6 @@
 
       if (rt.v <= 0.15) {
         if (pose.avgTy > 0.015 && !pose.lift && pose.spec !== 2) {
-          // Unpowered uphill climb ran out of kinetic energy — let real gravity pull rt.v negative (rollback)
           rt.stalled = true;
         } else if (L.energyOk && pose.avgTy <= 0.015) {
           rt.v = Math.min(2.0, Math.max(0.4, rt.v) + 3.5 * subDt);
@@ -1718,31 +1724,28 @@
         rt.stalled = false;
       }
 
-      // Prevent overtaking another train on the same coaster
+      // Keep trains separated using the latest positions from every substep.
       if (rt.v > 0) {
-        var peers = trainsOnStation(T.stationId);
         for (var p = 0; p < peers.length; p++) {
           var O = peers[p];
           if (O.id === T.id) continue;
           var ort = TR[O.id]; if (!ort) continue;
           var gap = ((ort.s - rt.s) % L.totalLen + L.totalLen) % L.totalLen;
-          var minGap = T.cars * (CD.carLen + CD.carGap) + 3.5;
           if (gap < minGap) { rt.v = Math.min(rt.v, Math.max(0, ort.v) * 0.5); if (gap < minGap * 0.75) rt.v = 0; }
         }
       }
 
-      // Smoothly brake as the train enters the station platform approach before docking at L.stMidS
+      // Brake smoothly on approach so the train can dock without overshooting the station.
       if (rt.leftStation && rt.v > 0) {
         var dToSt = ((L.stMidS - rt.s) % L.totalLen + L.totalLen) % L.totalLen;
         if (dToSt < 4.5) {
-          var approachTarget = Math.max(2.0, 2.0 + dToSt * 1.6);
+          var approachTarget = 2.0 + dToSt * 1.6;
           if (rt.v > approachTarget) rt.v = Math.max(approachTarget, rt.v - 14.0 * subDt);
         }
       }
 
       var subPrevS = rt.s;
       rt.s = ((rt.s + rt.v * subDt) % L.totalLen + L.totalLen) % L.totalLen;
-
       var distFromSt = Math.abs(rt.s - L.stMidS);
       if (distFromSt > 4.5 && distFromSt < L.totalLen - 4.5) rt.leftStation = true;
 
@@ -1765,12 +1768,9 @@
       }
     }
 
-    T.s = rt.s;
-    T.v = rt.v;
     if (rt.stalled) {
       rt.stallT = (rt.stallT || 0) + dt;
       if (rt.stallT > 4.0) {
-        // Winch train back to station safely
         rt.stallT = 0; rt.stalled = false;
         rt.s = T.s = L.stMidS; rt.v = T.v = 0;
         rt.state = T.state = 'dwell'; rt.dwell = T.dwell = CD.dwell;
@@ -1781,6 +1781,9 @@
     } else {
       rt.stallT = 0;
     }
+
+    T.v = rt.v;
+    T.s = rt.s;
 
     placeRiders(T, L);
   }
@@ -1881,8 +1884,8 @@
     }
     for (k = 0; k < s.guests.length; k++) {
       var g = s.guests[k];
-      if (g.state === 'ride') {
-        var rt = g.coasterTrain ? TR[g.coasterTrain] : null;
+      if (g.state === 'ride' && g.coasterTrain) {
+        var rt = TR[g.coasterTrain];
         if (rt) rt.riders.push(g.id);
         else { g.state = 'walk'; g.gt = ''; g.dk = ''; g.coasterTrain = 0; g.absY = null; }
       }

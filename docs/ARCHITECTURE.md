@@ -7,8 +7,8 @@ This refactor extracts the original game's existing sections, preserves their de
 `index.html` explicitly lists classic deferred scripts. They run in document order after HTML parsing. No bundler, package registry, CDN, or runtime network API is required. Keep this order when adding files. Do not change individual scripts to ES modules without also replacing their shared `Z` namespace references.
 
 - `00-data.js`: definitions, island maps, species (dinosaurs, marine reptiles, pterosaurs, modern safari animals, donor traits), costs, research and news content.
-- `10-core.js`: typed state arrays, random number generator, event bus, serialization helpers.
-- `15-storage.js`: localStorage checkpoints, IndexedDB records, startup selection, storage status. It does not interpret park contents.
+- `shared/10-core.js`: grid utilities, random number generator, event bus, and typed-array serialization. `dino-config.js` and `zoo/zoo-config.js` supply the park state schemas and storage identifiers.
+- `shared/15-storage.js`: localStorage checkpoints, IndexedDB records, startup selection, and storage status for both games.
 - `20-sim.js` and `22` through `29` (`22-sim-dna.js`, `23-sim-moats.js`, `24-sim-monorail.js`, `25-sim-power.js`, `26-sim-realms.js`, `27-sim-news.js`, `28-sim-director.js`, `29-sim-safari.js`, `29b-sim-boats.js`): own live simulation state and game actions; export `Z.Sim` and internal context bridges (`Z.simCtx`, `Z.moatCtx`, `Z.monoCtx`, `Z.powerCtx`, `Z.realmCtx`, `Z.safariCtx`). `29b-sim-boats.js` (`Z.Boats`) holds floating pontoons (a path type), guest and service piers, staff and VIP helipads: it derives water bodies and component links, ferries guests and staff as runtime trips, and spawns VIP guests; it persists only `S.boats` and per-building fares. Prefer changing state through public `Z.Sim` actions rather than editing `Z.state` from the UI.
 - `30-models.js` through `36-models-boats.js` and `40-world.js` through `49-world-boats.js`: 3D models, realm/moat/monorail/power/safari meshes, overlay patterns and presentation. Do not move authoritative simulation state into scene objects.
 - `50` through `78`: UI, construction tools, panels, modal screens (`53-screens.js`), audio, 14-step tutorial, research and DNA lab (`56-research.js`, `61-minigames.js`, `62-research-dna.js`), guide, street view, weather HUD, 3D portrait (`64-portrait.js`), moat/monorail/realm/power/news/safari/boats UI (`65`–`69`, `74`, `79-ui-boats.js`), Masterclass example games and UI (`70`–`73`), two-level build groups (`75-ui-groups.js`), mobile HUD (`76-ui-mobile.js`), unlock hints (`77-ui-hints.js`) and overlay legend (`78-ui-legend.js`).
@@ -16,11 +16,13 @@ This refactor extracts the original game's existing sections, preserves their de
 
 Rendering and UI observe `Z.state` and the `Z.bus` event bus. A `reset` event follows simulation resets/loads; renderer and UI rebuild their derived views. Runtime simulation caches are recreated by `Sim.load`, so serialized JSON need not be byte-identical after a load.
 
-## Zoo entry point
+## Shared modules and Zoo entry point
 
-`zoo.html` loads Wild Acres Zoo from `styles/zoo.css` and the ordered classic scripts in `src/zoo/`. These files preserve the supplied Zoo game's existing module boundaries and behaviour. Both games reuse the identical bundled Three.js library. Each page loads only its own game scripts, so their `Z` namespaces remain independent. `styles/tycoon-menu.css` styles the title-screen links between the two entry points.
+`zoo.html` loads Wild Acres Zoo from the ordered classic scripts in `src/zoo/` and `src/shared/`. Both entry points load `styles/tycoon.css` before their game-specific styles. They reuse the bundled Three.js library in independent `Z` namespaces. `styles/tycoon-menu.css` styles the title-screen links between the two entry points.
 
-Zoo retains its own localStorage keys: `wildacres.save.v1`, `wildacres.settings.v1` and `wazoo_tut`. Dino's keys remain unchanged. Zoo keeps its original storage implementation; the Dino storage service and backup controls described below apply to Dino.
+Shared scripts implement custom coaster simulation, rendering, and controls, plus the weather HUD, street view, and the detailed toilet model. Each game's data controls the items it offers, their prices, and their footprints. Coasters use the active game's `Z.coasterCtx`. Species, park mechanics, and features such as Dino's DNA lab and Zoo's play timer are implemented in their respective game scripts.
+
+Zoo uses `wildacres.save.v1`, `wildacres.settings.v1`, the `wildacres` IndexedDB database, and the `wazoo_tut` tutorial key. Dino uses its own keys and the `amberacres` database. The v2 save contract below describes Dino.
 
 ## Save contract
 
