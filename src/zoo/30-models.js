@@ -830,7 +830,7 @@ function quadParts(spec, sex) {
     g = B();
     var ncol = typeof nk.col === 'function' ? function (zc, ca, sa, x, y, z) { return nk.col(x, y, z, sa, ca, 0); } : (nk.col || 0x888888);
     var nl = nk.len, nr0 = nk.r0, nr1 = nk.r1, nw = nl < nr0 * 2 ? 1 : 0.9, nm1 = lerp(nr0, nr1, 0.4), nm2 = lerp(nr0, nr1, 0.75);
-    g.loft([[-nr0 * 0.8, nr0 * 0.62, nr0 * 0.68, 0], [0, nr0 * 0.98 * nw, nr0 * 1.12, 0], [nl * 0.3, nm1 * nw, nm1 * 1.14, -nm1 * 0.03], [nl * 0.65, nm2 * nw, nm2 * 1.1, -nm2 * 0.04], [nl * 0.95, nr1 * 0.95 * nw, nr1 * 1.02, 0], [nl + nr1 * 0.25, nr1 * 0.75, nr1 * 0.8, 0]],
+    g.loft([[-nr0 * 0.8, nr0 * 0.62, nr0 * 0.68, 0], [0, nr0 * 0.98 * nw, nr0 * 1.12, 0], [nl * 0.3, nm1 * nw, nm1 * 1.14, -nm1 * 0.03], [nl * 0.65, nm2 * nw, nm2 * 1.1, -nm2 * 0.04], [nl * 0.95, nr1 * 0.95 * nw, nr1 * 1.02, 0], [nl + nr1 * 0.2, nr1 * 0.75, nr1 * 0.8, 0], [nl + nr1 * 0.4, nr1 * 0.4, nr1 * 0.42, 0]],
       { rings: clamp(Math.round(nl * 10), 8, 22), seg: Math.max(8, nk.seg || 8), cap0: true, cap1: true }, ncol);
     if (nk.extra) nk.extra(g, sex);
     P.neck = g.build();
@@ -1846,8 +1846,8 @@ function earBall(g, x, y, z, r, col, inner) {
     head: function (g) {
       g.loft([[-0.08, 0.09, 0.11, 0.03], [0.05, 0.11, 0.13, 0.03], [0.18, 0.085, 0.1, -0.01], [0.3, 0.065, 0.075, -0.045], [0.4, 0.062, 0.07, -0.07], [0.46, 0.05, 0.055, -0.075], [0.485, 0.02, 0.025, -0.075]], { rings: 16, seg: 14, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z > 0.4 ? mixHex(PW, 0xe6b8c8, sstep(0.4, 0.47, z)) : PW; });
       // flowing forelock
-      g.sph(0.05, 0.075, 0.07, 0.03, 0.11, 0.09, MN, { s: [5, 4], rot: [0.3, 0, 0.2] });
-      g.sph(0.04, 0.065, 0.06, -0.02, 0.09, 0.13, MN3, { s: [5, 4], rot: [0.35, 0, -0.15] });
+      g.sph(0.05, 0.035, 0.07, 0.015, 0.1, 0.05, MN, { s: [6, 4], rot: [-0.2, 0, 0.2] });
+      g.sph(0.04, 0.03, 0.06, -0.025, 0.1, 0.09, MN3, { s: [6, 4], rot: [-0.3, 0, -0.15] });
       spiralHorn(g, 0, 0.12, 0.17, 0, 0.62, 0.78, 0.5, 0.042, 4, 5, function (x, y, z, nx, ny, nz, t) { return mixHex(GD2, GD, sstep(0.2, 0.9, t)); }, 0);
       eyePair(g, 0.095, 0.06, 0.16, 0.028, 0x2a1a42);
       g.sph(0.014, 0.022, 0.01, 0.028, -0.06, 0.47, 0xd8a8ba, { s: [4, 3] });
@@ -1880,20 +1880,24 @@ function earBall(g, x, y, z, r, col, inner) {
     },
     neck: { y: 1.12, z: 0.68, len: 0.36, up: 0.75, r0: 0.22, r1: 0.15, col: IVORY,
       extra: function (g) {
-        for (var i = 0; i < 4; i++) g.sph(0.08, 0.08, 0.1, 0, -0.05, 0.06 + i * 0.08, i % 2 ? IVORY : shade(IVORY, 0.94), { s: [5, 4] });
+        // two staggered rings of swept ruff feathers; blades lie tangent to the neck and point back
+        for (var r = 0; r < 2; r++) for (var i = 0; i < 11; i++) {
+          var a = (i + r * 0.5) / 11 * TAU, rad = r ? 0.17 : 0.215, z = r ? 0.2 : 0.04, len = r ? 0.17 : 0.23;
+          g.extrude([[0, 0], [0.05, -len * 0.25], [0.04, -len * 0.75], [0, -len], [-0.04, -len * 0.75], [-0.05, -len * 0.25]], 0.014, -sin(a) * rad, cos(a) * rad * 0.95, z, [0, 0, a], shade(IVORY, 0.9 + 0.1 * ((i + r) % 3)), { axis: 'y', bev: 0.004 });
+        }
       } },
     hpitch: 0.7, eatY: 0.18,
     head: function (g) {
-      g.sph(0.145, 0.145, 0.175, 0, 0.01, 0.1, IVORY, { s: [8, 6] });
-      // hooked golden eagle beak
-      g.cone(0.065, 0.16, 0, -0.02, 0.29, BEAK, { seg: 6, rot: [PI / 2 + 0.12, 0, 0] });
-      g.cone(0.032, 0.09, 0, -0.075, 0.365, shade(BEAK, 0.88), { seg: 5, rot: [PI - 0.15, 0, 0] });
-      g.sph(0.048, 0.03, 0.08, 0, -0.065, 0.25, shade(BEAK, 0.82), { s: [5, 4] });
-      // noble eagle brow ridges & swept ear tufts
-      g.tube([[-0.13, 0.08, 0.13], [-0.04, 0.105, 0.19], [0.04, 0.105, 0.19], [0.13, 0.08, 0.13]], [0.018, 0.024, 0.024, 0.018], shade(IVORY, 0.9), { seg: 5, steps: 2 });
-      g.tube([[0.09, 0.09, 0.03], [0.13, 0.16, -0.05], [0.16, 0.2, -0.15]], [0.032, 0.02, 0.004], CHEST, { seg: 5, steps: 2 });
-      g.tube([[-0.09, 0.09, 0.03], [-0.13, 0.16, -0.05], [-0.16, 0.2, -0.15]], [0.032, 0.02, 0.004], CHEST, { seg: 5, steps: 2 });
-      eyePair(g, 0.105, 0.045, 0.17, 0.028, 0xe89818);
+      var hc = function (zc, ca, sa, x, y, z) { return z > 0.14 && ca < -0.2 ? shade(IVORY, 0.92) : IVORY; };
+      g.loft([[-0.08, 0.07, 0.08, 0.01], [0.0, 0.125, 0.135, 0.015], [0.1, 0.13, 0.14, 0.02], [0.18, 0.09, 0.1, 0.01], [0.24, 0.05, 0.06, -0.005], [0.27, 0.025, 0.035, -0.01]], { rings: 12, seg: 12, cap0: true, cap1: true }, hc);
+      // hooked upper beak, lower mandible and waxy cere
+      g.loft([[0.2, 0.05, 0.05, -0.02], [0.27, 0.042, 0.048, -0.03], [0.33, 0.03, 0.042, -0.05], [0.385, 0.015, 0.03, -0.09], [0.405, 0.004, 0.012, -0.125]], { rings: 8, seg: 8, cap0: true, cap1: true }, function (zc, ca, sa, x, y, z) { return z < 0.26 ? shade(BEAK, 0.7) : mixHex(BEAK, shade(BEAK, 0.85), sstep(0.3, 0.4, z)); });
+      g.loft([[0.19, 0.04, 0.022, -0.07], [0.29, 0.032, 0.02, -0.075], [0.36, 0.014, 0.014, -0.082]], { rings: 5, seg: 8, cap1: true }, shade(BEAK, 0.88));
+      g.sph(0.012, 0.01, 0.018, 0.022, 0.012, 0.275, 0x3a2810, { s: [4, 3] });
+      g.sph(0.012, 0.01, 0.018, -0.022, 0.012, 0.275, 0x3a2810, { s: [4, 3] });
+      g.tube([[-0.12, 0.085, 0.1], [-0.05, 0.115, 0.16], [0.05, 0.115, 0.16], [0.12, 0.085, 0.1]], [0.018, 0.026, 0.026, 0.018], shade(IVORY, 0.88), { seg: 5, steps: 2 });
+      for (var sd = -1; sd <= 1; sd += 2) g.tube([[sd * 0.08, 0.1, 0.0], [sd * 0.12, 0.13, -0.08], [sd * 0.14, 0.12, -0.17]], [0.03, 0.02, 0.004], CHEST, { seg: 5, steps: 2 });
+      eyePair(g, 0.1, 0.045, 0.145, 0.026, 0xe89818);
     },
     legs: {
       fx: 0.21, fy: 0.72, fz: 0.48, hy: 0.74, hz: -0.56, hx: 0.21, fLen: 0.72, hLen: 0.74,
@@ -1913,6 +1917,7 @@ function earBall(g, x, y, z, r, col, inner) {
         [[0, -0.02, -0.34], [s * 0.58, 0.06, -0.44], [s * 1.24, -0.02, -0.52]],
         [[0, -0.04, -0.54], [s * 0.45, -0.02, -0.58], [s * 0.95, -0.06, -0.66]]
       ], 0.08, function (x, y, z) { return z < -0.42 ? CHEST_DK : 0x9c6234; }, { camber: 0.08, scallop: 0.06, uSteps: 3, vSteps: 2 });
+      for (var c = 0; c < 7; c++) g.extrude([[0, 0], [0.07, -0.05], [0.055, -0.2], [0, -0.28], [-0.055, -0.2], [-0.07, -0.05]], 0.02, s * (0.12 + c * 0.2), 0.065 - c * 0.012, -0.14 - c * 0.02, [0, s * (0.12 + c * 0.05), 0], c % 2 ? 0xa86a38 : 0x8c5428, { axis: 'y', bev: 0.005 });
       for (var k = 0; k < 6; k++) {
         var wx = s * (0.48 + k * 0.19), wy = 0.05 - k * 0.012, wz = -0.42 - k * 0.035;
         g.extrude([[0, 0], [0.065, -0.12], [0.045, -0.42], [0, -0.54], [-0.045, -0.42], [-0.065, -0.12]], 0.024, wx, wy, wz, [0, s * (0.24 + k * 0.07), 0], k >= 3 ? CHEST_DK : 0xb07644, { axis: 'y', bev: 0.007 });
@@ -2218,8 +2223,8 @@ function spotDist(x, y, z, scale) {
     legs: {
       hs: 4, fx: 0.14, fy: 0.56, fz: 0.44, hy: 0.55, hz: -0.52, hx: 0.15, fLen: 0.56, hLen: 0.55,
       fr: [0.105, 0.078, 0.066], hr: [0.115, 0.076, 0.064], haunch: [0.13, 0.17, 0.19],
-      col: function (y, ny, front, x, z) { return y < -0.45 ? BL : (spotDist(x || 0, y, z || 0, 9.0) < 0.2 ? DK : GW); },
-      foot: { type: 'paw', col: 0x222222, h: 0.065, pawCol: BL }
+      col: function (y, ny, front, x, z) { return y < -0.45 ? mixHex(GW, BL, 0.3) : (spotDist(x || 0, y, z || 0, 9.0) < 0.2 ? DK : GW); },
+      foot: { type: 'paw', col: 0x222222, h: 0.065, pawCol: mixHex(GW, BL, 0.3) }
     },
     tail: {
       y: 0.80, z: -0.78, n: 3, len: 0.85, r0: 0.056, r1: 0.04, hs: 4,
@@ -2267,8 +2272,8 @@ function spotDist(x, y, z, scale) {
     legs: {
       hs: 5, fx: 0.125, fy: 0.72, fz: 0.45, hy: 0.72, hz: -0.52, hx: 0.135, fLen: 0.72, hLen: 0.72,
       fr: [0.075, 0.05, 0.042], hr: [0.09, 0.055, 0.042], haunch: [0.11, 0.16, 0.17],
-      col: function (y, ny, front, x, z) { return y < -0.58 ? BL : mixHex(TAN, DK, sstep(0.24, 0.15, spotDist(x || 0, y, z || 0, 9))); },
-      foot: { type: 'paw', col: 0x222222, h: 0.055, pawCol: BL }
+      col: function (y, ny, front, x, z) { return y < -0.58 ? mixHex(TAN, BL, 0.3) : mixHex(TAN, DK, sstep(0.24, 0.15, spotDist(x || 0, y, z || 0, 9))); },
+      foot: { type: 'paw', col: 0x222222, h: 0.055, pawCol: mixHex(TAN, BL, 0.3) }
     },
     tail: {
       y: 0.90, z: -0.78, n: 3, len: 1.05, r0: 0.045, r1: 0.032, hs: 4,
