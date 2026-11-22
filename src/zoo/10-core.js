@@ -82,11 +82,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       weather: { type: 'clear', intensity: 0.6, hoursLeft: 9, next: 'cloudy' },
       activeEvents: [],
       eventAt: 3,
-      debtWarn: 0
+      debtWarn: 0,
+      boats: { vipT: 0, trips: 0, income: 0, vips: 0, vipIncome: 0 }
     };
   };
   Z.emptyFinance = function () {
-    return { tickets: 0, food: 0, shops: 0, donations: 0, animals: 0, construction: 0, upkeep: 0, wages: 0, marketing: 0, other: 0 };
+    return { tickets: 0, food: 0, shops: 0, boats: 0, donations: 0, animals: 0, construction: 0, upkeep: 0, wages: 0, marketing: 0, other: 0 };
   };
 
   // ---- compact typed-array (de)serialisation: byte RLE + base64 ----

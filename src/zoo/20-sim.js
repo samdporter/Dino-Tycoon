@@ -75,7 +75,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function newRT() {
     var undoStack = [];
-    return {
+    var rt = {
       fields: {}, pathVer: 1, nb: new Uint8Array(NN), pathTiles: [], block: new Uint8Array(NN), shelter: new Uint8Array(NN),
       wallDist: new Uint8Array(NN), clearDist: new Uint8Array(NN), dpBuf: new Int16Array(N + 1),
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
@@ -92,6 +92,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       gstand: new Uint8Array(NN), gtarg: new Uint8Array(NN), gvd: {}, wbuf: [], gload: {},
       comp: new Uint16Array(NN), compN: 0, reachComp: null, gateComps: []
     };
+    rt.scomp = rt.comp; rt.gcomp = null; rt.jump = null;
+    return rt;
   }
 
   // ---- generic helpers ----
@@ -129,7 +131,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function earn(amount, cat, x, z) {
     if (!amount) return;
-    if (cat === 'tickets' || cat === 'food' || cat === 'shops' || cat === 'donations') {
+    if (cat === 'tickets' || cat === 'food' || cat === 'shops' || cat === 'boats' || cat === 'donations') {
       var incMul = (DIFF.income || 1) * (EV.income || 1);
       if (incMul !== 1) amount = Math.round(amount * incMul * 100) / 100;
     }
@@ -209,7 +211,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function rebuildNav() {
     var nb = RT.nb, pt = RT.pathTiles; pt.length = 0;
     var pp = RT.navP || (RT.navP = new Uint8Array(NN)), E = S.elev;
-    for (var q = 0; q < NN; q++) pp[q] = S.path[q] && slopeOfT(q, E) < 3 ? 1 : 0;   // cliff tiles are impassable
+    for (var q = 0; q < NN; q++) pp[q] = S.path[q] && (slopeOfT(q, E) < 3 || S.terrain[q] === WATER) ? 1 : 0;   // cliff tiles are impassable; pontoons float
     for (var j = 0; j < N; j++) for (var i = 0; i < N; i++) {
       var t = i + j * N, m = 0;
       if (pp[t]) {
@@ -242,6 +244,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (comp[gt] && gc.indexOf(comp[gt]) < 0) gc.push(comp[gt]);
     }
     RT.gateComps = gc;
+    RT.scomp = comp; RT.gcomp = null; RT.jump = null;
+    if (Z.Boats) Z.Boats.rebuild();
     refreshReach();
     RT.pathVer++; RT.fields = {};
   }
@@ -252,6 +256,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     else RT.reachComp.fill(0);
     var gc = RT.gateComps || [];
     for (var k = 0; k < gc.length; k++) RT.reachComp[gc[k]] = 1;
+    if (RT.gcomp) {
+      for (var c = 1; c <= cn; c++) for (k = 0; k < gc.length; k++) if (RT.gcomp[c] === RT.gcomp[gc[k]]) RT.reachComp[c] = 1;
+    }
   }
   function isParkConnected(t) {
     if (t < 0 || t >= NN) return false;
@@ -263,7 +270,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var fc = fromT >= 0 && fromT < NN ? RT.comp[fromT] : 0;
     var tc = toT >= 0 && toT < NN ? RT.comp[toT] : 0;
     if (!fc || !tc) return false;
-    return fc === tc;
+    return fc === tc || !!(RT.gcomp && RT.gcomp[fc] === RT.gcomp[tc]);
   }
 
   function bfs(sources) {
@@ -361,9 +368,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var found = -1, lim = maxDepth || 99999;
     while (h < tl) {
       var t = q[h++], m = nb[t];
-      for (var d = 0; d < 4; d++) {
-        if (!(m & (1 << d))) continue;
-        var n = t + DT4[d];
+      var jl = RT.jump && RT.jump[t], nd = 4 + (jl ? jl.length : 0);
+      for (var d = 0; d < nd; d++) {
+        if (d < 4 && !(m & (1 << d))) continue;
+        var n = d < 4 ? t + DT4[d] : jl[d - 4];
         if (stamp[n] === st) continue;
         stamp[n] = st; prev[n] = t; q[tl++] = n;
         if (pred(n)) { found = n; h = tl; break; }
@@ -838,6 +846,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     RT.fields = {};
     RT.gaesT = 0;
     RT.glmPv = -1;
+    if (Z.Boats) { Z.Boats.rebuild(); refreshReach(); }
     recomputeEnclosures();
     if (Z.Coaster) Z.Coaster.updateGraph();
     if (Z.Coaster) Z.Coaster.update();
@@ -1008,8 +1017,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var pid = PI_[pathId]; if (!pid) return fail('Unknown path type');
     if (!inMap(i, j)) return fail('Outside your land');
     var t = i + j * N;
-    if (S.terrain[t] === WATER) return fail('Needs flat dry land');
-    if (cliffT(t)) return fail('Too steep — level the ground first');
+    var floating = !!D.paths[pid - 1].pontoon;
+    if (floating !== (S.terrain[t] === WATER)) return fail(floating ? 'Pontoons need open water' : 'Needs flat dry land');
+    if (!floating && cliffT(t)) return fail('Too steep — level the ground first');
     if (S.tileObj[t]) return fail('Something is in the way');
     if (S.tileEnc[t]) return fail("Can't lay paths inside an enclosure");
     if (S.path[t] === pid) return fail('Already paved');
@@ -1104,6 +1114,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (!footprintFlat(fp, 1)) return fail('Too steep — level the ground first');
       if (inEnc) return fail("Buildings can't go inside an enclosure");
       if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp); if (cr) return fail(cr); }
+      if (Z.Boats) { var br = Z.Boats.placeCheck(type, fp); if (br) return fail(br); }
       if (!adjacentPathExists(fp)) warn = 'Not connected to a path yet';
     } else {
       if (inEnc && def.inEnclosure === false) return fail("Can't place that inside an enclosure");
@@ -1692,14 +1703,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     g.prettyE = 0.3; g.nbuy = 0; g.done = 0; g.strollNext = 0; g.idle = 0; g.gAge = 0; g.ix = g.x; g.iz = g.z; g.glide = 0; g.sx = g.x; g.sz = g.z; g.spot = 0; g.lm = 0; g.wat = 0;
   }
 
-  function spawnGuest(group, first) {
+  function spawnGuest(group, first, pad) {
     gxGrid();
     var gi = GATE_I0 + (rng.chance(0.5) ? 1 : 0), t = gi + GATE_J * N;
-    if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
+    if (pad) t = pad.t;
+    else if (!S.path[t]) { t = GATE_I0 + GATE_J * N; if (!S.path[t]) return null; }
     var price = S.ticketPrice, mood = clamp(12 - Math.max(0, price - RT.value) * 1.5, -25, 12), hr = gxHr();
     var budget = rng.range(0.55, 1.45) * rng.range(0.6, 1.5) * 17 * (0.85 + 0.06 * S.rating);
+    if (pad) { budget *= 3.5; mood = 12; }
     var g = {
-      id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: cxOf(t) + rng.range(-0.8, 0.8), z: N * TILE + rng.range(0.3, 1.4),
+      id: newId(), name: rng.pick(D.guestNames), seed: Math.floor(rng.next() * 1e9), x: pad ? pad.x : cxOf(t) + rng.range(-0.8, 0.8), z: pad ? pad.z : N * TILE + rng.range(0.3, 1.4),
       heading: PI, speed: 0, state: 'walk', hunger: rng.range(6, 38), thirst: rng.range(4, 36), bladder: rng.range(0, 34), energy: rng.range(72, 100),
       happiness: 70, money: Math.round(budget), thought: '', thoughtT: 0, seen: {}, group: group,
       ti: t, ni: t, px: cxOf(t), pz: czOf(t), lo: rng.range(-0.7, 0.7), lo2: rng.range(-0.5, 0.5), bs: rng.range(2.6, 3.4),
@@ -1707,10 +1720,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       stay: 60, pv: RT.pathVer, last: 0, bid: 0, fleeT: 0, nbt: 0, isl: 0, hd: 0, fx: 0, fz: 0, unr: 0, shel: 0, ubid: 0
     };
     g.px += g.lo * 0.5; g.pz = czOf(t);
-    var pay = S.ticketPrice;
+    var pay = pad ? pad.fee : S.ticketPrice;
     gxPlan(g, hr, pay);
+    if (pad) { g.vip = 1; g.tol *= 1.5; g.al.shop = 1; g.al.treat = 1; g.al.act += 1; g.stay += hr; g.stay0 += hr; }
     S.guests.push(g); RT.gById.set(g.id, g);
-    earn(pay, 'tickets', g.x, N * TILE - 1);
+    earn(pay, 'tickets', g.x, pad ? g.z : N * TILE - 1);
     S.stats.guestsTotal++; S.stats.guestsToday = (S.stats.guestsToday || 0) + 1;
     if (!RT.groupLead.has(group)) RT.groupLead.set(group, g.id);
     bus.emit('guestAdded', g);
@@ -1738,6 +1752,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     releaseGuest(g);
     g.state = 'leave'; g.glide = 0; g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; g.fleeT = 0; g.wt = 0;
     g.thoughtT = 0; g.tcool = 0; say(g, 'leaving');
+    if (g.vip && Z.Boats) Z.Boats.vipLeave(g);
   }
 
   function objCentre(o) {
@@ -1780,7 +1795,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function pickBuilding(g, list, kind, bargainMin) {
     var bargainOnly = bargainMin !== undefined, bestAttraction = false;
-    var best = null, bs = 1e9, k, rejected = 0, cand = 0, tolE = g.tol * clamp(WX.spend, 0.5, 1.6);
+    var best = null, bestPlan = null, bs = 1e9, k, rejected = 0, cand = 0, tolE = g.tol * clamp(WX.spend, 0.5, 1.6);
     for (k = 0; k < list.length; k++) {
       var o = list[k], def = BD[o.type];
       if (kind === 'cover') { if (!gxIndoor(o)) continue; }
@@ -1794,8 +1809,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var discount = attraction && refPrice > 0 ? clamp(1 - price / refPrice, 0, 1) : 0;
       if (bargainOnly && (discount <= 0 || discount <= bargainMin)) continue;
       if (price > 0 && g.al[kind] !== undefined && g.al[kind] <= 0) continue;
-      var f = getField('b' + o.id);
-      if (!f || !(f[g.ti] < INF)) continue;
+      var f = getField('b' + o.id), plan = null, walkD;
+      if (f && f[g.ti] < INF) walkD = f[g.ti];
+      else {
+        plan = kind === 'act' && Z.Boats && Z.Boats.plan(g, 'b' + o.id);
+        if (!plan) continue;
+        walkD = plan.dist;
+      }
       cand++;
       if (price > 0 && (price > g.money * (kind === 'act' ? 0.9 : 0.8) || (refPrice > 0 && price > refPrice * tolE))) {
         rejected++;
@@ -1808,10 +1828,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (attraction && !bargainOnly) recordAttractionDemand(o.id, 'queueRejected');
         continue;
       }
-      var sc = f[g.ti] * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 8 : 0);
+      var sc = walkD * (kind === 'act' ? 0.85 : 1.6) + rng.next() * (kind === 'act' ? 24 : 12) + ql * 5 + (q ? q.use / Math.max(1, def.capacity) * 8 : 0);
       var effThrill = (def.coasterStation && Z.Coaster) ? Z.Coaster.stationExcitement(o.id) * 0.7 : (def.thrill || 0);
       if (kind === 'act') sc -= effThrill * 1.8 + (def.type === 'ride' ? 7 : 1) + discount * 4;
-      if (sc < bs) { bs = sc; best = o; bestAttraction = attraction; }
+      if (sc < bs) { bs = sc; best = o; bestAttraction = attraction; bestPlan = plan; }
     }
     if (!best) {
       if (!bargainOnly && cand > 0 && rejected === cand && kind !== 'cover') {
@@ -1823,6 +1843,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (bestAttraction) recordAttractionDemand(best.id, 'selected');
     g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = kind;
+    if (bestPlan) Z.Boats.start(g, bestPlan);
     return true;
   }
 
@@ -1851,9 +1872,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function gxGoExhibit(g, e) {
     var t = gxPickSpot(g, e);
     if (t < 0) return false;
-    var f = getField('t' + t);
-    if (!f || !(f[g.ti] < INF)) return false;
+    var f = getField('t' + t), plan = null;
+    if (!f || !(f[g.ti] < INF)) {
+      plan = Z.Boats && Z.Boats.plan(g, 't' + t);
+      if (!plan) return false;
+    }
     g.gt = 'enc'; g.gid = e.id; g.dk = 't' + t; g.spot = t; g.ni = -1; g.gAge = 0; RT.gtarg[t]++;
+    if (plan) Z.Boats.start(g, plan);
     return true;
   }
   function pickExhibit(g) {
@@ -1866,7 +1891,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     var gc = RT.comp[g.ti], reachMap = null;
-    if (gc) { reachMap = {}; reachMap[gc] = true; }
+    if (gc) {
+      reachMap = {}; reachMap[gc] = true;
+      if (RT.gcomp) for (var rc = 1; rc <= RT.compN; rc++) if (RT.gcomp[rc] === RT.gcomp[gc]) reachMap[rc] = true;
+    }
     for (k = 0; k < encs.length; k++) {
       var e = encs[k], E = RT.encx[e.id], wt = 0;
       var okR = false;
@@ -2093,6 +2121,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       g.gt = '';
     } else if (gt === 'stroll') {
       g.mood += 0.6 + 2 * g.prettyE; g.gt = ''; g.dk = '';
+    } else if (gt === 'pier') {
+      Z.Boats.board(g);
+    } else if (gt === 'pad') {
+      Z.Boats.liftOff(g);
     } else if (gt === 'exit') {
       g.gt = 'out'; g.dk = ''; g.px = g.x + rng.range(-0.5, 0.5); g.pz = N * TILE + 3; g.ni = -2;
     } else g.gt = '';
@@ -2187,7 +2219,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function revalidateGuest(g) {
     g.pv = RT.pathVer;
     var t = tileOf(g.x, g.z);
-    if (g.gt === 'out' || g.state === 'sit') return;
+    if (g.gt === 'out' || g.state === 'sit' || g.state === 'boat' || g.state === 'fly') return;
     if (S.path[t]) { if (g.ti !== t && g.ni < 0) g.ti = t; if (g.ni >= 0 && !S.path[g.ni]) g.ni = -1; if (!S.path[g.ti]) g.ti = t; g.ni = g.ni >= 0 && S.path[g.ni] ? g.ni : -1; return; }
     var i = t % N, j = (t - i) / N, best = -1, bd = 1e9;
     for (var r = 1; r <= 8 && best < 0; r++) {
@@ -2202,10 +2234,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function guestThink(g, a) {
-    if (g.state === 'ride') {
+    if (g.state === 'ride' || g.state === 'boat' || g.state === 'fly') {
       g.thoughtT -= a; g.tcool -= a; g.stay -= a;
       if (g.thoughtT <= 0 && g.thought) g.thought = '';
-      if (Z.Coaster) Z.Coaster.rideTick(g, a);
+      if (g.state === 'ride' && Z.Coaster) Z.Coaster.rideTick(g, a);
       return;
     }
     var k, hr = gxHr(), ah = a / hr, st0 = g.state, still = st0 === 'watch' || st0 === 'queue' || st0 === 'use';
@@ -2228,7 +2260,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.bladder > 60) pen += (g.bladder - 60) * 0.6;
     if (g.energy < 35) pen += (35 - g.energy) * 0.6;
     if (g.fun < 30) pen += (30 - g.fun) * 0.35;
-    var target = 44 + 22 * frac + 9 * g.prettyE + Math.min(6, (g.nsp || 0) * 1.2) + g.mood - pen;
+    var target = 44 + 22 * frac + 9 * g.prettyE + Math.min(6, (g.nsp || 0) * 1.2) + g.mood - pen - (g.vip ? 10 : 0);
     for (k = 0; k < RT.guides.length; k++) {
       var gd = RT.guides[k], dx = gd.x - g.x, dz = gd.z - g.z;
       if (dx * dx + dz * dz < 144) { target += 8; g.fun = Math.min(100, g.fun + 1 * a); break; }
@@ -2268,7 +2300,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (leave) { startLeaving(g); return; }
     } else {
       var fx = getField('exit');
-      if (!fx || fx[g.ti] === INF) { g.isl += a; if (g.isl > 12) { removeGuest(g); return false; } }
+      if (!fx || fx[g.ti] === INF) {
+        if (g.gt === 'pier' || (Z.Boats && Z.Boats.leave(g))) { g.isl = 0; gxWatchdog(g, a); return; }
+        g.isl += a; if (g.isl > 12) { removeGuest(g); return false; }
+      }
       else { g.isl = 0; if (!g.gt) { g.gt = 'exit'; g.dk = 'exit'; g.ni = -1; } }
       gxWatchdog(g, a);
       return;
@@ -2383,7 +2418,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (!g.al) gxPlan(g, gxHr(), 0);
     if (g.pv !== RT.pathVer) { if (revalidateGuest(g) === false) return; }
     var st = g.state;
-    if (st === 'ride') {
+    if (st === 'ride' || st === 'boat' || st === 'fly') {
       g.speed = 0; g.glide = 0;
     } else if (st === 'walk' || st === 'leave' || st === 'flee') {
       g.glide = 0;
@@ -2434,7 +2469,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
-      if (s === 'ride') continue;
+      if (s === 'ride' || s === 'boat' || s === 'fly') continue;
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -3492,7 +3527,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
-    var t = r[s.ri], tx = cxOf(t) + s.lo * (((t % N) & 1) ? 1 : -1), tz = czOf(t) + s.lo * 0.5;
+    var t = r[s.ri];
+    if (Z.Boats && Z.Boats.staffHop(s, t, dt)) return false;
+    var tx = cxOf(t) + s.lo * (((t % N) & 1) ? 1 : -1), tz = czOf(t) + s.lo * 0.5;
     var dx = tx - s.x, dz = tz - s.z, d = Math.sqrt(dx * dx + dz * dz), spd = staffSpeed(s), step = spd * dt;
     s.state = 'walk';
     if (d <= step + 0.01) { s.x = tx; s.z = tz; s.ti = t; s.ri++; s.speed = spd; }
@@ -3522,7 +3559,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function encReachesComp(e, c) {
     if (!c) return true;
-    for (var k = 0; k < e.viewTiles.length; k++) if (RT.comp[e.viewTiles[k]] === c) return true;
+    for (var k = 0; k < e.viewTiles.length; k++) if (RT.scomp[e.viewTiles[k]] === c) return true;
     return false;
   }
   function encNeedsKeeper(e) {
@@ -3567,13 +3604,13 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var ni = bin.i + (d === 1 ? 1 : d === 3 ? -1 : 0), nj = bin.j + (d === 2 ? 1 : d === 0 ? -1 : 0);
         if (ni < 0 || nj < 0 || ni >= N || nj >= N) continue;
         var nt = ni + nj * N;
-        if (S.path[nt] && (!sc0 || RT.comp[nt] === sc0)) return true;
+        if (S.path[nt] && (!sc0 || RT.scomp[nt] === sc0)) return true;
       }
     }
     var pt = RT.pathTiles;
     for (k = 0; k < pt.length; k++) {
       var t = pt[k];
-      if ((!sc0 || RT.comp[t] === sc0) && S.dirt[t] >= 40 && !claimed('t' + t, s)) return true;
+      if ((!sc0 || RT.scomp[t] === sc0) && S.dirt[t] >= 40 && !claimed('t' + t, s)) return true;
     }
     return false;
   }
@@ -3585,7 +3622,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return false;
   }
   function urgentTaskReady(s) {
-    var t = tileOf(s.x, s.z), sc0 = RT.comp[S.path[t] ? t : s.ti];
+    var t = tileOf(s.x, s.z), sc0 = RT.scomp[S.path[t] ? t : s.ti];
     if (s.type === 'security') return hasEscapeeToCatch(s);
     if (s.type === 'keeper') return !!pickKeeperEnc(s, sc0) || (RT.secCount === 0 && hasEscapeeToCatch(s));
     if (s.type === 'vet') return !!pickVetAnimal(s, sc0);
@@ -3642,7 +3679,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 1.2); s.tk = null; s.route = null;
     s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner' || s.type === 'mechanic') ? 'Patrolling (radio ready)' : 'Patrolling';
     var pt = RT.pathTiles; if (!pt.length || !S.path[s.ti]) return;
-    var sc0 = RT.comp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.comp[c] === sc0; }) : pt;
+    var sc0 = RT.scomp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.scomp[c] === sc0; }) : pt;
     if (!pool.length) return;
     var homeT = s.home >= 0 ? s.home : s.ti, hi = homeT % N, hj = (homeT - hi) / N;
     var tgt = pool[Math.floor(rng.next() * pool.length)];
@@ -3681,7 +3718,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function assignTask(s) {
     var k, enc, a;
     if (!staffOnPath(s)) { s.state = 'idle'; s.speed = 0; s.wt = 1; s.task = 'Waiting for path'; return; }
-    var sc0 = RT.comp[s.ti];
+    var sc0 = RT.scomp[s.ti];
     if (s.type === 'security') {
       if (RT.escaped.length) {
         for (k = 0; k < RT.escaped.length; k++) {
@@ -4430,7 +4467,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Coaster) Z.Coaster.newDay();
     if (S.loan > 0) { var intr = Math.round(S.loan * (DIFF.interest || 0.004)); if (intr) spend(intr, 'other'); }
     var t = S.finance.today;
-    var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
+    var income = t.tickets + t.food + t.shops + (t.boats || 0) + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
     var profit = income - costs;
     var rec = {}; for (var c in t) rec[c] = Math.round(t[c]);
     rec.day = S.day; rec.balance = Math.round(S.money); rec.income = Math.round(income); rec.costs = Math.round(costs); rec.profit = Math.round(profit);
@@ -4574,6 +4611,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var gs = S.guests;
     for (k = gs.length - 1; k >= 0; k--) { if (k < gs.length) guestStep(gs[k], dt); }
     if (Z.Coaster) Z.Coaster.step(dt);
+    if (Z.Boats) Z.Boats.step(dt);
     updateQueues();
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
@@ -4870,6 +4908,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     recomputeEnclosures();
     ensureInit();
     if (Z.Coaster) Z.Coaster.afterLoad();
+    if (Z.Boats) Z.Boats.afterLoad();
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to your new zoo! Build an enclosure, add some animals, and open the gates.', 'info', false);
     bus.emit('reset');
@@ -4958,6 +4997,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var g = S.guests[k];
         g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
         if (g.state === 'ride') { /* re-attached by Z.Coaster.afterLoad */ }
+        else if (g.state === 'boat' || g.state === 'fly') { g.state = g.vip ? 'leave' : 'walk'; g.gt = g.vip ? 'exit' : ''; g.dk = g.vip ? 'exit' : ''; }
         else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; }
         else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
         if (g.gt === 'out') g.gt = 'exit';
@@ -4983,6 +5023,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       initDerived();
       recomputeEnclosures();
       if (Z.Coaster) Z.Coaster.afterLoad();
+      if (Z.Boats) Z.Boats.afterLoad();
       secondly();
       bus.emit('reset');
       return true;
@@ -5017,12 +5058,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       out.issues.unshift('Keepers and vets cannot reach this enclosure: no path within 3 tiles. Lay a path beside it.');
     } else if (e.animals.length && e.viewTiles.length) {
       var keepersZ = S.staff.filter(function (st) { return st.type === 'keeper'; });
-      if (keepersZ.length && !keepersZ.some(function (ks) { return encReachesComp(e, RT.comp[ks.ti]); })) {
+      if (keepersZ.length && !keepersZ.some(function (ks) { return encReachesComp(e, RT.scomp[ks.ti]); })) {
         out.noKeeperRoute = true;
         out.issues.unshift('Keepers cannot reach this enclosure from their paths. Hire a keeper on this path network or connect it.');
       }
       var vetsZ = S.staff.filter(function (st) { return st.type === 'vet'; });
-      if (vetsZ.length && e.animals.some(function (aid) { return vetNeedsAnimal(RT.aById.get(aid)); }) && !vetsZ.some(function (v) { return encReachesComp(e, RT.comp[v.ti]); })) {
+      if (vetsZ.length && e.animals.some(function (aid) { return vetNeedsAnimal(RT.aById.get(aid)); }) && !vetsZ.some(function (v) { return encReachesComp(e, RT.scomp[v.ti]); })) {
         out.noVetRoute = true;
         out.issues.unshift('Vets cannot reach this enclosure from their paths. Hire a vet on this path network or connect it.');
       }
@@ -5060,7 +5101,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (enc) {
       if (vetNeedsAnimal(a)) {
         var vetsA = S.staff.filter(function (st) { return st.type === 'vet'; });
-        if (vetsA.length && (!enc.viewTiles.length || !vetsA.some(function (v) { return encReachesComp(enc, RT.comp[v.ti]); }))) {
+        if (vetsA.length && (!enc.viewTiles.length || !vetsA.some(function (v) { return encReachesComp(enc, RT.scomp[v.ti]); }))) {
           iss.push('Vets cannot reach this enclosure (missing or disconnected path)');
         }
       }
@@ -5074,14 +5115,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function guestReport(id) {
     var g = RT.gById.get(id); if (!g) return null;
-    return { id: g.id, name: g.name, state: g.state, thought: g.thought, money: g.money, happiness: g.happiness, needs: { hunger: g.hunger, thirst: g.thirst, bladder: g.bladder, energy: g.energy, fun: g.fun } };
+    return { id: g.id, name: g.name, vip: !!g.vip, state: g.state, thought: g.thought, money: g.money, happiness: g.happiness, needs: { hunger: g.hunger, thirst: g.thirst, bladder: g.bladder, energy: g.energy, fun: g.fun } };
   }
   function objectReport(id) {
     var o = RT.oById.get(id); if (!o) return null;
     var def = o.kind === 'building' ? BD[o.type] : SC[o.type], issues = [], connected = true;
     if (o.kind === 'building') {
-      connected = buildingConnected(o);
-      if (!connected) issues.push('Not connected to a path');
+      connected = (def.boatPier || def.helipad) && Z.Boats ? Z.Boats.connected(o) : buildingConnected(o);
+      if (!connected) issues.push(def.boatPier ? 'Needs water beside it and a path in front' : def.helipad === 'vip' ? 'Must connect to the zoo entrance by path' : 'Not connected to a path');
       if (def.type === 'staff') connected = connected;
     }
     if (o.type === 'bench' || o.type === 'bin') {
@@ -5129,6 +5170,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     fail: fail, okr: okr, dryOf: dryOf
   };
 
+  Z.boatsCtx = {
+    getS: function () { return S; },
+    getRT: function () { return RT; },
+    getN: function () { return N; },
+    BD: BD, WATER: WATER, TILE: TILE, INF: INF,
+    rng: rng, earn: earn, msg: msg, say: say, newId: newId,
+    cxOf: cxOf, czOf: czOf, heightAt: heightAt, gxHr: gxHr,
+    objFootprint: objFootprint, frontPathTiles: frontPathTiles, frontList: frontList, adjacentPathExists: adjacentPathExists,
+    sourcesFor: sourcesFor, getField: getField, isParkConnected: isParkConnected,
+    spawnGuest: spawnGuest, removeGuest: removeGuest, openNow: openNow
+  };
+
   Z.Sim = {
     newGame: newGame, tick: tick, save: save, load: load,
     terraform: terraform, heightAt: heightAt, tileSlope: tileSlope, isCliff: isCliff, inMap: inMap, cornerElev: cornerElev, mapBounds: mapBounds, maps: function () { return D.maps; }, applyMap: applyMap, previewMap: previewMap, resolveSizeN: resolveSizeN,
@@ -5138,7 +5191,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, staffCoverage: staffCoverage,
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex); insertAnimal(a); return a; },
     setTicketPrice: setTicketPrice, setPrice: setPrice, attractionDemand: attractionDemand, takeLoan: takeLoan, repayLoan: repayLoan, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
-    enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, vetNeedsAnimal: vetNeedsAnimal, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
+    enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, vetNeedsAnimal: vetNeedsAnimal, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable, canGuestReach: canGuestReach,
     // extras
     _combat: { isPredator: isPredator, isPackHunter: isPackHunter, animalBulk: animalBulk, combatPower: combatPower, packPower: packPower, gatherPack: gatherPack, findPrey: findPrey, findRivalPredator: findRivalPredator, startFight: startFight, resolveFight: resolveFight },
     isLockdown: function () { return !!(RT && RT.lockdown); },

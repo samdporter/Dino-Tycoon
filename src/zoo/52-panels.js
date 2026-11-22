@@ -225,7 +225,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function openObject(id) {
     var o = find(Z.state.objects, id); if (!o) return false;
     var isB = o.kind === 'building', def = UI.byId(isB ? D.buildings : D.scenery, o.type);
-    var subTitle = isB ? (def.rideKind === 'coaster' ? 'Rollercoaster' : ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', arcade: 'Arcade & game stall', info: 'Information', staff: 'Staff building' })[def.type] || '') : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || '';
+    var subTitle = isB ? (def.rideKind === 'coaster' ? 'Rollercoaster' : ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', arcade: 'Arcade & game stall', info: 'Information', staff: 'Staff building', transport: def.boatPier ? 'Boat landing' : 'Helipad' })[def.type] || '') : ({ tree: 'Tree', bush: 'Planting', rock: 'Rockwork', shelter: 'Shelter', deco: 'Decoration', toy: 'Enrichment' })[def.kind] || '';
     var f = frame(thumbBox(isB ? 'building' : 'scenery', o.type, 96, def.emoji), def.name, subTitle), b = f.body;
     var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tiles = []; if (fp) for (var a = 0; a < fp.w; a++) for (var c = 0; c < fp.h; c++) tiles.push({ i: fp.i0 + a, j: fp.j0 + c });
     if (tiles.length) {
@@ -239,7 +239,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     var st = h('div'), slider = null, pv = null, stats = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
     b.appendChild(st);
-    if (isB && def.price > 0) {
+    if (isB && def.type === 'transport') { if (def.price > 0) UI.Boats.fareControl(o, def, b); }
+    else if (isB && def.price > 0) {
       var max = Math.max(10, Math.round(def.price * 4)), step = def.price >= 10 ? 0.5 : 0.25;
       pv = h('b.num'); slider = h('input', { type: 'range', min: '0', max: String(max), step: String(step), value: String(o.price), 'aria-label': 'Price' });
       var pr = function () { slider.style.setProperty('--p', (slider.value / max * 100) + '%'); };
@@ -259,11 +260,12 @@ window.Z = window.Z || {}; var Z = window.Z;
         var pok = (Z.Sim && Z.Sim.plantOk ? Z.Sim.plantOk(id) : (r.thriving !== undefined ? r.thriving : null));
         var covO = isB && (q.type === 'keeper_hut' || q.type === 'vet_clinic') && Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : null;
         var stCovN = covO && fp ? covO.enclosuresInRadius(fp.cx, fp.cz, q.type === 'vet_clinic' ? covO.vetClinicTiles : covO.stationTiles) : 0;
-        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, pok, stCovN]);
+        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, pok, stCovN, isB && def.type === 'transport' ? UI.Boats.rows(q, def, r) : 0]);
         if (k !== key) {
           key = k; stats.innerHTML = ''; var rows = [];
           if (isB) {
-            if (def.type !== 'staff') {
+            if (def.type === 'transport') rows = rows.concat(UI.Boats.rows(q, def, r));
+            else if (def.type !== 'staff') {
               rows.push(['Visitors served', r.uses]); if (def.price > 0) rows.push(['Takings so far', fmt(r.income)]); rows.push(['In the queue', r.queue + (r.users ? ' (+' + r.users + ' being served)' : '')]);
               if (def.thrill > 0) rows.push(['Thrill rating', '★'.repeat(def.thrill)]);
             }

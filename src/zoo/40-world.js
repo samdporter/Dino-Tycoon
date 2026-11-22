@@ -1355,7 +1355,7 @@ function buildSurroundings() {
 }
 
 /* ------------------------------------------------------- paths and fences */
-var PY = 0.045;
+var PY = 0.045, PONTOON_Y = 0.14;
 var pathGroup, fenceGroup, cageRoofGroup, pathMeshes = [], fenceMeshes = [], pathDirty, fenceDirty, PCOL = [];
 function clearCageRoofs() {
   if (!cageRoofGroup) return;
@@ -1429,6 +1429,7 @@ function buildPathChunk(ci, cj) {
   function has(i, j) { return i >= 0 && j >= 0 && i < N && j < N && pth[i + j * N] > 0; }
   for (var j = j0; j < j1; j++) for (var i = i0; i < i1; i++) {
     var pv = pth[i + j * N]; if (!pv) continue;
+    if (types[pv - 1] && types[pv - 1].pontoon) continue;
     any = true;
     var pt = types[pv - 1] || types[0], kind = pathKind(pt, pv);
     var base = PCOL[pv - 1] || PCOL[0] || [0.5, 0.5, 0.5];
@@ -2241,7 +2242,11 @@ function updateEntities(dt, dtGame) {
       if (hasAbsY) { gy = e.absY; rec.gy = e.absY; rec.gy0 = groundY(x, z); }
       else {
         if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
-        else { var ti = (x / T) | 0, tj = (z / T) | 0; gy = groundY(x, z) + ((ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N]) ? PY : 0); }
+        else if (e.state === 'boat' && wl > -50) gy = wl + 0.3;
+        else {
+          var ti = (x / T) | 0, tj = (z / T) | 0, onPath = ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N];
+          gy = onPath && wl > -50 ? wl + PONTOON_Y : groundY(x, z) + (onPath ? PY : 0);
+        }
         rec.gy = gy + alt; rec.gy0 = gy;
       }
       rec.wl = wl;
@@ -3381,6 +3386,7 @@ function frame(dtReal) {
   updateGrime(dtReal);
   updateLamps(dtReal);
   if (Z.CoasterWorld && Z.CoasterWorld.frame) Z.CoasterWorld.frame(dtReal, dtGame);
+  if (Z.BoatsWorld) Z.BoatsWorld.frame(dtReal);
   updatePreview();
   renderer.render(scene, camera);
 }
@@ -3393,6 +3399,7 @@ World.setLockdown = function (on) { G.lockdown = !!on; if (!on) { hemi.color.set
 World.setPreview = setPreview; World.highlightEnclosure = highlightEnclosure;
 // additions (not in the contract)
 World.groundY = groundY;
+World.waterLevelAt = waterLvlAt;
 World.reseatWorld = reseatWorld;
 World.objectBox = function (id) { var r = objRecs.get(id); if (!r || !r.group) return null; var b = new THREE.Box3().setFromObject(r.group); return { min: [b.min.x, b.min.y, b.min.z], max: [b.max.x, b.max.y, b.max.z], pos: [r.group.position.x, r.group.position.y, r.group.position.z], w: r.w, h: r.h }; };
 World.project = function (x, y, z) { var o = { x: 0, y: 0, w: 0, vis: false }; if (!G.inited) return o; _vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); return projectPoint(x, y, z, o); };
