@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { readScript } = require('./game-scripts.cjs');
 
 function zoo(seed) {
   const values = new Map(seed || []);
@@ -17,8 +18,8 @@ function zoo(seed) {
     document: { readyState: 'loading', hidden: false, addEventListener() {}, getElementById: id => id === 'title' ? title : ui },
     location: { protocol: 'http:' }, performance: { now: () => 0 } });
   vm.runInContext('var window=globalThis', ctx);
-  const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx);
-  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const load = file => vm.runInContext(readScript(file, true), ctx);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = { h: node, ic: () => '', snd() {}, toast() {}, reset() {}, closeModal() {}, narrow: () => false,
     Tutorial: { restart() {} }, el: { cards: node() } };
@@ -294,8 +295,8 @@ function zooWithPlayTimer(opts) {
     innerHeight: 900
   });
   vm.runInContext('var window=globalThis', ctx);
-  const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx);
-  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const load = file => vm.runInContext(readScript(file, true), ctx);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = {
     h: (sel, a, ...kids) => {
@@ -762,8 +763,8 @@ test('Zoo UI shows 48t station badges, preview zones, inspect stats, and radio d
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   let lastPreview = null;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
@@ -2187,11 +2188,11 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  ['50-ui.js', '51-tools.js', '52-panels.js', '66-ui-coaster.js', '53-screens.js'].forEach(load);
+  ['50-ui.js', '51-tools.js', '52-panels.js', '66b-ui-coaster.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 912 });
   z.state.money = 250000; z.state.unlocked.star = 3;
@@ -2347,8 +2348,8 @@ test('Zoo Theme Park 3D models build cleanly and animate without errors', () => 
     document: { createElement: tag => tag === 'canvas' ? fakeCanvas() : {} }
   });
   ctx.window = ctx;
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '30-models.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
+  ['00-data.js', '30-models-toilets.js', '30-models.js'].forEach(load);
 
   const M = ctx.Z.Models;
   const tpBuildings = [
@@ -2652,8 +2653,8 @@ test('Zoo Theme Park 3D models and world module pass 1,000-frame animation and g
   });
   ctx.window = ctx; ctx.self = ctx;
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../vendor/three.r128.min.js'), 'utf8'), ctx, { filename: 'three.r128.min.js' });
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '30-models.js', '40-world.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '30-models-toilets.js', '30-models.js', '40-world.js'].forEach(load);
 
   const THREE = ctx.THREE;
   const M = ctx.Z.Models;
@@ -3082,12 +3083,12 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
   const cam = { target: { x: 0, z: 0 } };
   const ctx = vm.createContext({ console, THREE, Math, Float32Array, Uint8Array, Int8Array, Int16Array, Int32Array });
   vm.runInContext('var window = globalThis;', ctx);
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
+  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = { root: () => root, groundY: () => 0, cam, _G: { t: 1 } };
-  load('43-world-coaster.js');
+  load('48-world-coaster.js');
 
   assert.ok(z.CoasterWorld, 'Z.CoasterWorld should initialize');
   // All 5 station models build cleanly
@@ -3346,9 +3347,8 @@ test('Zoo animals enforce minimum enclosure width, separate cleanly, and keep fe
 });
 
 test('all Zoo species, scenery, and buildings build valid finite 3D geometry', () => {
-  const root = path.join(__dirname, '..');
   const ctx = {
-    THREE: require(path.join(root, 'vendor/three.r128.min.js')),
+    THREE: require('../vendor/three.r128.min.js'),
     console, Math, Array, Object, Number, String, Boolean, RegExp, Date, JSON,
     Float32Array, Uint16Array, Uint32Array, Int32Array,
     document: { createElement: () => ({ width: 256, height: 64, getContext: () => ({ fillStyle: '', strokeStyle: '', lineWidth: 0, font: '', textAlign: '', textBaseline: '', fillRect() {}, strokeRect() {}, fillText() {} }) }) },
@@ -3356,8 +3356,8 @@ test('all Zoo species, scenery, and buildings build valid finite 3D geometry', (
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ['src/zoo/00-data.js', 'src/zoo/30-models.js']) {
-    vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx, { filename: f });
+  for (const f of ['00-data.js', '30-models-toilets.js', '30-models.js']) {
+    vm.runInContext(readScript(f, true), ctx, { filename: f });
   }
   const checkObj = (obj, label) => {
     let verts = 0;

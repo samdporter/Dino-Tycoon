@@ -1,11 +1,9 @@
 // Run with: node --test tests/coaster.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript, simulationScripts } = require('./game-scripts.cjs');
 
-const root = path.resolve(__dirname, '..');
 
 function game() {
   const ctx = vm.createContext({
@@ -13,11 +11,9 @@ function game() {
     btoa: s => Buffer.from(s, 'binary').toString('base64'),
     atob: s => Buffer.from(s, 'base64').toString('binary')
   });
-  const simFiles = fs.readdirSync(path.join(root, 'src'))
-    .filter(f => /^(00|10|2\d)-.*\.js$/.test(f))
-    .sort();
+  const simFiles = simulationScripts();
   for (const f of simFiles) {
-    vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+    vm.runInContext(readScript(f), ctx, { filename: f });
   }
   return ctx.Z;
 }
@@ -505,8 +501,8 @@ test('Dino Coasters: 3D Z.CoasterWorld renderer, 4-rotation arrows, overlay sync
   });
   vm.runInContext('var window = globalThis;', ctx);
 
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  ['00-data.js', 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = {
@@ -626,8 +622,8 @@ test('Dino Coasters: Large Loop-de-Loop (6), Large Corkscrew (7) & 3D rendering'
     Int32Array
   });
   vm.runInContext('var window = globalThis;', ctx);
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  ['00-data.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  ['00-data.js', 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = {

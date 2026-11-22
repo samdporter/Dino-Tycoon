@@ -1,14 +1,14 @@
 // Run with: node --test tests/*.test.cjs
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const { gameScripts, readScript, simulationScripts } = require('./game-scripts.cjs');
 const root = path.resolve(__dirname, '..');
 function game() {
   const ctx = vm.createContext({ console, btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary') });
-  const simFiles = fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
-  for (const f of simFiles) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  const simFiles = simulationScripts();
+  for (const f of simFiles) vm.runInContext(readScript(f), ctx, { filename: f });
   return ctx.Z;
 }
 test('simulation actions and typed terrain survive saving/loading', () => {
@@ -678,8 +678,8 @@ test('UI cards, toolstrip, placement plan, and inspect panel render building spe
   ctx.window = ctx;
   ctx.addEventListener = () => {};
 
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  simulationScripts().forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
   load('50-ui.js');
@@ -925,8 +925,8 @@ test('Finances modal shows offered loan rate, circumstance factors, active loans
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  simulationScripts().forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
   load('50-ui.js'); load('53-screens.js');
@@ -1196,8 +1196,8 @@ test('all build categories including aviary and tagging render all cards at 5 st
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  simulationScripts().forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
   z.RealmsWorld = { overlayOn: () => false, setOverlay() {}, showRange() {} };
@@ -1548,8 +1548,8 @@ test('UI displays ranger and ranger station range badges, placement preview ring
     btoa: s => Buffer.from(s, 'binary').toString('base64'), atob: s => Buffer.from(s, 'base64').toString('binary')
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
-  const load = f => vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
-  fs.readdirSync(path.join(root, 'src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort().forEach(load);
+  const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
+  simulationScripts().forEach(load);
   const z = ctx.Z;
   let lastPreview = null;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
@@ -2294,8 +2294,8 @@ test('all Dino species, scenery, and buildings build valid finite 3D geometry', 
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  const files = fs.readdirSync(path.join(root, 'src')).filter((f) => /^(0\d|3\d)-.*\.js$/.test(f)).sort();
-  for (const f of files) vm.runInContext(fs.readFileSync(path.join(root, 'src', f), 'utf8'), ctx, { filename: f });
+  const files = Array.from(gameScripts().keys()).filter(f => /^(0\d|3\d)-/.test(f));
+  for (const f of files) vm.runInContext(readScript(f), ctx, { filename: f });
 
   const checkObj = (obj, label) => {
     let verts = 0;

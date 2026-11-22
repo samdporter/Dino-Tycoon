@@ -1,4 +1,5 @@
-// Wild Acres Zoo — Custom Rollercoaster UI, Tools & Inspect Panels (Zoo Tycoon only)
+// ===== 66b-ui-coaster.js =====
+// Custom Rollercoaster UI, Tools & Inspect Panels
 (function () {
   'use strict';
   var Z = window.Z, UI = Z && Z.UI, D = Z && Z.DATA;
@@ -28,9 +29,20 @@
     return selected + ' recent choices to visit this ride.';
   }
 
+  if (typeof document !== 'undefined' && document.head) {
+    var st = document.createElement('style');
+    st.setAttribute('data-coaster', '1');
+    st.textContent = '.drawer-mode{flex:0 0 auto;align-self:center}' +
+      '#coasterRide{position:fixed;bottom:calc(74px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);z-index:30;display:none;background:rgba(18,24,32,0.92);color:#fff;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);font:600 13px var(--sans,sans-serif);align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.2);pointer-events:auto}' +
+      '#coasterRide.on{display:flex}';
+    document.head.appendChild(st);
+  }
+
   // ---- 1. Coaster Tab Items ----
   function items(bd) {
-    var stations = bd(['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'], 'stations')();
+    var stationIds = ['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'];
+    var stations = bd(stationIds, 'stations')();
+    var ovOn = !!(Z.CoasterWorld && Z.CoasterWorld.isOverlay && Z.CoasterWorld.isOverlay());
     var track = [
       { kind: 'ctrack', id: 'ctrack', name: 'Build Track', emoji: '🛤️', cost: 35, unit: '/tile', star: 0, tpCat: 'track', coasterTool: true,
         tip: 'Drag from the green arrow on a coaster station around in a loop to the amber arrow. Curves and hills smooth automatically!' },
@@ -40,7 +52,7 @@
         tip: 'Click or drag over coaster track to lower its height.' },
       { kind: 'ctrackrm', id: 'ctrackrm', name: 'Remove Track', emoji: '✂️', cost: 0, priceHtml: '50% back', star: 0, tpCat: 'track', coasterTool: true,
         tip: 'Drag over coaster track tiles to dismantle them.' },
-      { kind: 'cview', id: 'cview', name: 'Track Overlay', emoji: '🗺️', cost: 0, priceHtml: 'Toggle', star: 0, tpCat: 'track', coasterTool: true,
+      { kind: 'cview', id: 'cview', name: 'Track Overlay', emoji: '🗺️', cost: 0, priceHtml: ovOn ? 'On' : 'Off', star: 0, tpCat: 'track', coasterTool: true,
         tip: 'Highlight coaster track heights, station connection arrows, and special pieces.' }
     ];
     var specials = CD.specials.map(function (sp) {
@@ -137,11 +149,17 @@
       }
     } else {
       // Strictly inline exterior snap: only snap if rt[0] is the exact inline tile in front of endF or endB!
+      // Skip if rt[1] is already inside that station (player is dragging INTO the station).
       for (var s = 0; s < X.stations.length; s++) {
         var stA = X.stations[s];
-        if (rt.length >= 2 && X.stAt[rt[1]] === s) continue;
-        if (rt[0] === stepTile(stA.endF, stA.fd)) { rt.unshift(stA.endF); break; }
-        if (rt[0] === stepTile(stA.endB, stA.bd)) { rt.unshift(stA.endB); break; }
+        if (rt[0] === stepTile(stA.endF, stA.fd)) {
+          if (!(rt.length >= 2 && X.stAt[rt[1]] === s)) rt.unshift(stA.endF);
+          break;
+        }
+        if (rt[0] === stepTile(stA.endB, stA.bd)) {
+          if (!(rt.length >= 2 && X.stAt[rt[1]] === s)) rt.unshift(stA.endB);
+          break;
+        }
       }
     }
 
@@ -169,9 +187,14 @@
     } else {
       for (var s2 = 0; s2 < X.stations.length; s2++) {
         var stB = X.stations[s2];
-        if (rt.length >= 2 && X.stAt[rt[rt.length - 2]] === s2) continue;
-        if (lastT === stepTile(stB.endF, stB.fd) && rt[0] !== stB.endF) { rt.push(stB.endF); break; }
-        if (lastT === stepTile(stB.endB, stB.bd) && rt[0] !== stB.endB) { rt.push(stB.endB); break; }
+        if (lastT === stepTile(stB.endF, stB.fd) && rt[0] !== stB.endF) {
+          if (!(rt.length >= 2 && X.stAt[rt[rt.length - 2]] === s2)) rt.push(stB.endF);
+          break;
+        }
+        if (lastT === stepTile(stB.endB, stB.bd) && rt[0] !== stB.endB) {
+          if (!(rt.length >= 2 && X.stAt[rt[rt.length - 2]] === s2)) rt.push(stB.endB);
+          break;
+        }
       }
     }
     return rt;
@@ -392,7 +415,7 @@
           }
         }
         var demand = Z.Sim && Z.Sim.attractionDemand ? Z.Sim.attractionDemand(o.id) : null;
-        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.hasBad, info.stallReason, info.loop, info.branch, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.price, demand, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
+        var key = JSON.stringify([info.ready, info.broken, info.condition, info.eng, mechCount, mechStaff ? mechStaff.id : 0, info.energyOk, info.stallReason, info.loop, info.branch, info.hasBad, info.trackLen, info.excitement, info.intensity, info.maxHeight, info.totalDrop, info.overlooks.length, info.queueLen, info.trains.length, info.connected, info.paused, o.price, demand, o.uses, Math.round(o.income || 0), info.trains.map(function (t) { return [t.id, t.state, t.cars]; })]);
         if (key === lastKey) return true;
         lastKey = key;
         syncPrice();
@@ -405,9 +428,7 @@
           statusEl.appendChild(h('ul.issues', h('li.ok', { text: info.paused ? 'Paused — closed to guests' : 'Circuit complete & running!' })));
         } else if (info.branch) {
           statusEl.appendChild(kit.issuesList(['Track cannot branch or cross — remove extra branches']));
-        } else if (info.loop && info.hasBad) {
-          statusEl.appendChild(kit.issuesList([info.stallReason || 'No room for coaster supports under part of the track — clear obstacles under long spans']));
-        } else if (info.loop && !info.energyOk && info.stallReason) {
+        } else if (info.loop && (info.hasBad || !info.energyOk) && info.stallReason) {
           statusEl.appendChild(kit.issuesList([info.stallReason]));
         } else {
           statusEl.appendChild(kit.issuesList(['Incomplete circuit — drag track from the green station arrow around in a loop to the amber arrow']));
@@ -594,13 +615,11 @@
   }
 
   // ---- 5. Ride-Along Floating Pill, Station Placement Guide Toast & Breakdown Banner ----
+  // Escape handling is centralized in 51-tools.js so exiting Ride Along never conflicts with tools/panels.
   var ridePill = null;
   function showRidePill(trainId) {
     if (!ridePill && typeof document !== 'undefined') {
-      ridePill = h('div', {
-        id: 'coasterRide',
-        style: 'position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:900;display:none;background:rgba(18,24,32,0.92);color:#fff;padding:8px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,0.4);font:600 13px var(--sans,sans-serif);align-items:center;gap:10px;border:1px solid rgba(255,255,255,0.2)'
-      });
+      ridePill = h('div', { id: 'coasterRide' });
       var lbl = h('span', { text: '🎢 Riding Rollercoaster' });
       var exitBtn = h('button', {
         text: 'Leave Train (Esc)',
@@ -610,17 +629,13 @@
       ridePill.appendChild(lbl);
       ridePill.appendChild(exitBtn);
       if (document.body) document.body.appendChild(ridePill);
-      if (typeof window !== 'undefined' && window.addEventListener) {
-        window.addEventListener('keydown', function (e) {
-          if (e.key === 'Escape' && Z.CoasterWorld && Z.CoasterWorld.isRiding()) Z.CoasterWorld.endRide();
-        });
-      }
     }
-    if (ridePill) ridePill.style.display = trainId ? 'flex' : 'none';
+    if (ridePill) ridePill.classList.toggle('on', !!trainId);
   }
 
   if (Z.bus && Z.bus.on) {
     Z.bus.on('coasterRide', showRidePill);
+    Z.bus.on('reset', function () { showRidePill(0); });
     Z.bus.on('objectAdded', function (o) {
       if (!o || o.kind !== 'building') return;
       var def = UI.byId(D.buildings, o.type);

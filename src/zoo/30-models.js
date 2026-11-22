@@ -5996,27 +5996,7 @@ BLD.coffee_cart = function (grp0) {
   grp0.add(labelMesh('COFFEE', 0x5a3a24, 0xf4ead0, 0.8, 0.2, 0, 0.38, 0.456, 0));
 };
 BLD.toilets = function (grp0) {
-  var g = B();
-  g.bevelBox(3.66, 0.12, 1.76, 0.03, 0, 0.06, 0, 0x8d8a84);
-  g.bevelBox(3.42, 2.0, 1.52, 0.05, 0, 1.12, 0, 0xd8dce0);
-  gable(g, 3.44, 1.54, 2.12, 0.56, 0x5a6672, 0.20);
-  g.bevelBox(3.56, 0.12, 1.66, 0.03, 0, 2.12, 0, 0x4b5662);
-  g.bevelBox(3.54, 0.22, 0.05, 0.015, 0, 1.88, 0.77, 0x6a8aa8);
-  for (var px = -1; px <= 1; px += 2) {
-    g.cyl(0.06, 0.06, 2.0, px * 1.68, 1.12, 0.74, 0xc2c8d0, { seg: 6 });
-    g.cyl(0.22, 0.17, 0.26, px * 1.52, 0.18, 0.94, 0x9a7860, { seg: 8 });
-    g.sph(0.21, 0.22, 0.21, px * 1.52, 0.40, 0.94, 0x3f8a4a, { s: [6, 5] });
-  }
-  var door = function (x, col, fem) {
-    g.bevelBox(0.8, 1.5, 0.06, 0.015, x, 0.9, 0.76, col); g.bevelBox(0.92, 1.62, 0.04, 0.015, x, 0.9, 0.74, 0xf4f4f4); g.sph(0.04, 0.04, 0.04, x + 0.3, 0.85, 0.82, 0xe8c040, { s: [4, 3] });
-    g.sph(0.07, 0.07, 0.03, x, 1.5, 0.8, 0xffffff, { s: [6, 4] }); g.box(fem ? 0.1 : 0.14, 0.22, 0.03, x, 1.32, 0.8, 0xffffff);
-    if (fem) g.cone(0.14, 0.22, x, 1.26, 0.8, 0xffffff, { seg: 3 });
-    else { g.box(0.04, 0.16, 0.03, x - 0.1, 1.3, 0.8, 0xffffff); g.box(0.04, 0.16, 0.03, x + 0.1, 1.3, 0.8, 0xffffff); }
-  };
-  door(-0.9, 0x3b82f6, false); door(0.9, 0xf472b6, true);
-  windowAt(g, 0, 1.45, 0.77, 0.45, 0.35, 0xffffff, 0xaed8f0); g.bevelBox(0.55, 0.3, 0.05, 0.015, 0, 1.0, 0.77, 0x6a8aa8);
-  grp0.add(mesh(g.build()));
-  grp0.add(labelMesh('WC', 0x6a8aa8, 0xffffff, 0.45, 0.25, 0, 1.0, 0.8, 0));
+  Z.SharedModels.toilets(grp0, API.kit);
 };
 BLD.gift_shop = function (grp0) {
   var g = B();
@@ -6848,6 +6828,7 @@ API.setDetail = function (d) {
   unitCache = {}; bodyCache = {}; legCache = {}; armCache = {}; propCache = {}; sceneryGeoCache = {}; partsCache = {};
 };
 API.getDetail = function () { return DETAIL; };
+API.kit = { B: B, mesh: mesh, gable: gable, windowAt: windowAt, labelMesh: labelMesh };
 API.speciesIds = function () { return Object.keys(QUADS).concat(Object.keys(OTHERS)); };
 return API;
 })();

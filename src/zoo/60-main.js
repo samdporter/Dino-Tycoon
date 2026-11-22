@@ -5,7 +5,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   'use strict';
   var Main = Z.Main = { playing: false }, UI = Z.UI, h = UI.h, ic = UI.ic, N = Z.N;
   Z.bus.on('gridsize', function (n) { N = n; });
-  var SAVE_KEY = 'wildacres.save.v1', SET_KEY = 'wildacres.settings.v1';
+  var storageKeys = Z.GameConfig.storage;
+  var SAVE_KEY = storageKeys.saveKey, SET_KEY = storageKeys.settingsKey;
   var mem = {}, settings = { sound: true, quality: 'auto', shadows: true, impostors: false }, titleEl, last = 0, saveT = 0, orbit = 0.4, saveFailed = false;
   var ema = 0.016, slowT = 0, prCap = 2, budget = 3200, qOpts = { detail: 1.5, shadows: true, impostors: false, farScale: 1.15 };
   var QUAL = {

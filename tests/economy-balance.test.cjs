@@ -1,14 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript } = require('./game-scripts.cjs');
 
 function zoo(seed) {
   const ctx = vm.createContext({ console, setTimeout, clearTimeout, URL: globalThis.URL || {}, Blob: globalThis.Blob || {}, FileReader: globalThis.FileReader || {},
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, location: { protocol: 'http:' }, performance: { now: () => 0 } });
-  for (const file of ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js']) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/zoo', file), 'utf8'), ctx, { filename: file });
+  for (const file of ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js']) {
+    vm.runInContext(readScript(file, true), ctx, { filename: file });
   }
   const z = ctx.Z;
   z.Sim.newGame({ seed, map: 'meadow', money: 250000 });

@@ -4997,7 +4997,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       for (k = 0; k < S.guests.length; k++) {
         var g = S.guests[k];
         g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
-        if (g.state === 'ride') { /* re-attached by Z.Coaster.afterLoad */ }
+        if (g.state === 'ride' && g.coasterTrain) { /* re-attached by Z.Coaster.afterLoad */ }
         else if (g.state === 'boat' || g.state === 'fly') { g.state = g.vip ? 'leave' : 'walk'; g.gt = g.vip ? 'exit' : ''; g.dk = g.vip ? 'exit' : ''; }
         else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; }
         else { g.state = 'walk'; g.gt = ''; g.dk = ''; }

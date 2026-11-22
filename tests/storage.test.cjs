@@ -1,10 +1,9 @@
 // Unit tests exercise backend failures. Real IndexedDB is covered by test_browser.py.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
-const source = fs.readFileSync(path.join(__dirname, '../src/15-storage.js'), 'utf8');
+const { readScript } = require('./game-scripts.cjs');
+const source = readScript('15-storage.js');
 const SAVE = 'amberacres.save.v2';
 function storage(options = {}) {
   const local = options.local || new Map(), records = options.records || new Map();
@@ -34,7 +33,9 @@ function storage(options = {}) {
     return request;
   } };
   const window = {};
-  vm.runInNewContext(source, { window, localStorage, indexedDB, navigator: {}, setTimeout, clearTimeout, console });
+  const ctx = vm.createContext({ window, localStorage, indexedDB, navigator: {}, setTimeout, clearTimeout, console });
+  vm.runInContext(readScript('dino-config.js'), ctx);
+  vm.runInContext(source, ctx);
   return { api: window.Z.Storage, local, records };
 }
 test('legacy localStorage raw save is readable after startup', async () => {

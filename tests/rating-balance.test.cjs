@@ -1,9 +1,8 @@
 // Attraction and facility rating behavior for both games.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript, simulationScripts } = require('./game-scripts.cjs');
 
 function loadGame(zooGame) {
   function node() { return { appendChild() {}, classList: { add() {}, remove() {}, toggle() {} }, style: {}, innerHTML: '', className: '' }; }
@@ -12,10 +11,8 @@ function loadGame(zooGame) {
     document: { readyState: 'loading', hidden: false, addEventListener() {}, getElementById: id => id === 'title' ? title : ui },
     location: { protocol: 'http:' }, performance: { now: () => 0 }, localStorage: { getItem: k => values.get(k) || null, setItem: (k,v) => values.set(k,String(v)), removeItem: k => values.delete(k) } });
   vm.runInContext('var window=globalThis', ctx);
-  const base = zooGame ? 'src/zoo/' : 'src/';
-  const load = file => vm.runInContext(fs.readFileSync(path.join(__dirname, '../' + base + file), 'utf8'), ctx);
-  const simFiles = zooGame ? ['00-data.js', '10-core.js', '20-sim.js', '24-sim-coaster.js']
-    : fs.readdirSync(path.join(__dirname, '../src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
+  const load = file => vm.runInContext(readScript(file, zooGame), ctx);
+  const simFiles = simulationScripts(zooGame);
   simFiles.forEach(load);
   const z = ctx.Z;
   z.UI = { h: node, ic: () => '', snd() {}, toast() {}, reset() {}, closeModal() {}, narrow: () => false, Tutorial: { restart() {} }, el: { cards: node() } };

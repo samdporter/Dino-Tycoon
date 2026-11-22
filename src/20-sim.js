@@ -5455,7 +5455,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     addBack: function (an) { S.animals.push(an); RT.aById.set(an.id, an); }, addAnimal: addAnimal, cliffT: cliffT, cxOf: cxOf, czOf: czOf, fxOf: fxOf, spawnGuestHook: null, lc: lc, gateTile: function () { return GATE_I0 + GATE_J * N; }
   };
 
-  // Context for the rollercoaster package (src/21-sim-coaster.js)
+  // Context for the shared rollercoaster package.
   Z.coasterCtx = {
     getS: function () { return S; },
     getRT: function () { return RT; },

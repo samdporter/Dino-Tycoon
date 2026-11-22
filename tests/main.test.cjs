@@ -1,9 +1,8 @@
 // Lifecycle integration without a renderer; actual DOM interaction is in Playwright.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { readScript, simulationScripts } = require('./game-scripts.cjs');
 function main() {
   const saved = new Map(), notices = []; let candidateValues = null;
   function node() { return { appendChild() {}, classList: { add() {}, remove() {} }, style: {}, innerHTML: '' }; }
@@ -11,8 +10,8 @@ function main() {
     btoa: s => Buffer.from(s,'binary').toString('base64'), atob: s => Buffer.from(s,'base64').toString('binary'),
     document: {readyState:'loading',addEventListener(){},getElementById:node}, location:{protocol:'http:'} });
   vm.runInContext('var window=globalThis',ctx);
-  const load = f => vm.runInContext(fs.readFileSync(path.join(__dirname,'../src',f),'utf8'),ctx);
-  const simFiles = fs.readdirSync(path.join(__dirname,'../src')).filter(f => /^(00|10|2\d)-.*\.js$/.test(f)).sort();
+  const load = f => vm.runInContext(readScript(f),ctx);
+  const simFiles = simulationScripts();
   simFiles.forEach(load);
   const z=ctx.Z;
   z.Storage={get:k=>saved.get(k)||null,getCandidates:k=>candidateValues || [saved.get(k)||null],set:(k,v)=>{saved.set(k,v);candidateValues=null;return Promise.resolve(true)},requestPersistence(){}};

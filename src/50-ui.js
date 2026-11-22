@@ -531,6 +531,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       } },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'picnic_table', 'sign', 'fossil_skeleton']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.filter(function (s) { return s.id !== 'scientist'; }).map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
+      { id: 'coasters', name: 'Coasters', icon: 'coaster', items: function () { return UI.Coaster ? UI.Coaster.items(bd) : []; } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
     ];
     if (UI.extraCats) UI.extraCats.forEach(function (c) { CATS.splice(CATS.length - 1, 0, c); });   // other packages (moats) add build categories
