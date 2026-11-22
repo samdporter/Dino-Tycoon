@@ -24,7 +24,7 @@ function readScript(file, zoo = false) {
 
 function simulationScripts(zoo = false, boats = false) {
   return Array.from(gameScripts(zoo).keys()).filter(file =>
-    /^(00|10|2\d\w?)-/.test(file) || file.endsWith('-config.js')
+    /^(00|10|19|2\d\w?)-/.test(file) || file.endsWith('-config.js')
   ).filter(file => boats || !file.endsWith('-sim-boats.js'));
 }
 

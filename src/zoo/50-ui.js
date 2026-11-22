@@ -4,30 +4,9 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var D = Z.DATA, UI = Z.UI = { held: {}, tool: null, sel: null, cat: null, prefs: {} };
-  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $ = Z.sharedUI.$, h = Z.sharedUI.h;
 
   // ------------------------------------------------------------------ helpers
-  function h(sel, a) {
-    var m = /^([a-z0-9]*)((?:[.#][\w-]+)*)/i.exec(sel), el = document.createElement(m[1] || 'div'), k, i;
-    (m[2].match(/[.#][\w-]+/g) || []).forEach(function (t) { if (t[0] === '#') el.id = t.slice(1); else el.classList.add(t.slice(1)); });
-    var kids = Array.prototype.slice.call(arguments, 1);
-    if (a && a.constructor === Object) {
-      kids.shift();
-      for (k in a) {
-        if (k === 'html') el.innerHTML = a[k]; else if (k === 'text') el.textContent = a[k];
-        else if (k === 'on') { for (var ev in a.on) el.addEventListener(ev, a.on[ev]); }
-        else if (k === 'style') el.style.cssText = a[k];
-        else if (a[k] !== false && a[k] != null) el.setAttribute(k, a[k] === true ? '' : a[k]);
-      }
-    }
-    (function add(list) {
-      for (i = 0; i < list.length; i++) {
-        var c = list[i]; if (c == null || c === false) continue;
-        if (Array.isArray(c)) add(c); else el.appendChild(c.nodeType ? c : document.createTextNode(c));
-      }
-    })(kids);
-    return el;
-  }
   UI.h = h; UI.$ = $;
   function fmt(n) { n = Math.round(n || 0); return (n < 0 ? '-' : '') + '£' + Math.abs(n).toLocaleString('en-GB'); }
   function fmt2(n) { return '£' + (Math.round(n * 100) / 100).toFixed(2); }

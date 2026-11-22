@@ -5,7 +5,7 @@ const { readScript } = require('./game-scripts.cjs');
 
 function park(zoo) {
   const ctx = vm.createContext({});
-  const files = ['00-data.js', zoo ? 'zoo-config.js' : 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'];
+  const files = ['00-data.js', zoo ? 'zoo-config.js' : 'dino-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'];
   for (const file of files) {
     let source = readScript(file, zoo);
     if (file === '20-sim.js') {

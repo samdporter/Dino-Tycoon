@@ -4,44 +4,20 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA;
-  var Screens = UI.Screens = {}, el, tabEls = {}, curTab = null, tabUpdate = null, pausedBy = false, pressing = false, tick = 0;
+  var Screens = UI.Screens = {};
   var TABS = [['ov', 'Overview', 'star'], ['fin', 'Finances', 'coin'], ['ani', 'Animals', 'paw'], ['gst', 'Guests', 'guests'], ['stf', 'Staff', 'person'], ['goals', 'Goals', 'flag'], ['msg', 'News', 'bell'], ['guide', 'Guide', 'book'], ['set', 'Settings', 'gear']];
   var BUILD = { ov: ovTab, fin: finTab, ani: aniTab, gst: gstTab, stf: stfTab, goals: goalsTab, msg: msgTab, guide: function (b) { return UI.Guide && UI.Guide.build ? UI.Guide.build(b) : null; }, set: setTab };
+  var standardTabs = Z.createStandardTabs(UI, D, fmt, bar, h, ic);
 
-  Screens.init = function () {
-    el = UI.el; var m = el.modal; m.innerHTML = '';
-    var tabs = h('div#mtabs');
-    TABS.forEach(function (t) { var b = h('button', { html: ic(t[2]) + '<span>' + t[1] + '</span>', 'data-t': t[0], on: { click: function () { UI.snd('click'); Screens.open(t[0]); } } }); tabEls[t[0]] = b; tabs.appendChild(b); });
-    el.mbody = h('div#mbody');
-    var box = h('div#mbox', h('div#mhead', tabs, h('button#mclose', { html: ic('close'), 'aria-label': 'Close', on: { click: function () { UI.snd('click'); UI.closeModal(); } } })), el.mbody);
-    m.appendChild(box);
-    m.addEventListener('pointerdown', function (e) { if (e.target === m) UI.closeModal(); else pressing = true; });
-    window.addEventListener('pointerup', function () { pressing = false; }); window.addEventListener('pointercancel', function () { pressing = false; });
-  };
-  UI.modalOpen = function () { return el && el.modal.classList.contains('on'); };
-  UI.openModal = function (tab) {
-    var S = Z.state;
-    if (!UI.modalOpen()) { if (S.speed > 0) { UI.lastSpeed = S.speed; Z.Sim.setSpeed(0); pausedBy = true; } else pausedBy = false; }
-    if (UI.Panel) UI.Panel.closeSheet();
-    if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false);
-    el.modal.classList.add('on'); UI.unread = 0; Screens.open(tab || 'ov');
-  };
-  UI.closeModal = function () {
-    if (!UI.modalOpen()) return;
-    el.modal.classList.remove('on'); curTab = null; tabUpdate = null; el.mbody.innerHTML = '';
-    if (pausedBy && Z.state.speed === 0 && !Z.state.gameOver) Z.Sim.setSpeed(UI.lastSpeed || 1); pausedBy = false;
-  };
-  Screens.open = function (t) {
-    curTab = t; for (var k in tabEls) tabEls[k].classList.toggle('on', k === t);
-    el.mbody.innerHTML = ''; el.mbody.scrollTop = 0; tabUpdate = BUILD[t](el.mbody) || null;
-    var b = tabEls[t]; if (b && b.scrollIntoView) { try { b.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch (e) { } }
-    if (UI.Tutorial) UI.Tutorial.onModal && UI.Tutorial.onModal(t);
-  };
-  Screens.update = function () {
-    if (!UI.modalOpen() || !tabUpdate) return;
-    tick++; if (tick % 4 !== 0 || pressing) return;
-    var sc = el.mbody.scrollTop; tabUpdate(); el.mbody.scrollTop = sc;
-  };
+  var shell = Z.createScreenShell(UI, { screens: Screens, tabs: TABS, build: function (tab, body) { return BUILD[tab](body); }, beforeOpen: function () {
+      if (UI.PlayTimer && UI.PlayTimer.open) UI.PlayTimer.open(false);
+  } });
+  Screens.init = shell.init;
+  UI.modalOpen = shell.modalOpen;
+  UI.openModal = shell.openModal;
+  UI.closeModal = shell.closeModal;
+  Screens.open = shell.open;
+  Screens.update = shell.update;
   function bar(frac, label) { var f = UI.clamp(frac, 0, 1); return h('div.bar' + (f > 0.6 ? '' : f > 0.35 ? '.mid' : '.low'), h('i', { style: 'width:' + Math.round(f * 100) + '%' })); }
   function box(title) { var b = h('div.box'); if (title) b.appendChild(h('h4', { text: title })); for (var i = 1; i < arguments.length; i++) if (arguments[i]) b.appendChild(arguments[i]); return b; }
   function starRow(r, size) {
@@ -278,23 +254,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
 
   // ------------------------------------------------------------------ guests
-  function gstTab(b) {
-    var top = h('div.box'), needs = h('div.box'), th = h('div.box'); b.appendChild(top); b.appendChild(needs); b.appendChild(th);
-    function upd() {
-      var S = Z.state, gs = S.guests, n = gs.length;
-      function avg(f) { var s = 0; gs.forEach(function (g) { s += f(g); }); return n ? s / n : 0; }
-      top.innerHTML = ''; top.appendChild(h('div', { style: 'display:flex;gap:16px;flex-wrap:wrap' }, h('div', h('div.big', { text: String(n) }), h('div', { style: 'font-size:12px;color:var(--ink2)', text: 'in the zoo now' })), h('div', h('div.big', { text: n ? Math.round(avg(function (g) { return g.happiness; })) + '%' : '-' }), h('div', { style: 'font-size:12px;color:var(--ink2)', text: 'average happiness' })), h('div', h('div.big', { text: S.stats.guestsTotal.toLocaleString('en-GB') }), h('div', { style: 'font-size:12px;color:var(--ink2)', text: 'visitors so far' }))));
-      needs.innerHTML = ''; needs.appendChild(h('h4', { text: 'What guests are feeling' }));
-      if (!n) { needs.appendChild(h('div.fact', { text: Z.Sim.isOpenNow() ? 'No guests right now. Animals, paths and a pleasant price draw them in.' : 'The zoo is closed. Gates open at 08:00.' })); }
-      else [['Happiness', avg(function (g) { return g.happiness; }) / 100], ['Fed', 1 - avg(function (g) { return g.hunger; }) / 100], ['Hydrated', 1 - avg(function (g) { return g.thirst; }) / 100], ['Comfort', 1 - avg(function (g) { return g.bladder; }) / 100], ['Energy', avg(function (g) { return g.energy; }) / 100], ['Entertained', avg(function (g) { return g.fun || 0; }) / 100]].forEach(function (r) { needs.appendChild(h('div', { style: 'display:grid;grid-template-columns:90px 1fr 40px;gap:8px;align-items:center;font-size:12.5px' }, h('span', { style: 'font-weight:700;color:var(--ink2)', text: r[0] }), bar(r[1]), h('b.num', { style: 'text-align:right', text: Math.round(r[1] * 100) + '%' }))); });
-      th.innerHTML = ''; th.appendChild(h('h4', { text: 'What they are saying' })); var cnt = {};
-      gs.forEach(function (g) { if (g.thought) cnt[g.thought] = (cnt[g.thought] || 0) + 1; });
-      var top6 = Object.keys(cnt).sort(function (x, y) { return cnt[y] - cnt[x]; }).slice(0, 7);
-      if (!top6.length) th.appendChild(h('div', { style: 'font-size:13px;color:var(--ink2)', text: 'Quiet at the moment.' }));
-      top6.forEach(function (t) { th.appendChild(h('div.thought', h('span', { text: '“' + t + '”' }), h('b', { text: '×' + cnt[t] }))); });
-    }
-    upd(); return upd;
-  }
+  function gstTab(b) { return standardTabs.guests('zoo')(b); }
 
   // ------------------------------------------------------------------ staff
   function stfTab(b) {
@@ -321,26 +281,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
 
   // ------------------------------------------------------------------ goals / messages
-  function goalsTab(b) {
-    var wrap = h('div', { style: 'display:flex;flex-direction:column;gap:8px' }); b.appendChild(wrap);
-    function upd() {
-      var S = Z.state; wrap.innerHTML = ''; var done = 0;
-      D.goals.forEach(function (g) {
-        var isDone = !!S.goals[g.id]; if (isDone) done++; var p = UI.goalProgress(g);
-        wrap.appendChild(h('div.goal' + (isDone ? '.done' : ''), h('div.gh', h('span', { html: (isDone ? ic('check') + ' ' : '') + g.text }), h('span', { text: isDone ? 'Done' : 'Reward ' + fmt(g.reward) })), isDone ? null : bar(p.frac), isDone ? null : h('div', { style: 'font-size:12px;color:var(--ink2)', text: p.text })));
-      });
-      wrap.insertBefore(h('div', { style: 'font:700 14px var(--serif)', text: done + ' of ' + D.goals.length + ' goals complete' }), wrap.firstChild);
-    }
-    upd(); return upd;
-  }
-  function msgTab(b) {
-    var wrap = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(wrap);
-    function upd() {
-      var S = Z.state; wrap.innerHTML = ''; if (!S.messages.length) wrap.appendChild(h('div.fact', { text: 'No news yet.' }));
-      S.messages.slice().reverse().forEach(function (m) { wrap.appendChild(h('div.msg.' + (m.kind || 'info'), h('small', { text: 'Day ' + m.day }), m.text)); });
-    }
-    upd(); return upd;
-  }
+  function goalsTab(b) { return standardTabs.goals(b); }
+  function msgTab(b) { return standardTabs.messages(b); }
 
   // ------------------------------------------------------------------ settings
   function toggle(label, get, set) {

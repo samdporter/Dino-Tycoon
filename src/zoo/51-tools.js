@@ -4,6 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 (function () {
   'use strict';
   var UI = Z.UI, h = UI.h, ic = UI.ic, fmt = UI.fmt, D = Z.DATA, N = Z.N, T = Z.TILE;
+  var gestureMath = Z.GestureMath;
   Z.bus.on('gridsize', function (n) { N = n; });
   var Tools = UI.Tools = {}, el, world;
   var ptrs = {}, nptr = 0, g = null, drag = null, hover = null, lastPlan = null, moved = false;
@@ -25,25 +26,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- keyboard
   var keys = {};
   function onKey(e) {
-    var tg = e.target; if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA')) { if (e.key === 'Escape') tg.blur(); return; }
-    if (UI.titleOpen) return;
-    var k = e.key.toLowerCase();
-    if (UI.SV && UI.SV.active && UI.SV.key && UI.SV.key(e, k)) return;
-    UI.snd('unlock');
-    if ((e.ctrlKey || e.metaKey) && k === 'z') { if (!(UI.modalOpen && UI.modalOpen())) { UI.doUndo(); e.preventDefault(); } return; }
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    var S = Z.state;
-    if (k === 'escape') { if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.PlayTimer && UI.PlayTimer.isOpen && UI.PlayTimer.isOpen()) UI.PlayTimer.open(false); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat); e.preventDefault(); return; }
-    if (UI.modalOpen && UI.modalOpen()) return;
-    if (k === ' ') { UI.setSpeed(S.speed === 0 ? (UI.lastSpeed || 1) : 0); if (S.speed) UI.lastSpeed = S.speed; e.preventDefault(); return; }
-    if (k === '1') UI.setSpeed(1); else if (k === '2') UI.setSpeed(2); else if (k === '3') UI.setSpeed(4);
-    else if (k === 'r') Tools.rotate();
-    else if (k === 'z') UI.doUndo();
-    else if (k === 'b') { UI.openCat('bull', true); }
-    else if (k === 'h') UI.hideUI(!UI.el.root_hidden && !document.getElementById('ui').classList.contains('ui-hidden'));
-    else if (k === '+' || k === '=') Z.World.zoom(0.8); else if (k === '-' || k === '_') Z.World.zoom(1.25);
-    else if (k === 'm') Tools.toggleMove();
-    else if ('wasdqe'.indexOf(k) >= 0 || k.indexOf('arrow') === 0) { keys[k] = 1; e.preventDefault(); }
+    Z.handleGameKey(e, { UI: UI, Tools: Tools, keys: keys,
+      beforeKey: function (e, k) { return !!(UI.SV && UI.SV.active && UI.SV.key && UI.SV.key(e, k)); },
+      escape: function () {
+        if (Z.CoasterWorld && Z.CoasterWorld.isRiding && Z.CoasterWorld.isRiding()) Z.CoasterWorld.endRide(); else if (UI.modalOpen && UI.modalOpen()) UI.closeModal(); else if (UI.PlayTimer && UI.PlayTimer.isOpen && UI.PlayTimer.isOpen()) UI.PlayTimer.open(false); else if (UI.tool) Tools.cancel(); else if (UI.Panel && UI.Panel.isOpen()) UI.Panel.hide(); else if (UI.cat) UI.openCat(UI.cat);
+      }
+    });
   }
   function keysFrame(dt) {
     if (UI.titleOpen || (UI.StreetView && (typeof UI.StreetView.active === 'function' ? UI.StreetView.active() : UI.StreetView.active)) || (UI.SV && UI.SV.active)) return;
@@ -70,12 +58,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       else g = { mode: 'pan' };
     } else if (nptr === 2) {
       if (g && g.mode === 'tool') toolAbort();
-      var p = pts(); g = { mode: 'multi', cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2, d: dist(p[0], p[1]), a: ang(p[0], p[1]) };
+      var p = gestureMath.points(ptrs); g = { mode: 'multi', cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2, d: gestureMath.distance(p[0], p[1]), a: gestureMath.angle(p[0], p[1]) };
     } else g = { mode: 'ignore' };
   }
-  function pts() { var a = []; for (var k in ptrs) a.push(ptrs[k]); return a; }
-  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-  function ang(a, b) { return Math.atan2(b.y - a.y, b.x - a.x); }
   function onMove(e) {
     if (UI.SV && UI.SV.active) return UI.SV.move(e);
     var p = ptrs[e.pointerId];
@@ -87,7 +72,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     else if (g.mode === 'pan') { if (moved) { Z.World.pan(dx, dy); if (UI.tool) clearPreview(); } }
     else if (g.mode === 'rot') { Z.World.rotate(-dx * 0.008, dy * 0.006); }
     else if (g.mode === 'multi' && nptr >= 2) {
-      var q = pts(), cx = (q[0].x + q[1].x) / 2, cy = (q[0].y + q[1].y) / 2, d = dist(q[0], q[1]), a = ang(q[0], q[1]);
+      var q = gestureMath.points(ptrs), cx = (q[0].x + q[1].x) / 2, cy = (q[0].y + q[1].y) / 2, d = gestureMath.distance(q[0], q[1]), a = gestureMath.angle(q[0], q[1]);
       if (isFinite(cx - g.cx) && isFinite(cy - g.cy)) Z.World.pan(cx - g.cx, cy - g.cy);
       if (g.d > 10 && d > 10 && isFinite(g.d / d)) Z.World.zoom(g.d / d);
       var da = a - g.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;

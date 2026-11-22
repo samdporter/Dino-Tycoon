@@ -2890,130 +2890,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
   }
-  function steerAnimal(a) {
-    var t0 = tileOf(a.x, a.z), d, nt, pt;
-    if (a.tg === 'wander' || (a.state === 'escaped' && !a.lg)) {
-      var cur = t0, prev = a.prevT >= 0 ? a.prevT : -1, wroute = [];
-      for (var s = 0; s < 3; s++) {
-        var cands = [], fall = [];
-        for (d = 0; d < 4; d++) {
-          if (!canStepTile(a, cur, d)) continue;
-          nt = cur + DT4[d];
-          if (nt !== prev) cands.push(nt); else fall.push(nt);
-        }
-        var pool = cands.length ? cands : fall;
-        if (!pool.length) break;
-        var nxt = pool[Math.floor(rng.next() * pool.length)];
-        wroute.push(nxt);
-        prev = cur; cur = nxt;
-      }
-      if (!wroute.length) return false;
-      a.prevT = t0;
-      var lastW = wroute[wroute.length - 1];
-      pt = tilePt(a, lastW, 0.4); a.tx = pt.x; a.tz = pt.z;
-      var firstW = wroute[0];
-      pt = tilePt(a, firstW, 0.35); a.wx = pt.x; a.wz = pt.z;
-      a.aroute = wroute.length > 1 ? wroute.slice(1) : null;
-      return true;
-    }
-    var goalT = tileOf(a.tx, a.tz);
-    var st = ++RT.stampN, stamp = RT.stamp, q = RT.queue, prevArr = RT.prev, h = 0, tl = 0;
-    q[tl++] = t0; stamp[t0] = st; prevArr[t0] = -1;
-    var bestT = -1, bestD = 1e9;
-    while (h < tl && tl < 160) {
-      var t = q[h++];
-      if (t === goalT) { bestT = t; break; }
-      if (t !== t0) {
-        var bdx = cxOf(t) - a.tx, bdz = czOf(t) - a.tz, bdd = bdx * bdx + bdz * bdz;
-        if (t === a.prevT) bdd += 64;
-        if (bdd < bestD) { bestD = bdd; bestT = t; }
-      }
-      for (d = 0; d < 4; d++) {
-        if (!canStepTile(a, t, d)) continue;
-        nt = t + DT4[d];
-        if (stamp[nt] === st) continue;
-        stamp[nt] = st; prevArr[nt] = t; q[tl++] = nt;
-      }
-    }
-    if (bestT < 0 || bestT === t0) return false;
-    var route = [], c = bestT;
-    while (c !== t0 && prevArr[c] >= 0) { route.push(c); c = prevArr[c]; }
-    if (!route.length) return false;
-    route.reverse();
-    a.prevT = t0;
-    var first = route[0];
-    pt = tilePt(a, first, 0.35); a.wx = pt.x; a.wz = pt.z;
-    var chasing = a.tg === 'hunt' || (a.state === 'escaped' && a.lg);
-    a.aroute = (!chasing && route.length > 1) ? route.slice(1) : null;
-    if (!chasing && bestT !== goalT) {
-      var last = route[route.length - 1];
-      pt = tilePt(a, last, 0.4); a.tx = pt.x; a.tz = pt.z;
-    }
-    return true;
-  }
-  // moves toward (tx,tz); returns true when arrived or given up
-  function animalMove(a, dt, spd) {
-    var ct = tileOf(a.x, a.z);
-    if (a.curT !== ct) { a.prevT = a.curT !== undefined ? a.curT : ct; a.curT = ct; }
-    var gx = a.wx ? a.wx : a.tx, gz = a.wz ? a.wz : a.tz;
-    var dx = gx - a.x, dz = gz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (!isFinite(d) || d < 0.3) {
-      if (!isFinite(d)) { a.wx = 0; a.wz = 0; a.aroute = null; a.tx = a.x; a.tz = a.z; a.speed = 0; a.detours = 0; return true; }
-      if (a.wx) {
-        if (a.aroute && a.aroute.length) {
-          var nt = a.aroute.shift();
-          var wpt = tilePt(a, nt, 0.35);
-          a.wx = wpt.x; a.wz = wpt.z;
-        } else { a.wx = 0; a.wz = 0; }
-        gx = a.wx ? a.wx : a.tx; gz = a.wz ? a.wz : a.tz;
-        dx = gx - a.x; dz = gz - a.z; d = Math.sqrt(dx * dx + dz * dz);
-        if (!isFinite(d) || d < 0.3) { a.speed = 0; a.detours = 0; return true; }
-      } else { a.speed = 0; a.detours = 0; return true; }
-    }
-    // separateAnimals runs after this move and can undo it every frame, so judge progress over a window of frames
-    if (a.progX !== gx || a.progZ !== gz) { a.progX = gx; a.progZ = gz; a.progD = d; a.progT = 0; }
-    a.progT += dt;
-    if (a.progT > 2.5) {
-      if (a.progD - d < spd * a.progT * 0.2) { a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.speed = 0; a.progX = undefined; return true; }
-      a.progD = d; a.progT = 0;
-    }
-    var step = Math.min(spd * dt, d), ox = a.x, oz = a.z;
-    var vx = dx / d * step, vz = dz / d * step;
-    var okX = Math.abs(dx) > 1e-4 && canGo(a, ox, oz, ox + vx, oz);
-    var nx = okX ? ox + vx : ox;
-    var okZ = Math.abs(dz) > 1e-4 && canGo(a, nx, oz, nx, oz + vz);
-    if (okX && okZ) {
-      a.x = nx; a.z = oz + vz;
-    } else if (okX && Math.abs(dx) > 0.25) {
-      var sx = ox + (dx > 0 ? 1 : -1) * Math.min(step, Math.abs(dx));
-      if (canGo(a, ox, oz, sx, oz)) a.x = sx; else a.x = nx;
-    } else if (okZ && Math.abs(dz) > 0.25) {
-      var sz = oz + (dz > 0 ? 1 : -1) * Math.min(step, Math.abs(dz));
-      if (canGo(a, ox, oz, ox, sz)) a.z = sz; else a.z = oz + vz;
-    }
-    if (a.enc) { var _enc = RT.eMap[a.enc]; if (_enc) pushFromWalls(a, _enc, animalMetrics(SP[a.species], a), dt); }
-    var mx = a.x - ox, mz = a.z - oz, md = Math.sqrt(mx * mx + mz * mz);
-    var prog = d > 1e-5 ? (mx * dx + mz * dz) / d : md;
-    if (prog < step * 0.35 && step > 1e-4) {
-      a.stuck += dt;
-      if (a.stuck > 0.08) {
-        a.stuck = 0;
-        a.detours = (a.detours || 0) + 1;
-        if (a.detours <= 8 && steerAnimal(a)) {
-          a.speed = spd;
-          a.heading = turn(a.heading, Math.atan2((a.wx || a.tx) - a.x, (a.wz || a.tz) - a.z), dt * 8);
-          return false;
-        }
-        a.wx = 0; a.wz = 0; a.aroute = null; a.detours = 0; a.speed = 0;
-        return true;
-      }
-      a.speed = 0;
-      return false;
-    }
-    a.stuck = 0; a.speed = spd;
-    if (md > 1e-4) a.heading = turn(a.heading, Math.atan2(mx, mz), dt * 6);
-    return false;
-  }
+  var animalMovement = Z.SimCommon.createAnimalMovement({
+    tileOf: tileOf, getDT4: function () { return DT4; }, rng: rng, tilePt: tilePt,
+    getRT: function () { return RT; }, cxOf: cxOf, czOf: czOf, canStepTile: canStepTile,
+    canGo: canGo, pushFromWalls: pushFromWalls, animalMetrics: animalMetrics, getSP: function () { return SP; }, turn: turn
+  });
+  var animalMove = animalMovement.animalMove;
   function setTargetTile(a, t) {
     var pt = tilePt(a, t, 0.6);
     a.tx = pt.x; a.tz = pt.z;
@@ -4255,14 +4137,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function wxIntensity(type) { return Math.round((WXT[type].notable ? rng.range(0.7, 1) : rng.range(0.5, 1)) * 100) / 100; }
   function wxHours(type) { return Math.round(rng.range(WXT[type].dur[0], WXT[type].dur[1]) * 2) / 2; }
-  function wxScale(v, i, add) { return add ? v * i : 1 + (v - 1) * i; }
+  var wxScale = Z.SimCommon.wxScale;
   // writes the weather (and active-event) multipliers into WX. Called on every weather/event change and on load.
   function recomputeWX() {
     var w = S.weather, t = WXT[w.type] || WXT.cloudy, i = w.intensity === undefined ? 1 : w.intensity, k, f, ea = 1, es = 1, am = 1;
-    WX.type = w.type; WX.intensity = i;
-    WX.arrivals = wxScale(t.arrivals, i); WX.thirst = wxScale(t.thirst, i); WX.hunger = wxScale(t.hunger, i); WX.energy = wxScale(t.energy, i); WX.guestSpeed = wxScale(t.guestSpeed, i);
-    WX.fun = wxScale(t.fun, i, true); WX.spend = wxScale(t.spend, i); WX.shelter = !!t.shelter && i >= 0.4; WX.animalMood = wxScale(t.animalMood, i, true);
-    WX.sick = wxScale(t.sick, i); WX.escape = wxScale(t.escape, i); WX.dirt = wxScale(t.dirt, i);
+    Z.SimCommon.applyWeatherBase(WX, w.type, i, t);
     var ae = S.activeEvents || [];
     for (k = 0; k < ae.length; k++) { f = ae[k].fx || {}; if (f.arrivals) ea *= f.arrivals; if (f.sick) es *= f.sick; if (f.amber) am *= f.amber; }
     WX.arrivals *= ea; WX.sick *= es; EV.amber = am;
@@ -4285,12 +4164,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var last = out.pop(), txt = out.length ? out.join(', ') + ' and ' + last : last;
     return txt.charAt(0).toUpperCase() + txt.slice(1) + '.';
   }
-  function wxHoursTxt(h) { return h >= 1.5 ? 'about ' + Math.round(h) + ' hours' : 'about an hour'; }
+  var wxHoursTxt = Z.SimCommon.wxHoursTxt;
   function setWeather(type, intensity, hours, cause) {
-    var w = S.weather, old = w.type, def = wxDef(type), t = WXT[type];
-    if (old === type) { w.hoursLeft = Math.max(w.hoursLeft, hours); w.intensity = Math.max(w.intensity, intensity); recomputeWX(); bus.emit('weather', w); return; }
-    w.type = type; w.intensity = intensity; w.hoursLeft = hours; w.next = wxPick(type);
-    if (w.next === type) w.next = 'cloudy';
+    var w = S.weather, transition = Z.SimCommon.transitionWeather(w, type, intensity, hours, function () { return wxPick(type); }), old = transition.old, def = wxDef(type), t = WXT[type];
+    if (!transition.changed) { recomputeWX(); bus.emit('weather', w); return; }
     recomputeWX();
     if (t.notable) msg((cause ? cause + ' ' : '') + def.name + ' for ' + wxHoursTxt(hours) + '. ' + wxEffectText(type, intensity), type === 'fog' ? 'info' : 'bad');
     else if (WXT[old] && WXT[old].notable) msg('The ' + wxDef(old).name.toLowerCase() + ' has passed. ' + (type === 'clear' ? 'Clear skies again.' : 'It is ' + def.name.toLowerCase() + ' now.'), 'good', false);
@@ -4299,7 +4176,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function advanceWeather() { var w = S.weather, nt = w.next && WXT[w.next] ? w.next : wxPick(w.type); setWeather(nt, wxIntensity(nt), wxHours(nt)); }
   function weatherInfo() {
     var w = S.weather, def = wxDef(w.type), nd = wxDef(w.next || 'cloudy'), nw = WXT[w.next] && WXT[w.next].notable;
-    var fc = w.hoursLeft < 0.5 ? nd.name + ' arriving now.' : (nw ? nd.name + ' expected in ' + wxHoursTxt(w.hoursLeft) + '.' : def.name + ' for ' + wxHoursTxt(w.hoursLeft) + ', then ' + nd.name.toLowerCase() + '.');
+    var fc = Z.SimCommon.forecastText(w.hoursLeft, def.name, nd.name, nw);
     return { type: w.type, name: def.name, emoji: def.emoji, effects: WXT[w.type].notable ? wxEffectText(w.type, w.intensity) : def.effects, blurb: def.blurb, intensity: w.intensity, hoursLeft: Math.round(w.hoursLeft * 10) / 10,
       next: w.next, nextName: nd.name, nextEmoji: nd.emoji, forecast: fc };
   }

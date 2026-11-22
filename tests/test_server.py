@@ -42,17 +42,22 @@ class PublicServerTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertTrue(response.read())
 
-    def test_both_games_use_shared_engine_and_coaster_scripts(self):
+    def test_each_game_loads_its_own_scripts_and_the_shared_modules(self):
         shared = {
-            '10-core.js', '15-storage.js', '21-sim-coaster.js', '30-models-toilets.js',
+            '10-core.js', '15-storage.js', '19-sim-common.js', '21-sim-coaster.js',
+            '30-models-common.js', '30-models-toilets.js', 'world-renderer.js',
             '48-world-coaster.js', '58-streetview.js', '59-weather-hud.js',
-            '66b-ui-coaster.js',
+            '50-ui-dom.js', '51-input.js', '53-screen-shell.js', '53-standard-tabs.js',
+            '54-audio-effects.js', '66b-ui-coaster.js', 'main-lifecycle.js',
         }
-        for entry in ['/index.html', '/zoo.html']:
+        for entry, game in [('/index.html', 'dino'), ('/zoo.html', 'zoo')]:
             with self.subTest(entry=entry), urlopen(self.base + entry) as response:
                 html = response.read().decode('utf-8')
-                scripts = re.findall(r'<script defer src="src/shared/([^" ]+)"', html)
-                self.assertTrue(shared.issubset(scripts), shared.difference(scripts))
+                scripts = re.findall(r'<script defer src="src/([^" ]+)"', html)
+                self.assertIn(f'{game}/00-data.js', scripts)
+                expected = {f'shared/{name}' for name in shared}
+                self.assertTrue(expected.issubset(scripts), expected.difference(scripts))
+                self.assertTrue(all(path.startswith((f'{game}/', 'shared/')) for path in scripts))
 
     def test_private_files_and_traversal_are_not_served(self):
         for path in ['/.git/config', '/README.md', '/server.py', '/tests/test_browser.py', '/%2e%2e/README.md', '/src/%2e%2e/README.md', '/src/']:

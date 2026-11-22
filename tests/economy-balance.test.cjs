@@ -6,7 +6,7 @@ const { readScript } = require('./game-scripts.cjs');
 function zoo(seed) {
   const ctx = vm.createContext({ console, setTimeout, clearTimeout, URL: globalThis.URL || {}, Blob: globalThis.Blob || {}, FileReader: globalThis.FileReader || {},
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, location: { protocol: 'http:' }, performance: { now: () => 0 } });
-  for (const file of ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js']) {
+  for (const file of ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js']) {
     vm.runInContext(readScript(file, true), ctx, { filename: file });
   }
   const z = ctx.Z;

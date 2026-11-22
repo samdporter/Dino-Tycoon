@@ -18,7 +18,7 @@ function main() {
   z.UI={h:node,ic:()=>'',snd(){},toast:message=>notices.push(message),reset(){},closeModal(){},narrow:()=>false,
     Tutorial:{restart(){}},el:{cards:node()}};
   z.World={cam:{target:{x:0,z:0}},resize(){}};
-  load('90-main.js'); z.Main.showTitle();
+  load('main-lifecycle.js'); load('90-main.js'); z.Main.showTitle();
   return {z,saved,notices,setCandidates(values){candidateValues=values}};
 }
 test('new park is checkpointed immediately and save returns an awaited boolean', async () => {

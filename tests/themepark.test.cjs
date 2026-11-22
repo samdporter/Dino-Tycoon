@@ -354,7 +354,7 @@ test('Dino UI Theme Park tab, Guests group, sub-filters, goalProgress, and inspe
   ctx.window = ctx; ctx.addEventListener = () => {};
   const simFiles = simulationScripts();
   for (const f of simFiles) vm.runInContext(readScript(f), ctx, { filename: f });
-  ['50-ui.js', '51-tools.js', '52-panels.js', '53-screens.js', '66b-ui-coaster.js', '68-ui-power.js', '75-ui-groups.js'].forEach(f => {
+  ['50-ui-dom.js', '50-ui.js', '51-input.js', '51-tools.js', '52-panels.js', '53-screen-shell.js', '53-standard-tabs.js', '53-screens.js', '66b-ui-coaster.js', '68-ui-power.js', '75-ui-groups.js'].forEach(f => {
     const fullPath = gameScripts().get(f);
     if (fullPath) {
       vm.runInContext(fs.readFileSync(fullPath, 'utf8'), ctx, { filename: f });
@@ -509,7 +509,7 @@ test('Dino Theme Park 3D Models, Footprints, Finite Geometry & 1,000-frame Anima
   });
   ctx.window = ctx; ctx.self = ctx;
   vm.runInContext(fs.readFileSync(path.join(root, 'vendor/three.r128.min.js'), 'utf8'), ctx, { filename: 'three.r128.min.js' });
-  for (const f of ['00-data.js', '30-models-toilets.js', '30-models.js', '40-world.js']) {
+  for (const f of ['00-data.js', '30-models-toilets.js', '30-models-common.js', '30-models.js', 'world-renderer.js', '40-world.js']) {
     const fullPath = gameScripts().get(f);
     if (fullPath) {
       vm.runInContext(fs.readFileSync(fullPath, 'utf8'), ctx, { filename: f });

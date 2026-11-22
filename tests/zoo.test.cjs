@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const { readScript } = require('./game-scripts.cjs');
+const { gameScripts, readScript } = require('./game-scripts.cjs');
 
 function zoo(seed) {
   const values = new Map(seed || []);
@@ -19,13 +19,13 @@ function zoo(seed) {
     location: { protocol: 'http:' }, performance: { now: () => 0 } });
   vm.runInContext('var window=globalThis', ctx);
   const load = file => vm.runInContext(readScript(file, true), ctx);
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = { h: node, ic: () => '', snd() {}, toast() {}, reset() {}, closeModal() {}, narrow: () => false,
     Tutorial: { restart() {} }, el: { cards: node() } };
   z.World = { cam: { target: { x: 0, z: 0 } }, resize() {} };
   z.Audio = { enabled: () => true, setEnabled() {} };
-  load('60-main.js');
+  load('main-lifecycle.js'); load('60-main.js');
   z.Main.showTitle();
   return { z, values };
 }
@@ -296,7 +296,7 @@ function zooWithPlayTimer(opts) {
   });
   vm.runInContext('var window=globalThis', ctx);
   const load = file => vm.runInContext(readScript(file, true), ctx);
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.UI = {
     h: (sel, a, ...kids) => {
@@ -330,7 +330,7 @@ function zooWithPlayTimer(opts) {
   z.World = { cam: { target: { x: 0, z: 0 } }, resize() {} };
   z.Audio = { enabled: () => true, setEnabled() {} };
   load('56-playtimer.js');
-  load('60-main.js');
+  load('main-lifecycle.js'); load('60-main.js');
   z.UI.init();
   z.Main.showTitle();
   return { z, doc, toasts, r2 };
@@ -421,9 +421,9 @@ test('PlayTimer is present only in Zoo Tycoon and not in Dino Tycoon', () => {
   assert.ok(!indexHtml.includes('playtimer'), 'index.html must not load playtimer');
   assert.ok(zooHtml.includes('src/zoo/56-playtimer.js'), 'zoo.html must load 56-playtimer.js');
 
-  const dinoSrcFiles = fs.readdirSync(path.join(__dirname, '../src')).filter(f => f.endsWith('.js'));
+  const dinoSrcFiles = [...gameScripts()].filter(([, fullPath]) => fullPath.includes('/src/dino/')).map(([file]) => file);
   for (const file of dinoSrcFiles) {
-    const content = fs.readFileSync(path.join(__dirname, '../src', file), 'utf8');
+    const content = readScript(file);
     assert.ok(!content.includes('PlayTimer') && !content.includes('timerchip'), `Dino script ${file} must not include PlayTimer`);
   }
   const dinoCss = fs.readFileSync(path.join(__dirname, '../styles/game.css'), 'utf8');
@@ -764,11 +764,11 @@ test('Zoo UI shows 48t station badges, preview zones, inspect stats, and radio d
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
   const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   let lastPreview = null;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  ['50-ui.js', '51-tools.js', '52-panels.js', '53-screens.js'].forEach(load);
+  ['50-ui-dom.js', '50-ui.js', '51-input.js', '51-tools.js', '52-panels.js', '53-screen-shell.js', '53-standard-tabs.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 911 });
   z.state.money = 250000; z.state.unlocked.star = 3;
@@ -955,9 +955,9 @@ test('Zoo Fantasy Pack is Zoo-only and unlocks at 4 stars', () => {
   }
 
   // Dino Tycoon must not include any Zoo-only Fantasy Pack items
-  const dinoDataSrc = fs.readFileSync(path.join(__dirname, '../src/00-data.js'), 'utf8');
+  const dinoDataSrc = readScript('00-data.js');
   for (const id of [...fantasyTerrains, ...fantasyScenery, ...fantasyAnimals]) {
-    assert.equal(dinoDataSrc.includes(id), false, `Dino src/00-data.js must not include Zoo-only '${id}'`);
+    assert.equal(dinoDataSrc.includes(id), false, `Dino src/dino/00-data.js must not include Zoo-only '${id}'`);
   }
 });
 
@@ -2189,10 +2189,10 @@ test('Zoo UI Theme Park tab, sub-filters, goalProgress, and inspect panel thrill
   });
   ctx.window = ctx; ctx.addEventListener = () => {};
   const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  ['50-ui.js', '51-tools.js', '52-panels.js', '66b-ui-coaster.js', '53-screens.js'].forEach(load);
+  ['50-ui-dom.js', '50-ui.js', '51-input.js', '51-tools.js', '52-panels.js', '66b-ui-coaster.js', '53-screen-shell.js', '53-standard-tabs.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 912 });
   z.state.money = 250000; z.state.unlocked.star = 3;
@@ -2349,7 +2349,7 @@ test('Zoo Theme Park 3D models build cleanly and animate without errors', () => 
   });
   ctx.window = ctx;
   const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
-  ['00-data.js', '30-models-toilets.js', '30-models.js'].forEach(load);
+  ['00-data.js', '30-models-toilets.js', '30-models-common.js', '30-models.js'].forEach(load);
 
   const M = ctx.Z.Models;
   const tpBuildings = [
@@ -2654,7 +2654,7 @@ test('Zoo Theme Park 3D models and world module pass 1,000-frame animation and g
   ctx.window = ctx; ctx.self = ctx;
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../vendor/three.r128.min.js'), 'utf8'), ctx, { filename: 'three.r128.min.js' });
   const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '30-models-toilets.js', '30-models.js', '40-world.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '30-models-toilets.js', '30-models-common.js', '30-models.js', 'world-renderer.js', '40-world.js'].forEach(load);
 
   const THREE = ctx.THREE;
   const M = ctx.Z.Models;
@@ -3084,7 +3084,7 @@ test('Zoo Custom Rollercoasters: 3D renderer builds stations, loops, trains, spl
   const ctx = vm.createContext({ console, THREE, Math, Float32Array, Uint8Array, Int8Array, Int16Array, Int32Array });
   vm.runInContext('var window = globalThis;', ctx);
   const load = f => vm.runInContext(readScript(f, true), ctx, { filename: f });
-  ['00-data.js', 'zoo-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'zoo-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = { root: () => root, groundY: () => 0, cam, _G: { t: 1 } };
@@ -3356,7 +3356,7 @@ test('all Zoo species, scenery, and buildings build valid finite 3D geometry', (
   };
   ctx.window = ctx; ctx.self = ctx;
   vm.createContext(ctx);
-  for (const f of ['00-data.js', '30-models-toilets.js', '30-models.js']) {
+  for (const f of ['00-data.js', '30-models-toilets.js', '30-models-common.js', '30-models.js']) {
     vm.runInContext(readScript(f, true), ctx, { filename: f });
   }
   const checkObj = (obj, label) => {

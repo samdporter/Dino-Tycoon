@@ -682,7 +682,9 @@ test('UI cards, toolstrip, placement plan, and inspect panel render building spe
   simulationScripts().forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
+  load('50-ui-dom.js');
   load('50-ui.js');
+  load('51-input.js');
   load('51-tools.js');
   load('52-panels.js');
   load('68-ui-power.js');
@@ -929,7 +931,7 @@ test('Finances modal shows offered loan rate, circumstance factors, active loans
   simulationScripts().forEach(load);
   const z = ctx.Z;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview() {}, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  load('50-ui.js'); load('53-screens.js');
+  ['50-ui-dom.js', '50-ui.js', '53-screen-shell.js', '53-standard-tabs.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 6666, map: 'green', difficulty: 'normal', name: 'Fin Tab Test' });
 
@@ -1204,7 +1206,7 @@ test('all build categories including aviary and tagging render all cards at 5 st
   z.MoatsWorld = { overlayOn: () => false, setOverlay() {} };
   z.MonoWorld = { overlayOn: false, setOverlay() {} };
   z.SafariWorld = { overlayOn: false, setOverlay() {} };
-  ['50-ui.js', '51-tools.js', '52-panels.js', '65-ui-moats.js', '66-ui-monorail.js', '67-ui-realms.js', '68-ui-power.js', '74-ui-safari.js', '75-ui-groups.js', '76-ui-mobile.js'].forEach(load);
+  ['50-ui-dom.js', '50-ui.js', '51-input.js', '51-tools.js', '52-panels.js', '65-ui-moats.js', '66-ui-monorail.js', '67-ui-realms.js', '68-ui-power.js', '74-ui-safari.js', '75-ui-groups.js', '76-ui-mobile.js'].forEach(load);
 
   z.UI.init();
   z.Sim.newGame({ seed: 7777, map: 'green', difficulty: 'easy', name: 'Realms UI Test' });
@@ -1553,7 +1555,7 @@ test('UI displays ranger and ranger station range badges, placement preview ring
   const z = ctx.Z;
   let lastPreview = null;
   z.World = { cam: { pitch: 0.9, dist: 40 }, setPreview(s) { lastPreview = s; }, highlightEnclosure() {}, thumb: () => null, focus() {} };
-  load('50-ui.js'); load('51-tools.js'); load('52-panels.js'); load('53-screens.js');
+  ['50-ui-dom.js', '50-ui.js', '51-input.js', '51-tools.js', '52-panels.js', '53-screen-shell.js', '53-standard-tabs.js', '53-screens.js'].forEach(load);
   z.UI.init();
   z.Sim.newGame({ seed: 905, map: 'fern_meadow', money: 200000 });
   setupFlatZone(z, 20, 20, 32, 32);

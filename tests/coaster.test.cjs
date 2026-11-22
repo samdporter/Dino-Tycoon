@@ -502,7 +502,7 @@ test('Dino Coasters: 3D Z.CoasterWorld renderer, 4-rotation arrows, overlay sync
   vm.runInContext('var window = globalThis;', ctx);
 
   const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
-  ['00-data.js', 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'dino-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = {
@@ -623,7 +623,7 @@ test('Dino Coasters: Large Loop-de-Loop (6), Large Corkscrew (7) & 3D rendering'
   });
   vm.runInContext('var window = globalThis;', ctx);
   const load = f => vm.runInContext(readScript(f), ctx, { filename: f });
-  ['00-data.js', 'dino-config.js', '10-core.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
+  ['00-data.js', 'dino-config.js', '10-core.js', '19-sim-common.js', '20-sim.js', '21-sim-coaster.js'].forEach(load);
   const z = ctx.Z;
   z.Models = { createBuilding: () => new THREE.Group() };
   z.World = {
