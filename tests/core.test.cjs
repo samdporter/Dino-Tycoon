@@ -2085,3 +2085,38 @@ test('all Dino species, scenery, and buildings build valid finite 3D geometry', 
 });
 
 
+
+test('a walking dinosaur blocked by a resting herd-mate gives up instead of walking in place', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 4243, map: 'fern_meadow', difficulty: 'easy', money: 500000 });
+  z.state.unlocked.star = 5;
+  z.state.research.genomes.brachiosaurus = 100;
+  setupFlatZone(z, 8, 8, 36, 28);
+  for (let i = 18; i <= 25; i++) {
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 10 }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'x', i, j: 18 }, 'reinforced').ok, true);
+  }
+  for (let j = 10; j <= 17; j++) {
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 18, j }, 'reinforced').ok, true);
+    assert.equal(z.Sim.placeFence({ axis: 'z', i: 26, j }, 'reinforced').ok, true);
+  }
+  const walker = z.Sim.spawnAnimal('brachiosaurus', 21, 13);
+  const sleeper = z.Sim.spawnAnimal('brachiosaurus', 21, 13);
+  assert.ok(walker && sleeper);
+
+  // The sleeper rests against the east fence, right on the walker's target, so the walker is pushed back every frame
+  sleeper.x = 25 * z.TILE; sleeper.z = 13.5 * z.TILE; sleeper.state = 'sleep'; sleeper.energy = 0; sleeper.heading = Math.PI / 2;
+  walker.x = 20 * z.TILE; walker.z = 13.5 * z.TILE; walker.heading = Math.PI / 2;
+  walker.state = 'walk'; walker.tg = 'wander'; walker.tx = 25.5 * z.TILE; walker.tz = 13.5 * z.TILE;
+  walker.wx = 0; walker.wz = 0; walker.aroute = null; walker.detours = 0; walker.stuck = 0;
+
+  let walkingInPlace = 0;
+  for (let k = 0; k < 120; k++) {
+    const x0 = walker.x, z0 = walker.z;
+    z.Sim.tick(0.05);
+    const moved = Math.hypot(walker.x - x0, walker.z - z0);
+    if (walker.state === 'walk' && walker.speed > 0 && moved < 0.01) walkingInPlace++;
+    else walkingInPlace = 0;
+    assert.ok(walkingInPlace < 60, `Walker kept its walk animation for ${walkingInPlace} ticks without moving`);
+  }
+});
