@@ -97,6 +97,7 @@ def open_game(browser, *, path="", mobile=False, init_script=None):
     problems = []
     page.on("pageerror", lambda error: problems.append(f"pageerror: {error}"))
     page.on("console", lambda msg: problems.append(f"console error: {msg.text}") if msg.type == "error" else None)
+    page.on("response", lambda r: problems.append(f"http {r.status}: {r.url}") if r.status >= 400 else None)
     target = f"{BASE}{path}"
     page.goto(target, wait_until="load", timeout=60000)
     page.wait_for_function("window.Z && Z.Main && Z.Storage && !document.querySelector('#boot:not(.gone)')", timeout=60000)
