@@ -543,9 +543,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function cardSpec(it) {
     var d = it.def; if (!d) return '';
-    if (it.kind === 'staff' && d.id === 'keeper') {
-      var baseT = Z.Sim && Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage().baseTiles : 32;
-      return baseT + 't';
+    if (it.kind === 'staff') {
+      if (d.id === 'keeper') {
+        var baseT = Z.Sim && Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage().baseTiles : 32;
+        return baseT + 't';
+      }
+      return d.badge || '';
     }
     if (it.kind === 'fence' && d.strength) return 'Str ' + d.strength;
     if (it.kind !== 'building') return '';

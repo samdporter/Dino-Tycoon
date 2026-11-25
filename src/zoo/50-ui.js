@@ -572,6 +572,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function itemPriceText(it) { return fmt(it.cost) + (it.unit ? '<small style="font:500 9.5px var(--sans);color:var(--ink2)"> ' + it.unit + '</small>' : ''); }
   function cardSpec(it) {
     var d = it.def; if (!d) return '';
+    if (it.kind === 'staff') return d.badge || '';
     if (it.kind === 'building' && (d.id === 'keeper_hut' || d.id === 'vet_clinic')) {
       var cov = Z.Sim && Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : { keeperHutTiles: 48, vetClinicTiles: 48 };
       return (d.id === 'vet_clinic' ? cov.vetClinicTiles : cov.keeperHutTiles) + 't';

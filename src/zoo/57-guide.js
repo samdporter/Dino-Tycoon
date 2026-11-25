@@ -137,8 +137,25 @@ window.Z = window.Z || {}; var Z = window.Z;
   var INTROS = {
     plants: 'Plants on terrain they like count fully toward an animal’s favourite-foliage need. On the wrong terrain they struggle and count half.',
     adds: 'Enclosure additions and what they do. Water is painted terrain, so it is listed here by hand.',
-    species: 'Wild Acres habitat guide — match soil, foliage and enclosure additions to each species.'
+    species: 'Wild Acres habitat guide — match soil, foliage and enclosure additions to each species.',
+    staff: 'Who fixes what, how fast they work, and how one-off emergency callouts work when you do not want full-time staff.'
   };
+
+  function staffCards() {
+    var fmt = UI.fmt || function (n) { return '£' + Math.round(n); };
+    var cards = [
+      h('div.box.gd-card', head('🚨', 'Emergency Callouts', 'One-off fixes · no payroll'),
+        h('div.gd-info', { text: 'Don’t want full-time staff yet? Click any broken fence, ride, or power cut to call a one-off crew (Call Fence Crew, Call Mechanic, or Call Electrician).' }))
+    ];
+    (D.staff || []).forEach(function (s) {
+      var kv = function (k, v) { return h('div.kv', h('span', { text: k }), h('b', { text: v })); };
+      cards.push(h('div.box.gd-card', head(s.emoji, s.name, s.badge || ''),
+        s.tagline ? h('div', { style: 'font:700 12.5px var(--sans);color:var(--ink);margin-bottom:4px', text: s.tagline }) : null,
+        h('div.gd-info', { text: s.duties || s.effect || '' }),
+        kv('Hire / Wage', fmt(s.hireCost) + ' · ' + fmt(s['wage/day'] || s.wage) + '/day')));
+    });
+    return cards;
+  }
 
   Guide.build = function (b) {
     var model = buildModel();
@@ -146,7 +163,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     var sections = [
       ['plants', 'Plants', function () { return model.plants.map(plantCard); }],
       ['adds', 'Additions', function () { return model.additions.map(additionCard); }],
-      ['species', 'Species & Needs', function () { return model.species.map(speciesCard); }]
+      ['species', 'Species & Needs', function () { return model.species.map(speciesCard); }],
+      ['staff', 'Staff & Repairs', staffCards]
     ];
     var btns = {};
     function show(key) {

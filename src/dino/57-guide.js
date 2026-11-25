@@ -135,8 +135,25 @@ window.Z = window.Z || {}; var Z = window.Z;
   var INTROS = {
     plants: 'Plants on terrain they like count fully toward a dinosaur’s favourite-foliage need. On the wrong terrain they struggle and count half.',
     adds: 'Enclosure additions and what they do. Water is painted terrain, so it is listed here by hand.',
-    dinos: 'A quick look at each species: where it likes to roam, what it eats and what it needs.'
+    dinos: 'A quick look at each species: where it likes to roam, what it eats and what it needs.',
+    staff: 'Who fixes what, how fast they work, and how one-off emergency callouts work when you do not want full-time staff.'
   };
+
+  function staffCards() {
+    var fmt = UI.fmt || function (n) { return '£' + Math.round(n); };
+    var cards = [
+      h('div.box.gd-card', head('🚨', 'Emergency Callouts', 'One-off fixes · no payroll'),
+        h('div.gd-info', { text: 'Don’t want full-time staff yet? Click any broken fence, ride, generator, substation, power cut, or sealed lab to call a one-off crew (Call Fence Crew, Call Mechanic, Call Electrician, Call Line Crew, or Call Decon Crew).' }))
+    ];
+    (D.staff || []).forEach(function (s) {
+      var kv = function (k, v) { return h('div.kv', h('span', { text: k }), h('b', { text: v })); };
+      cards.push(h('div.box.gd-card', head(s.emoji, s.name, s.badge || ''),
+        s.tagline ? h('div', { style: 'font:700 12.5px var(--sans);color:var(--ink);margin-bottom:4px', text: s.tagline }) : null,
+        h('div.gd-info', { text: s.duties || s.effect || '' }),
+        kv('Hire / Wage', fmt(s.hireCost) + ' · ' + fmt(s['wage/day'] || s.wage) + '/day')));
+    });
+    return cards;
+  }
 
   // open the Guide tab on a section: 'plants' 'adds' 'dinos' 'moats' 'sea' 'air' 'tags' 'monorail' 'safari' 'mc'
   Guide.openSection = function (key) { Guide.want = key; UI.openModal('guide'); };
@@ -151,7 +168,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     var sections = [
       ['plants', 'Plants', function () { return model.plants.map(plantCard); }],
       ['adds', 'Enclosure extras', function () { return model.additions.map(additionCard); }],
-      ['dinos', 'Dinosaurs', function () { return model.species.map(speciesCard); }]
+      ['dinos', 'Dinosaurs', function () { return model.species.map(speciesCard); }],
+      ['staff', 'Staff & Repairs', staffCards]
     ];
     if (UI.Moats && UI.Moats.guideSection) sections.push(UI.Moats.guideSection());
     if (UI.Realms && UI.Realms.guideSection) UI.Realms.guideSection().forEach(function (g) { sections.push(g); });
@@ -170,7 +188,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       body.appendChild(h('div.gd-grid', list));
     }
     // contents: grouped, wrapping buttons (40px tall) instead of one long scrolling strip; folds up after a pick
-    var GROUPS = [['The park', ['plants', 'adds', 'dinos']], ['Habitats', ['moats', 'sea', 'air', 'tags']], ['Guests and transport', ['monorail', 'safari']], ['Learn', ['mc']]];
+    var GROUPS = [['The park', ['plants', 'adds', 'dinos', 'staff']], ['Habitats', ['moats', 'sea', 'air', 'tags']], ['Guests and transport', ['monorail', 'safari']], ['Learn', ['mc']]];
     var idx = h('div.gd-index'), idxHead = h('button.gd-idxh', { 'aria-expanded': 'true' }), idxBody = h('div.gd-idxb');
     function fold(on) { idxBody.style.display = on ? 'none' : ''; idxHead.setAttribute('aria-expanded', on ? 'false' : 'true'); idxHead.querySelector('i').textContent = on ? '\u25be' : '\u25b4'; }
     idxHead.appendChild(h('span', { text: 'Contents' })); idxHead.appendChild(h('b', { text: '' })); idxHead.appendChild(h('i', { text: '\u25b4' }));

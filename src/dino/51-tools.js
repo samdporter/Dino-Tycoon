@@ -159,11 +159,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
     var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
-    else if (t.kind === 'staff' && (t.id === 'keeper' || t.id === 'vet')) {
-      var covH = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32, stationTiles: 48, vetClinicTiles: 48 };
-      hint = t.id === 'keeper'
-        ? 'Tap a path to place. Circle shows ' + covH.baseTiles + '-tile base range (+ ' + covH.stationTiles + 't around stations).'
-        : 'Tap a path to deploy. Responds park-wide on connected paths (' + (covH.vetClinicTiles || 48) + 't fast clinic zone when a Vet clinic is built).';
+    else if (t.kind === 'staff') {
+      if (t.id === 'keeper' || t.id === 'vet') {
+        var covH = Z.Sim.rangerCoverage ? Z.Sim.rangerCoverage() : { baseTiles: 32, stationTiles: 48, vetClinicTiles: 48 };
+        hint = t.id === 'keeper'
+          ? 'Tap a path to place. Circle shows ' + covH.baseTiles + '-tile base range (+ ' + covH.stationTiles + 't around stations).'
+          : 'Tap a path to deploy. Responds park-wide on connected paths (' + (covH.vetClinicTiles || 48) + 't fast clinic zone when a Vet clinic is built).';
+      } else if (t.def && (t.def.tagline || t.def.effect)) {
+        hint = 'Tap a path to place. ' + (t.def.tagline ? t.def.tagline + (t.def.duties ? ' ' + t.def.duties : '') : t.def.effect);
+      }
     }
     else if ((t.kind === 'scenery' || t.kind === 'building') && t.def && UI.itemInfo && UI.itemInfo(t.def, true)) hint = UI.itemInfo(t.def, true);
     else if (t.kind === 'building' && t.def && t.def.utility) hint = 'Tap to place. Slide to adjust.';

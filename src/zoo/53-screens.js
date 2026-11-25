@@ -282,8 +282,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   function stfTab(b) {
     var hire = h('div.box'), list = h('div.box'); b.appendChild(hire); b.appendChild(list);
     hire.appendChild(h('h4', { text: 'Hire staff' }));
+    hire.appendChild(h('div.fact', { style: 'margin-bottom:6px', text: 'Tip: Click any broken fence, ride, or power cut to call a one-off crew without hiring staff. Handymen fix everything slowly on a budget; Mechanics and Electricians cost more but work much faster.' }));
     D.staff.forEach(function (s) {
-      hire.appendChild(h('div.sp-row', { style: 'padding:8px' }, h('div.sth', (function () { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center' }); UI.lazyThumb(d, 'staff', s.id, s.emoji, 64); return d; })()), h('div.sm', s.name + '  ' + fmt(s['wage/day'] || s.wage) + '/day', h('small', { text: s.effect })),
+      var sm = h('div.sm', s.name + '  ' + fmt(s['wage/day'] || s.wage) + '/day');
+      if (s.tagline) sm.appendChild(h('div', { style: 'font:600 12px var(--sans);color:var(--ink);margin-top:2px', text: s.tagline }));
+      sm.appendChild(h('small', { text: s.duties || s.effect }));
+      hire.appendChild(h('div.sp-row', { style: 'padding:8px' }, h('div.sth', (function () { var d = h('div', { style: 'width:100%;height:100%;display:flex;align-items:center;justify-content:center' }); UI.lazyThumb(d, 'staff', s.id, s.emoji, 64); return d; })()), sm,
         h('button.btn.sm', { text: 'Hire ' + fmt(s.hireCost), on: { click: function () { var r = Z.Sim.hireStaff(s.id); if (r.ok) { UI.toast(s.name + ' hired at the main gate.', 'good'); UI.snd('cash'); } else { UI.toast(r.msg, 'bad'); UI.snd('bad'); } upd(); } } })));
     });
     var key = '';

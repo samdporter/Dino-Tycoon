@@ -562,14 +562,38 @@ window.Z.DATA = {
   ],
 
   staff: [
-    { id: "keeper", name: "Ranger", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, effect: "Feeds dinosaurs, cleans enclosures & responds by radio (32t range; 48t + station hubs with a Ranger station)" },
-    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, effect: "Treats sick & injured dinosaurs on reachable paths (responds immediately by radio)" },
-    { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
-    { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
-    { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped dinosaurs" },
-    { id: "handyman", name: "Handyman", emoji: "🛠️", wage: 55, hireCost: 140, effect: "Budget all-rounder: slowly repairs broken fences, rides, and power faults, and tidies paths when free." },
-    { id: "electrician", name: "Electrician", emoji: "⚡", wage: 90, hireCost: 350, effect: "Power specialist: rapidly repairs power cuts, downed substations, broken generators, and electric fences." },
-    { id: "scientist", name: "Scientist", emoji: "🔬", wage: 40, perSkill: true, hireCost: 500, effect: "Runs amber extraction experiments in research labs; daily pay is the base wage times skill" }
+    { id: "keeper", name: "Ranger", emoji: "🧑‍🌾", "wage/day": 60, hireCost: 150, badge: "Care",
+      tagline: "Keeps your dinosaurs fed, clean, and safely contained.",
+      duties: "Feeds & waters enclosures, cleans poop, and repairs broken fences by radio (32t range; 48t with a Ranger station).",
+      effect: "Keeps your dinosaurs fed, clean, and safely contained. Feeds & waters enclosures, cleans poop, and repairs broken fences by radio (32t range; 48t with a Ranger station)." },
+    { id: "vet", name: "Vet", emoji: "🩺", "wage/day": 120, hireCost: 800, badge: "Medical",
+      tagline: "Essential medical care when dinosaurs fall ill or fight.",
+      duties: "Responds park-wide by radio to heal sick and injured dinosaurs (faster triage near a Vet clinic).",
+      effect: "Essential medical care when dinosaurs fall ill or fight. Responds park-wide by radio to heal sick and injured dinosaurs (faster triage near a Vet clinic)." },
+    { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, badge: "Clean",
+      tagline: "Keeps paths spotless so guests stay happy and avoid fines.",
+      duties: "Sweeps litter off paths and empties overflowing bins before grime hurts your park rating.",
+      effect: "Keeps paths spotless so guests stay happy and avoid fines. Sweeps litter off paths and empties overflowing bins before grime hurts your park rating." },
+    { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, badge: "Guests",
+      tagline: "Turns casual visitors into thrilled fans.",
+      duties: "Patrols paths giving talks that boost nearby guest happiness and park reputation.",
+      effect: "Turns casual visitors into thrilled fans. Patrols paths giving talks that boost nearby guest happiness and park reputation." },
+    { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, badge: "Safety",
+      tagline: "First responder when a dangerous dinosaur breaks out.",
+      duties: "Chases down and recaptures escaped dinosaurs fast, ending park lockdowns before guests get hurt.",
+      effect: "First responder when a dangerous dinosaur breaks out. Chases down and recaptures escaped dinosaurs fast, ending park lockdowns before guests get hurt." },
+    { id: "handyman", name: "Handyman", emoji: "🛠️", wage: 55, hireCost: 140, badge: "All-round",
+      tagline: "Slow but dependable: handles all your park's odd jobs on a budget.",
+      duties: "Repairs broken fences, rollercoasters (to 90%), and power faults slowly, and tidies paths & bins when free.",
+      effect: "Slow but dependable: handles all your park's odd jobs on a budget. Repairs broken fences, rollercoasters (to 90%), and power faults slowly, and tidies paths & bins when free." },
+    { id: "electrician", name: "Electrician", emoji: "⚡", wage: 90, hireCost: 350, badge: "Power",
+      tagline: "Trusted expert for your park's power grid and electric fences.",
+      duties: "Fastest fix for power cuts, downed substations, broken generators, and breached fences, plus 1.5× grid reliability.",
+      effect: "Trusted expert for your park's power grid and electric fences. Fastest fix for power cuts, downed substations, broken generators, and breached fences, plus 1.5× grid reliability." },
+    { id: "scientist", name: "Scientist", emoji: "🔬", wage: 40, perSkill: true, hireCost: 500, badge: "Lab",
+      tagline: "Unlocks new dinosaurs and stronger genetics.",
+      duties: "Runs amber extractions, DNA sequencing, and genome splicing in Research Labs (daily pay is base wage times skill).",
+      effect: "Unlocks new dinosaurs and stronger genetics. Runs amber extractions, DNA sequencing, and genome splicing in Research Labs (daily pay is base wage times skill)." }
   ],
 
   equipment: [
@@ -1177,7 +1201,10 @@ window.Z.DATA.donors = [
   // existing buildings and scenery that plausibly use mains power
   D.buildings.forEach(function (b) { var kw = D.power.draws[b.id]; if (kw && !b.powerDraw) { b.needsPower = true; b.powerDraw = kw; } });
   D.scenery.forEach(function (s) { var kw = D.power.sceneryDraws[s.id]; if (kw && !s.powerDraw) { s.needsPower = true; s.powerDraw = kw; } });
-  D.staff.push({ id: 'mechanic', name: 'Mechanic', emoji: '🔧', 'wage/day': 75, hireCost: 300, effect: 'Keeps generators & pumps running (fewer breakdowns, faster power repairs) and inspects & repairs rollercoasters across reachable paths' });
+  D.staff.push({ id: 'mechanic', name: 'Mechanic', emoji: '🔧', 'wage/day': 75, hireCost: 300, badge: 'Rides',
+    tagline: 'Ride & machinery specialist who keeps attractions running smoothly.',
+    duties: 'Rapidly repairs & services rollercoasters (to 100%), fixes broken generators, cuts breakdown rates, and patches fences.',
+    effect: 'Ride & machinery specialist who keeps attractions running smoothly. Rapidly repairs & services rollercoasters (to 100%), fixes broken generators, cuts breakdown rates, and patches fences.' });
   D.goals.push({ id: 'power_backup', text: 'Build a backup generator and a battery bank', type: 'powerBackup', target: 1, reward: 2200 });
   D.guestThoughts.blackout = [
     "Why has it gone so dark?", "Is the power off? I can't see the menu!", "No lights, no ice lollies... this is grim.", "Somebody call an electrician!",

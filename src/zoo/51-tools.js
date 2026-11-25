@@ -166,10 +166,14 @@ window.Z = window.Z || {}; var Z = window.Z;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
     var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
-    else if (t.kind === 'staff' && (t.id === 'keeper' || t.id === 'vet')) {
-      hint = t.id === 'keeper'
-        ? 'Tap a path to deploy. Responds by radio across reachable paths (faster around Keeper huts).'
-        : 'Tap a path to deploy. Treats sick & injured animals park-wide on reachable paths (faster around Vet clinics).';
+    else if (t.kind === 'staff') {
+      if (t.id === 'keeper' || t.id === 'vet') {
+        hint = t.id === 'keeper'
+          ? 'Tap a path to deploy. Responds by radio across reachable paths (faster around Keeper huts).'
+          : 'Tap a path to deploy. Treats sick & injured animals park-wide on reachable paths (faster around Vet clinics).';
+      } else if (t.def && (t.def.tagline || t.def.effect)) {
+        hint = 'Tap a path to deploy. ' + (t.def.tagline ? t.def.tagline + (t.def.duties ? ' ' + t.def.duties : '') : t.def.effect);
+      }
     } else if (t.kind === 'building' && t.def && t.def.info) hint = t.def.info;
     s.appendChild(h('div.tname', { html: name + '<small>' + hint + '</small>' }));
     function seg(opts, cur, fn) {
