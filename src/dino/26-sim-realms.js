@@ -80,6 +80,13 @@ window.Z = window.Z || {}; var Z = window.Z;
   function walkAt(t) { var p = S().path[t]; return p ? (D.paths[p - 1].walk || null) : null; }
   R.walkAt = walkAt;
   function defById(id) { var d = RS().defs; for (var k = 0; k < d.length; k++) if (d[k].id === id) return d[k]; return null; }
+  // highest enclosure id still referenced by realm state: definitions and a running feeding show
+  R.maxEncId = function () {
+    var r = RS(), max = 0, k;
+    for (k = 0; k < r.defs.length; k++) if (r.defs[k] && r.defs[k].id > max) max = r.defs[k].id;
+    if (r.show && r.show.enc > max) max = r.show.enc;
+    return max;
+  };
   function isSea(t) { return !!C.seaMask()[t]; }
   function dist2(x0, z0, x1, z1) { var dx = x0 - x1, dz = z0 - z1; return dx * dx + dz * dz; }
 
@@ -472,7 +479,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (merge.length) {
       def = merge[0]; for (k = 1; k < merge.length; k++) { def.tiles = def.tiles.concat(merge[k].tiles); def.paid += merge[k].paid; rs.defs.splice(rs.defs.indexOf(merge[k]), 1); }
       def.tiles = def.tiles.concat(fresh); def.paid += cost;
-    } else { def = { id: C.newId(), kind: kind, realm: realm, tiles: fresh.slice(), lvl: p.lvl, wall: p.wall || 0, mesh: p.mesh || 0, band: p.band || 0, paid: cost }; rs.defs.push(def); }
+    } else { def = { id: C.newEncId(), kind: kind, realm: realm, tiles: fresh.slice(), lvl: p.lvl, wall: p.wall || 0, mesh: p.mesh || 0, band: p.band || 0, paid: cost }; rs.defs.push(def); }
     for (k = 0; k < def.tiles.length; k++) { var tb = def.tiles[k], bi = tb % N, bj = (tb - bi) / N; box[0] = Math.min(box[0], bi); box[1] = Math.min(box[1], bj); box[2] = Math.max(box[2], bi); box[3] = Math.max(box[3], bj); }
     C.spend(cost, 'construction');
     var after = JSON.stringify(rs.defs);
