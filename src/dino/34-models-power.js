@@ -160,7 +160,13 @@
     }
     rot.position.set(0, 5.8, 0.46); g.add(rot);
     var ang = 0;
-    spin(g, function (dt) { var w = Z.Power && Z.Power.windK ? Z.Power.windK() : 0.4; ang += dt * (0.2 + w * 5); rot.rotation.z = ang; });
+    spin(g, function (dt, t, gr) {
+      var st = genState(gr);
+      if (st && (st.state === 'broken' || st.state === 'tripped' || st.state === 'feathered')) return;
+      var w = Z.Power && Z.Power.windK ? Z.Power.windK() : 0.4;
+      ang += dt * (0.2 + w * 5);
+      rot.rotation.z = ang;
+    });
   };
   MODELS.battery_bank = function (g) {   // beveled ribbed container cabinets, roof HVAC pods & power conduits
     var b = B();
@@ -215,7 +221,10 @@
     var puffs = [], pg = grp('steam');
     for (k = 0; k < 6; k++) { var pb = B(); pb.sph(0.5, 0.5, 0.5, 0, 0, 0, 0xf2f4f6, { s: [6, 4] }); var m = mesh(pb.build()); pg.add(m); puffs.push(m); }
     g.add(pg);
-    spin(g, function (dt, t) {
+    spin(g, function (dt, t, gr) {
+      var st = genState(gr);
+      if (st && (st.state === 'broken' || st.state === 'tripped')) { pg.visible = false; return; }
+      pg.visible = true;
       for (var k = 0; k < puffs.length; k++) { var u = (t * 0.25 + k / 6) % 1, m = puffs[k], tower = k & 1; m.position.set(1.95 + tower * 1.50 + Math.sin(k * 3 + t) * 0.2, 2.95 + u * 2.4, 1.75); m.scale.setScalar(0.4 + u * 1.2); }
     });
   };

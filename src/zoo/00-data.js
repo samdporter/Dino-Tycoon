@@ -674,7 +674,9 @@ window.Z.DATA = {
     { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
     { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
     { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped animals" },
-    { id: "mechanic", name: "Mechanic", emoji: "🔧", "wage/day": 85, hireCost: 300, effect: "Inspects & repairs rollercoasters across reachable paths (responds immediately by radio on breakdowns)" }
+    { id: "mechanic", name: "Mechanic", emoji: "🔧", "wage/day": 85, hireCost: 300, effect: "Inspects & repairs rollercoasters across reachable paths (responds immediately by radio on breakdowns)" },
+    { id: "handyman", name: "Handyman", emoji: "🛠️", wage: 55, hireCost: 140, effect: "Budget all-rounder: slowly repairs broken fences, rollercoasters, and power cuts, and tidies paths when free." },
+    { id: "electrician", name: "Electrician", emoji: "⚡", wage: 85, hireCost: 320, effect: "Power specialist: rapidly restores zoo power cuts and repairs damaged fences." }
   ],
 
   goals: [

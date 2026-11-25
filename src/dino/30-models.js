@@ -1550,6 +1550,8 @@ var STAFF = {
   cleaner: { shirt: 0x2f78c4, trouser: 0x24456e, style: 5, hat: 0x2f78c4, prop: 'broom', shortSl: true },
   guide: { shirt: 0xd8322e, trouser: 0x25252b, style: 5, hat: 0xd8322e, prop: 'flag', shortSl: false },
   mechanic: { shirt: 0xe2762a, trouser: 0xb85a1c, style: 10, hat: 0xf2c230, prop: 'toolbox', vest: true, shortSl: false },
+  handyman: { shirt: 0x6d8c54, trouser: 0x344a66, style: 5, hat: 0x5c7346, prop: 'toolbox', shortSl: true },
+  electrician: { shirt: 0xf0c420, trouser: 0x1e2c44, style: 10, hat: 0x2868c8, prop: 'toolbox', vest: true, shortSl: false },
   security: { shirt: 0x2a3042, trouser: 0x1b1f2b, style: 8, hat: 0x2a3042, prop: null, vest: true, shortSl: false }
 };
 API_people = {

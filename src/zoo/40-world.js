@@ -226,6 +226,7 @@ function init(container) {
   buildObjectsSystem();
   buildEntitySystem();
   buildOverlays();
+  buildBreakageFX();
   buildPreview();
   ATM.buildRain(rng32);
   buildCameraSystem();
@@ -1079,6 +1080,10 @@ function fcl() {
   FCL = {};
   Object.keys(FC).forEach(function (k) { FCL[k] = {}; Object.keys(FC[k]).forEach(function (kk) { FCL[k][kk] = lin3(FC[k][kk]); }); });
   FCL.glassPane = lin3('#a8e0ee');
+  FCL.hazRed = lin3('#ef2b2d');
+  FCL.hazAmb = lin3('#f59e0b');
+  FCL.woodDebris = lin3('#7c522c');
+  FCL.bark = lin3('#4b3520');
   return FCL;
 }
 // quad auto oriented to a desired normal
@@ -1088,7 +1093,7 @@ function quadN(mb, a, b, c, d, n, col, u0, v0, u1, v1) {
   if (cx * n[0] + cy * n[1] + cz * n[2] < 0) mb.quad(a, d, c, b, n[0], n[1], n[2], col, u0, v1, u1, v0);
   else mb.quad(a, b, c, d, n[0], n[1], n[2], col, u0, v0, u1, v1);
 }
-function fenceEdge(set, axis, i, j, f, contNext) {
+function fenceEdge(set, axis, i, j, f, contNext, broken) {
   var C = fcl(), h = f.height || 1.2, st = f.style, ox = i * T, oz = j * T, solid = set.solid;
   var jit = h2(i * 17 + (axis === 'x' ? 0 : 5), j * 29 + 3);
   // ground heights at the two ends of the edge; everything is sheared to follow the slope
@@ -1106,6 +1111,34 @@ function fenceEdge(set, axis, i, j, f, contNext) {
     quadN(mb, a0, d0, d1, a1, nsm, cs); quadN(mb, b0, c0, c1, b1, ns, cs);
     if (!nb) quadN(mb, a0, b0, c0, d0, [0, -1, 0], mul3(col, 0.6));
   }
+  function fallenBox(mb, sc, yc, tc, hs, hy, ht, yaw, tilt, col) {
+    var cy = Math.cos(yaw), sy = Math.sin(yaw), ct = Math.cos(tilt), stt = Math.sin(tilt);
+    function pt(ls, ly, lt) {
+      var ly1 = ly * ct - lt * stt, lt1 = ly * stt + lt * ct;
+      var ds = ls * cy - lt1 * sy, dt = ls * sy + lt1 * cy;
+      return P(sc + ds, yc + ly1, tc + dt);
+    }
+    var p000 = pt(-hs, -hy, -ht), p100 = pt(hs, -hy, -ht), p110 = pt(hs, hy, -ht), p010 = pt(-hs, hy, -ht);
+    var p001 = pt(-hs, -hy, ht), p101 = pt(hs, -hy, ht), p111 = pt(hs, hy, ht), p011 = pt(-hs, hy, ht);
+    var cs = mul3(col, 0.84), cb = mul3(col, 0.62);
+    function qf(a, b, c, d, cl) {
+      var ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+      var nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      var nl = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+      mb.quad(a, b, c, d, nx / nl, ny / nl, nz / nl, cl);
+    }
+    qf(p011, p111, p110, p010, col);
+    qf(p000, p100, p101, p001, cb);
+    qf(p001, p101, p111, p011, cs);
+    qf(p100, p000, p010, p110, cs);
+    qf(p101, p100, p110, p111, cs);
+    qf(p000, p001, p011, p010, cs);
+  }
+  function hazardTrim(sEdge, topY) {
+    var ty = clamp(topY || 0.42, 0.28, 0.56);
+    bx(solid, sEdge - 0.055, 0.02, -0.09, sEdge + 0.055, ty * 0.56, 0.09, C.hazRed);
+    bx(solid, sEdge - 0.06, ty * 0.56, -0.095, sEdge + 0.06, ty, 0.095, C.hazAmb, true);
+  }
   function panel(mb, s0, s1, y0, y1, col, ru, rv) {
     var nf = axis === 'x' ? [0, 0, 1] : [1, 0, 0], nb = axis === 'x' ? [0, 0, -1] : [-1, 0, 0];
     var a = P(s0, y0, 0), b = P(s1, y0, 0), c = P(s1, y1, 0), d = P(s0, y1, 0);
@@ -1118,6 +1151,114 @@ function fenceEdge(set, axis, i, j, f, contNext) {
       bx(solid, s - w, -0.05, -w, s + w, ph, w, col);
       if (capCol) bx(solid, s - w * 1.3, ph, -w * 1.3, s + w * 1.3, ph + 0.05, w * 1.3, capCol, true);
     }
+  }
+  if (broken) {
+    var gap0 = T * 0.28, gap1 = T * 0.72;
+    if (st === 'wood') {
+      var bw = C.wood;
+      bx(solid, -0.07, -0.05, -0.07, 0.07, h * 0.62, 0.07, bw.post);
+      if (!contNext) bx(solid, T - 0.07, -0.05, -0.07, T + 0.07, h * 0.58, 0.07, bw.post);
+      bx(solid, gap0 - 0.06, -0.05, -0.06, gap0 + 0.04, h * 0.44, 0.06, bw.post);
+      bx(solid, gap1 - 0.04, -0.05, -0.06, gap1 + 0.06, h * 0.40, 0.06, bw.post);
+      bx(solid, 0.06, h * 0.20, -0.035, gap0, h * 0.20 + 0.11, 0.035, bw.rail);
+      bx(solid, 0.06, h * 0.46, -0.035, gap0 - 0.05, h * 0.46 + 0.10, 0.035, bw.rail);
+      bx(solid, gap1, h * 0.20, -0.035, T - 0.06, h * 0.20 + 0.11, 0.035, bw.rail);
+      fallenBox(solid, T * 0.42, 0.05, -0.18, 0.34, 0.045, 0.05, 0.45, 0.08, bw.rail);
+      fallenBox(solid, T * 0.58, 0.05, 0.20, 0.32, 0.045, 0.05, -0.55, -0.06, C.woodDebris);
+      fallenBox(solid, T * 0.50, 0.06, -0.32, 0.22, 0.055, 0.055, 0.18, 0.12, bw.post);
+      hazardTrim(gap0, 0.44); hazardTrim(gap1, 0.44);
+    } else if (st === 'rail') {
+      var br = C.rail;
+      bx(solid, -0.06, -0.05, -0.06, 0.06, h * 0.62, 0.06, br.post);
+      if (!contNext) bx(solid, T - 0.06, -0.05, -0.06, T + 0.06, h * 0.56, 0.06, br.post);
+      bx(solid, gap0 - 0.05, -0.05, -0.05, gap0 + 0.04, h * 0.42, 0.05, br.post);
+      bx(solid, gap1 - 0.04, -0.05, -0.05, gap1 + 0.05, h * 0.38, 0.05, br.post);
+      bx(solid, 0.05, h * 0.42, -0.025, gap0, h * 0.42 + 0.07, 0.025, mul3(br.rail, 0.85));
+      bx(solid, gap1, h * 0.42, -0.025, T - 0.05, h * 0.42 + 0.07, 0.025, mul3(br.rail, 0.85));
+      fallenBox(solid, T * 0.44, 0.05, 0.16, 0.35, 0.045, 0.055, -0.42, 0.10, br.rail);
+      fallenBox(solid, T * 0.57, 0.05, -0.22, 0.28, 0.04, 0.045, 0.52, -0.08, br.post);
+      hazardTrim(gap0, 0.42); hazardTrim(gap1, 0.42);
+    } else if (st === 'chain') {
+      var bheavy = f.strength >= 5, bc = bheavy ? C.chainR : C.chain, bpw = bheavy ? 0.055 : 0.04;
+      bx(solid, -bpw, -0.05, -bpw, bpw, h * 0.56, bpw, bc.post);
+      if (!contNext) bx(solid, T - bpw, -0.05, -bpw, T + bpw, h * 0.54, bpw, bc.post);
+      bx(solid, gap0 - bpw, -0.05, -bpw, gap0 + bpw, h * 0.42, bpw, bc.post);
+      bx(solid, gap1 - bpw, -0.05, -bpw, gap1 + bpw, h * 0.38, bpw, bc.post);
+      bx(solid, 0, 0, -0.025, gap0, 0.07, 0.025, bc.post);
+      bx(solid, gap1, 0, -0.025, T, 0.07, 0.025, bc.post);
+      panel(set.chain, 0, gap0, 0.07, h * 0.48, bheavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], gap0, h * 0.41);
+      panel(set.chain, gap1, T, 0.07, h * 0.44, bheavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T - gap1, h * 0.37);
+      fallenBox(solid, T * 0.45, 0.045, 0.18, 0.36, 0.035, 0.035, 0.38, 0.06, bc.post);
+      fallenBox(solid, T * 0.55, 0.045, -0.20, 0.30, 0.03, 0.03, -0.48, -0.08, bc.post);
+      quadN(set.chain, P(gap0 + 0.04, 0.04, -0.18), P(gap1 - 0.04, 0.05, -0.10), P(gap1 - 0.08, 0.06, 0.32), P(gap0 + 0.08, 0.04, 0.24), [0, 1, 0], bheavy ? [0.55, 0.58, 0.6] : [0.85, 0.88, 0.9], 0, 0, 0.8, 0.5);
+      hazardTrim(gap0, 0.44); hazardTrim(gap1, 0.44);
+    } else if (st === 'cage') {
+      var bc7 = C.cage, bch = f.height || 3.0;
+      bx(solid, -0.065, -0.05, -0.065, 0.065, bch * 0.38, 0.065, bc7.post);
+      if (!contNext) bx(solid, T - 0.065, -0.05, -0.065, T + 0.065, bch * 0.36, 0.065, bc7.post);
+      bx(solid, gap0 - 0.055, -0.05, -0.055, gap0 + 0.045, bch * 0.32, 0.055, bc7.post);
+      bx(solid, gap1 - 0.045, -0.05, -0.055, gap1 + 0.055, bch * 0.30, 0.055, bc7.post);
+      bx(solid, 0, 0, -0.04, gap0, 0.09, 0.04, bc7.rail);
+      bx(solid, gap1, 0, -0.04, T, 0.09, 0.04, bc7.rail);
+      bx(solid, T * 0.14 - 0.02, 0.09, -0.02, T * 0.14 + 0.02, bch * 0.34, 0.02, bc7.bar, true);
+      bx(solid, T * 0.86 - 0.02, 0.09, -0.02, T * 0.86 + 0.02, bch * 0.30, 0.02, bc7.bar, true);
+      panel(set.chain, 0, gap0, 0.09, bch * 0.32, [0.48, 0.52, 0.56], gap0, bch * 0.23);
+      panel(set.chain, gap1, T, 0.09, bch * 0.30, [0.48, 0.52, 0.56], T - gap1, bch * 0.21);
+      fallenBox(solid, T * 0.44, 0.06, -0.22, 0.38, 0.045, 0.045, 0.52, 0.08, bc7.post);
+      fallenBox(solid, T * 0.56, 0.06, 0.24, 0.36, 0.035, 0.035, -0.36, -0.06, bc7.bar);
+      fallenBox(solid, T * 0.48, 0.05, 0.04, 0.26, 0.03, 0.03, 0.95, 0.10, bc7.rail);
+      hazardTrim(gap0, 0.52); hazardTrim(gap1, 0.52);
+    } else if (st === 'glass') {
+      var bc4 = C.glass;
+      bx(solid, -0.04, -0.05, -0.04, 0.04, h * 0.52, 0.04, bc4.post);
+      if (!contNext) bx(solid, T - 0.04, -0.05, -0.04, T + 0.04, h * 0.48, 0.04, bc4.post);
+      bx(solid, gap0 - 0.04, -0.05, -0.04, gap0 + 0.03, h * 0.42, 0.04, bc4.post);
+      bx(solid, gap1 - 0.03, -0.05, -0.04, gap1 + 0.04, h * 0.38, 0.04, bc4.post);
+      bx(solid, 0, 0, -0.05, gap0, 0.1, 0.05, mul3(bc4.post, 0.9));
+      bx(solid, gap1, 0, -0.05, T, 0.1, 0.05, mul3(bc4.post, 0.9));
+      panel(set.glass, 0.02, gap0 - 0.02, 0.1, h * 0.42, C.glassPane, 0.4, 0.4);
+      panel(set.glass, gap1 + 0.02, T - 0.02, 0.1, h * 0.36, C.glassPane, 0.4, 0.4);
+      fallenBox(solid, T * 0.46, 0.045, -0.22, 0.32, 0.035, 0.035, 0.42, 0.05, bc4.post);
+      fallenBox(set.glass, T * 0.40, 0.03, 0.16, 0.16, 0.02, 0.13, 0.72, 0.08, C.glassPane);
+      fallenBox(set.glass, T * 0.56, 0.03, -0.10, 0.14, 0.02, 0.11, -0.58, -0.10, C.glassPane);
+      fallenBox(set.glass, T * 0.62, 0.03, 0.25, 0.15, 0.02, 0.10, 0.25, 0.12, C.glassPane);
+      hazardTrim(gap0, 0.44); hazardTrim(gap1, 0.44);
+    } else if (st === 'concrete') {
+      var bc5 = C.concrete, bk5 = 0.94 + 0.12 * jit;
+      bx(solid, 0, 0, -0.17, gap0, 0.22, 0.17, mul3(bc5.plinth, bk5));
+      bx(solid, gap1, 0, -0.17, T, 0.22, 0.17, mul3(bc5.plinth, bk5));
+      bx(solid, 0, 0.22, -0.14, gap0 * 0.72, h * 0.58, 0.14, mul3(bc5.wall, bk5));
+      bx(solid, gap0 * 0.72, 0.22, -0.14, gap0, h * 0.38, 0.14, mul3(bc5.wall, 0.9 * bk5));
+      bx(solid, gap1 + (T - gap1) * 0.28, 0.22, -0.14, T, h * 0.55, 0.14, mul3(bc5.wall, bk5));
+      bx(solid, gap1, 0.22, -0.14, gap1 + (T - gap1) * 0.28, h * 0.36, 0.14, mul3(bc5.wall, 0.9 * bk5));
+      bx(solid, -0.2, 0, -0.2, 0.2, h * 0.62, 0.2, mul3(bc5.wall, 0.92 * bk5));
+      if (!contNext) bx(solid, T - 0.2, 0, -0.2, T + 0.2, h * 0.60, 0.2, mul3(bc5.wall, 0.92 * bk5));
+      fallenBox(solid, T * 0.42, 0.09, -0.20, 0.19, 0.09, 0.15, 0.38, 0.16, mul3(bc5.wall, bk5));
+      fallenBox(solid, T * 0.58, 0.08, 0.22, 0.18, 0.08, 0.14, -0.62, -0.14, mul3(bc5.cap, bk5));
+      fallenBox(solid, T * 0.49, 0.07, 0.02, 0.13, 0.07, 0.11, 0.95, 0.20, mul3(bc5.plinth, bk5));
+      hazardTrim(gap0, 0.52); hazardTrim(gap1, 0.52);
+    } else if (st === 'hedge') {
+      var bc6 = C.hedge, bhh = h * (0.95 + 0.1 * jit), bkk = 0.88 + 0.24 * h2(i * 3 + 9, j * 7 + 1);
+      var bcol = mul3(bc6.a, bkk), bcolTop = mul3(bc6.b, bkk);
+      bx(solid, -0.08, 0, -0.42, gap0, bhh * 0.48, 0.42, bcol);
+      bx(solid, -0.04, bhh * 0.48, -0.32, gap0 - 0.05, bhh * 0.64, 0.32, bcolTop, true);
+      bx(solid, gap1, 0, -0.42, T + 0.08, bhh * 0.45, 0.42, bcol);
+      bx(solid, gap1 + 0.05, bhh * 0.45, -0.32, T + 0.04, bhh * 0.60, 0.32, bcolTop, true);
+      bx(solid, gap0 - 0.06, 0.08, -0.14, gap0 + 0.06, 0.24, 0.14, C.bark, true);
+      bx(solid, gap1 - 0.06, 0.08, -0.14, gap1 + 0.06, 0.22, 0.14, C.bark, true);
+      fallenBox(solid, T * 0.43, 0.07, -0.18, 0.18, 0.08, 0.16, 0.45, 0.12, bcol);
+      fallenBox(solid, T * 0.57, 0.06, 0.20, 0.16, 0.07, 0.15, -0.52, -0.10, bcolTop);
+      fallenBox(solid, T * 0.50, 0.04, 0.02, 0.22, 0.035, 0.04, 0.32, 0.08, C.bark);
+      hazardTrim(gap0, 0.46); hazardTrim(gap1, 0.46);
+    } else {
+      bx(solid, -0.06, -0.05, -0.06, 0.06, h * 0.58, 0.06, [0.4, 0.3, 0.2]);
+      if (!contNext) bx(solid, T - 0.06, -0.05, -0.06, T + 0.06, h * 0.56, 0.06, [0.4, 0.3, 0.2]);
+      bx(solid, 0, h * 0.38, -0.03, gap0, h * 0.38 + 0.09, 0.03, [0.5, 0.4, 0.3]);
+      bx(solid, gap1, h * 0.38, -0.03, T, h * 0.38 + 0.09, 0.03, [0.5, 0.4, 0.3]);
+      fallenBox(solid, T * 0.50, 0.05, 0.12, 0.32, 0.04, 0.05, 0.48, 0.08, [0.5, 0.4, 0.3]);
+      hazardTrim(gap0, 0.44); hazardTrim(gap1, 0.44);
+    }
+    return;
   }
   if (st === 'wood') {
     var c = C.wood;
@@ -1194,6 +1335,16 @@ function buildFenceChunk(ci, cj) {
   fenceMeshes[key] = null;
   var s = Z.state; if (!s || !s.fenceX || !s.fenceZ) return;
   var types = D.fences || [], fx = s.fenceX, fz = s.fenceZ;
+  var brokenMap = {}, encs = s.enclosures;
+  if (encs && encs.length) {
+    for (var ek = 0; ek < encs.length; ek++) {
+      var enc = encs[ek];
+      if (enc && enc.breach > 0 && enc.breachEdge) {
+        var be = enc.breachEdge;
+        brokenMap[be.axis + ':' + be.i + ':' + be.j] = 1;
+      }
+    }
+  }
   var set = { solid: new MB(), chain: new MB(), glass: new MB() }, any = false;
   var i0 = ci * CH, j0 = cj * CH, i1 = Math.min(N, i0 + CH), j1 = Math.min(N, j0 + CH);
   var iEnd = ci === NCH - 1 ? N : i1 - 1, jEnd = cj === NCH - 1 ? N : j1 - 1;
@@ -1201,12 +1352,12 @@ function buildFenceChunk(ci, cj) {
   for (j = j0; j <= jEnd; j++) for (i = i0; i < i1; i++) {   // fenceX: along north side of (i,j)
     v = fx[i + j * N]; if (!v) continue;
     f = types[v - 1]; if (!f) continue; any = true;
-    fenceEdge(set, 'x', i, j, f, i + 1 < N && fx[i + 1 + j * N] === v);
+    fenceEdge(set, 'x', i, j, f, i + 1 < N && fx[i + 1 + j * N] === v, !!brokenMap['x:' + i + ':' + j]);
   }
   for (j = j0; j < j1; j++) for (i = i0; i <= iEnd; i++) {   // fenceZ: along west side of (i,j)
     v = fz[i + j * (N + 1)]; if (!v) continue;
     f = types[v - 1]; if (!f) continue; any = true;
-    fenceEdge(set, 'z', i, j, f, j + 1 < N && fz[i + (j + 1) * (N + 1)] === v);
+    fenceEdge(set, 'z', i, j, f, j + 1 < N && fz[i + (j + 1) * (N + 1)] === v, !!brokenMap['z:' + i + ':' + j]);
   }
   if (!any) return;
   var meshes = [];
@@ -1486,6 +1637,9 @@ function syncObjects() {
       var bm = buildingMeta(o.type), w = bm.w || 1, h = bm.h || 1;
       if ((rot & 1) && w !== h) { var t0 = w; w = h; h = t0; }
       rec.w = w; rec.h = h;
+      rec.bType = bm.type || '';
+      rec.powered = (rec.bType === 'ride' || rec.bType === 'food' || rec.bType === 'drink' || rec.bType === 'shop' || rec.bType === 'arcade');
+      rec.coasterStation = !!bm.coasterStation;
       rec.x = (o.i + w / 2) * T; rec.z = (o.j + h / 2) * T; rec.y = 0;
       var g = makeBuildingGroup(o.type);
       enableShadows(g, true, true);
@@ -1596,11 +1750,12 @@ function rebuildLamps() {
   lampTimer = 0;
 }
 function updateLamps(dt) {
-  var n = G.night, i;
-  lampPoints.visible = n > 0.03 && lampList.length > 0;
+  var powerCut = !!(Z.Sim && Z.Sim.powerCutActive && Z.Sim.powerCutActive());
+  var n = powerCut ? 0 : G.night, i;
+  lampPoints.visible = !powerCut && n > 0.03 && lampList.length > 0;
   lampPoints.material.opacity = clamp(n * 1.1, 0, 1);
-  for (i = 0; i < lampMats.length; i++) { var m = lampMats[i]; if (m.emissiveIntensity !== undefined) m.emissiveIntensity = m.userData._ei * (0.35 + 2.2 * n); }
-  if (G.signMat) G.signMat.emissiveIntensity = 0.55 * n;
+  for (i = 0; i < lampMats.length; i++) { var m = lampMats[i]; if (m.emissiveIntensity !== undefined) m.emissiveIntensity = powerCut ? 0 : m.userData._ei * (0.35 + 2.2 * n); }
+  if (G.signMat) G.signMat.emissiveIntensity = powerCut ? 0 : 0.55 * n;
   lampTimer -= dt;
   if (lampTimer <= 0) {
     lampTimer = 0.4;
@@ -1951,8 +2106,16 @@ function updateEntities(dt, dtGame) {
 }
 function updateBuildings(dtGame) {
   var t = G.t;
+  var powerCut = !!(Z.Sim && Z.Sim.powerCutActive && Z.Sim.powerCutActive());
   for (var k = 0; k < bldList.length; k++) {
     var r = bldList[k], dx = r.x - view.x, dz = r.z - view.z;
+    if (!r.upd) continue;
+    if (r.obj && (r.obj.broken || r.obj.paused)) continue;
+    if (powerCut && r.powered) continue;
+    if (r.coasterStation && Z.Coaster && Z.Coaster.stationInfo) {
+      var stInfo = Z.Coaster.stationInfo(r.obj.id);
+      if (stInfo && (stInfo.broken || stInfo.paused)) continue;
+    }
     if (dx * dx + dz * dz > 130 * 130 && (G.frameNo & 7)) continue;
     try { r.upd.call(r.group.userData, dtGame, t, r.group); } catch (e) { r.upd = null; }
   }
@@ -2315,6 +2478,162 @@ function syncFights(dtReal) {
     var sps = 0.85 + 0.18 * Math.sin(t * 10);
     rec.sp.scale.set(sps, sps, 1);
   });
+}
+
+/* ------------------------------------------------ breakage & power-cut FX */
+var breakageGrp = null, _brkRes = null, brkBeacons = [], brkParts = [], brkEmitT = 0;
+var MAX_BRK_PARTS = 140;
+function getBrkRes() {
+  if (_brkRes) return _brkRes;
+  _brkRes = {
+    sphereGeo: new THREE.SphereGeometry(0.28, 10, 8),
+    diamondGeo: new THREE.OctahedronGeometry(0.32, 0),
+    partGeo: new THREE.SphereGeometry(0.16, 6, 5),
+    redMat: new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
+    amberMat: new THREE.MeshBasicMaterial({ color: 0xffa818 }),
+    smokeMat: new THREE.MeshBasicMaterial({ color: 0x3a3e44, transparent: true, opacity: 0.72 }),
+    sparkMat: new THREE.MeshBasicMaterial({ color: 0xffc832 })
+  };
+  return _brkRes;
+}
+function buildBreakageFX() {
+  if (!breakageGrp && scene) {
+    breakageGrp = new THREE.Group();
+    scene.add(breakageGrp);
+  }
+}
+function clearBreakageFX() {
+  if (breakageGrp) {
+    while (breakageGrp.children.length) breakageGrp.remove(breakageGrp.children[0]);
+  }
+  brkBeacons.length = 0;
+  brkParts.length = 0;
+  brkEmitT = 0;
+}
+function allocBrkBeacon(idx, isAmber) {
+  var R = getBrkRes();
+  var rec = brkBeacons[idx];
+  if (!rec) {
+    var g = new THREE.Group();
+    var sp = new THREE.Mesh(R.sphereGeo, isAmber ? R.amberMat : R.redMat);
+    var dm = new THREE.Mesh(R.diamondGeo, isAmber ? R.amberMat : R.redMat);
+    dm.position.set(0, 0.58, 0);
+    g.add(sp);
+    g.add(dm);
+    breakageGrp.add(g);
+    rec = brkBeacons[idx] = { grp: g, sphere: sp, diamond: dm };
+  } else {
+    var mat = isAmber ? R.amberMat : R.redMat;
+    rec.sphere.material = mat;
+    rec.diamond.material = mat;
+  }
+  return rec;
+}
+function spawnBrkPart(kind, x, y, z) {
+  if (!breakageGrp) return;
+  var R = getBrkRes(), slot = null;
+  for (var k = 0; k < brkParts.length; k++) {
+    if (!brkParts[k].active) { slot = brkParts[k]; break; }
+  }
+  if (!slot) {
+    if (brkParts.length >= MAX_BRK_PARTS) return;
+    var m = new THREE.Mesh(R.partGeo, R.smokeMat);
+    breakageGrp.add(m);
+    slot = { active: false, mesh: m, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, kind: 'smoke' };
+    brkParts.push(slot);
+  }
+  slot.active = true;
+  slot.kind = kind;
+  slot.mesh.material = kind === 'spark' ? R.sparkMat : R.smokeMat;
+  slot.mesh.position.set(x + (Math.random() - 0.5) * 0.45, y, z + (Math.random() - 0.5) * 0.45);
+  slot.mesh.visible = true;
+  if (kind === 'spark') {
+    slot.vx = (Math.random() - 0.5) * 2.4;
+    slot.vy = 2.3 + Math.random() * 1.8;
+    slot.vz = (Math.random() - 0.5) * 2.4;
+    slot.maxLife = 0.42 + Math.random() * 0.25;
+    slot.mesh.scale.setScalar(0.55);
+  } else {
+    slot.vx = (Math.random() - 0.5) * 0.45;
+    slot.vy = 1.15 + Math.random() * 0.7;
+    slot.vz = (Math.random() - 0.5) * 0.45;
+    slot.maxLife = 1.15 + Math.random() * 0.45;
+    slot.mesh.scale.setScalar(0.75);
+  }
+  slot.life = slot.maxLife;
+}
+function syncBreakageFX(dtReal) {
+  if (!breakageGrp || !Z.state) return;
+  var dt = isFin(dtReal) ? dtReal : 0.016;
+  var s = Z.state, tNow = G.t;
+  var powerCut = !!(Z.Sim && Z.Sim.powerCutActive && Z.Sim.powerCutActive());
+  var emitTick = false;
+  brkEmitT += dt;
+  if (brkEmitT >= 0.16) { brkEmitT = brkEmitT % 0.16; emitTick = true; }
+
+  var bCount = 0;
+  function placeBeacon(x, y, z, isAmber, ph) {
+    var rec = allocBrkBeacon(bCount++, isAmber);
+    rec.grp.visible = true;
+    rec.grp.position.set(x, y, z);
+    var pulse = 0.85 + 0.25 * Math.sin(tNow * 8 + ph);
+    rec.sphere.scale.setScalar(pulse);
+    rec.sphere.visible = Math.sin(tNow * 9 + ph) > -0.25;
+    rec.diamond.position.y = 0.58 + Math.sin(tNow * 5 + ph) * 0.14;
+    rec.diamond.rotation.y = tNow * 2.6 + ph;
+  }
+
+  // 1. Breached enclosures: red pulsing beacon + sparks at the exact broken fence panel
+  var encs = s.enclosures || [];
+  for (var k = 0; k < encs.length; k++) {
+    var e = encs[k];
+    if (!e || !(e.breach > 0) || !e.breachEdge) continue;
+    var ed = e.breachEdge;
+    var fx = ed.axis === 'x' ? (ed.i + 0.5) * T : ed.i * T;
+    var fz = ed.axis === 'x' ? ed.j * T : (ed.j + 0.5) * T;
+    var gy = groundY(fx, fz);
+    placeBeacon(fx, gy + 1.5, fz, false, k * 0.9);
+    if (emitTick) {
+      spawnBrkPart('spark', fx, gy + 0.55, fz);
+      if (Math.random() < 0.5) spawnBrkPart('spark', fx, gy + 0.65, fz);
+    }
+  }
+
+  // 2. Broken buildings (red pulsing beacon + smoke) and 3. Power-cut rides/stalls/arcades (amber pulsing outage beacon)
+  objRecs.forEach(function (r) {
+    if (r.kind !== 'building' || !r.obj) return;
+    var isBroken = !!r.obj.broken;
+    var isOutage = powerCut && r.powered;
+    if (!isBroken && !isOutage) return;
+    var topY = r.y + (r.coasterStation ? 5.2 : (r.w >= 3 || r.h >= 3 ? 3.4 : r.w >= 2 || r.h >= 2 ? 2.8 : 2.25));
+    placeBeacon(r.x, topY, r.z, !isBroken && isOutage, (r.id | 0) * 0.7);
+    if (emitTick && isBroken) {
+      spawnBrkPart('smoke', r.x, topY - 0.5, r.z);
+    }
+  });
+
+  for (k = bCount; k < brkBeacons.length; k++) {
+    brkBeacons[k].grp.visible = false;
+  }
+
+  // Update pooled smoke & spark particles
+  for (k = 0; k < brkParts.length; k++) {
+    var pt = brkParts[k];
+    if (!pt.active) continue;
+    pt.life -= dt;
+    if (pt.life <= 0) {
+      pt.active = false;
+      pt.mesh.visible = false;
+      continue;
+    }
+    var u = pt.life / pt.maxLife;
+    if (pt.kind === 'spark') pt.vy -= 5.6 * dt;
+    pt.mesh.position.x += pt.vx * dt;
+    pt.mesh.position.y += pt.vy * dt;
+    pt.mesh.position.z += pt.vz * dt;
+    var sc = pt.kind === 'spark' ? Math.max(0.1, 0.55 * u) : (0.65 + (1 - u) * 1.15) * Math.min(1, u * 2.2);
+    pt.mesh.scale.setScalar(Math.max(0.08, sc));
+  }
 }
 /* ------------------------------------------------ preview / highlighting */
 var pv = {};
@@ -2903,6 +3222,7 @@ function resetAll() {
   for (var t in pools) { root.remove(pools[t].mesh); } pools = {};
   clearEnts();
   clearFightClouds();
+  clearBreakageFX();
   objDirty = true; G.poopSig = -1; G.litterSig = -1; G.ovTimer = 0;
   followK = null; followId = null;
   setPreview(null);
@@ -2936,6 +3256,13 @@ function hookBus() {
     if (!e) { fenceDirty.fill(1); return; }
     if (e.axis === 'x') markRect(fenceDirty, e.i - 1, e.j - 1, e.i + 1, e.j, 1); else markRect(fenceDirty, e.i - 1, e.j - 1, e.i, e.j + 1, 1);
   });
+  function dirtyFenceEdge(e) {
+    var ed = e && (e.edge || (e.axis ? e : null));
+    if (!ed) { fenceDirty.fill(1); return; }
+    if (ed.axis === 'x') markRect(fenceDirty, ed.i - 1, ed.j - 1, ed.i + 1, ed.j, 1); else markRect(fenceDirty, ed.i - 1, ed.j - 1, ed.i, ed.j + 1, 1);
+  }
+  b.on('fenceBreach', dirtyFenceEdge);
+  b.on('fenceFixed', dirtyFenceEdge);
   b.on('fences', function () { fenceDirty.fill(1); rebuildCageRoofs(); });
   b.on('objectAdded', function () { objDirty = true; });
   b.on('objectRemoved', function () { objDirty = true; });
@@ -2981,6 +3308,7 @@ function frame(dtReal) {
   updateBuildings(dtGame);
   syncEggs(dtReal);
   syncFights(dtReal);
+  syncBreakageFX(dtReal);
   updateBubbles();
   updateFloaters(dtReal);
   updateGrime(dtReal);

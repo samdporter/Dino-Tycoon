@@ -4472,7 +4472,9 @@ var STAFF = {
   cleaner: { shirt: 0x2f78c4, trouser: 0x24456e, style: 5, hat: 0x2f78c4, prop: 'broom', shortSl: true },
   guide: { shirt: 0xd8322e, trouser: 0x25252b, style: 5, hat: 0xd8322e, prop: 'flag', shortSl: false },
   security: { shirt: 0x2a3042, trouser: 0x1b1f2b, style: 8, hat: 0x2a3042, prop: null, vest: true, shortSl: false },
-  mechanic: { shirt: 0xe07828, trouser: 0x24344d, style: 5, hat: 0xf2b824, prop: 'case', vest: true, shortSl: true }
+  mechanic: { shirt: 0xe07828, trouser: 0x24344d, style: 5, hat: 0xf2b824, prop: 'case', vest: true, shortSl: true },
+  handyman: { shirt: 0x6d8c54, trouser: 0x344a66, style: 5, hat: 0x5c7346, prop: 'case', shortSl: true },
+  electrician: { shirt: 0xf0c420, trouser: 0x1e2c44, style: 5, hat: 0x2868c8, prop: 'case', vest: true, shortSl: true }
 };
 API_people = {
   guest: function (seed) { var k = guestLook(seed | 0); return createPerson(k, null); },

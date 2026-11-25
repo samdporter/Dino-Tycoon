@@ -76,6 +76,14 @@ window.Z = window.Z || {}; var Z = window.Z;
       } else if (panic > 0.01) {
         hint('Recent panic is still lowering the rating. Keep animals secure while guests settle.', 0.6 * panic, null, null, null, null, 'safety');
       }
+      (S2.enclosures || []).forEach(function (e) {
+        if (e.breach > 0) {
+          var T = Z.TILE || 2, ed = e.breachEdge;
+          var bx = ed ? (ed.axis === 'x' ? (ed.i + 0.5) * T : ed.i * T) : e.cx;
+          var bz = ed ? (ed.axis === 'x' ? ed.j * T : (ed.j + 0.5) * T) : e.cz;
+          hint('⚠️ ' + (e.name || 'Enclosure') + ' has a broken fence panel!' + (e.breachCrew ? ' (Repair crew on site)' : ' Call a fence crew or send a ranger.'), 1.9, 'enclosure', e.id, bx, bz, 'breach');
+        }
+      });
       var collectionCap = Number.isFinite(rb.collectionCap) ? rb.collectionCap : null, speciesCount = rb.speciesCount, animalCount = rb.animalCount;
       if (!Number.isFinite(speciesCount)) { var foundSpecies = {}; (S2.animals || []).forEach(function (a) { foundSpecies[a.species] = 1; }); speciesCount = Object.keys(foundSpecies).length; }
       if (!Number.isFinite(animalCount)) animalCount = (S2.animals || []).length;

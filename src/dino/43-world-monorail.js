@@ -67,6 +67,12 @@
         var lb = B(); for (k = -1; k <= 1; k += 2) lb.box(0.2, 0.08, 0.2, k * 3.3, dk + 1.5, 0.5, 0xffe9a8); lb.box(1.9, 0.1, 0.03, 0, dk - 0.55, 2.03, 0xffefc2);
         for (k = -2; k <= 2; k++) lb.box(0.42, 0.12, 0.02, k * 1.3, 0.55 + 2.0, 1.99, 0xffe0a0);
         var lm = new THREE.Mesh(lb.build(), MW.lampMat()); g.add(lm);
+        g.userData.update = function (dt, t, gr, obj) {
+          var o = obj || (gr && gr.userData && gr.userData.obj) || (g.userData && g.userData.obj);
+          var st = S();
+          var off = !!(o && o.off) || !!(st && st.mono && st.mono.powered === false);
+          lm.material = off ? lampOffMat() : MW.lampMat();
+        };
       }
       var oc = K && Z.Models.createBuilding, of = Z.Models.buildingFootprint;
       Z.Models.createBuilding = function (id) {
@@ -78,8 +84,9 @@
   }
 
   // ======================================================================= shared materials
-  var _lampMat = null, _lightMat = null, _glassMat = null, _beamMat = null, _ghostMat = null, _ovMat = null, _dotMat = null, _boltMat = null;
+  var _lampMat = null, _lampOffMat = null, _lightMat = null, _glassMat = null, _beamMat = null, _ghostMat = null, _ovMat = null, _dotMat = null, _boltMat = null;
   MW.lampMat = function () { return _lampMat || (_lampMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.25, fog: false })); };
+  function lampOffMat() { return _lampOffMat || (_lampOffMat = new THREE.MeshBasicMaterial({ color: 0x3b3830, transparent: true, opacity: 0.08, fog: false })); }
   function lightMat() { return _lightMat || (_lightMat = new THREE.MeshBasicMaterial({ color: 0xfff1c9, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })); }
   function glassMat() { return _glassMat || (_glassMat = new THREE.MeshLambertMaterial({ color: 0xa8d8ee, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })); }
   function beamMat() { return _beamMat || (_beamMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })); }
@@ -245,8 +252,18 @@
     };
     return GEO[li];
   }
-  var TRN = {};   // train id -> { group, cars:[{g, dl, dr}], lampF, lampB, n, li }
+  var TRN = {};   // train id -> { group, cars:[{g, dl, dr}], lampF, lampB, beacon, bSph, bDia, n, li }
   var _lampWhite = null, _lampRed = null;
+  var _hazSphGeo = null, _hazDiaGeo = null, _hazRedMat = null, _hazAmbMat = null;
+  function hazRes() {
+    if (!_hazSphGeo) {
+      _hazSphGeo = new THREE.SphereGeometry(0.24, 8, 6);
+      _hazDiaGeo = new THREE.OctahedronGeometry(0.26, 0);
+      _hazRedMat = new THREE.MeshBasicMaterial({ color: 0xff3028, fog: false });
+      _hazAmbMat = new THREE.MeshBasicMaterial({ color: 0xffaa18, fog: false });
+    }
+    return { sphGeo: _hazSphGeo, diaGeo: _hazDiaGeo, red: _hazRedMat, amb: _hazAmbMat };
+  }
   function lampMats() {
     if (!_lampWhite) { _lampWhite = new THREE.MeshBasicMaterial({ color: 0xfff8d8, fog: false }); _lampRed = new THREE.MeshBasicMaterial({ color: 0xff4030, fog: false }); }
     return [_lampWhite, _lampRed];
@@ -277,8 +294,12 @@
     }
     var lampF = new THREE.Mesh(G.lamp, lm[0]), lampB = new THREE.Mesh(G.lamp, lm[1]);
     lampF.position.z = HL + 0.62; lampB.position.z = -HL - 0.62; lampB.rotation.y = PI;
+    var hr = hazRes(), beacon = new THREE.Group(), bSph = new THREE.Mesh(hr.sphGeo, hr.red), bDia = new THREE.Mesh(hr.diaGeo, hr.red);
+    bDia.position.y = 0.55; beacon.position.y = 2.05; beacon.visible = false;
+    beacon.add(bSph); beacon.add(bDia);
+    cars[T.cars >> 1].g.add(beacon);
     scene.add(grpT);
-    return { group: grpT, cars: cars, lampF: lampF, lampB: lampB, n: T.cars, li: li, lampOn: -1 };
+    return { group: grpT, cars: cars, lampF: lampF, lampB: lampB, beacon: beacon, bSph: bSph, bDia: bDia, n: T.cars, li: li, lampOn: -1 };
   }
   function dropTrain(id) { var r = TRN[id]; if (!r) return; scene.remove(r.group); r.group.traverse(function (o) { /* geometries are shared */ }); delete TRN[id]; }
   var _pose = { x: 0, y: 0, z: 0, h: 0, pitch: 0, roll: 0 };
@@ -315,6 +336,18 @@
         r.lampF.position.z = dir > 0 ? HL + 0.62 : -HL - 0.62; r.lampF.rotation.y = dir > 0 ? 0 : PI;
         r.lampB.position.z = dir > 0 ? -HL - 0.62 : HL + 0.62; r.lampB.rotation.y = dir > 0 ? PI : 0;
         r.lampOn = dir;
+      }
+      var stuck = T0.st === 'stuck';
+      if (r.beacon) {
+        r.beacon.visible = stuck;
+        if (stuck) {
+          var hr = hazRes(), hm = T0.why === 'power' ? hr.amb : hr.red;
+          r.bSph.material = hm; r.bDia.material = hm;
+          var blink = Math.sin(tm * 9 + T0.id) > -0.2, pulse = 0.5 + 0.5 * Math.sin(tm * 7 + T0.id);
+          r.bSph.scale.setScalar(blink ? 0.85 + 0.4 * pulse : 0.4);
+          r.bDia.position.y = 0.55 + Math.sin(tm * 4 + T0.id) * 0.14;
+          r.bDia.rotation.y = tm * 2.5;
+        }
       }
     }
     for (var id in TRN) if (!seen[id]) dropTrain(id);

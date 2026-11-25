@@ -64,6 +64,10 @@
     p.appendChild(h('div.prow', h('span', { text: 'Backup' }), h('b', { text: P.hasBackup() ? (st.backup === 'running' ? 'Running' : 'Ready') : 'None' })));
     if (st.shedding.length) p.appendChild(h('div.pwarn', { text: 'Shed: ' + st.shedding.map(function (c) { var d = D.power.classes.filter(function (x) { return x.id === c; })[0]; return d ? d.name : c; }).join(', ') }));
     if (rep.forecast) p.appendChild(h('div.pwarn', { text: rep.forecast + (P.hasBackup() ? '' : ' No backup generator: fences will go dead.') }));
+    if (s.out) {
+      if (st.outage.crew) p.appendChild(h('div', { style: 'color:var(--ink2);font-weight:700;margin:4px 0', text: '🔧 Emergency line crew on site...' }));
+      else p.appendChild(h('button.btn.sm.pbtn', { text: '🔧 Call Line Crew (' + fmt(st.outage.repairFee || 220) + ')', on: { click: function () { var res = P.callRepairCut(); if (res.ok) { UI.snd('build'); UI.toast('Emergency line crew dispatched!', 'good'); renderChip(true); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } } }));
+    }
     p.appendChild(h('button.btn.sm.pbtn', { html: ic('bolt') + 'Power screen', on: { click: function () { open(false); UI.snd('click'); UI.openModal('power'); } } }));
     place();
   }
@@ -99,6 +103,16 @@
     } else if (e.on === true && e.cause !== 'shed' && lastOut) { lastOut = null; UI.toast('Power restored', 'good'); }
   });
   Z.bus.on('eggLost', function () { UI.toast('An egg was lost in the blackout', 'bad'); });
+  Z.bus.on('powerNodeDown', function (ev) {
+    if (!ev) return;
+    UI.banner({ title: '⚡ Power Relay Down!', text: (ev.name || 'A power relay') + ' went offline.', kind: 'alert', jump: function () { Z.World.focus(ev.i * (Z.TILE || 2), ev.j * (Z.TILE || 2), 26); UI.Panel.open('object', ev.id); } });
+    UI.snd('bad');
+  });
+  Z.bus.on('powerGenBroken', function (ev) {
+    if (!ev) return;
+    UI.banner({ title: '⚠️ Generator Breakdown!', text: (ev.name || 'A generator') + ' broke down.', kind: 'alert', jump: function () { Z.World.focus(ev.i * (Z.TILE || 2), ev.j * (Z.TILE || 2), 26); UI.Panel.open('object', ev.id); } });
+    UI.snd('bad');
+  });
 
   // ------------------------------------------------------------------ Power tab
   var ST = { open: {}, cov: false };
@@ -106,7 +120,7 @@
     var P = Z.Power, wrap = h('div'); b.appendChild(wrap), sig = '';
     var sig = '';
     function upd() {
-      var rep = P.report(), st = rep.status, k = JSON.stringify([rep.status, rep.sources.map(function (x) { return x.out + x.state; }), rep.prio, rep.cover, Object.keys(rep.consumers).map(function (c) { return rep.consumers[c].map(function (x) { return x.on ? 1 : 0; }).join(''); }), rep.history.length, rep.forecast]);
+      var rep = P.report(), st = rep.status, k = JSON.stringify([rep.status, rep.sources.map(function (x) { return x.out + x.state + (x.crew ? 1 : 0); }), rep.prio, rep.cover, Object.keys(rep.consumers).map(function (c) { return rep.consumers[c].map(function (x) { return x.on ? 1 : 0; }).join(''); }), rep.history.length, rep.forecast]);
       if (k === sig) return; sig = k; wrap.innerHTML = '';
       var top = h('div.pwbox');
       top.appendChild(h('div', { style: 'display:flex;align-items:center;gap:10px' }, h('span', { html: ic('bolt'), style: 'width:30px;height:30px;color:#e0a416' }), h('div', { style: 'flex:1' }, h('b', { style: 'font-size:16px', text: st.outage ? 'Power cut: ' + causeName(st.outage.cause) : st.brownout ? 'Grid strained, shedding load' : 'Power is on' }), h('div', { style: 'font-size:12.5px;color:var(--ink2)', text: r0(st.supply) + ' kW supply, ' + r0(st.demand) + ' kW demand' + (st.capacity ? ', batteries ' + r0(st.stored) + '/' + r0(st.capacity) + ' kWh' : '') }))));
@@ -114,15 +128,18 @@
       if (rep.forecast) top.appendChild(h('div.pwarn', { text: rep.forecast + (P.hasBackup() ? '' : ' Build a backup generator and a battery bank.') }));
       if (rep.fuelDue > 0) top.appendChild(h('div.prow', h('span', { text: 'Fuel bill so far today' }), h('b', { text: fmt(rep.fuelDue) })));
       if (rep.mechanics !== undefined) top.appendChild(h('div.prow', h('span', { text: 'Mechanics on duty' }), h('b', { text: rep.mechanics + ' (fewer breakdowns, faster repairs)' })));
-      top.appendChild(h('div.btnrow', { style: 'margin-top:8px' },
+      if (st.outage && st.outage.crew) top.appendChild(h('div', { style: 'font-size:12px;font-weight:700;color:var(--ink2);margin-top:4px', text: '🔧 Emergency line crew on site...' }));
+      top.appendChild(h('div.btnrow', { style: 'margin-top:8px;flex-wrap:wrap' },
+        st.outage && !st.outage.crew ? h('button.btn.sm', { text: '🔧 Call Line Crew (' + fmt(st.outage.repairFee || 220) + ')', on: { click: function () { var res = P.callRepairCut(); if (res.ok) { UI.snd('build'); UI.toast('Emergency line crew dispatched!', 'good'); sig = ''; upd(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } } }) : null,
         h('button.btn.sm' + (ST.cov ? '.gold' : '.alt'), { html: ic('target') + (ST.cov ? 'Hide coverage' : 'Show coverage'), on: { click: function () { ST.cov = !ST.cov; Z.PowerWorld && Z.PowerWorld.setCoverage(ST.cov); sig = ''; upd(); UI.snd('click'); } } }),
         h('button.btn.sm.alt', { html: ic('hammer') + 'Build power', on: { click: function () { UI.closeModal(); UI.openCat('power', true); } } })));
       wrap.appendChild(top);
 
       var src = h('div.pwbox'); src.appendChild(h('h4', { text: 'Sources' }));
       rep.sources.forEach(function (s) {
-        var stTxt = s.why || (s.state === 'run' ? 'Running' : s.state === 'charging' ? 'Charging' : s.state === 'cut' ? 'Cut' : s.state === 'broken' ? 'Broken down' : s.state === 'idle' ? 'Standing by' : s.state);
+        var stTxt = s.crew ? 'Emergency mechanic on site...' : (s.why || (s.state === 'run' ? 'Running' : s.state === 'charging' ? 'Charging' : s.state === 'cut' ? 'Cut' : s.state === 'broken' ? 'Broken down' : s.state === 'idle' ? 'Standing by' : s.state));
         src.appendChild(h('div.pwsrc' + (s.state === 'idle' || s.state === 'broken' || s.state === 'cut' ? '.off' : '') + (s.state === 'cut' || s.state === 'broken' ? '.cut' : ''), h('span.em', { text: s.emoji || '⚡' }), h('div.nm', s.name, h('small', { text: stTxt })), h('span.kw', { text: r0(s.out) + ' / ' + r0(s.kw) + ' kW' }),
+          (s.state === 'broken' && s.id > 0 && !s.crew) ? h('button.btn.sm', { text: '🔧 Call Mechanic (' + fmt(s.repairFee || 180) + ')', on: { click: function () { var res = P.callRepairGen(s.id); if (res.ok) { UI.snd('build'); UI.toast('Emergency mechanic dispatched!', 'good'); sig = ''; upd(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } } }) : null,
           s.i ? h('button.btn.sm.alt', { html: ic('target'), 'aria-label': 'Show on map', on: { click: function () { UI.closeModal(); Z.World.focus(s.i * Z.TILE, s.j * Z.TILE, 30); } } }) : null));
       });
       if (rep.wind !== undefined) src.appendChild(h('div', { style: 'font-size:11.5px;color:var(--ink2);margin-top:4px', text: 'Sun ' + Math.round(rep.sun * 100) + '%, wind ' + Math.round(rep.wind * 100) + '%' + (rep.feather ? ' (turbines feathered)' : '') }));
@@ -193,7 +210,10 @@
     var box = h('div.pwenc'), key = '';
     function update() {
       var i = Z.Power && Z.Power.objectInfo(id); if (!i) { box.style.display = 'none'; return; }
-      var k = JSON.stringify(i); if (k === key) return; key = k; box.style.display = ''; box.innerHTML = '';
+      var staff = Z.state && Z.state.staff ? Z.state.staff : [];
+      var mechCount = staff.filter(function (s) { return s.type === 'mechanic'; }).length;
+      var elecCount = staff.filter(function (s) { return s.type === 'electrician'; }).length;
+      var k = JSON.stringify([i, mechCount === 0, elecCount === 0]); if (k === key) return; key = k; box.style.display = ''; box.innerHTML = '';
       if (i.kind === 'gen') {
         box.appendChild(h('h4', { text: i.genKind === 'backup' ? 'Backup generator' : 'Generator' }));
         box.appendChild(h('div.kv', h('span', { text: 'Capacity' }), h('b', { text: i.kw + ' kW' })));
@@ -201,6 +221,20 @@
         var bad = i.state === 'broken' || i.state === 'nofuel' || i.state === 'tripped' || i.state === 'feathered';
         var stTxt = i.why || (i.state === 'run' ? 'Running' : i.state === 'standby' ? 'Standing by (runs when needed)' : i.state === 'idle' ? 'Idle' : i.state);
         box.appendChild(h('div.' + (bad ? 'bad' : i.state === 'run' ? 'ok' : ''), { text: stTxt }));
+        if (i.state === 'broken') {
+          if (i.crew) box.appendChild(h('div', { style: 'font-size:12px;font-weight:700;color:var(--ink2);margin-top:4px', text: '🔧 Emergency mechanic on site...' }));
+          var gRow = h('div.btnrow', { style: 'margin-top:5px;flex-wrap:wrap;gap:4px' });
+          if (!i.crew) {
+            gRow.appendChild(h('button.btn.sm', {
+              text: '🔧 Call Mechanic (' + fmt(i.repairFee || 180) + ')',
+              on: { click: function () { var res = Z.Power.callRepairGen(id); if (res.ok) { UI.snd('build'); UI.toast('Emergency mechanic dispatched!', 'good'); key = ''; update(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+            }));
+          }
+          if (mechCount === 0) {
+            gRow.appendChild(h('button.btn.sm.alt', { text: 'Hire Mechanic', on: { click: function () { UI.Panel && UI.Panel.hide(); UI.openCat('staff', true); } } }));
+          }
+          if (gRow.children.length) box.appendChild(gRow);
+        }
       } else if (i.kind === 'battery') {
         box.appendChild(h('h4', { text: 'Battery bank' }));
         box.appendChild(h('div.kv', h('span', { text: 'Unit capacity' }), h('b', { text: i.kwh + ' kWh (±' + i.rate + ' kW)' })));
@@ -212,7 +246,14 @@
         box.appendChild(h('div.kv', h('span', { text: 'Reach' }), h('b', { text: i.radius + ' tiles' })));
         box.appendChild(h('div.kv', h('span', { text: 'Consumers in range' }), h('b', { text: String(i.consumers) })));
         box.appendChild(h('div.' + (i.alive ? 'ok' : 'bad'), { text: i.alive ? 'Online' : 'Down: repair due in ' + i.etaHours + ' h' }));
-        box.appendChild(h('div.btnrow', { style: 'margin-top:5px' }, h('button.btn.sm.alt', { html: ic('target') + (ST.cov ? 'Hide coverage' : 'Show coverage'), on: { click: function () { ST.cov = !ST.cov; Z.PowerWorld && Z.PowerWorld.setCoverage(ST.cov); key = ''; update(); UI.snd('click'); } } })));
+        if (!i.alive && i.crew) box.appendChild(h('div', { style: 'font-size:12px;font-weight:700;color:var(--ink2);margin-top:4px', text: '🔧 Emergency electrician on site...' }));
+        box.appendChild(h('div.btnrow', { style: 'margin-top:5px;flex-wrap:wrap;gap:4px' },
+          (!i.alive && !i.crew) ? h('button.btn.sm', {
+            text: '🔧 Call Electrician (' + fmt(i.repairFee || 140) + ')',
+            on: { click: function () { var res = Z.Power.callRepairNode(id); if (res.ok) { UI.snd('build'); UI.toast('Emergency electrician dispatched!', 'good'); key = ''; update(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+          }) : null,
+          (!i.alive && elecCount === 0) ? h('button.btn.sm.alt', { text: 'Hire Electrician', on: { click: function () { UI.Panel && UI.Panel.hide(); UI.openCat('staff', true); } } }) : null,
+          h('button.btn.sm.alt', { html: ic('target') + (ST.cov ? 'Hide coverage' : 'Show coverage'), on: { click: function () { ST.cov = !ST.cov; Z.PowerWorld && Z.PowerWorld.setCoverage(ST.cov); key = ''; update(); UI.snd('click'); } } })));
       } else {
         box.appendChild(h('h4', { text: 'Power' }));
         box.appendChild(h('div.' + (i.powered ? 'ok' : 'bad'), h('span', { text: i.powered ? 'On, ' : 'Off (' + i.kw + ' kW): ' }), h('b', { text: i.powered ? i.kw + ' kW' : (i.why || 'no supply') })));

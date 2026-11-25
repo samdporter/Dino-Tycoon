@@ -1193,6 +1193,9 @@ function fcl() {
   FCL = {};
   Object.keys(FC).forEach(function (k) { FCL[k] = {}; Object.keys(FC[k]).forEach(function (kk) { FCL[k][kk] = lin3(FC[k][kk]); }); });
   FCL.glassPane = lin3('#a8e0ee');
+  FCL.hazRed = lin3('#e83028');
+  FCL.hazAmb = lin3('#ffaa14');
+  FCL.hazDark = lin3('#242629');
   return FCL;
 }
 // quad auto oriented to a desired normal
@@ -1202,7 +1205,7 @@ function quadN(mb, a, b, c, d, n, col, u0, v0, u1, v1) {
   if (cx * n[0] + cy * n[1] + cz * n[2] < 0) mb.quad(a, d, c, b, n[0], n[1], n[2], col, u0, v1, u1, v0);
   else mb.quad(a, b, c, d, n[0], n[1], n[2], col, u0, v0, u1, v1);
 }
-function fenceEdge(set, axis, i, j, f, contNext) {
+function fenceEdge(set, axis, i, j, f, contNext, broken) {
   var C = fcl(), h = f.height || 1.2, st = f.style, ox = i * T, oz = j * T, solid = set.solid;
   var jit = h2(i * 17 + (axis === 'x' ? 0 : 5), j * 29 + 3);
   // ground heights at the two ends of the edge; everything is sheared to follow the slope
@@ -1220,6 +1223,37 @@ function fenceEdge(set, axis, i, j, f, contNext) {
     quadN(mb, a0, d0, d1, a1, nsm, cs); quadN(mb, b0, c0, c1, b1, ns, cs);
     if (!nb) quadN(mb, a0, b0, c0, d0, [0, -1, 0], mul3(col, 0.6));
   }
+  function tiltedBx(mb, s0, y0, t0, s1, y1, t1, ds0, dy0, ds1, dy1, col, mapFn) {
+    var mp = mapFn || P, cs = mul3(col, 0.84);
+    var a0 = mp(s0, y0, t0), b0 = mp(s1, y0 + dy0, t0), c0 = mp(s1, y0 + dy0, t1), d0 = mp(s0, y0, t1);
+    var a1 = mp(s0 + ds0, y1, t0), b1 = mp(s1 + ds1, y1 + dy1, t0), c1 = mp(s1 + ds1, y1 + dy1, t1), d1 = mp(s0 + ds0, y1, t1);
+    var nt = axis === 'x' ? [0, 0, 1] : [1, 0, 0], ns = axis === 'x' ? [1, 0, 0] : [0, 0, 1];
+    quadN(mb, a1, b1, c1, d1, [0, 1, 0], col);
+    quadN(mb, a0, b0, b1, a1, [-nt[0], 0, -nt[2]], cs); quadN(mb, d0, c0, c1, d1, nt, cs);
+    quadN(mb, a0, d0, d1, a1, [-ns[0], 0, -ns[2]], cs); quadN(mb, b0, c0, c1, b1, ns, cs);
+    quadN(mb, a0, b0, c0, d0, [0, -1, 0], mul3(col, 0.6));
+  }
+  function flatDebris(mb, sc, tc, len, wid, hgt, ang, y0, col, mapFn) {
+    var mp = mapFn || P, ca = Math.cos(ang), sa = Math.sin(ang), hl = len * 0.5, hw = wid * 0.5, cs = mul3(col, 0.82);
+    function rp(ds, dt, yy) { return mp(sc + ds * ca - dt * sa, yy, tc + ds * sa + dt * ca); }
+    var a0 = rp(-hl, -hw, y0), b0 = rp(hl, -hw, y0), c0 = rp(hl, hw, y0), d0 = rp(-hl, hw, y0);
+    var a1 = rp(-hl, -hw, y0 + hgt), b1 = rp(hl, -hw, y0 + hgt), c1 = rp(hl, hw, y0 + hgt), d1 = rp(-hl, hw, y0 + hgt);
+    var nt = axis === 'x' ? [-sa, 0, ca] : [ca, 0, -sa], ns = axis === 'x' ? [ca, 0, sa] : [sa, 0, ca];
+    quadN(mb, a1, b1, c1, d1, [0, 1, 0], col);
+    quadN(mb, a0, b0, b1, a1, [-nt[0], 0, -nt[2]], cs); quadN(mb, d0, c0, c1, d1, nt, cs);
+    quadN(mb, a0, d0, d1, a1, [-ns[0], 0, -ns[2]], cs); quadN(mb, b0, c0, c1, b1, ns, cs);
+  }
+  function hazardEnds(yBase, mapFn) {
+    var mp = mapFn || P, ph = Math.min(0.62, Math.max(0.45, h * 0.45));
+    for (var hi = 0; hi < 2; hi++) {
+      var hs = hi ? T * 0.77 : T * 0.23;
+      tiltedBx(solid, hs - 0.055, yBase - 0.04, -0.055, hs + 0.055, yBase + ph * 0.34, 0.055, 0, 0, 0, 0, C.hazRed, mp);
+      tiltedBx(solid, hs - 0.055, yBase + ph * 0.34, -0.055, hs + 0.055, yBase + ph * 0.68, 0.055, 0, 0, 0, 0, C.hazAmb, mp);
+      tiltedBx(solid, hs - 0.06, yBase + ph * 0.68, -0.06, hs + 0.06, yBase + ph, 0.06, 0, 0, 0, 0, C.hazRed, mp);
+      flatDebris(solid, hs, 0.22, 0.22, 0.09, 0.05, hi ? -0.35 : 0.35, yBase + 0.01, C.hazAmb, mp);
+      flatDebris(solid, hs, -0.22, 0.22, 0.09, 0.05, hi ? 0.35 : -0.35, yBase + 0.01, C.hazRed, mp);
+    }
+  }
   function panel(mb, s0, s1, y0, y1, col, ru, rv) {
     var nf = axis === 'x' ? [0, 0, 1] : [1, 0, 0], nb = axis === 'x' ? [0, 0, -1] : [-1, 0, 0];
     var a = P(s0, y0, 0), b = P(s1, y0, 0), c = P(s1, y1, 0), d = P(s0, y1, 0);
@@ -1235,58 +1269,123 @@ function fenceEdge(set, axis, i, j, f, contNext) {
   }
   if (st === 'wood') {
     var c = C.wood;
-    posts(0.07, h, c.post, c.cap);
-    for (var r = 0; r < 3; r++) { var y = h * (0.2 + 0.33 * r); bx(solid, 0.06, y, -0.035, T - 0.06, y + 0.12, 0.035, c.rail); }
+    if (broken) {
+      posts(0.07, h * 0.45, c.post);
+      tiltedBx(solid, 0.04, h * 0.22, -0.035, T * 0.26, h * 0.33, 0.035, 0, -0.14, 0, -0.14, c.rail);
+      tiltedBx(solid, T * 0.74, h * 0.22 - 0.12, -0.035, T - 0.04, h * 0.33 - 0.12, 0.035, 0, 0.12, 0, 0.12, c.rail);
+      flatDebris(solid, T * 0.44, 0.26, 0.68, 0.11, 0.06, 0.42, 0.01, c.rail);
+      flatDebris(solid, T * 0.56, -0.24, 0.62, 0.10, 0.06, -0.55, 0.01, c.post);
+      flatDebris(solid, T * 0.36, -0.16, 0.44, 0.09, 0.05, 1.15, 0.03, c.rail);
+      hazardEnds(0);
+    } else {
+      posts(0.07, h, c.post, c.cap);
+      for (var r = 0; r < 3; r++) { var y = h * (0.2 + 0.33 * r); bx(solid, 0.06, y, -0.035, T - 0.06, y + 0.12, 0.035, c.rail); }
+    }
   } else if (st === 'rail') {
     var c2 = C.rail;
-    posts(0.06, h, c2.post);
-    var y2 = h * 0.8; bx(solid, 0.05, y2, -0.04, T - 0.05, y2 + 0.13, 0.04, c2.rail);
-    bx(solid, 0.05, h * 0.42, -0.025, T - 0.05, h * 0.42 + 0.07, 0.025, mul3(c2.rail, 0.85));
+    if (broken) {
+      posts(0.06, h * 0.44, c2.post);
+      tiltedBx(solid, 0.04, h * 0.38, -0.035, T * 0.25, h * 0.49, 0.035, 0, -0.22, 0, -0.22, c2.rail);
+      tiltedBx(solid, T * 0.75, h * 0.18, -0.035, T - 0.04, h * 0.29, 0.035, 0, 0.20, 0, 0.20, c2.rail);
+      flatDebris(solid, T * 0.46, 0.24, 0.72, 0.10, 0.06, -0.38, 0.01, c2.rail);
+      flatDebris(solid, T * 0.58, -0.22, 0.56, 0.09, 0.05, 0.64, 0.01, mul3(c2.rail, 0.85));
+      hazardEnds(0);
+    } else {
+      posts(0.06, h, c2.post);
+      var y2 = h * 0.8; bx(solid, 0.05, y2, -0.04, T - 0.05, y2 + 0.13, 0.04, c2.rail);
+      bx(solid, 0.05, h * 0.42, -0.025, T - 0.05, h * 0.42 + 0.07, 0.025, mul3(c2.rail, 0.85));
+    }
   } else if (st === 'chain') {
     var heavy = f.strength >= 5, c3 = heavy ? C.chainR : C.chain, pw = heavy ? 0.055 : 0.04;
-    posts(pw, h, c3.post);
-    bx(solid, 0, h - 0.06, -0.03, T, h, 0.03, c3.post);
-    bx(solid, 0, 0, -0.025, T, 0.07, 0.025, c3.post);
-    if (heavy) bx(solid, 0, h * 0.5, -0.03, T, h * 0.5 + 0.05, 0.03, c3.post);
-    panel(set.chain, 0, T, 0.07, h - 0.06, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T, (h - 0.13));
+    if (broken) {
+      posts(pw, h * 0.46, c3.post);
+      tiltedBx(solid, 0, h * 0.38, -0.025, T * 0.25, h * 0.44, 0.025, 0, -0.22, 0, -0.22, c3.post);
+      tiltedBx(solid, T * 0.75, h * 0.16, -0.025, T, h * 0.22, 0.025, 0, 0.22, 0, 0.22, c3.post);
+      panel(set.chain, 0.02, T * 0.24, 0.05, h * 0.36, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T * 0.22, h * 0.3);
+      panel(set.chain, T * 0.76, T - 0.02, 0.05, h * 0.36, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T * 0.22, h * 0.3);
+      flatDebris(solid, T * 0.48, 0.22, 0.68, 0.08, 0.05, 0.28, 0.01, c3.post);
+      flatDebris(solid, T * 0.52, -0.25, 0.48, 0.18, 0.04, -0.45, 0.01, mul3(c3.post, 0.8));
+      hazardEnds(0);
+    } else {
+      posts(pw, h, c3.post);
+      bx(solid, 0, h - 0.06, -0.03, T, h, 0.03, c3.post);
+      bx(solid, 0, 0, -0.025, T, 0.07, 0.025, c3.post);
+      if (heavy) bx(solid, 0, h * 0.5, -0.03, T, h * 0.5 + 0.05, 0.03, c3.post);
+      panel(set.chain, 0, T, 0.07, h - 0.06, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T, (h - 0.13));
+    }
   } else if (st === 'glass') {
     var c4 = C.glass;
-    posts(0.04, h, c4.post);
-    bx(solid, 0, h - 0.09, -0.04, T, h, 0.04, c4.post);
-    bx(solid, 0, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
-    panel(set.glass, 0.02, T - 0.02, 0.1, h - 0.09, C.glassPane, 1, 1);
+    if (broken) {
+      posts(0.04, h * 0.45, c4.post);
+      bx(solid, 0, 0, -0.05, T * 0.26, 0.1, 0.05, mul3(c4.post, 0.9));
+      bx(solid, T * 0.74, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
+      panel(set.glass, 0.02, T * 0.23, 0.1, h * 0.40, C.glassPane, 1, 1);
+      panel(set.glass, T * 0.77, T - 0.02, 0.1, h * 0.40, C.glassPane, 1, 1);
+      flatDebris(set.glass, T * 0.42, 0.22, 0.34, 0.22, 0.03, 0.55, 0.01, C.glassPane);
+      flatDebris(set.glass, T * 0.58, -0.18, 0.30, 0.20, 0.03, -0.75, 0.01, C.glassPane);
+      flatDebris(set.glass, T * 0.50, 0.08, 0.26, 0.16, 0.03, 1.1, 0.02, C.glassPane);
+      flatDebris(solid, T * 0.48, -0.26, 0.55, 0.07, 0.05, -0.25, 0.01, c4.post);
+      hazardEnds(0);
+    } else {
+      posts(0.04, h, c4.post);
+      bx(solid, 0, h - 0.09, -0.04, T, h, 0.04, c4.post);
+      bx(solid, 0, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
+      panel(set.glass, 0.02, T - 0.02, 0.1, h - 0.09, C.glassPane, 1, 1);
+    }
   } else if (st === 'concrete') {
     var c5 = C.concrete, k5 = 0.94 + 0.12 * jit;
-    bx(solid, 0, 0, -0.17, T, 0.22, 0.17, mul3(c5.plinth, k5));
-    bx(solid, 0, 0.22, -0.14, T, h - 0.12, 0.14, mul3(c5.wall, k5));
-    bx(solid, -0.02, h - 0.12, -0.2, T + 0.02, h, 0.2, mul3(c5.cap, k5), true);
-    bx(solid, -0.2, 0, -0.2, 0.2, h + 0.03, 0.2, mul3(c5.wall, 0.92 * k5));
-    if (!contNext) bx(solid, T - 0.2, 0, -0.2, T + 0.2, h + 0.03, 0.2, mul3(c5.wall, 0.92 * k5));
-    // panel seam shadow lines
-    bx(solid, T * 0.5 - 0.015, 0.22, -0.145, T * 0.5 + 0.015, h - 0.12, 0.145, mul3(c5.wall, 0.8 * k5), true);
+    if (broken) {
+      bx(solid, 0, 0, -0.17, T * 0.25, 0.22, 0.17, mul3(c5.plinth, k5));
+      bx(solid, 0, 0.22, -0.14, T * 0.24, h * 0.45, 0.14, mul3(c5.wall, k5));
+      bx(solid, T * 0.75, 0, -0.17, T, 0.22, 0.17, mul3(c5.plinth, k5));
+      bx(solid, T * 0.76, 0.22, -0.14, T, h * 0.48, 0.14, mul3(c5.wall, k5));
+      bx(solid, -0.2, 0, -0.2, 0.2, h * 0.55, 0.2, mul3(c5.wall, 0.92 * k5));
+      if (!contNext) bx(solid, T - 0.2, 0, -0.2, T + 0.2, h * 0.55, 0.2, mul3(c5.wall, 0.92 * k5));
+      flatDebris(solid, T * 0.42, 0.28, 0.42, 0.28, 0.16, 0.4, 0.0, mul3(c5.wall, k5));
+      flatDebris(solid, T * 0.60, -0.26, 0.38, 0.26, 0.14, -0.6, 0.0, mul3(c5.cap, k5));
+      flatDebris(solid, T * 0.50, 0.10, 0.28, 0.22, 0.11, 1.0, 0.0, mul3(c5.plinth, k5));
+      hazardEnds(0);
+    } else {
+      bx(solid, 0, 0, -0.17, T, 0.22, 0.17, mul3(c5.plinth, k5));
+      bx(solid, 0, 0.22, -0.14, T, h - 0.12, 0.14, mul3(c5.wall, k5));
+      bx(solid, -0.02, h - 0.12, -0.2, T + 0.02, h, 0.2, mul3(c5.cap, k5), true);
+      bx(solid, -0.2, 0, -0.2, 0.2, h + 0.03, 0.2, mul3(c5.wall, 0.92 * k5));
+      if (!contNext) bx(solid, T - 0.2, 0, -0.2, T + 0.2, h + 0.03, 0.2, mul3(c5.wall, 0.92 * k5));
+      // panel seam shadow lines
+      bx(solid, T * 0.5 - 0.015, 0.22, -0.145, T * 0.5 + 0.015, h - 0.12, 0.145, mul3(c5.wall, 0.8 * k5), true);
+    }
   } else if (st === 'hedge') {
     var c6 = C.hedge, hh = h * (0.95 + 0.1 * jit), kk = 0.88 + 0.24 * h2(i * 3 + 9, j * 7 + 1);
-    var prof = [[-0.46, 0], [-0.52, 0.45], [-0.4, 0.82], [-0.22, 1], [0.22, 1], [0.4, 0.82], [0.52, 0.45], [0.46, 0]];
-    var s0 = -0.12, s1 = T + 0.12;
-    for (var k = 0; k < prof.length - 1; k++) {
-      var p = prof[k], q = prof[k + 1], dt = q[0] - p[0], dy = (q[1] - p[1]) * hh;
-      var l = Math.sqrt(dt * dt + dy * dy) || 1, nt = -dy / l, ny = dt / l;
-      var n = axis === 'x' ? [0, ny, nt] : [nt, ny, 0];
-      var up = (p[1] + q[1]) * 0.5;
-      var col = mix3(mul3(c6.a, kk), mul3(c6.b, kk), clamp(up * 1.1, 0, 1));
-      var a = P(s0, p[1] * hh, p[0]), b = P(s1, p[1] * hh, p[0]), c = P(s1, q[1] * hh, q[0]), d = P(s0, q[1] * hh, q[0]);
-      quadN(solid, a, b, c, d, n, col, 0, 0, 1, 1);
-    }
-    var capn = axis === 'x' ? [1, 0, 0] : [0, 0, 1], capn2 = axis === 'x' ? [-1, 0, 0] : [0, 0, -1];
-    [[s0, capn2], [s1, capn]].forEach(function (e) {
-      var ids = []; var cc = mul3(c6.a, kk * 0.9);
-      for (var m = 0; m < prof.length; m++) { var pp = P(e[0], prof[m][1] * hh, prof[m][0]); ids.push(solid.vtx(pp[0], pp[1], pp[2], e[1][0], e[1][1], e[1][2], cc, 0, 0)); }
-      for (m = 1; m < ids.length - 1; m++) {
-        var A_ = [solid.p[ids[0] * 3], solid.p[ids[0] * 3 + 1], solid.p[ids[0] * 3 + 2]], B_ = [solid.p[ids[m] * 3], solid.p[ids[m] * 3 + 1], solid.p[ids[m] * 3 + 2]], C_ = [solid.p[ids[m + 1] * 3], solid.p[ids[m + 1] * 3 + 1], solid.p[ids[m + 1] * 3 + 2]];
-        var cx = (B_[1] - A_[1]) * (C_[2] - A_[2]) - (B_[2] - A_[2]) * (C_[1] - A_[1]), cy = (B_[2] - A_[2]) * (C_[0] - A_[0]) - (B_[0] - A_[0]) * (C_[2] - A_[2]), cz = (B_[0] - A_[0]) * (C_[1] - A_[1]) - (B_[1] - A_[1]) * (C_[0] - A_[0]);
-        if (cx * e[1][0] + cy * e[1][1] + cz * e[1][2] >= 0) solid.tri(ids[0], ids[m], ids[m + 1]); else solid.tri(ids[0], ids[m + 1], ids[m]);
+    if (broken) {
+      bx(solid, -0.10, 0, -0.36, T * 0.24, hh * 0.42, 0.36, mul3(c6.a, kk));
+      bx(solid, T * 0.76, 0, -0.36, T + 0.10, hh * 0.44, 0.36, mul3(c6.b, kk));
+      flatDebris(solid, T * 0.42, 0.25, 0.42, 0.24, 0.14, 0.5, 0.0, mul3(c6.a, kk));
+      flatDebris(solid, T * 0.58, -0.22, 0.36, 0.22, 0.12, -0.7, 0.0, mul3(c6.b, kk));
+      flatDebris(solid, T * 0.50, 0.04, 0.48, 0.08, 0.06, 0.25, 0.01, C.wood.post);
+      hazardEnds(0);
+    } else {
+      var prof = [[-0.46, 0], [-0.52, 0.45], [-0.4, 0.82], [-0.22, 1], [0.22, 1], [0.4, 0.82], [0.52, 0.45], [0.46, 0]];
+      var s0 = -0.12, s1 = T + 0.12;
+      for (var k = 0; k < prof.length - 1; k++) {
+        var p = prof[k], q = prof[k + 1], dt = q[0] - p[0], dy = (q[1] - p[1]) * hh;
+        var l = Math.sqrt(dt * dt + dy * dy) || 1, nt = -dy / l, ny = dt / l;
+        var n = axis === 'x' ? [0, ny, nt] : [nt, ny, 0];
+        var up = (p[1] + q[1]) * 0.5;
+        var col = mix3(mul3(c6.a, kk), mul3(c6.b, kk), clamp(up * 1.1, 0, 1));
+        var a = P(s0, p[1] * hh, p[0]), b = P(s1, p[1] * hh, p[0]), c = P(s1, q[1] * hh, q[0]), d = P(s0, q[1] * hh, q[0]);
+        quadN(solid, a, b, c, d, n, col, 0, 0, 1, 1);
       }
-    });
+      var capn = axis === 'x' ? [1, 0, 0] : [0, 0, 1], capn2 = axis === 'x' ? [-1, 0, 0] : [0, 0, -1];
+      [[s0, capn2], [s1, capn]].forEach(function (e) {
+        var ids = []; var cc = mul3(c6.a, kk * 0.9);
+        for (var m = 0; m < prof.length; m++) { var pp = P(e[0], prof[m][1] * hh, prof[m][0]); ids.push(solid.vtx(pp[0], pp[1], pp[2], e[1][0], e[1][1], e[1][2], cc, 0, 0)); }
+        for (m = 1; m < ids.length - 1; m++) {
+          var A_ = [solid.p[ids[0] * 3], solid.p[ids[0] * 3 + 1], solid.p[ids[0] * 3 + 2]], B_ = [solid.p[ids[m] * 3], solid.p[ids[m] * 3 + 1], solid.p[ids[m] * 3 + 2]], C_ = [solid.p[ids[m + 1] * 3], solid.p[ids[m + 1] * 3 + 1], solid.p[ids[m + 1] * 3 + 2]];
+          var cx = (B_[1] - A_[1]) * (C_[2] - A_[2]) - (B_[2] - A_[2]) * (C_[1] - A_[1]), cy = (B_[2] - A_[2]) * (C_[0] - A_[0]) - (B_[0] - A_[0]) * (C_[2] - A_[2]), cz = (B_[0] - A_[0]) * (C_[1] - A_[1]) - (B_[1] - A_[1]) * (C_[0] - A_[0]);
+          if (cx * e[1][0] + cy * e[1][1] + cz * e[1][2] >= 0) solid.tri(ids[0], ids[m], ids[m + 1]); else solid.tri(ids[0], ids[m + 1], ids[m]);
+        }
+      });
+    }
   } else if (st === 'net') {   // realms package: floats on the surface, a mesh curtain hanging to the sea bed; strength 4+ is steel with a rail, 5 is an armoured barrier
     var yW = -0.1, bedY = Math.min(gA, gB), hang = Math.max(0.5, yW - bedY + 0.1), heavyN = f.strength >= 4, armN = f.strength >= 5;
     function PA(sv, y, tv) { return axis === 'x' ? [ox + sv, y, oz + tv] : [ox + tv, y, oz + sv]; }
@@ -1296,26 +1395,63 @@ function fenceEdge(set, axis, i, j, f, contNext) {
       quadN(solid, a1, b1, c1, d1, [0, 1, 0], col); quadN(solid, a0, b0, b1, a1, [-nt[0], 0, -nt[2]], cs); quadN(solid, d0, c0, c1, d1, nt, cs); quadN(solid, a0, d0, d1, a1, [-ns[0], 0, -ns[2]], cs); quadN(solid, b0, c0, c1, b1, ns, cs);
     }
     var fl = armN ? [0.55, 0.58, 0.62] : heavyN ? [0.95, 0.5, 0.12] : [0.96, 0.78, 0.2], rope = armN ? [0.3, 0.33, 0.36] : [0.82, 0.8, 0.74];
-    var nb0 = PA(0, yW - hang, 0), nb1 = PA(T, yW - hang, 0), nt1 = PA(T, yW + (armN ? 0.5 : 0.25), 0), nt0 = PA(0, yW + (armN ? 0.5 : 0.25), 0), nfv = axis === 'x' ? [0, 0, 1] : [1, 0, 0], nbv = [-nfv[0], 0, -nfv[2]];
-    quadN(set.chain, nb0, nb1, nt1, nt0, nfv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
-    quadN(set.chain, nb0, nb1, nt1, nt0, nbv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
-    boxA(0, yW + (armN ? 0.5 : 0.22), -0.03, T, yW + (armN ? 0.58 : 0.27), 0.03, rope);
-    var nfl = armN ? 3 : 2; for (var q2 = 0; q2 < nfl; q2++) { var sc2 = (q2 + 0.5) / nfl * T; boxA(sc2 - 0.1, yW - 0.07, -0.1, sc2 + 0.1, yW + 0.2, 0.1, fl); }
-    if (!contNext) { boxA(-0.05, yW - 0.1, -0.08, 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope); }
-    boxA(T - 0.05, yW - 0.1, -0.08, T + 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope);
+    var nfv = axis === 'x' ? [0, 0, 1] : [1, 0, 0], nbv = [-nfv[0], 0, -nfv[2]];
+    if (broken) {
+      var nCol = armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62];
+      quadN(set.chain, PA(0, yW - hang, 0), PA(T * 0.24, yW - hang, 0), PA(T * 0.24, yW + 0.16, 0), PA(0, yW + 0.16, 0), nfv, nCol, 0, 0, T * 0.24, hang + 0.2);
+      quadN(set.chain, PA(0, yW - hang, 0), PA(T * 0.24, yW - hang, 0), PA(T * 0.24, yW + 0.16, 0), PA(0, yW + 0.16, 0), nbv, nCol, 0, 0, T * 0.24, hang + 0.2);
+      quadN(set.chain, PA(T * 0.76, yW - hang, 0), PA(T, yW - hang, 0), PA(T, yW + 0.16, 0), PA(T * 0.76, yW + 0.16, 0), nfv, nCol, 0, 0, T * 0.24, hang + 0.2);
+      quadN(set.chain, PA(T * 0.76, yW - hang, 0), PA(T, yW - hang, 0), PA(T, yW + 0.16, 0), PA(T * 0.76, yW + 0.16, 0), nbv, nCol, 0, 0, T * 0.24, hang + 0.2);
+      boxA(0, yW + 0.14, -0.03, T * 0.25, yW + 0.20, 0.03, rope);
+      boxA(T * 0.75, yW + 0.14, -0.03, T, yW + 0.20, 0.03, rope);
+      if (!contNext) boxA(-0.05, yW - 0.1, -0.08, 0.05, yW + 0.35, 0.08, rope);
+      boxA(T - 0.05, yW - 0.1, -0.08, T + 0.05, yW + 0.35, 0.08, rope);
+      flatDebris(solid, T * 0.40, 0.24, 0.26, 0.16, 0.12, 0.4, yW - 0.04, fl, PA);
+      flatDebris(solid, T * 0.60, -0.22, 0.44, 0.07, 0.06, -0.5, yW - 0.02, rope, PA);
+      hazardEnds(yW, PA);
+    } else {
+      var nb0 = PA(0, yW - hang, 0), nb1 = PA(T, yW - hang, 0), nt1 = PA(T, yW + (armN ? 0.5 : 0.25), 0), nt0 = PA(0, yW + (armN ? 0.5 : 0.25), 0);
+      quadN(set.chain, nb0, nb1, nt1, nt0, nfv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
+      quadN(set.chain, nb0, nb1, nt1, nt0, nbv, armN ? [0.45, 0.5, 0.55] : heavyN ? [0.42, 0.5, 0.55] : [0.62, 0.7, 0.62], 0, 0, T, hang + 0.4);
+      boxA(0, yW + (armN ? 0.5 : 0.22), -0.03, T, yW + (armN ? 0.58 : 0.27), 0.03, rope);
+      var nfl = armN ? 3 : 2; for (var q2 = 0; q2 < nfl; q2++) { var sc2 = (q2 + 0.5) / nfl * T; boxA(sc2 - 0.1, yW - 0.07, -0.1, sc2 + 0.1, yW + 0.2, 0.1, fl); }
+      if (!contNext) { boxA(-0.05, yW - 0.1, -0.08, 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope); }
+      boxA(T - 0.05, yW - 0.1, -0.08, T + 0.05, yW + (armN ? 0.75 : 0.5), 0.08, rope);
+    }
   } else if (st === 'electric') {   // power package: live wires pale and bright, dead wires dull grey
     var live = Z.Power ? Z.Power.fenceLive(i, j) : true, heavyE = f.strength >= 5, pwE = heavyE ? 0.07 : 0.04, ins = [0.92, 0.9, 0.82];
     var wc = live ? [0.78, 0.9, 1] : [0.36, 0.38, 0.4], pc = heavyE ? [0.3, 0.33, 0.36] : [0.62, 0.64, 0.6], nW = heavyE ? 5 : 3;
-    posts(pwE, h, pc);
-    for (var wI = 0; wI < nW; wI++) {
-      var wy = 0.18 + (h - 0.3) * wI / (nW - 1);
-      bx(solid, 0, wy, -0.012 - (heavyE ? 0.05 : 0), T, wy + 0.025, 0.012 + (heavyE ? 0.05 : 0), wc, true);
-      if (!contNext || wI === 0) bx(solid, -0.03, wy - 0.02, -0.07, 0.03, wy + 0.04, 0.07, ins, true);
+    if (broken) {
+      posts(pwE, h * 0.48, pc);
+      for (var bw = 0; bw < 2; bw++) {
+        var wyB = 0.20 + bw * 0.18;
+        tiltedBx(solid, 0, wyB, -0.02, T * 0.24, wyB + 0.025, 0.02, 0, -0.16, 0, -0.16, [0.36, 0.38, 0.4]);
+        tiltedBx(solid, T * 0.76, wyB - 0.14, -0.02, T, wyB - 0.115, 0.02, 0, 0.14, 0, 0.14, [0.36, 0.38, 0.4]);
+      }
+      flatDebris(solid, T * 0.44, 0.22, 0.58, 0.06, 0.04, 0.48, 0.01, pc);
+      flatDebris(solid, T * 0.58, -0.22, 0.52, 0.04, 0.03, -0.62, 0.01, wc);
+      flatDebris(solid, T * 0.35, -0.12, 0.12, 0.10, 0.08, 0.2, 0.0, ins);
+      hazardEnds(0);
+    } else {
+      posts(pwE, h, pc);
+      for (var wI = 0; wI < nW; wI++) {
+        var wy = 0.18 + (h - 0.3) * wI / (nW - 1);
+        bx(solid, 0, wy, -0.012 - (heavyE ? 0.05 : 0), T, wy + 0.025, 0.012 + (heavyE ? 0.05 : 0), wc, true);
+        if (!contNext || wI === 0) bx(solid, -0.03, wy - 0.02, -0.07, 0.03, wy + 0.04, 0.07, ins, true);
+      }
+      if (heavyE) { bx(solid, 0, h, -0.14, T, h + 0.05, 0.14, pc, true); bx(solid, T * 0.5 - 0.1, h * 0.45, -0.06, T * 0.5 + 0.1, h * 0.45 + 0.2, 0.06, live ? [0.95, 0.8, 0.15] : [0.5, 0.45, 0.2], true); }
     }
-    if (heavyE) { bx(solid, 0, h, -0.14, T, h + 0.05, 0.14, pc, true); bx(solid, T * 0.5 - 0.1, h * 0.45, -0.06, T * 0.5 + 0.1, h * 0.45 + 0.2, 0.06, live ? [0.95, 0.8, 0.15] : [0.5, 0.45, 0.2], true); }
   } else if (st === 'gate') {   // safari package: the airlock gate is drawn by 46-world-safari.js (posts, chamber, sliding doors)
   } else {
-    posts(0.06, h, [0.4, 0.3, 0.2]); bx(solid, 0, h * 0.7, -0.03, T, h * 0.7 + 0.1, 0.03, [0.5, 0.4, 0.3]);
+    if (broken) {
+      posts(0.06, h * 0.45, [0.4, 0.3, 0.2]);
+      tiltedBx(solid, 0, h * 0.32, -0.03, T * 0.25, h * 0.42, 0.03, 0, -0.18, 0, -0.18, [0.5, 0.4, 0.3]);
+      tiltedBx(solid, T * 0.75, h * 0.14, -0.03, T, h * 0.24, 0.03, 0, 0.18, 0, 0.18, [0.5, 0.4, 0.3]);
+      flatDebris(solid, T * 0.48, 0.20, 0.62, 0.10, 0.06, 0.4, 0.01, [0.5, 0.4, 0.3]);
+      hazardEnds(0);
+    } else {
+      posts(0.06, h, [0.4, 0.3, 0.2]); bx(solid, 0, h * 0.7, -0.03, T, h * 0.7 + 0.1, 0.03, [0.5, 0.4, 0.3]);
+    }
   }
 }
 function buildFenceChunk(ci, cj) {
@@ -1324,6 +1460,15 @@ function buildFenceChunk(ci, cj) {
   fenceMeshes[key] = null;
   var s = Z.state; if (!s || !s.fenceX || !s.fenceZ) return;
   var types = D.fences || [], fx = s.fenceX, fz = s.fenceZ;
+  var brokenMap = {};
+  if (s.enclosures) {
+    for (var bk = 0; bk < s.enclosures.length; bk++) {
+      var be = s.enclosures[bk];
+      if (be && be.breach > 0 && be.breachEdge) {
+        brokenMap[be.breachEdge.axis + ':' + be.breachEdge.i + ':' + be.breachEdge.j] = 1;
+      }
+    }
+  }
   var set = { solid: new MB(), chain: new MB(), glass: new MB() }, any = false;
   var i0 = ci * CH, j0 = cj * CH, i1 = Math.min(N, i0 + CH), j1 = Math.min(N, j0 + CH);
   var iEnd = ci === NCH - 1 ? N : i1 - 1, jEnd = cj === NCH - 1 ? N : j1 - 1;
@@ -1331,12 +1476,12 @@ function buildFenceChunk(ci, cj) {
   for (j = j0; j <= jEnd; j++) for (i = i0; i < i1; i++) {   // fenceX: along north side of (i,j)
     v = fx[i + j * N]; if (!v) continue;
     f = types[v - 1]; if (!f) continue; any = true;
-    fenceEdge(set, 'x', i, j, f, i + 1 < N && fx[i + 1 + j * N] === v);
+    fenceEdge(set, 'x', i, j, f, i + 1 < N && fx[i + 1 + j * N] === v, !!brokenMap['x:' + i + ':' + j]);
   }
   for (j = j0; j < j1; j++) for (i = i0; i <= iEnd; i++) {   // fenceZ: along west side of (i,j)
     v = fz[i + j * (N + 1)]; if (!v) continue;
     f = types[v - 1]; if (!f) continue; any = true;
-    fenceEdge(set, 'z', i, j, f, j + 1 < N && fz[i + (j + 1) * (N + 1)] === v);
+    fenceEdge(set, 'z', i, j, f, j + 1 < N && fz[i + (j + 1) * (N + 1)] === v, !!brokenMap['z:' + i + ':' + j]);
   }
   if (!any) return;
   var meshes = [];
@@ -1548,7 +1693,7 @@ function syncObjects() {
   for (var k = 0; k < arr.length; k++) {
     var o = arr[k], rec = objRecs.get(o.id);
     var key = o.kind + '|' + o.type + '|' + o.i + '|' + o.j + '|' + (o.rot | 0);
-    if (rec && rec.key === key) { rec.gen = gen; continue; }
+    if (rec && rec.key === key) { rec.obj = o; rec.gen = gen; continue; }
     if (rec) { removeRec(rec); if (rec.inst) poolsDirty = true; objRecs.delete(o.id); }
     rec = { id: o.id, key: key, obj: o, kind: o.kind, type: o.type, gen: gen, group: null, inst: null, upd: null, lamp: false };
     var rot = (o.rot | 0) & 3;
@@ -2037,12 +2182,16 @@ function updateEntities(dt, dtGame) {
   }
   G.entStats = { visible: n, impostors: nG + nATot, meshes: Math.round(totalMc) };
 }
+var STOPPED_RIDES = { carousel: 1, ferris_wheel: 1, wooden_coaster: 1, loop_coaster: 1, mine_coaster: 1, log_flume: 1 };
 function updateBuildings(dtGame) {
   var t = G.t;
   for (var k = 0; k < bldList.length; k++) {
     var r = bldList[k], dx = r.x - view.x, dz = r.z - view.z;
     if (dx * dx + dz * dz > 130 * 130 && (G.frameNo & 7)) continue;
-    try { r.upd.call(r.group.userData, dtGame, t, r.group); } catch (e) { r.upd = null; }
+    var o = r.obj;
+    if (o && STOPPED_RIDES[r.type] && (o.off || o.broken || o.paused)) continue;
+    if (r.group && r.group.userData) r.group.userData.obj = o;
+    try { r.upd.call(r.group.userData, dtGame, t, r.group, o); } catch (e) { r.upd = null; }
   }
 }
 function entityRec(kind, id) { var m = ents[kind]; return m ? m.get(id) : null; }
@@ -2363,6 +2512,208 @@ function syncFights(dt) {
     c.sp.scale.set(spSc, spSc, 1);
     c.sp.material.opacity = alpha;
   });
+}
+
+/* ------------------------------------------------ breakage & outage 3D FX */
+var breakageGrp = null, fxRes = null, fxAttached = false, fxBeacons = [], fxBox = null;
+var FX_CAP = 128, fxSmokePool = [], fxSparkPool = [], fxSmokeHead = 0, fxSparkHead = 0, fxSpawnAcc = 0;
+function initFxPool(pool) {
+  for (var i = 0; i < FX_CAP; i++) pool.push({ life: 0, max: 1, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s0: 0.4, s1: 1.0 });
+}
+initFxPool(fxSmokePool);
+initFxPool(fxSparkPool);
+
+function ensureFxResources() {
+  if (typeof THREE === 'undefined' || !scene || !THREE.Group || !THREE.SphereGeometry) return false;
+  if (!breakageGrp) {
+    breakageGrp = new THREE.Group();
+    breakageGrp.name = 'breakage-fx';
+    scene.add(breakageGrp);
+  } else if (breakageGrp.parent !== scene) {
+    scene.add(breakageGrp);
+  }
+  if (!fxRes) {
+    var sphGeo = new THREE.SphereGeometry(0.32, 8, 6);
+    var diaGeo = THREE.OctahedronGeometry ? new THREE.OctahedronGeometry(0.36, 0) : sphGeo;
+    var smokeGeo = THREE.IcosahedronGeometry ? new THREE.IcosahedronGeometry(0.32, 1) : sphGeo;
+    var sparkGeo = THREE.OctahedronGeometry ? new THREE.OctahedronGeometry(0.14, 0) : sphGeo;
+    var redMat = new THREE.MeshBasicMaterial({ color: 0xff2e24, fog: false });
+    var ambMat = new THREE.MeshBasicMaterial({ color: 0xffaa18, fog: false });
+    var smokeMat = new THREE.MeshLambertMaterial({ color: 0x2c3036, transparent: true, opacity: 0.7, depthWrite: false });
+    var sparkMat = new THREE.MeshBasicMaterial({ color: 0xffe45e, fog: false });
+    var smokeInst = null, sparkInst = null;
+    if (THREE.InstancedMesh) {
+      smokeInst = new THREE.InstancedMesh(smokeGeo, smokeMat, FX_CAP);
+      smokeInst.frustumCulled = false; smokeInst.count = 0; smokeInst.renderOrder = 8;
+      if (smokeInst.instanceMatrix && smokeInst.instanceMatrix.setUsage) smokeInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      sparkInst = new THREE.InstancedMesh(sparkGeo, sparkMat, FX_CAP);
+      sparkInst.frustumCulled = false; sparkInst.count = 0; sparkInst.renderOrder = 9;
+      if (sparkInst.instanceMatrix && sparkInst.instanceMatrix.setUsage) sparkInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    }
+    fxRes = { sphGeo: sphGeo, diaGeo: diaGeo, redMat: redMat, ambMat: ambMat, smokeInst: smokeInst, sparkInst: sparkInst };
+    if (THREE.Box3) fxBox = new THREE.Box3();
+  }
+  if (!fxAttached) {
+    if (fxRes.smokeInst) breakageGrp.add(fxRes.smokeInst);
+    if (fxRes.sparkInst) breakageGrp.add(fxRes.sparkInst);
+    fxAttached = true;
+  }
+  return true;
+}
+
+function getFxBeacon(idx) {
+  var b = fxBeacons[idx];
+  if (!b) {
+    var g = new THREE.Group();
+    var sph = new THREE.Mesh(fxRes.sphGeo, fxRes.redMat);
+    var dia = new THREE.Mesh(fxRes.diaGeo, fxRes.redMat);
+    dia.position.y = 0.72;
+    g.add(sph); g.add(dia);
+    b = { grp: g, sph: sph, dia: dia, active: false };
+    fxBeacons.push(b);
+  }
+  if (b.grp.parent !== breakageGrp) breakageGrp.add(b.grp);
+  b.grp.visible = true;
+  b.active = true;
+  return b;
+}
+
+function emitFxParticle(pool, isSmoke, x, y, z) {
+  var idx = isSmoke ? fxSmokeHead : fxSparkHead;
+  if (isSmoke) fxSmokeHead = (fxSmokeHead + 1) % FX_CAP;
+  else fxSparkHead = (fxSparkHead + 1) % FX_CAP;
+  var p = pool[idx], hA = Math.sin(idx * 12.9898 + G.t * 17.3) * 0.5;
+  var hB = Math.cos(idx * 78.233 + G.t * 13.7) * 0.5;
+  if (isSmoke) {
+    p.life = p.max = 1.4;
+    p.x = x + hA * 0.6; p.y = y + 0.15; p.z = z + hB * 0.6;
+    p.vx = hA * 0.5; p.vy = 1.6 + Math.abs(hA) * 0.8; p.vz = hB * 0.5;
+    p.s0 = 0.45; p.s1 = 1.45;
+  } else {
+    p.life = p.max = 0.48;
+    p.x = x + hA * 0.5; p.y = y + 0.1; p.z = z + hB * 0.5;
+    p.vx = hA * 3.8; p.vy = 1.8 + Math.abs(hB) * 2.4; p.vz = hB * 3.8;
+    p.s0 = 1.1; p.s1 = 0.15;
+  }
+}
+
+function stepFxPool(pool, inst, dt, isSmoke) {
+  if (!inst || !inst.instanceMatrix || !inst.instanceMatrix.array) return;
+  var arr = inst.instanceMatrix.array, cnt = 0;
+  for (var i = 0; i < FX_CAP; i++) {
+    var p = pool[i];
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) continue;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+    if (!isSmoke) p.vy -= 8.5 * dt;
+    var u = 1 - p.life / p.max, sc = lerp(p.s0, p.s1, u), b = cnt * 16;
+    arr[b] = sc; arr[b + 1] = 0; arr[b + 2] = 0; arr[b + 3] = 0;
+    arr[b + 4] = 0; arr[b + 5] = sc; arr[b + 6] = 0; arr[b + 7] = 0;
+    arr[b + 8] = 0; arr[b + 9] = 0; arr[b + 10] = sc; arr[b + 11] = 0;
+    arr[b + 12] = p.x; arr[b + 13] = p.y; arr[b + 14] = p.z; arr[b + 15] = 1;
+    cnt++;
+  }
+  inst.count = cnt;
+  inst.visible = cnt > 0;
+  inst.instanceMatrix.needsUpdate = true;
+}
+
+function clearBreakageFX() {
+  for (var i = 0; i < fxBeacons.length; i++) {
+    fxBeacons[i].active = false;
+    fxBeacons[i].grp.visible = false;
+  }
+  for (i = 0; i < FX_CAP; i++) { fxSmokePool[i].life = 0; fxSparkPool[i].life = 0; }
+  if (fxRes) {
+    if (fxRes.smokeInst) { fxRes.smokeInst.count = 0; fxRes.smokeInst.visible = false; }
+    if (fxRes.sparkInst) { fxRes.sparkInst.count = 0; fxRes.sparkInst.visible = false; }
+  }
+  if (breakageGrp) {
+    while (breakageGrp.children.length) breakageGrp.remove(breakageGrp.children[0]);
+  }
+  fxAttached = false;
+}
+
+function syncBreakageFX(dtReal) {
+  if (!ensureFxResources()) return;
+  var s = Z.state;
+  if (!s) { clearBreakageFX(); return; }
+  var bIdx = 0, camPos = camera && camera.position ? camera.position : null;
+  fxSpawnAcc += dtReal || 0;
+  var doSpawn = fxSpawnAcc >= 0.14;
+  if (doSpawn) fxSpawnAcc = fxSpawnAcc % 0.14;
+
+  function placeBeacon(wx, wy, wz, kind, phase, smoke, spark) {
+    var b = getFxBeacon(bIdx++), t = G.t;
+    var mat = kind === 'amber' ? fxRes.ambMat : (kind === 'redamber' && (Math.floor(t * 4) & 1)) ? fxRes.ambMat : fxRes.redMat;
+    b.sph.material = mat; b.dia.material = mat;
+    var d = camPos ? Math.hypot(camPos.x - wx, camPos.y - wy, camPos.z - wz) : 40;
+    var sc = clamp(0.8 + d * 0.009, 0.85, 1.75);
+    var pulse = 0.5 + 0.5 * Math.sin(t * 7.5 + phase), blink = Math.sin(t * 9.0 + phase) > -0.25;
+    b.grp.position.set(wx, wy, wz);
+    b.grp.scale.setScalar(sc);
+    b.sph.scale.setScalar(blink ? 0.85 + 0.45 * pulse : 0.4);
+    b.dia.position.y = 0.72 + Math.sin(t * 3.8 + phase) * 0.16;
+    b.dia.rotation.y = t * 2.4 + phase;
+    b.dia.scale.setScalar(0.85 + 0.3 * pulse);
+    if (doSpawn) {
+      if (smoke) emitFxParticle(fxSmokePool, true, wx, wy - 0.5, wz);
+      if (spark) emitFxParticle(fxSparkPool, false, wx, wy - 0.4, wz);
+    }
+  }
+
+  // 1. Breached enclosure fence panels
+  var encs = s.enclosures || [];
+  for (var ei = 0; ei < encs.length; ei++) {
+    var enc = encs[ei];
+    if (enc && enc.breach > 0 && enc.breachEdge) {
+      var ed = enc.breachEdge;
+      var ex = ed.axis === 'x' ? (ed.i + 0.5) * T : ed.i * T;
+      var ez = ed.axis === 'x' ? ed.j * T : (ed.j + 0.5) * T;
+      var ey = groundY(ex, ez) + 1.4;
+      placeBeacon(ex, ey, ez, 'red', (enc.id || ei) * 1.1, false, true);
+    }
+  }
+
+  // 2-6. Broken generators, downed substations/pylons, unpowered buildings, sealed research labs, broken buildings
+  var objs = s.objects || [], now = (typeof s.day === 'number' ? s.day : 0) + (typeof s.time === 'number' ? s.time : 0);
+  var pBroken = s.power && s.power.broken, pNodes = s.power && s.power.nodes;
+  var labSealed = !!(s.research && s.research.labOffline > 0);
+  for (var oi = 0; oi < objs.length; oi++) {
+    var o = objs[oi];
+    if (!o || o.kind !== 'building') continue;
+    var genBrk = !!(pBroken && pBroken[o.id] && pBroken[o.id].eta > now);
+    var nodeDown = !!(pNodes && pNodes[o.id] && pNodes[o.id].eta > now);
+    var bldBrk = !!o.broken;
+    var labOff = labSealed && o.type === 'research_lab';
+    var unpow = !!o.off;
+    if (!genBrk && !nodeDown && !bldBrk && !labOff && !unpow) continue;
+    var rec = objRecs.get(o.id), wx, wy, wz;
+    if (rec) {
+      wx = rec.x; wz = rec.z;
+      if (rec.fxH === undefined) {
+        if (rec.group && fxBox) {
+          fxBox.setFromObject(rec.group);
+          rec.fxH = (isFin(fxBox.max.y) ? clamp(fxBox.max.y - rec.y, 1.8, 9.0) : 2.6) + 0.75;
+        } else rec.fxH = 3.0;
+      }
+      wy = rec.y + rec.fxH;
+    } else {
+      var bm = buildingMeta(o.type), bw = bm.w || 1, bh = bm.h || 1;
+      if ((o.rot & 1) && bw !== bh) { var tmp = bw; bw = bh; bh = tmp; }
+      wx = (o.i + bw * 0.5) * T; wz = (o.j + bh * 0.5) * T; wy = groundY(wx, wz) + 3.0;
+    }
+    var bKind = genBrk || nodeDown || bldBrk ? 'red' : labOff ? 'redamber' : 'amber';
+    placeBeacon(wx, wy, wz, bKind, (o.id || oi) * 0.7, genBrk || bldBrk, genBrk || nodeDown);
+  }
+
+  for (var bi = bIdx; bi < fxBeacons.length; bi++) {
+    fxBeacons[bi].active = false;
+    fxBeacons[bi].grp.visible = false;
+  }
+  stepFxPool(fxSmokePool, fxRes.smokeInst, dtReal || 0, true);
+  stepFxPool(fxSparkPool, fxRes.sparkInst, dtReal || 0, false);
 }
 /* ------------------------------------------------ preview / highlighting */
 var pv = {};
@@ -2963,6 +3314,7 @@ function resetAll() {
   for (var t in pools) { root.remove(pools[t].mesh); } pools = {};
   clearEnts();
   fightClouds.forEach(disposeFightCloud); fightClouds.clear();
+  clearBreakageFX();
   objDirty = true; G.poopSig = -1; G.litterSig = -1; G.ovTimer = 0;
   followK = null; followId = null;
   setPreview(null);
@@ -2995,6 +3347,14 @@ function hookBus() {
     if (!e) { fenceDirty.fill(1); return; }
     if (e.axis === 'x') markRect(fenceDirty, e.i - 1, e.j - 1, e.i + 1, e.j, 1); else markRect(fenceDirty, e.i - 1, e.j - 1, e.i, e.j + 1, 1);
   });
+  function dirtyFenceEv(ev) {
+    var e = ev && ev.edge ? ev.edge : ev;
+    if (!e || typeof e.i !== 'number' || typeof e.j !== 'number') { fenceDirty.fill(1); return; }
+    if (e.axis === 'x') markRect(fenceDirty, e.i - 1, e.j - 1, e.i + 1, e.j, 1);
+    else markRect(fenceDirty, e.i - 1, e.j - 1, e.i, e.j + 1, 1);
+  }
+  b.on('fenceBreach', dirtyFenceEv);
+  b.on('fenceFixed', dirtyFenceEv);
   b.on('fences', function () { fenceDirty.fill(1); });
   b.on('power', function () { fenceDirty.fill(1); rebuildLamps(); });   // power package: wire colour and lamps follow the grid
   b.on('objectAdded', function () { objDirty = true; });
@@ -3045,6 +3405,7 @@ function frame(dtReal) {
   updateFloaters(dtReal);
   updateGrime(dtReal);
   updateLamps(dtReal);
+  syncBreakageFX(dtReal);
   if (Z.PowerWorld) Z.PowerWorld.frame(dtReal);
   if (Z.RealmsWorld) Z.RealmsWorld.preRender(dtReal, SV);   // realms package: dome crackle, geofence shimmer, underwater tint in tunnels
   if (Z.CoasterWorld && Z.CoasterWorld.frame) Z.CoasterWorld.frame(dtReal, dtGame);

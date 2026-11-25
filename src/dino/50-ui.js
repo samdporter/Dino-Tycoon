@@ -669,6 +669,15 @@ window.Z = window.Z || {}; var Z = window.Z;
       UI.banner({ title: 'Escape!', text: (a.name || 'An animal') + ' the ' + (sp ? sp.name.toLowerCase() : 'animal') + ' has broken out!', kind: 'alert', jump: function () { UI.jumpTo('animal', a.id); } });
       UI.snd('alarm');
     });
+    b.on('fenceBreach', function (ev) {
+      if (!ev) return;
+      UI.banner({ title: '⚠️ Fence Broken!', text: (ev.name || 'An enclosure') + ' has a broken fence panel!', kind: 'alert', jump: function () { if (isFinite(ev.x) && isFinite(ev.z)) Z.World.focus(ev.x, ev.z, 24); if (UI.Panel) UI.Panel.open('enclosure', ev.encId); } });
+      UI.snd('alarm');
+    });
+    b.on('fenceFixed', function (ev) {
+      if (!ev) return;
+      UI.toast((ev.name ? ev.name + ' fence repaired' : 'Fence repaired') + (ev.by ? ' (' + ev.by + ')' : '') + '.', 'good');
+    });
     b.on('birth', function (a) {
       if (!a) return; var sp = UI.sp(a.species);
       UI.banner({ title: 'A baby ' + (sp ? sp.name.toLowerCase() : 'animal') + '!', text: (a.name || 'It') + ' was born. Congratulations!', kind: 'good', jump: function () { UI.jumpTo('animal', a.id); } }); UI.snd('good');

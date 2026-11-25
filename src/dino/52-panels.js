@@ -145,6 +145,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var spaceTxt = h('b');
     b.appendChild(h('div.kv', h('span', { text: 'Enclosure space' }), spaceTxt));
     var fenceTxt = h('div.kv'); b.appendChild(fenceTxt);
+    var breachBox = h('div', { style: 'display:none;flex-direction:column;gap:6px;margin:4px 0' }), breachKey = ''; b.appendChild(breachBox);
     var moatBox = UI.Moats ? UI.Moats.encBlock(id) : null; if (moatBox) b.appendChild(moatBox.el);
     var rlBox = UI.Realms ? UI.Realms.encBlock(id) : null; if (rlBox) b.appendChild(rlBox.el);   // realms package
     var pwBox = UI.Power ? UI.Power.encBlock(id) : null; if (pwBox) b.appendChild(pwBox.el);   // power package: electric fence state
@@ -168,6 +169,32 @@ window.Z = window.Z || {}; var Z = window.Z;
         var fn = D.fences.filter(function (x) { return x.strength === en.minFence; })[0];
         var worst = 0; en.species.forEach(function (s) { worst = Math.max(worst, UI.sp(s).minFence); });
         if (en.kind) fenceTxt.style.display = 'none'; else fenceTxt.innerHTML = '<span>Weakest fence strength</span><b style="color:' + (en.minFence < worst ? 'var(--bad)' : 'inherit') + '">' + en.minFence + (worst ? ' / needs ' + worst : '') + '</b>';
+        var rangerCount = (Z.state.staff || []).filter(function (s) { return s.type === 'keeper'; }).length;
+        var bKey = [r.breach ? 1 : 0, r.breachCrew ? 1 : 0, r.breachCrew ? Math.max(1, Math.ceil(r.breachFix || 0)) : 0, r.breachEdge ? r.breachEdge.axis + ':' + r.breachEdge.i + ':' + r.breachEdge.j : '', rangerCount === 0 ? 1 : 0].join('|');
+        if (bKey !== breachKey) {
+          breachKey = bKey; breachBox.innerHTML = '';
+          if (r.breach > 0) {
+            breachBox.style.display = 'flex';
+            breachBox.appendChild(issuesList([r.breachCrew ? '🔧 Emergency fence crew on site (~' + Math.max(1, Math.ceil(r.breachFix || 0)) + 's)...' : '⚠️ Fence panel broken!']));
+            var bRow = h('div.btnrow', { style: 'flex-wrap:wrap;gap:4px' });
+            if (!r.breachCrew) {
+              bRow.appendChild(h('button.btn.sm', {
+                text: '🔧 Call Fence Crew (' + fmt(r.fenceCrewFee || Z.Sim.FENCE_CREW_FEE || 150) + ')',
+                on: { click: function () { var res = Z.Sim.callFenceCrew(id); if (res.ok) { UI.snd('build'); UI.toast('Emergency fence crew dispatched!', 'good'); breachKey = ''; cur.update(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+              }));
+            }
+            if (r.breachEdge) {
+              var ed = r.breachEdge, T2 = Z.TILE || 2, bx = ed.axis === 'x' ? (ed.i + 0.5) * T2 : ed.i * T2, bz = ed.axis === 'x' ? ed.j * T2 : (ed.j + 0.5) * T2;
+              bRow.appendChild(h('button.btn.sm.alt', { text: '🎯 Show Broken Panel', on: { click: function () { Z.World.focus(bx, bz, 24); } } }));
+            }
+            if (rangerCount === 0) {
+              bRow.appendChild(h('button.btn.sm.alt', { text: 'Hire Ranger', on: { click: function () { Panel.hide(); UI.openCat('staff', true); } } }));
+            }
+            if (bRow.children.length) breachBox.appendChild(bRow);
+          } else {
+            breachBox.style.display = 'none';
+          }
+        }
         if (moatBox) { moatBox.update(); if (en.kind) moatBox.el.style.display = 'none'; } if (pwBox) pwBox.update(); if (rlBox) rlBox.update(); if (sfBox) sfBox.update();
         var key = en.species.join(',') + '|' + en.animals.length + '|' + Object.keys(r.species).map(function (s) { return s + Math.round(r.species[s].suitability * 100); }).join(',');
         if (key !== spKey) {
@@ -299,9 +326,16 @@ window.Z = window.Z || {}; var Z = window.Z;
       b.appendChild(h('button.btn.sm.gold', { style: 'margin:6px 0', html: ic('flask') + (o.type === 'hatchery' ? 'Open hatchery research' : 'Open the lab'), on: { click: function () { UI.Research.open(o.type === 'hatchery' ? 'genomes' : 'lab'); } } }));
       var skey = '';
       sciUpd = function () {
-        var sm = Z.Sim.research.summary(), R = Z.state.research, k = JSON.stringify([sm.labOnline, sm.jobs, sm.eggs, sm.freeScientists, sm.labOfflineHours | 0]); if (k === skey) return; skey = k; sci.innerHTML = '';
+        var sm = Z.Sim.research.summary(), R = Z.state.research, k = JSON.stringify([sm.labOnline, sm.jobs, sm.eggs, sm.freeScientists, sm.labOfflineHours | 0, !!R.labDeconCrew]); if (k === skey) return; skey = k; sci.innerHTML = '';
         if (o.type === 'research_lab') {
           sci.appendChild(h('div.kv', h('span', { text: 'Status' }), h('b', { style: 'color:' + (sm.labOnline ? 'var(--good)' : 'var(--bad)'), text: sm.labOnline ? 'Online' : (sm.labOfflineHours > 0 ? 'Sealed: ' + Math.ceil(sm.labOfflineHours) + ' h' : 'Offline') })));
+          if (sm.labOfflineHours > 0) {
+            if (R.labDeconCrew) sci.appendChild(h('div.fact', { text: '🔧 Emergency decon crew on site...' }));
+            else sci.appendChild(h('div.btnrow', { style: 'margin-top:4px' }, h('button.btn.sm', {
+              text: '🔧 Call Decon Crew (' + fmt(Z.Sim.LAB_DECON_FEE || 200) + ')',
+              on: { click: function () { var res = Z.Sim.callLabDecon(); if (res.ok) { UI.snd('build'); UI.toast('Emergency decontamination crew dispatched!', 'good'); skey = ''; sciUpd(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+            })));
+          }
           sci.appendChild(h('div.kv', h('span', { text: 'Scientists' }), h('b', { text: sm.scientists + ' (' + sm.freeScientists + ' free)' })));
           sci.appendChild(h('div.kv', h('span', { text: 'Experiments running' }), h('b', { text: String(R.jobs.filter(function (j) { return j.kind !== 'expedition'; }).length) })));
         } else {

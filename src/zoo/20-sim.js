@@ -81,7 +81,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
       encx: {}, bq: {}, benchOcc: {}, byType: { food: [], drink: [], toilet: [], fun: [], bench: [], bin: [] },
       t1: 0, t2: 0, escAcc: 0, arrAcc: 0, rate: 0.3, arrMul: 1, arrMulT: 0, pendingSpawn: 0,
-      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
+      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, mechCount: 0, handyCount: 0, elecCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
       advice: {}, claim: {}, groupLead: new Map(), nextGroup: 1, dirtyCount: 0, ghEMA: 65, value: 10,
       queue: new Int32Array(NN), prev: new Int32Array(NN), stamp: new Int32Array(NN), stampN: 0, binVer: 0,
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
@@ -516,8 +516,147 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- enclosures ----
+  var FENCE_CREW_FEE = 120, POWER_CREW_FEE = 150;
   function encById(id) { return RT.eMap[id] || null; }
   function encOfTile(t) { var id = S.tileEnc[t]; return id ? encById(id) : null; }
+
+  function findEncFenceEdges(enc) {
+    if (!enc || !enc.tiles || !enc.tiles.length) return [];
+    var edges = [], seen = {};
+    for (var k = 0; k < enc.tiles.length; k++) {
+      var t = enc.tiles[k], i = t % N, j = (t - i) / N;
+      var checks = [
+        ['x', i, j, j === 0 || S.tileEnc[t - N] !== enc.id, S.fenceX[i + j * N]],
+        ['x', i, j + 1, j === N - 1 || S.tileEnc[t + N] !== enc.id, S.fenceX[i + (j + 1) * N]],
+        ['z', i, j, i === 0 || S.tileEnc[t - 1] !== enc.id, S.fenceZ[i + j * (N + 1)]],
+        ['z', i + 1, j, i === N - 1 || S.tileEnc[t + 1] !== enc.id, S.fenceZ[(i + 1) + j * (N + 1)]]
+      ];
+      for (var c = 0; c < 4; c++) {
+        var ch = checks[c];
+        if (!ch[3] || !ch[4]) continue;
+        var key = ch[0] + ':' + ch[1] + ':' + ch[2];
+        if (seen[key]) continue; seen[key] = 1;
+        edges.push({ axis: ch[0], i: ch[1], j: ch[2] });
+      }
+    }
+    return edges;
+  }
+  function isValidEncFenceEdge(enc, edge) {
+    if (!enc || !edge) return false;
+    var v = edge.axis === 'x' ? S.fenceX[edge.i + edge.j * N] : S.fenceZ[edge.i + edge.j * (N + 1)];
+    if (!v) return false;
+    var edges = findEncFenceEdges(enc);
+    for (var k = 0; k < edges.length; k++) {
+      if (edges[k].axis === edge.axis && edges[k].i === edge.i && edges[k].j === edge.j) return true;
+    }
+    return false;
+  }
+  function pickBreachEdgeDet(enc, edges) {
+    if (!edges || !edges.length) return null;
+    var h = ((enc.id * 2654435761) ^ ((S.day || 1) * 2246822519) ^ (Math.floor((S.time || 0) * 10000) * 3266489917)) >>> 0;
+    return edges[h % edges.length];
+  }
+  function ensureBreachEdge(enc) {
+    if (!enc) return;
+    if (enc.breach > 0) {
+      if (!isValidEncFenceEdge(enc, enc.breachEdge)) {
+        var edges = findEncFenceEdges(enc);
+        enc.breachEdge = pickBreachEdgeDet(enc, edges);
+      }
+    } else {
+      enc.breachEdge = null;
+      enc.breachCrew = false;
+      enc.breachFix = 0;
+    }
+  }
+  function breachEdgeWorldPos(enc) {
+    var ed = enc && enc.breachEdge;
+    if (!ed) return { x: enc ? enc.cx : 0, z: enc ? enc.cz : 0 };
+    return ed.axis === 'x' ? { x: (ed.i + 0.5) * TILE, z: ed.j * TILE } : { x: ed.i * TILE, z: (ed.j + 0.5) * TILE };
+  }
+  function breachEnclosure(encOrId) {
+    var enc = typeof encOrId === 'object' ? encOrId : encById(encOrId);
+    if (!enc) return null;
+    enc.breach = 1;
+    enc.breachCrew = false;
+    enc.breachFix = 0;
+    var edges = findEncFenceEdges(enc);
+    enc.breachEdge = pickBreachEdgeDet(enc, edges);
+    if (enc.breachEdge) bus.emit('fence', enc.breachEdge);
+    else bus.emit('fences');
+    var wp = breachEdgeWorldPos(enc);
+    bus.emit('fenceBreach', { encId: enc.id, name: enc.name, edge: enc.breachEdge, x: wp.x, z: wp.z });
+    return enc.breachEdge;
+  }
+  function repairEnclosureBreach(enc, byName) {
+    if (!enc) return;
+    var oldEdge = enc.breachEdge;
+    enc.breach = 0;
+    enc.breachEdge = null;
+    enc.breachCrew = false;
+    enc.breachFix = 0;
+    if (oldEdge) bus.emit('fence', oldEdge);
+    else bus.emit('fences');
+    bus.emit('fenceFixed', { encId: enc.id, name: enc.name, by: byName || 'Repair crew' });
+  }
+  function callFenceCrew(encId) {
+    var enc = encById(encId);
+    if (!enc) return fail('Enclosure not found.');
+    if (!(enc.breach > 0)) return fail('This enclosure fence is not broken.');
+    if (enc.breachCrew) return fail('Emergency fence crew is already on the way.');
+    if (S.money < FENCE_CREW_FEE) return fail('Not enough money (' + fmt(FENCE_CREW_FEE) + ' needed).');
+    spend(FENCE_CREW_FEE, 'upkeep');
+    enc.breachCrew = true;
+    enc.breachFix = 4.5;
+    msg('Emergency fence repair crew dispatched to ' + enc.name + ' (' + fmt(FENCE_CREW_FEE) + ').', 'info');
+    return okr(FENCE_CREW_FEE);
+  }
+  function stepBreachCrews(dt) {
+    for (var k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (e.breach > 0 && e.breachCrew) {
+        e.breachFix = Math.max(0, (e.breachFix || 0) - dt);
+        if (e.breachFix <= 0) {
+          repairEnclosureBreach(e, 'Emergency Fence Crew');
+          msg('Emergency fence crew repaired the broken fence panel at ' + e.name + '.', 'good');
+        }
+      }
+    }
+  }
+  function powerCutEvent() {
+    if (!S || !S.activeEvents) return null;
+    for (var k = 0; k < S.activeEvents.length; k++) if (S.activeEvents[k].kind === 'powerCut') return S.activeEvents[k];
+    return null;
+  }
+  function powerCutActive() { return !!powerCutEvent(); }
+  function callPowerCrew() {
+    var ev = powerCutEvent();
+    if (!ev) return fail('Power is currently on.');
+    if (ev.crew) return fail('Emergency electrician is already on the way.');
+    if (S.money < POWER_CREW_FEE) return fail('Not enough money (' + fmt(POWER_CREW_FEE) + ' needed).');
+    spend(POWER_CREW_FEE, 'upkeep');
+    ev.crew = true;
+    ev.until = Math.min(ev.until, S.day + S.time + 4.5 / DAY_SECONDS);
+    ev.text = 'Emergency electrician restoring power...';
+    msg('Emergency electrician dispatched to restore zoo power (' + fmt(POWER_CREW_FEE) + ').', 'info');
+    bus.emit('events', S.activeEvents);
+    return okr(POWER_CREW_FEE);
+  }
+  function resolvePowerCut(byName) {
+    if (!S || !S.activeEvents) return false;
+    var removed = false;
+    for (var k = S.activeEvents.length - 1; k >= 0; k--) {
+      if (S.activeEvents[k].kind === 'powerCut') {
+        S.activeEvents.splice(k, 1);
+        removed = true;
+      }
+    }
+    if (!removed) return false;
+    recomputeWX();
+    bus.emit('events', S.activeEvents);
+    msg((byName || 'Staff') + ' restored zoo power!', 'good');
+    return true;
+  }
 
   function recomputeEnclosures() {
     var old = S.enclosures || [], oldTE = S.tileEnc.slice(), oldMap = {}, k;
@@ -572,7 +711,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var match = assigned[r] !== undefined ? oldMap[assigned[r]] : null;
       var eid = match ? match.id : nextEncId++;
       var name = match ? match.name : ('Enclosure ' + eid);
-      var enc = { id: eid, name: name, tiles: tiles2, area: tiles2.length, minFence: 99, see: 1, poop: match ? match.poop : 0, foodLevel: match ? match.foodLevel : 1, waterLevel: match ? match.waterLevel : 1, breach: match ? match.breach : 0, animals: [], species: [], suitability: {}, viewTiles: [] };
+      var enc = { id: eid, name: name, tiles: tiles2, area: tiles2.length, minFence: 99, see: 1, poop: match ? match.poop : 0, foodLevel: match ? match.foodLevel : 1, waterLevel: match ? match.waterLevel : 1, breach: match ? match.breach : 0, breachEdge: match ? (match.breachEdge || null) : null, breachCrew: match ? !!match.breachCrew : false, breachFix: match ? (match.breachFix || 0) : 0, animals: [], species: [], suitability: {}, viewTiles: [] };
       var sx = 0, sz = 0;
       for (k = 0; k < tiles2.length; k++) { var et = tiles2[k]; S.tileEnc[et] = eid; sx += cxOf(et); sz += czOf(et); }
       enc.cx = tiles2.length ? sx / tiles2.length : N * TILE / 2;
@@ -597,6 +736,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (S.path[ot] && !seenV[ot]) { seenV[ot] = 1; vt.push(ot); }
       }
       e.viewTiles = vt;
+      ensureBreachEdge(e);
     }
     // re-home animals
     for (k = 0; k < S.animals.length; k++) {
@@ -3416,7 +3556,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== STAFF ======================
-  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : 2.2; }
+  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'electrician' ? 2.6 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : s.type === 'handyman' ? 1.85 : 2.2; }
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
@@ -3514,13 +3654,31 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     return false;
   }
+  function pickBreachedEnc(s, sc0) {
+    var best = null, bd = 1e9;
+    for (var k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (!(e.breach > 0) || !e.viewTiles.length || !encReachesComp(e, sc0) || claimed('e' + e.id, s)) continue;
+      var dist = Math.hypot(e.cx - s.x, e.cz - s.z);
+      if (dist < bd) { bd = dist; best = e; }
+    }
+    return best;
+  }
+  function hasCoasterWork(s, sc0) {
+    return !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, sc0, claimed));
+  }
+  function hasPowerCutWork(s) {
+    return powerCutActive() && !claimed('pwcut', s);
+  }
   function urgentTaskReady(s) {
     var t = tileOf(s.x, s.z), sc0 = RT.scomp[S.path[t] ? t : s.ti];
     if (s.type === 'security') return hasEscapeeToCatch(s);
     if (s.type === 'keeper') return !!pickKeeperEnc(s, sc0) || (RT.secCount === 0 && hasEscapeeToCatch(s));
     if (s.type === 'vet') return !!pickVetAnimal(s, sc0);
     if (s.type === 'cleaner') return hasCleanerWork(s, sc0);
-    if (s.type === 'mechanic') return !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, sc0, claimed));
+    if (s.type === 'electrician') return hasPowerCutWork(s) || !!pickBreachedEnc(s, sc0);
+    if (s.type === 'mechanic') return hasCoasterWork(s, sc0) || !!pickBreachedEnc(s, sc0);
+    if (s.type === 'handyman') return !!pickBreachedEnc(s, sc0) || hasCoasterWork(s, sc0) || hasPowerCutWork(s) || hasCleanerWork(s, sc0);
     return false;
   }
   function staffCoverage() {
@@ -3570,7 +3728,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function startPatrol(s) {
     s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 1.2); s.tk = null; s.route = null;
-    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner' || s.type === 'mechanic') ? 'Patrolling (radio ready)' : 'Patrolling';
+    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Patrolling';
     var pt = RT.pathTiles; if (!pt.length || !S.path[s.ti]) return;
     var sc0 = RT.scomp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.scomp[c] === sc0; }) : pt;
     if (!pool.length) return;
@@ -3606,6 +3764,55 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (bestPt < 0) return null;
     return findRoute(s.ti, function (t) { return t === bestPt; });
+  }
+
+  function assignCleanerTask(s, durBin, durDirt) {
+    var bins = RT.byType.bin;
+    for (var k = 0; k < bins.length; k++) {
+      var bin = bins[k];
+      if ((bin.fill || 0) >= 8 && !claimed('b' + bin.id, s)) {
+        var r5 = findRoute(s.ti, function (t) { return Math.abs((t % N) - bin.i) + Math.abs(Math.floor(t / N) - bin.j) === 1; });
+        if (r5) { RT.claim['b' + bin.id] = s.id; s.tk = { k: 'bin', id: bin.id, i: bin.i, j: bin.j, dur: durBin }; s.task = 'Emptying litter bin'; s.route = r5; s.ri = 0; return true; }
+      }
+    }
+    var rc = findRoute(s.ti, function (t) { return S.dirt[t] >= 40 && !claimed('t' + t, s); });
+    if (rc) {
+      var dt = rc.length ? rc[rc.length - 1] : s.ti;
+      RT.claim['t' + dt] = s.id; s.tk = { k: 'dirt', t: dt, dur: durDirt }; s.task = 'Sweeping path';
+      s.route = rc; s.ri = 0; return true;
+    }
+    return false;
+  }
+  function assignFenceTask(s, sc0, dur) {
+    var enc = pickBreachedEnc(s, sc0);
+    if (!enc) return false;
+    var vs = new Set(enc.viewTiles), rf = findRoute(s.ti, function (t) { return vs.has(t); });
+    if (!rf) return false;
+    RT.claim['e' + enc.id] = s.id;
+    s.tk = { k: 'fence', id: enc.id, dur: dur };
+    s.task = 'Repairing fence at ' + enc.name;
+    s.route = rf; s.ri = 0;
+    return true;
+  }
+  function assignCoasterTask(s, sc0, dur, targetCond) {
+    if (!(Z.Coaster && Z.Coaster.pickMechanicTarget)) return false;
+    var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
+    if (!mt) return false;
+    var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
+    if (!rm) return false;
+    RT.claim['c' + mt.station.id] = s.id;
+    s.tk = { k: 'coaster', id: mt.station.id, broken: mt.broken, dur: dur, targetCond: targetCond };
+    s.task = (mt.broken ? 'Repairing ' : 'Servicing ') + BD[mt.station.type].name;
+    s.route = rm; s.ri = 0;
+    return true;
+  }
+  function assignPowerCutTask(s, dur) {
+    if (!hasPowerCutWork(s)) return false;
+    RT.claim['pwcut'] = s.id;
+    s.tk = { k: 'powerCut', dur: dur };
+    s.task = 'Restoring zoo power';
+    s.route = null; s.state = 'work'; s.wt = dur;
+    return true;
   }
 
   function assignTask(s) {
@@ -3653,33 +3860,20 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         }
       }
     }
-    if (s.type === 'cleaner') {
-      var bins = RT.byType.bin;
-      for (k = 0; k < bins.length; k++) {
-        var bin = bins[k];
-        if ((bin.fill || 0) >= 8 && !claimed('b' + bin.id, s)) {
-          var r5 = findRoute(s.ti, function (t) { return Math.abs((t % N) - bin.i) + Math.abs(Math.floor(t / N) - bin.j) === 1; });
-          if (r5) { RT.claim['b' + bin.id] = s.id; s.tk = { k: 'bin', id: bin.id, i: bin.i, j: bin.j }; s.task = 'Emptying litter bin'; s.route = r5; s.ri = 0; return; }
-        }
-      }
-      var rc = findRoute(s.ti, function (t) { return S.dirt[t] >= 40 && !claimed('t' + t, s); });
-      if (rc) {
-        var dt = rc.length ? rc[rc.length - 1] : s.ti;
-        RT.claim['t' + dt] = s.id; s.tk = { k: 'dirt', t: dt }; s.task = 'Sweeping path';
-        s.route = rc; s.ri = 0; return;
-      }
+    if (s.type === 'cleaner' && assignCleanerTask(s, 2, 2.5)) return;
+    if (s.type === 'electrician') {
+      if (assignPowerCutTask(s, 2.2)) return;
+      if (assignFenceTask(s, sc0, 2.2)) return;
     }
-    if (s.type === 'mechanic' && Z.Coaster && Z.Coaster.pickMechanicTarget) {
-      var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
-      if (mt) {
-        var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
-        if (rm) {
-          RT.claim['c' + mt.station.id] = s.id;
-          s.tk = { k: 'coaster', id: mt.station.id, broken: mt.broken };
-          s.task = (mt.broken ? 'Repairing ' : 'Inspecting ') + BD[mt.station.type].name;
-          s.route = rm; s.ri = 0; return;
-        }
-      }
+    if (s.type === 'mechanic') {
+      if (assignCoasterTask(s, sc0, 2.4, 100)) return;
+      if (assignFenceTask(s, sc0, 2.5)) return;
+    }
+    if (s.type === 'handyman') {
+      if (assignFenceTask(s, sc0, 5.5)) return;
+      if (assignCoasterTask(s, sc0, 5.5, 90)) return;
+      if (assignPowerCutTask(s, 8.0)) return;
+      if (assignCleanerTask(s, 2.5, 2.5)) return;
     }
     startPatrol(s);
   }
@@ -3705,7 +3899,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var va = RT.aById.get(s.tk.id);
         if (!va || (!va.sick && !va.injured && va.health >= 65)) { releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return; }
       }
-      if ((s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop')) && !encById(s.tk.id)) {
+      if ((s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop' || s.tk.k === 'fence')) && (!encById(s.tk.id) || (s.tk.k === 'fence' && !(encById(s.tk.id).breach > 0)))) {
+        releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
+      }
+      if (s.tk && s.tk.k === 'powerCut' && !powerCutActive()) {
         releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
       }
       if (walkRoute(s, dt)) {
@@ -3717,15 +3914,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           } else if (tk.k === 'enc' || tk.k === 'feed' || tk.k === 'poop') {
             var inHut = inStationZone(s.x, s.z, RT.huts, STATION_TILES);
             s.state = 'work'; s.wt = RT.hasHut ? (inHut ? 1.8 : 2.3) : 3.2; s.task = 'Tending animals';
+          } else if (tk.k === 'fence') {
+            s.state = 'work'; s.wt = tk.dur || 2.5; s.task = 'Repairing fence';
+          } else if (tk.k === 'powerCut') {
+            s.state = 'work'; s.wt = tk.dur || 2.2; s.task = 'Restoring zoo power';
           } else if (tk.k === 'vet') {
             var pa = RT.aById.get(tk.id);
             s.state = 'work'; s.wt = RT.hasVet ? (pa && inStationZone(pa.x, pa.z, RT.vets, STATION_TILES) ? 1.8 : 2.5) : 4.2; s.task = 'Administering treatment';
           } else if (tk.k === 'bin') {
-            s.state = 'work'; s.wt = 2; s.task = 'Emptying bin';
+            s.state = 'work'; s.wt = tk.dur || 2; s.task = 'Emptying bin';
           } else if (tk.k === 'dirt') {
-            s.state = 'work'; s.wt = 2.5; s.task = 'Sweeping';
+            s.state = 'work'; s.wt = tk.dur || 2.5; s.task = 'Sweeping';
           } else if (tk.k === 'coaster') {
-            s.state = 'work'; s.wt = 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster';
+            s.state = 'work'; s.wt = tk.dur || 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster';
           }
         } else startPatrol(s);
       }
@@ -3741,10 +3942,22 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             if (e) {
               var hadBreach = e.breach > 0;
               e.foodLevel = 1; e.waterLevel = 1; e.poop = 0;
-              if (hadBreach) { e.breach = 0; msg(s.name + ' secured the damaged fence at ' + e.name + '.', 'good', false); }
+              if (hadBreach) { repairEnclosureBreach(e, s.name); msg(s.name + ' secured the damaged fence at ' + e.name + '.', 'good', false); }
               encStats(e);
             }
             delete RT.claim['e' + done.id]; delete RT.claim['f' + done.id]; delete RT.claim['p' + done.id];
+          }
+          else if (done.k === 'fence') {
+            var ef = encById(done.id);
+            if (ef && ef.breach > 0) {
+              repairEnclosureBreach(ef, s.name);
+              msg(s.name + ' repaired the damaged fence at ' + ef.name + '.', 'good', false);
+            }
+            delete RT.claim['e' + done.id];
+          }
+          else if (done.k === 'powerCut') {
+            resolvePowerCut(s.name);
+            delete RT.claim['pwcut'];
           }
           else if (done.k === 'vet') {
             var a2 = RT.aById.get(done.id);
@@ -3761,7 +3974,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             delete RT.claim['t' + done.t];
           }
           else if (done.k === 'coaster') {
-            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(done.id, s.name);
+            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(done.id, s.name, done.targetCond || 100);
             delete RT.claim['c' + done.id];
           }
         }
@@ -4028,7 +4241,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var w = S.weather;
     if (w.type === 'storm' && rng.chance(0.12 * w.intensity)) {
       var cand = S.enclosures.filter(function (e) { return e.animals.length && !(e.breach > 0); });
-      if (cand.length) { var e = rng.pick(cand); e.breach = 1; msg('Lightning has brought down a fence panel at ' + e.name + '. It is open to the elements until repaired, so animals could slip out!', 'bad'); }
+      if (cand.length) { var e = rng.pick(cand); breachEnclosure(e); msg('Lightning has brought down a fence panel at ' + e.name + '. It is open to the elements until repaired, so animals could slip out!', 'bad'); }
     }
   }
   function stepWeather(dt) {
@@ -4091,7 +4304,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var inten = Math.round(rng.range(0.85, 1) * 100) / 100, wh = hrs || (wt === 'heatwave' ? rng.range(9, 13) : wt === 'storm' ? rng.range(3, 4.5) : rng.range(4, 6.5));
         wh = Math.round(wh * 2) / 2;
         var e1 = null;
-        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length; }); if (cand.length) { e1 = rng.pick(cand); e1.breach = 1; } }
+        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length; }); if (cand.length) { e1 = rng.pick(cand); breachEnclosure(e1); } }
         if (S.weather.type === wt) setWeather(wt, inten, wh);
         else setWeather(wt, inten, wh, text);
         if (e1) msg('A fence panel at ' + e1.name + ' has been knocked down. Its animals could slip out until the repair crew finishes at midnight.', 'bad');
@@ -4205,7 +4418,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, a, e;
     if (!RT.wxInit) ensureInit();
     refreshEncAnimals();
-    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.dangerEsc = 0;
+    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.handyCount = 0; RT.elecCount = 0; RT.dangerEsc = 0;
     for (k = 0; k < S.animals.length; k++) {
       if (S.animals[k].state === 'escaped') {
         RT.escaped.push(S.animals[k]);
@@ -4225,7 +4438,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
@@ -4357,7 +4570,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     S.day++; S.stats.guestsToday = 0;
     if (S.marketing.active) { S.marketing.daysLeft--; if (S.marketing.daysLeft <= 0) { S.marketing.active = false; msg('Your marketing campaign has ended.', 'info'); } }
     for (k = 0; k < S.enclosures.length; k++) {
-      var e = S.enclosures[k]; if (e.breach > 0) { e.breach--; if (e.breach <= 0) msg('The fence at ' + e.name + ' has been repaired.', 'good', false); }
+      var e = S.enclosures[k]; if (e.breach > 0) { e.breach--; if (e.breach <= 0) { repairEnclosureBreach(e, 'Overnight crew'); msg('The fence at ' + e.name + ' has been repaired.', 'good', false); } }
     }
     for (k = S.animals.length - 1; k >= 0; k--) {
       a = S.animals[k]; var sp = SP[a.species];
@@ -4499,6 +4712,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     stepFights(dt);
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
+    stepBreachCrews(dt);
     RT.t1 += dt;
     if (RT.t1 >= 1) { RT.t1 -= 1; secondly(); }
     RT.escAcc += dt;
@@ -4938,8 +5152,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function enclosureReport(encId, extraSpecies) {
     var e = encById(encId); if (!e) return null;
     var E = RT.encx[e.id], out = { id: e.id, name: e.name, area: e.area, minFence: e.minFence, isCage: !!e.isCage, see: e.see, poop: e.poop, foodLevel: e.foodLevel, waterLevel: e.waterLevel,
+      breach: e.breach || 0, breachEdge: e.breachEdge || null, breachCrew: !!e.breachCrew, breachFix: Math.max(0, e.breachFix || 0), fenceCrewFee: FENCE_CREW_FEE,
       species: {}, suitability: {}, issues: [], animals: e.animals.length, viewTiles: e.viewTiles.length,
       relief: E.relief || 0, cliffTiles: E.cliffs || 0, plantsThriving: E.thrive || 0, plantsStruggling: E.struggle || 0, badPlants: E.struggle || 0 };
+    if (e.breach > 0) out.issues.push(e.breachCrew ? 'Fence panel broken — emergency repair crew on site (' + Math.max(1, Math.ceil(e.breachFix || 0)) + 's).' : 'Fence panel broken! Animals may escape until repaired by a keeper or emergency crew.');
     var bySp = {}, k; for (k in E.bySp) bySp[k] = E.bySp[k];
     out.usedSpace = encSpaceDemand(e, extraSpecies); out.availableSpace = usableEncSpace(e, E);
     if (out.usedSpace > out.availableSpace) out.issues.push('Overcrowded: animals need ' + (Math.round(out.usedSpace * 10) / 10) + ' tiles, with ' + (Math.round(out.availableSpace * 10) / 10) + ' available. Expand the enclosure or move animals.');
@@ -5088,6 +5304,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke,
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, staffCoverage: staffCoverage,
+    callFenceCrew: callFenceCrew, breachEnclosure: breachEnclosure, powerCutActive: powerCutActive, callPowerCrew: callPowerCrew, FENCE_CREW_FEE: FENCE_CREW_FEE, POWER_CREW_FEE: POWER_CREW_FEE,
     spawnAnimal: function (speciesId, i, j, opts) { opts = opts || {}; var t = i + j * N, enc = encOfTile(t); var a = makeAnimal(speciesId, enc, cxOf(t), czOf(t), !!opts.baby, opts.sex); insertAnimal(a); return a; },
     setTicketPrice: setTicketPrice, setPrice: setPrice, attractionDemand: attractionDemand, takeLoan: takeLoan, repayLoan: repayLoan, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, vetNeedsAnimal: vetNeedsAnimal, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable, canGuestReach: canGuestReach,

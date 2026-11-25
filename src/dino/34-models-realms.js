@@ -7,7 +7,20 @@
   var K = M.kit, B = K.B, mesh = K.mesh, grp = K.grp, shade = K.shade, PI = Math.PI;
   var DEF = { filtration_plant: [3, 2], underwater_gallery: [3, 2], feeding_grandstand: [4, 2], canopy_tower: [2, 2], tagging_tower: [2, 2], boathouse: [3, 2], drone_hangar: [2, 2] };
   var MODELS = {}, SCEN = {};
-  function spin(g, fn) { var prev = g.userData.update; g.userData.update = function (dt, t) { if (prev) prev(dt, t); fn(dt, t || 0); }; }
+  function spin(g, fn) {
+    var prev = g.userData.update;
+    g.userData.update = function (dt, t, gr, obj) {
+      if (prev) prev.call(this, dt, t, gr, obj);
+      var o = obj || (gr && gr.userData && gr.userData.obj) || (g.userData && g.userData.obj) || (this && this.obj);
+      fn.call(this, dt, t || 0, gr || g, o);
+    };
+  }
+  var _lampOnMat = null, _lampOffMat = null;
+  function towerLampMat(off) {
+    if (!_lampOnMat) _lampOnMat = K.mat(0x3ee07a, { emissive: 0x168a3e });
+    if (!_lampOffMat) _lampOffMat = K.mat(0xff3028, { emissive: 0x991810 });
+    return off ? _lampOffMat : _lampOnMat;
+  }
   var steel = 0x7f8a92, dark = 0x3b4248, conc = 0xb9b5aa, teal = 0x2c8fa6, glassC = 0x8fd4ea, orange = 0xe8742a, white = 0xeeeeea;
 
   MODELS.filtration_plant = function (g) {   // 6 x 4 m: two settling tanks, a pump house, pipes
@@ -104,8 +117,13 @@
     g.add(mesh(b.build()));
     var rot = grp('rot'), rb = B(); rb.cyl(0.7, 0.2, 0.22, 0, 0, 0, orange, { seg: 10 }); rb.box(0.06, 0.5, 0.06, 0, 0.3, 0, steel);
     rot.add(mesh(rb.build())); rot.position.set(0, 7.0, -0.5); g.add(rot);
-    var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0x3ee07a, { s: [6, 4] }); lamp.add(mesh(lb.build())); lamp.position.set(0, 7.45, -0.5); g.add(lamp);
-    spin(g, function (dt) { rot.rotation.y += dt * 1.6; });
+    var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0xffffff, { s: [6, 4] }); var lampMesh = mesh(lb.build(), towerLampMat(false)); lamp.add(lampMesh); lamp.position.set(0, 7.45, -0.5); g.add(lamp);
+    spin(g, function (dt, t, gr, o) {
+      var off = !!(o && (o.off || o.broken));
+      lampMesh.material = towerLampMat(off);
+      if (off) return;
+      rot.rotation.y += dt * 1.6;
+    });
   };
   MODELS.boathouse = function (g) {   // 6 x 4 m: gabled timber boat shed & sleek-hull rescue boat on trailer
     var b = B(), wall = 0xe8e4d8, roof = 0x2c6f93, timber = 0x7a5233;
@@ -174,7 +192,10 @@
     }
     db.bevelBox(0.12, 0.10, 0.22, 0.02, 0, -0.09, 0.10, orange);
     dr.add(mesh(db.build())); dr.position.set(0.25, 0.6, 1.08); g.add(dr);
-    spin(g, function (dt, t) { dr.position.y = 0.6 + 0.9 * (0.5 + 0.5 * Math.sin(t * 0.8)); dr.rotation.y += dt * 0.7; });
+    spin(g, function (dt, t, gr, o) {
+      if (o && (o.off || o.broken)) { dr.position.y = 0.36; return; }
+      dr.position.y = 0.6 + 0.9 * (0.5 + 0.5 * Math.sin(t * 0.8)); dr.rotation.y += dt * 0.7;
+    });
   };
 
   // ---- scenery (footprint 1 tile = 2 m) ----

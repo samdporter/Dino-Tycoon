@@ -9,7 +9,11 @@
   var MODELS = {};
   function spinner(g, parent, y, fn) {
     var prev = g.userData.update;
-    g.userData.update = function (dt, t) { if (prev) prev(dt, t); fn(dt, t || 0); };
+    g.userData.update = function (dt, t, gr, obj) {
+      if (prev) prev.call(this, dt, t, gr, obj);
+      var o = obj || (gr && gr.userData && gr.userData.obj) || (g.userData && g.userData.obj) || (this && this.obj);
+      fn.call(this, dt, t || 0, gr || g, o);
+    };
   }
   MODELS.pump_station = function (g) {   // 4 x 4 m: beveled brick pump house, curved pipes, pressure tank, paddle wheel
     var b = B(), brick = 0xa9684a, roof = 0x5d6b73, steel = 0x7f8a92, dark = 0x3b4248, stone = 0x9a968c;
@@ -51,7 +55,7 @@
       wb.bevelBox(0.14, 0.44, 0.66, 0.02, 0, Math.cos(a) * 0.50, Math.sin(a) * 0.50, 0xc9a24a, { rot: [-a, 0, 0] });
     }
     w.add(mesh(wb.build())); w.position.set(1.1, 0.75, 1.1); g.add(w);
-    spinner(g, w, 0, function (dt) { w.rotation.x += dt * 2.2; });
+    spinner(g, w, 0, function (dt, t, gr, o) { if (o && (o.off || o.broken)) return; w.rotation.x += dt * 2.2; });
   };
   MODELS.borehole = function (g) {      // 2 x 2 m: wellhead with arched A-frame derrick and nodding curved horsehead pump jack
     var b = B(), steel = 0x7f8a92, red = 0xb23a2c, dark = 0x3b4248;
@@ -72,7 +76,7 @@
     // counterweight crank at -x end
     bb.extrude([[-0.64, -0.16], [-0.88, -0.10], [-0.88, 0.12], [-0.66, 0.14]], 0.16, 0, 0, 0, [0, 0, 0], 0x555a60, { bev: 0.025 });
     beam.add(mesh(bb.build())); beam.position.set(-0.45, 1.2, 0); g.add(beam);
-    spinner(g, beam, 0, function (dt, t) { beam.rotation.z = Math.sin(t * 2.4) * 0.22; });
+    spinner(g, beam, 0, function (dt, t, gr, o) { if (o && (o.off || o.broken)) return; beam.rotation.z = Math.sin(t * 2.4) * 0.22; });
   };
   var oc = M.createBuilding, of = M.buildingFootprint;
   M.createBuilding = function (id) {

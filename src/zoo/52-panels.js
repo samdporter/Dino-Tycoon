@@ -131,6 +131,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     rn.appendChild(inp); rn.appendChild(h('button.btn.sm', { html: ic('check') + 'Save', on: { click: function () { var r = Z.Sim.renameEnclosure(id, inp.value); if (r.ok) { f.title.textContent = inp.value.trim(); UI.toast('Enclosure renamed', 'good'); } rn.style.display = 'none'; UI.snd('click'); } } }));
     var env = bars([['clean', 'Cleanliness'], ['food', 'Food'], ['water', 'Water']]); b.appendChild(env.el);
     var fenceTxt = h('div.kv'); b.appendChild(fenceTxt);
+    var breachBox = h('div', { style: 'display:none;flex-direction:column;gap:6px;margin:4px 0' }), breachKey = ''; b.appendChild(breachBox);
     var encTypeTxt = h('div.kv'); b.appendChild(encTypeTxt);
     var spaceTxt = h('div.kv'); b.appendChild(spaceTxt);
     var spBox = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(spBox);
@@ -149,6 +150,32 @@ window.Z = window.Z || {}; var Z = window.Z;
         var fn = D.fences.filter(function (x) { return x.strength === en.minFence; })[0];
         var worst = 0; en.species.forEach(function (s) { worst = Math.max(worst, UI.sp(s).minFence); });
         fenceTxt.innerHTML = '<span>Weakest fence strength</span><b style="color:' + (en.minFence < worst ? 'var(--bad)' : 'inherit') + '">' + en.minFence + (worst ? ' / needs ' + worst : '') + '</b>';
+        var keeperCount = (Z.state.staff || []).filter(function (s) { return s.type === 'keeper'; }).length;
+        var bKey = [r.breach ? 1 : 0, r.breachCrew ? 1 : 0, r.breachCrew ? Math.max(1, Math.ceil(r.breachFix || 0)) : 0, r.breachEdge ? r.breachEdge.axis + ':' + r.breachEdge.i + ':' + r.breachEdge.j : '', keeperCount === 0 ? 1 : 0].join('|');
+        if (bKey !== breachKey) {
+          breachKey = bKey; breachBox.innerHTML = '';
+          if (r.breach > 0) {
+            breachBox.style.display = 'flex';
+            breachBox.appendChild(issuesList([r.breachCrew ? '🔧 Emergency fence crew on site (~' + Math.max(1, Math.ceil(r.breachFix || 0)) + 's)...' : '⚠️ Fence panel broken!']));
+            var bRow = h('div.btnrow', { style: 'flex-wrap:wrap;gap:4px' });
+            if (!r.breachCrew) {
+              bRow.appendChild(h('button.btn.sm', {
+                text: '🔧 Call Fence Crew (' + fmt(r.fenceCrewFee || Z.Sim.FENCE_CREW_FEE || 120) + ')',
+                on: { click: function () { var res = Z.Sim.callFenceCrew(id); if (res.ok) { UI.snd('build'); UI.toast('Emergency fence crew dispatched!', 'good'); breachKey = ''; cur.update(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+              }));
+            }
+            if (r.breachEdge) {
+              var ed = r.breachEdge, T2 = Z.TILE || 2, bx = ed.axis === 'x' ? (ed.i + 0.5) * T2 : ed.i * T2, bz = ed.axis === 'x' ? ed.j * T2 : (ed.j + 0.5) * T2;
+              bRow.appendChild(h('button.btn.sm.alt', { text: '🎯 Show Broken Panel', on: { click: function () { Z.World.focus(bx, bz, 24); } } }));
+            }
+            if (keeperCount === 0) {
+              bRow.appendChild(h('button.btn.sm.alt', { text: 'Hire Keeper', on: { click: function () { Panel.hide(); UI.openCat('staff', true); } } }));
+            }
+            if (bRow.children.length) breachBox.appendChild(bRow);
+          } else {
+            breachBox.style.display = 'none';
+          }
+        }
         var needCage = en.species.some(function (s) { return UI.sp(s).needsCage; });
         encTypeTxt.innerHTML = '<span>Enclosure type</span><b style="color:' + (needCage && !en.isCage ? 'var(--bad)' : 'inherit') + '">' + (en.isCage ? 'Roofed cage' : (needCage ? 'Open (needs roofed cage)' : 'Open-top')) + '</b>';
         var spaceValue = Math.round(r.usedSpace * 10) / 10, availableValue = Math.round(r.availableSpace * 10) / 10;
@@ -237,8 +264,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       }
       Z.World.setPreview(pvSpec);
     }
-    var st = h('div'), slider = null, pv = null, stats = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
-    b.appendChild(st);
+    var st = h('div'), pwrBox = h('div', { style: 'display:none;flex-direction:column;gap:4px;margin:4px 0' }), slider = null, pv = null, stats = h('div', { style: 'display:flex;flex-direction:column;gap:3px' });
+    b.appendChild(st); b.appendChild(pwrBox);
+    var pwrTypes = isB && (def.type === 'ride' || def.type === 'food' || def.type === 'drink' || def.type === 'shop' || def.type === 'arcade');
     if (isB && def.type === 'transport') { if (def.price > 0) UI.Boats.fareControl(o, def, b); }
     else if (isB && def.price > 0) {
       var max = Math.max(10, Math.round(def.price * 4)), step = def.price >= 10 ? 0.5 : 0.25;
@@ -260,9 +288,25 @@ window.Z = window.Z || {}; var Z = window.Z;
         var pok = (Z.Sim && Z.Sim.plantOk ? Z.Sim.plantOk(id) : (r.thriving !== undefined ? r.thriving : null));
         var covO = isB && (q.type === 'keeper_hut' || q.type === 'vet_clinic') && Z.Sim.staffCoverage ? Z.Sim.staffCoverage() : null;
         var stCovN = covO && fp ? covO.enclosuresInRadius(fp.cx, fp.cz, q.type === 'vet_clinic' ? covO.vetClinicTiles : covO.stationTiles) : 0;
-        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, pok, stCovN, isB && def.type === 'transport' ? UI.Boats.rows(q, def, r) : 0]);
+        var pCut = !!(pwrTypes && Z.Sim.powerCutActive && Z.Sim.powerCutActive());
+        var pCutEv = pCut && Z.state && Z.state.activeEvents ? Z.state.activeEvents.filter(function (ev) { return ev.kind === 'powerCut'; })[0] : null;
+        var pCrew = !!(pCutEv && pCutEv.crew);
+        var k = JSON.stringify([r.connected, r.uses, Math.round(r.income), r.queue, r.users, q.fill, r.thriving, r.thrivesOn, pok, stCovN, pCut, pCrew, isB && def.type === 'transport' ? UI.Boats.rows(q, def, r) : 0]);
         if (k !== key) {
           key = k; stats.innerHTML = ''; var rows = [];
+          pwrBox.innerHTML = '';
+          if (pCut) {
+            pwrBox.style.display = 'flex';
+            pwrBox.appendChild(issuesList([pCrew ? '🔧 Emergency electrician on site restoring power...' : '⚡ Power cut — this building is offline until power returns.']));
+            if (!pCrew) {
+              pwrBox.appendChild(h('div.btnrow', h('button.btn.sm', {
+                text: '🔧 Call Electrician (' + fmt(Z.Sim.POWER_CREW_FEE || 150) + ')',
+                on: { click: function () { var res = Z.Sim.callPowerCrew(); if (res.ok) { UI.snd('build'); UI.toast('Emergency electrician dispatched!', 'good'); key = ''; cur.update(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+              })));
+            }
+          } else {
+            pwrBox.style.display = 'none';
+          }
           if (isB) {
             if (def.type === 'transport') rows = rows.concat(UI.Boats.rows(q, def, r));
             else if (def.type !== 'staff') {

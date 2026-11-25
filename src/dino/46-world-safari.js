@@ -24,9 +24,24 @@
   };
 
   // ---- vehicles
+  var _hazSphGeo = null, _hazDiaGeo = null, _hazRedMat = null, _hazAmbMat = null;
+  function hazRes() {
+    if (!_hazSphGeo) {
+      _hazSphGeo = new THREE.SphereGeometry(0.26, 8, 6);
+      _hazDiaGeo = new THREE.OctahedronGeometry(0.28, 0);
+      _hazRedMat = new THREE.MeshBasicMaterial({ color: 0xff3028, fog: false });
+      _hazAmbMat = new THREE.MeshBasicMaterial({ color: 0xffaa18, fog: false });
+    }
+    return { sphGeo: _hazSphGeo, diaGeo: _hazDiaGeo, red: _hazRedMat, amb: _hazAmbMat };
+  }
   function makeVeh(v) {
     var g = new THREE.Group(), li = (v.id - 1) % 4, body = v.kind === 'sea' ? SM.boat(li) : v.kind === 'air' ? SM.balloon(li) : SM.truck(li);
-    g.add(body); g.userData.body = body; scene.add(g); return g;
+    g.add(body); g.userData.body = body;
+    var hr = hazRes(), beacon = new THREE.Group(), bSph = new THREE.Mesh(hr.sphGeo, hr.red), bDia = new THREE.Mesh(hr.diaGeo, hr.red);
+    bDia.position.y = 0.58; beacon.position.y = v.kind === 'air' ? 9.0 : v.kind === 'sea' ? 2.9 : 3.2; beacon.visible = false;
+    beacon.add(bSph); beacon.add(bDia); g.add(beacon);
+    g.userData.beacon = beacon; g.userData.bSph = bSph; g.userData.bDia = bDia;
+    scene.add(g); return g;
   }
   var _pz = { x: 0, y: 0, z: 0, h: 0 };
   function updateVehicles(dt) {
@@ -40,6 +55,18 @@
       if (v.kind === 'land') { var fx = Math.sin(p.h) * 1.6, fz = Math.cos(p.h) * 1.6, yF = gy(p.x + fx, p.z + fz), yR = gy(p.x - fx, p.z - fz); g.position.y = (yF + yR) / 2; g.rotation.x = -Math.atan2(yF - yR, 3.2) * 0.9; g.rotation.z = Math.sin(t0 * 9 + v.id) * 0.006 * Math.min(1, p.v); }
       else if (v.kind === 'sea') { g.position.y = SEA_Y + 0.08 + Math.sin(t0 * 1.6 + v.id) * 0.05; g.rotation.x = Math.sin(t0 * 1.1 + v.id) * 0.03; g.rotation.z = Math.sin(t0 * 0.9 + v.id * 2) * 0.04; }
       else { g.rotation.x = 0; g.rotation.z = Math.sin(t0 * 0.6 + v.id) * 0.03; }
+      var bcn = g.userData.beacon, stBad = v.st === 'broken' || v.st === 'stuck';
+      if (bcn) {
+        bcn.visible = stBad && SW.rideId !== v.id;
+        if (bcn.visible) {
+          var hr = hazRes(), hm = v.st === 'broken' ? hr.red : hr.amb;
+          g.userData.bSph.material = hm; g.userData.bDia.material = hm;
+          var blink = Math.sin(t0 * 9 + v.id) > -0.2, pulse = 0.5 + 0.5 * Math.sin(t0 * 7 + v.id);
+          g.userData.bSph.scale.setScalar(blink ? 0.85 + 0.4 * pulse : 0.4);
+          g.userData.bDia.position.y = 0.58 + Math.sin(t0 * 4 + v.id) * 0.14;
+          g.userData.bDia.rotation.y = t0 * 2.5;
+        }
+      }
     });
     for (var id in VM) if (!seen[id]) { scene.remove(VM[id]); delete VM[id]; }
   }

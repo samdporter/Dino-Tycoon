@@ -567,6 +567,8 @@ window.Z.DATA = {
     { id: "cleaner", name: "Cleaner", emoji: "🧹", "wage/day": 50, hireCost: 100, effect: "Sweeps paths and empties bins" },
     { id: "guide", name: "Guide", emoji: "🧭", "wage/day": 55, hireCost: 150, effect: "Boosts guest happiness" },
     { id: "security", name: "Security guard", emoji: "🛡️", "wage/day": 70, hireCost: 200, effect: "Recaptures escaped dinosaurs" },
+    { id: "handyman", name: "Handyman", emoji: "🛠️", wage: 55, hireCost: 140, effect: "Budget all-rounder: slowly repairs broken fences, rides, and power faults, and tidies paths when free." },
+    { id: "electrician", name: "Electrician", emoji: "⚡", wage: 90, hireCost: 350, effect: "Power specialist: rapidly repairs power cuts, downed substations, broken generators, and electric fences." },
     { id: "scientist", name: "Scientist", emoji: "🔬", wage: 40, perSkill: true, hireCost: 500, effect: "Runs amber extraction experiments in research labs; daily pay is the base wage times skill" }
   ],
 

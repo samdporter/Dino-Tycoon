@@ -156,7 +156,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     ps.wind = clamp(ps.wind + (b - ps.wind) * 0.35 + R.range(-0.1, 0.1), 0.05, 1.25);
   }
   function feathered() { var s = S(); return s.weather.type === 'storm' && s.weather.intensity > 0.86; }
-  function mechanics() { var s = S(), n = 0; for (var k = 0; k < s.staff.length; k++) if (s.staff[k].type === 'mechanic' && !(s.staff[k].sickUntil > now())) n++; return Math.min(n, PD.mechanic.max); }
+  function mechanics() {
+    var s = S(), n = 0, t = now();
+    for (var k = 0; k < s.staff.length; k++) {
+      var st = s.staff[k];
+      if (st.sickUntil > t) continue;
+      if (st.type === 'electrician') n += 1.5;
+      else if (st.type === 'mechanic') n += 1.0;
+      else if (st.type === 'handyman') n += 0.5;
+    }
+    return Math.min(3, n);
+  }
 
   // ------------------------------------------------------------------ evaluation
   function cutActive() { var ps = ensure(); return !!(ps.cut && ps.cut.eta > now()); }
@@ -183,7 +193,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (k = 0; k < X.gens.length; k++) {
       g = X.gens[k]; g.out = 0; g.state = 'idle'; g.why = '';
       var br = ps.broken[g.id];
-      if (br && br.eta > t) { g.state = 'broken'; g.why = 'Broken down, repair due in ' + Math.max(1, Math.ceil(hoursOf(br.eta - t))) + ' h'; continue; }
+      if (br && br.eta > t) { g.state = 'broken'; g.why = br.crew ? 'Emergency mechanic on site' : 'Broken down, repair due in ' + Math.max(1, Math.ceil(hoursOf(br.eta - t))) + ' h'; continue; }
       if (g.kind === 'solar') { g.out = g.kw * sun; g.state = sun > 0.02 ? 'run' : 'idle'; g.why = sun > 0.02 ? '' : 'No sun'; }
       else if (g.kind === 'wind') { if (feather) { g.state = 'feathered'; g.why = 'Blades feathered in the storm'; } else { g.out = g.kw * Math.min(1.15, Math.pow(wind, 1.4)); g.state = g.out > 0.5 ? 'run' : 'idle'; } }
       else if (g.kind === 'geothermal') { g.out = g.kw; g.state = 'run'; }
@@ -323,8 +333,57 @@ window.Z = window.Z || {}; var Z = window.Z;
   P.cut = function (cause, hours, scope) { return startCut(cause || 'storm', hours || 4, scope || 'cable'); };   // test hook and plug-in API
   P.eventCut = function (hours) { startCut('event', (hours || 8) * 0.55, 'cable', 'A fault on the mainland cable has cut the power.'); };
   P.restore = function () { var ps = ensure(); if (ps.cut) { ps.cut.eta = now() - 0.0001; evaluate(false, false); } };
-  P.breakGenerator = function (objId, hours) { var ps = ensure(); ps.broken[objId] = { since: now(), eta: now() + (hours || 4) / 24 }; evaluate(false, false); };
-  P.nodeDown = function (objId, hours, cause) { var ps = ensure(); ps.nodes[objId] = { cause: cause || 'storm', since: now(), eta: now() + (hours || 3) / 24 }; X.nodeSig = ''; evaluate(false, false); };
+  P.breakGenerator = function (objId, hours) {
+    var ps = ensure(); ps.broken[objId] = { since: now(), eta: now() + (hours || 4) / 24 };
+    evaluate(false, false);
+    var g = X.gens && X.gens.filter(function (x) { return x.id === objId; })[0];
+    bus.emit('powerGenBroken', { id: objId, name: g ? g.name : 'Generator', i: g ? Math.round(g.i) : 0, j: g ? Math.round(g.j) : 0 });
+  };
+  P.nodeDown = function (objId, hours, cause) {
+    var ps = ensure(); ps.nodes[objId] = { cause: cause || 'storm', since: now(), eta: now() + (hours || 3) / 24 };
+    X.nodeSig = ''; evaluate(false, false);
+    var nd = X.nodes && X.nodes.filter(function (x) { return x.id === objId; })[0];
+    bus.emit('powerNodeDown', { id: objId, name: nd ? nd.name : 'Power relay', i: nd ? nd.ci : 0, j: nd ? nd.cj : 0 });
+  };
+
+  var CREW_CUT_FEE = 220, CREW_NODE_FEE = 140, CREW_GEN_FEE = 180;
+  P.CREW_FEES = { cut: CREW_CUT_FEE, node: CREW_NODE_FEE, gen: CREW_GEN_FEE };
+  P.callRepairCut = function () {
+    var ps = ensure(), s = S();
+    if (!cutActive()) return { ok: false, msg: 'Power is not currently cut.' };
+    if (ps.cut.crew) return { ok: false, msg: 'Emergency line crew is already on the way.' };
+    if (s.money < CREW_CUT_FEE) return { ok: false, msg: 'Not enough money (' + C.fmt(CREW_CUT_FEE) + ' needed).' };
+    C.spend(CREW_CUT_FEE, 'upkeep');
+    ps.cut.crew = true;
+    ps.cut.eta = Math.min(ps.cut.eta, now() + 5 / C.DAY_SECONDS);
+    C.msg('Emergency line crew dispatched to restore power (' + C.fmt(CREW_CUT_FEE) + ').', 'info');
+    bus.emit('power', { on: false, cause: ps.cut.cause });
+    return { ok: true, fee: CREW_CUT_FEE };
+  };
+  P.callRepairNode = function (objId) {
+    var ps = ensure(), s = S(), rec = ps.nodes && ps.nodes[objId];
+    if (!rec || rec.eta <= now()) return { ok: false, msg: 'This power relay is already online.' };
+    if (rec.crew) return { ok: false, msg: 'Emergency electrician is already on site.' };
+    if (s.money < CREW_NODE_FEE) return { ok: false, msg: 'Not enough money (' + C.fmt(CREW_NODE_FEE) + ' needed).' };
+    C.spend(CREW_NODE_FEE, 'upkeep');
+    rec.crew = true;
+    rec.eta = Math.min(rec.eta, now() + 4.5 / C.DAY_SECONDS);
+    C.msg('Emergency electrician dispatched to repair the power relay (' + C.fmt(CREW_NODE_FEE) + ').', 'info');
+    bus.emit('power', { on: !cutActive(), cause: 'repair' });
+    return { ok: true, fee: CREW_NODE_FEE };
+  };
+  P.callRepairGen = function (objId) {
+    var ps = ensure(), s = S(), rec = ps.broken && ps.broken[objId];
+    if (!rec || rec.eta <= now()) return { ok: false, msg: 'This generator is not broken.' };
+    if (rec.crew) return { ok: false, msg: 'Emergency mechanic is already on site.' };
+    if (s.money < CREW_GEN_FEE) return { ok: false, msg: 'Not enough money (' + C.fmt(CREW_GEN_FEE) + ' needed).' };
+    C.spend(CREW_GEN_FEE, 'upkeep');
+    rec.crew = true;
+    rec.eta = Math.min(rec.eta, now() + 4.5 / C.DAY_SECONDS);
+    C.msg('Emergency mechanic dispatched to repair the generator (' + C.fmt(CREW_GEN_FEE) + ').', 'info');
+    evaluate(false, false);
+    return { ok: true, fee: CREW_GEN_FEE };
+  };
 
   // ------------------------------------------------------------------ hourly / daily
   function hourly() {
@@ -343,7 +402,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (!cutActive() && s.day > 7 && R.chance(0.075 * inten)) startCut('storm', R.range(3, 8), 'cable', 'Lightning has struck the mainland cable and the island is dark.');
       if (R.chance(0.03 * inten)) {
         var subs = X.nodes.filter(function (n) { return n.id && !(ps.nodes[n.id] && ps.nodes[n.id].eta > t); });
-        if (subs.length) { var sn = R.pick(subs); ps.nodes[sn.id] = { cause: 'storm', since: t, eta: t + R.range(2, 5) * (1 - 0.2 * mech) / 24 }; X.nodeSig = ''; C.msg('Lightning has struck a ' + sn.name.toLowerCase() + ': everything it feeds is dead until it is repaired.', 'bad'); }
+        if (subs.length) { var sn = R.pick(subs); ps.nodes[sn.id] = { cause: 'storm', since: t, eta: t + R.range(2, 5) * (1 - 0.2 * mech) / 24 }; X.nodeSig = ''; C.msg('Lightning has struck a ' + sn.name.toLowerCase() + ': everything it feeds is dead until it is repaired.', 'bad'); bus.emit('powerNodeDown', { id: sn.id, name: sn.name, i: sn.ci, j: sn.cj }); }
       }
     }
     // generator breakdowns
@@ -356,6 +415,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         ps.broken[g.id] = { since: t, eta: t + hrs / 24 }; ps.stats.breakdowns++;
         if (!mech && g.kind !== 'wind') { C.spend(PD.mechanic.callOut, 'other'); }
         C.msg('The ' + g.name.toLowerCase() + ' has broken down' + (mech ? '. Your mechanic is on it' : ' and an engineer has been called out (' + C.fmt(PD.mechanic.callOut) + ')') + '. Repair in about ' + Math.max(1, Math.round(hrs)) + ' hours.', 'bad');
+        bus.emit('powerGenBroken', { id: g.id, name: g.name, i: Math.round(g.i), j: Math.round(g.j) });
       }
     }
     // warnings
@@ -521,7 +581,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return !!(X.st && X.st.supply > 0);
   };
   P.objPowered = function (id) { var e = X.byKey['o' + id]; if (e) return e.on; var o = RT().oById && RT().oById.get(id); if (!o) return false; var d = defOf(o); return !(d && d.needsPower); };
-  P.status = function () { if (!X.st) evaluate(true, false); var st = X.st; return { supply: st.supply, demand: st.demand, stored: st.stored, capacity: st.capacity, shedding: st.shedding.slice(), outage: st.outage ? { cause: st.outage.cause, since: st.outage.since, eta: st.outage.eta } : null,
+  P.status = function () { if (!X.st) evaluate(true, false); var st = X.st, ps = ensure(); return { supply: st.supply, demand: st.demand, stored: st.stored, capacity: st.capacity, shedding: st.shedding.slice(), outage: st.outage ? { cause: st.outage.cause, since: st.outage.since, eta: st.outage.eta, crew: !!(ps && ps.cut && ps.cut.crew), repairFee: CREW_CUT_FEE } : null,
     brownout: st.brownout, backup: st.backup, onBattery: st.onBattery, cable: st.cable, renewable: st.renewable, diesel: st.diesel, backupKw: st.backupKw }; };
   P.setPriority = function (order) { var ps = ensure(); if (Array.isArray(order) && order.length === CLS.length && CLS.every(function (c) { return order.indexOf(c) >= 0; })) { ps.prio = order.slice(); evaluate(false, false); return true; } return false; };
   P.movePriority = function (cls, dir) { var ps = ensure(), k = ps.prio.indexOf(cls), n = k + dir; if (k < 0 || n < 0 || n >= ps.prio.length) return false; var a = ps.prio.slice(); a.splice(k, 1); a.splice(n, 0, cls); return P.setPriority(a); };
@@ -544,12 +604,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   P.objectInfo = function (objId) {
     var e = X.byKey['o' + objId];
     if (e) return { kind: 'consumer', powered: e.on, kw: e.kw, cls: e.cls, why: e.why, connected: e.node >= 0 };
-    var k, g;
+    var k, g, ps = ensure();
     if (X.gens) for (k = 0; k < X.gens.length; k++) {
       g = X.gens[k];
-      if (g.id === objId) return { kind: 'gen', genKind: g.kind, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, noise: g.noise || 0 };
+      if (g.id === objId) {
+        var brG = ps && ps.broken && ps.broken[objId];
+        return { kind: 'gen', genKind: g.kind, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, noise: g.noise || 0, crew: !!(brG && brG.crew), repairFee: CREW_GEN_FEE };
+      }
     }
-    var o = RT().oById && RT().oById.get(objId), def = o && defOf(o), ps = ensure();
+    var o = RT().oById && RT().oById.get(objId), def = o && defOf(o);
     if (def && def.battery) {
       return { kind: 'battery', kwh: def.battery.kwh, rate: PD.batteryRate, stored: ps ? r1(ps.stored) : 0, totalCap: X.cap, discharging: X.discharge > 0.5, charging: !!X.charging };
     }
@@ -563,7 +626,7 @@ window.Z = window.Z || {}; var Z = window.Z;
           var ce = X.entries[m], dx = ce.i + 0.5 - nd.ci, dz = ce.j + 0.5 - nd.cj;
           if (dx * dx + dz * dz <= nd.r * nd.r) inRange++;
         }
-        return { kind: 'node', radius: nd.r, alive: alive, etaHours: etaHours, consumers: inRange };
+        return { kind: 'node', radius: nd.r, alive: alive, etaHours: etaHours, consumers: inRange, crew: !!(dn && dn.crew), repairFee: CREW_NODE_FEE };
       }
     }
     return null;
@@ -589,7 +652,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   P.report = function () {
     var ps = ensure(), t = now(), s = S(), k, e, g, rep = { status: P.status(), prio: ps.prio.slice(), cover: JSON.parse(JSON.stringify(ps.cover)), classes: PD.classes, sources: [], consumers: {}, nodes: P.nodes(), history: ps.hist.slice(), stats: JSON.parse(JSON.stringify(ps.stats)), mechanics: mechanics(), wind: r1(ps.wind), sun: r1(X.sun), feather: X.feather, fuelDue: Math.round(ps.fuelDue), fuelCut: ps.fuelCut, forecast: '' };
     var cb = PD.cable; rep.sources.push({ id: 0, kind: 'cable', name: cb.name, emoji: '🔌', kw: cb.kw, out: X.cable, state: cutActive() && ps.cut.scope !== '' ? 'cut' : 'run', why: cutActive() ? 'Cut: ' + ps.cut.cause + ', back in ' + Math.max(1, Math.ceil(hoursOf(ps.cut.eta - t))) + ' h' : '', i: Math.floor(N / 2) - 1, j: N - 2 });
-    for (k = 0; k < X.gens.length; k++) { g = X.gens[k]; rep.sources.push({ id: g.id, kind: g.kind, name: g.name, emoji: g.emoji, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, i: Math.round(g.i), j: Math.round(g.j) }); }
+    for (k = 0; k < X.gens.length; k++) { g = X.gens[k]; var brR = ps.broken && ps.broken[g.id]; rep.sources.push({ id: g.id, kind: g.kind, name: g.name, emoji: g.emoji, kw: g.kw, out: r1(g.out), state: g.state, why: g.why, crew: !!(brR && brR.crew), repairFee: CREW_GEN_FEE, i: Math.round(g.i), j: Math.round(g.j) }); }
     if (X.batts) rep.sources.push({ id: -1, kind: 'battery', name: 'Batteries ×' + X.batts, emoji: '🔋', kw: PD.batteryRate * X.batts, out: r1(X.discharge || 0), state: X.discharge > 0.5 ? 'run' : X.charging ? 'charging' : 'idle', why: Math.round(ps.stored) + ' of ' + X.cap + ' kWh' });
     PD.classes.forEach(function (c) { rep.consumers[c.id] = []; });
     for (k = 0; k < X.entries.length; k++) { e = X.entries[k]; rep.consumers[e.cls].push({ key: e.key, id: e.id, kind: e.kind, name: e.name + (e.kind === 'fence' ? ' (' + e.n + ' panels)' : ''), emoji: e.emoji, kw: r1(e.kw), on: e.on, why: e.why, i: e.i, j: e.j, src: e.src || '' }); }
@@ -599,6 +662,131 @@ window.Z = window.Z || {}; var Z = window.Z;
   P.state = function () { return ensure(); };
   P.classes = function () { return PD.classes; };
   P.entries = function () { return X.entries.slice(); };
+
+  function staffReachComps(sc0) {
+    if (!sc0) return null;
+    return Z.Boats && Z.Boats.staffComps ? Z.Boats.staffComps(sc0) : null;
+  }
+  function tileReachable(t, sc0, linked) {
+    var s = S(), comp = RT().comp;
+    if (!s.path[t]) return false;
+    if (!sc0 || !comp) return true;
+    var c = comp[t];
+    return c === sc0 || !!(linked && linked[c]);
+  }
+  function nearestWalkTileForObj(o, staffI, staffJ, sc0, linked) {
+    var fp = C.objFootprint(o), best = -1, bd = 1e9, a, b, d, i, j, ni, nj, t;
+    for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
+      i = fp.i0 + a; j = fp.j0 + b;
+      for (d = 0; d < 4; d++) {
+        ni = i + (d === 1 ? 1 : d === 3 ? -1 : 0); nj = j + (d === 2 ? 1 : d === 0 ? -1 : 0);
+        if (!Z.inb(ni, nj)) continue;
+        t = ni + nj * N;
+        if (!tileReachable(t, sc0, linked)) continue;
+        var dist = Math.abs(ni - staffI) + Math.abs(nj - staffJ);
+        if (dist < bd) { bd = dist; best = t; }
+      }
+    }
+    if (best >= 0) return best;
+    var minI = Math.max(0, fp.i0 - 8), maxI = Math.min(N - 1, fp.i0 + fp.w - 1 + 8);
+    var minJ = Math.max(0, fp.j0 - 8), maxJ = Math.min(N - 1, fp.j0 + fp.h - 1 + 8);
+    var bestObjD2 = 1e9;
+    for (j = minJ; j <= maxJ; j++) for (i = minI; i <= maxI; i++) {
+      t = i + j * N;
+      if (!tileReachable(t, sc0, linked)) continue;
+      var dx = Math.max(0, fp.i0 - i, i - (fp.i0 + fp.w - 1));
+      var dy = Math.max(0, fp.j0 - j, j - (fp.j0 + fp.h - 1));
+      var d2 = dx * dx + dy * dy;
+      if (d2 > 64) continue;
+      var sDist = Math.abs(i - staffI) + Math.abs(j - staffJ);
+      if (d2 < bestObjD2 || (d2 === bestObjD2 && sDist < bd)) { bestObjD2 = d2; bd = sDist; best = t; }
+    }
+    return best;
+  }
+  function cutTargetTile(staffI, staffJ, sc0, linked) {
+    var gi = Math.floor(N / 2) - 1, gj = N - 1, g0 = gi + gj * N, g1 = gi + 1 + gj * N;
+    if (Z.inb(gi, gj) && tileReachable(g0, sc0, linked)) return g0;
+    if (Z.inb(gi + 1, gj) && tileReachable(g1, sc0, linked)) return g1;
+    var pt = RT().pathTiles, best = -1, bd = 1e9;
+    for (var k = 0; k < pt.length; k++) {
+      var t = pt[k];
+      if (!tileReachable(t, sc0, linked)) continue;
+      var ti = t % N, tj = (t - ti) / N;
+      var d = Math.abs(ti - gi) + Math.abs(tj - gj);
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (best >= 0) return best;
+    return Z.inb(gi, gj) && S().path[g0] ? g0 : -1;
+  }
+  P.pickPowerTarget = function (staff, sc0, claimedFn, allowCut) {
+    var s = S(), ps = ensure(), t = now(), rt = RT();
+    if (!s || !ps || !rt) return null;
+    var staffI = staff && staff.ti >= 0 ? (staff.ti % N) : (staff && staff.x !== undefined ? Math.floor(staff.x / 2) : Math.floor(N / 2));
+    var staffJ = staff && staff.ti >= 0 ? Math.floor(staff.ti / N) : (staff && staff.z !== undefined ? Math.floor(staff.z / 2) : N - 1);
+    var linked = staffReachComps(sc0);
+    if (allowCut && cutActive() && !(claimedFn && claimedFn('pwcut', staff))) {
+      var ct = cutTargetTile(staffI, staffJ, sc0, linked);
+      if (ct >= 0) return { kind: 'cut', id: 0, claimKey: 'pwcut', tile: ct, name: 'Main power grid' };
+    }
+    var best = null, bd = 1e9, idStr, id, rec, o, tile, def, dist;
+    for (idStr in ps.nodes) {
+      rec = ps.nodes[idStr]; id = +idStr;
+      if (!rec || !(rec.eta > t)) continue;
+      if (claimedFn && claimedFn('pn' + id, staff)) continue;
+      o = rt.oById && rt.oById.get(id); if (!o) continue;
+      tile = nearestWalkTileForObj(o, staffI, staffJ, sc0, linked);
+      if (tile < 0) continue;
+      dist = Math.abs((tile % N) - staffI) + Math.abs(Math.floor(tile / N) - staffJ);
+      if (dist < bd) {
+        bd = dist;
+        def = defOf(o);
+        best = { kind: 'node', id: id, claimKey: 'pn' + id, tile: tile, name: (def && def.name) || 'Power relay' };
+      }
+    }
+    for (idStr in ps.broken) {
+      rec = ps.broken[idStr]; id = +idStr;
+      if (!rec || !(rec.eta > t)) continue;
+      if (claimedFn && claimedFn('pg' + id, staff)) continue;
+      o = rt.oById && rt.oById.get(id); if (!o) continue;
+      tile = nearestWalkTileForObj(o, staffI, staffJ, sc0, linked);
+      if (tile < 0) continue;
+      dist = Math.abs((tile % N) - staffI) + Math.abs(Math.floor(tile / N) - staffJ);
+      if (dist < bd) {
+        bd = dist;
+        def = defOf(o);
+        best = { kind: 'gen', id: id, claimKey: 'pg' + id, tile: tile, name: (def && def.name) || 'Generator' };
+      }
+    }
+    return best;
+  };
+  P.hasUrgentPowerWork = function (staff, sc0, claimedFn, allowCut) {
+    return !!P.pickPowerTarget(staff, sc0, claimedFn, allowCut);
+  };
+  P.onStaffRepair = function (target, staffName) {
+    if (!target) return false;
+    var ps = ensure(), t = now();
+    if (!ps) return false;
+    if (target.kind === 'gen' && ps.broken[target.id]) {
+      delete ps.broken[target.id];
+      evaluate(false, false);
+      C.msg(staffName + ' repaired the ' + (target.name || 'generator').toLowerCase() + '.', 'good');
+      return true;
+    }
+    if (target.kind === 'node' && ps.nodes[target.id]) {
+      delete ps.nodes[target.id];
+      X.nodeSig = '';
+      evaluate(false, false);
+      C.msg(staffName + ' restored the ' + (target.name || 'power relay').toLowerCase() + '.', 'good');
+      return true;
+    }
+    if (target.kind === 'cut' && cutActive()) {
+      ps.cut.eta = t - 0.0001;
+      evaluate(false, false);
+      C.msg(staffName + ' restored island power!', 'good');
+      return true;
+    }
+    return false;
+  };
 
   // initial derive for the game that 20-sim.js created on load
   if (Z.state) P.afterLoad(true);

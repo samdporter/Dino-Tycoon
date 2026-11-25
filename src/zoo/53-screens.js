@@ -75,6 +75,14 @@ window.Z = window.Z || {}; var Z = window.Z;
       } else if (panic > 0.01) {
         hint('Recent panic is still lowering the rating. Keep animals secure while guests settle.', 0.6 * panic, null, null, null, null, 'safety');
       }
+      (S2.enclosures || []).forEach(function (e) {
+        if (e.breach > 0) {
+          var T = Z.TILE || 2, ed = e.breachEdge;
+          var bx = ed ? (ed.axis === 'x' ? (ed.i + 0.5) * T : ed.i * T) : e.cx;
+          var bz = ed ? (ed.axis === 'x' ? ed.j * T : (ed.j + 0.5) * T) : e.cz;
+          hint('⚠️ ' + (e.name || 'Enclosure') + ' has a broken fence panel!' + (e.breachCrew ? ' (Repair crew on site)' : ' Call a fence crew or send a keeper.'), 1.9, 'enclosure', e.id, bx, bz, 'breach');
+        }
+      });
       var collectionCap = Number.isFinite(rb.collectionCap) ? rb.collectionCap : null, speciesCount = rb.speciesCount, animalCount = rb.animalCount;
       if (!Number.isFinite(speciesCount)) { var foundSpecies = {}; (S2.animals || []).forEach(function (a) { foundSpecies[a.species] = 1; }); speciesCount = Object.keys(foundSpecies).length; }
       if (!Number.isFinite(animalCount)) animalCount = (S2.animals || []).length;
@@ -137,11 +145,25 @@ window.Z = window.Z || {}; var Z = window.Z;
       hints.sort(function (a, b) { return b.weight - a.weight; });
       var seenCats = {}; hints = hints.filter(function (item) { if (seenCats[item.category]) return false; seenCats[item.category] = true; return true; });
       actions.innerHTML = ''; actions.appendChild(h('h4', { text: 'What to improve next' }));
+      var pCut = !!(Z.Sim.powerCutActive && Z.Sim.powerCutActive());
+      if (pCut) {
+        var pCutEv = (S2.activeEvents || []).filter(function (ev) { return ev.kind === 'powerCut'; })[0];
+        var pCrew = !!(pCutEv && pCutEv.crew);
+        var pBox = h('div', { style: 'display:flex;flex-direction:column;gap:4px;margin:2px 0 6px;padding:8px 10px;border-radius:10px;background:rgba(194,64,47,.12);border:1px solid rgba(194,64,47,.35)' });
+        pBox.appendChild(h('div', { style: 'font-size:12.5px;font-weight:700;color:var(--bad)', text: pCrew ? '🔧 Emergency electrician on site restoring power...' : '⚡ Power Cut: rides and stalls are offline!' }));
+        if (!pCrew) {
+          pBox.appendChild(h('div.btnrow', h('button.btn.sm', {
+            text: '🔧 Call Electrician (' + fmt(Z.Sim.POWER_CREW_FEE || 150) + ')',
+            on: { click: function () { var res = Z.Sim.callPowerCrew(); if (res.ok) { UI.snd('build'); UI.toast('Emergency electrician dispatched!', 'good'); upd(); } else { UI.snd('bad'); UI.toast(res.msg, 'bad'); } } }
+          })));
+        }
+        actions.appendChild(pBox);
+      }
       if (hints.length) hints.slice(0, 3).forEach(function (item) {
         var node = item.kind ? h('button.btn.sm.alt', { style: 'width:100%;text-align:left;white-space:normal;margin:2px 0', text: item.text, on: { click: function () { jump(item.kind, item.id, item.x, item.z); } } }) : h('div.fact', { text: item.text });
         actions.appendChild(node);
       });
-      else actions.appendChild(h('div.fact', { text: 'No clear rating bottleneck right now. Keep the park accessible and services matched to demand.' }));
+      else if (!pCut) actions.appendChild(h('div.fact', { text: 'No clear rating bottleneck right now. Keep the park accessible and services matched to demand.' }));
       var ns = (S2.unlocked && Number.isFinite(S2.unlocked.star) ? S2.unlocked.star : Math.floor(current)) + 1, ul = [];
       D.animals.forEach(function (a) { if (a.star === ns) ul.push(a.name); }); D.buildings.forEach(function (a) { if (a.star === ns) ul.push(a.name); });
       next.innerHTML = ''; next.appendChild(h('h4', { text: ns <= 5 ? 'At ' + ns + ' stars you unlock' : 'You have unlocked everything' }));

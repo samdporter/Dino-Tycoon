@@ -58,7 +58,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       gById: new Map(), aById: new Map(), sById: new Map(), oById: new Map(),
       encx: {}, bq: {}, benchOcc: {}, byType: { food: [], drink: [], toilet: [], fun: [], bench: [], bin: [] },
       t1: 0, t2: 0, escAcc: 0, arrAcc: 0, rate: 0.3, arrMul: 1, arrMulT: 0, pendingSpawn: 0,
-      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, mechCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
+      escaped: [], guides: [], secCount: 0, keeperCount: 0, vetCount: 0, mechCount: 0, handyCount: 0, elecCount: 0, hasHut: false, huts: [], hasVet: false, vets: [], hasEdu: false,
       advice: {}, claim: {}, groupLead: new Map(), nextGroup: 1, dirtyCount: 0, ghEMA: 65, value: 10,
       queue: new Int32Array(NN), prev: new Int32Array(NN), stamp: new Int32Array(NN), stampN: 0, binVer: 0,
       pathMask: null, gh: 65, accSim: 0, eMap: {}, guestCrowd: 0, speciesCount: 0,
@@ -529,8 +529,128 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- enclosures ----
+  var FENCE_CREW_FEE = 150, LAB_DECON_FEE = 200;
   function encById(id) { return (RT.eMap && RT.eMap[id]) || null; }
   function encOfTile(t) { var id = S.tileEnc[t]; return id ? encById(id) : null; }
+
+  function findEncFenceEdges(enc) {
+    if (!enc || !enc.tiles || !enc.tiles.length) return [];
+    var edges = [], fallback = [], seen = {};
+    for (var k = 0; k < enc.tiles.length; k++) {
+      var t = enc.tiles[k], i = t % N, j = (t - i) / N;
+      var checks = [
+        ['x', i, j, j === 0 || S.tileEnc[t - N] !== enc.id, S.fenceX[i + j * N]],
+        ['x', i, j + 1, j === N - 1 || S.tileEnc[t + N] !== enc.id, S.fenceX[i + (j + 1) * N]],
+        ['z', i, j, i === 0 || S.tileEnc[t - 1] !== enc.id, S.fenceZ[i + j * (N + 1)]],
+        ['z', i + 1, j, i === N - 1 || S.tileEnc[t + 1] !== enc.id, S.fenceZ[(i + 1) + j * (N + 1)]]
+      ];
+      for (var c = 0; c < 4; c++) {
+        var ch = checks[c];
+        if (!ch[3] || !ch[4]) continue;
+        var key = ch[0] + ':' + ch[1] + ':' + ch[2];
+        if (seen[key]) continue; seen[key] = 1;
+        var fd = D.fences[ch[4] - 1];
+        var edge = { axis: ch[0], i: ch[1], j: ch[2] };
+        if (fd && fd.style === 'gate') fallback.push(edge);
+        else edges.push(edge);
+      }
+    }
+    return edges.length ? edges : fallback;
+  }
+  function isValidEncFenceEdge(enc, edge) {
+    if (!enc || !edge) return false;
+    var v = edge.axis === 'x' ? S.fenceX[edge.i + edge.j * N] : S.fenceZ[edge.i + edge.j * (N + 1)];
+    if (!v) return false;
+    var edges = findEncFenceEdges(enc);
+    for (var k = 0; k < edges.length; k++) {
+      if (edges[k].axis === edge.axis && edges[k].i === edge.i && edges[k].j === edge.j) return true;
+    }
+    return false;
+  }
+  function pickBreachEdgeDet(enc, edges) {
+    if (!edges || !edges.length) return null;
+    var h = ((enc.id * 2654435761) ^ ((S.day || 1) * 2246822519) ^ (Math.floor((S.time || 0) * 10000) * 3266489917)) >>> 0;
+    return edges[h % edges.length];
+  }
+  function ensureBreachEdge(enc) {
+    if (!enc) return;
+    if (enc.breach > 0) {
+      if (!isValidEncFenceEdge(enc, enc.breachEdge)) {
+        var edges = findEncFenceEdges(enc);
+        enc.breachEdge = pickBreachEdgeDet(enc, edges);
+      }
+    } else {
+      enc.breachEdge = null;
+      enc.breachCrew = false;
+      enc.breachFix = 0;
+    }
+  }
+  function breachEdgeWorldPos(enc) {
+    var ed = enc && enc.breachEdge;
+    if (!ed) return { x: enc ? enc.cx : 0, z: enc ? enc.cz : 0 };
+    return ed.axis === 'x' ? { x: (ed.i + 0.5) * TILE, z: ed.j * TILE } : { x: ed.i * TILE, z: (ed.j + 0.5) * TILE };
+  }
+  function breachEnclosure(encOrId) {
+    var enc = typeof encOrId === 'object' ? encOrId : encById(encOrId);
+    if (!enc) return null;
+    enc.breach = 1;
+    enc.breachCrew = false;
+    enc.breachFix = 0;
+    var edges = findEncFenceEdges(enc);
+    enc.breachEdge = pickBreachEdgeDet(enc, edges);
+    if (enc.breachEdge) bus.emit('fence', enc.breachEdge);
+    else bus.emit('fences');
+    var wp = breachEdgeWorldPos(enc);
+    bus.emit('fenceBreach', { encId: enc.id, name: enc.name, edge: enc.breachEdge, x: wp.x, z: wp.z });
+    return enc.breachEdge;
+  }
+  function repairEnclosureBreach(enc, byName) {
+    if (!enc) return;
+    var oldEdge = enc.breachEdge;
+    enc.breach = 0;
+    enc.breachEdge = null;
+    enc.breachCrew = false;
+    enc.breachFix = 0;
+    if (oldEdge) bus.emit('fence', oldEdge);
+    else bus.emit('fences');
+    bus.emit('fenceFixed', { encId: enc.id, name: enc.name, by: byName || 'Repair crew' });
+  }
+  function callFenceCrew(encId) {
+    var enc = encById(encId);
+    if (!enc) return fail('Enclosure not found.');
+    if (!(enc.breach > 0)) return fail('This enclosure fence is not broken.');
+    if (enc.breachCrew) return fail('Emergency fence crew is already on the way.');
+    if (S.money < FENCE_CREW_FEE) return fail('Not enough money (' + fmt(FENCE_CREW_FEE) + ' needed).');
+    spend(FENCE_CREW_FEE, 'upkeep');
+    enc.breachCrew = true;
+    enc.breachFix = 4.5;
+    msg('Emergency fence repair crew dispatched to ' + enc.name + ' (' + fmt(FENCE_CREW_FEE) + ').', 'info');
+    return okr(FENCE_CREW_FEE);
+  }
+  function stepBreachCrews(dt) {
+    for (var k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (e.breach > 0 && e.breachCrew) {
+        e.breachFix = Math.max(0, (e.breachFix || 0) - dt);
+        if (e.breachFix <= 0) {
+          repairEnclosureBreach(e, 'Emergency Fence Crew');
+          msg('Emergency fence crew repaired the broken fence panel at ' + e.name + '.', 'good');
+        }
+      }
+    }
+  }
+  function callLabDecon() {
+    var R = S.research;
+    if (!R || !(R.labOffline > 0)) return fail('The research lab is not sealed.');
+    if (R.labDeconCrew) return fail('Emergency decontamination crew is already on site.');
+    if (S.money < LAB_DECON_FEE) return fail('Not enough money (' + fmt(LAB_DECON_FEE) + ' needed).');
+    spend(LAB_DECON_FEE, 'upkeep');
+    R.labDeconCrew = true;
+    R.labOffline = Math.min(R.labOffline, 0.25);
+    msg('Emergency decontamination crew dispatched to the research lab (' + fmt(LAB_DECON_FEE) + ').', 'info');
+    bus.emit('research');
+    return okr(LAB_DECON_FEE);
+  }
 
   function recomputeEnclosures() {
     var oldTE = S.tileEnc.slice(), oldById = {}, k, t;
@@ -594,7 +714,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     S.enclosures = newEncs;
     RT.eMap = {}; for (k = 0; k < newEncs.length; k++) RT.eMap[newEncs[k].id] = newEncs[k];
     computeEncClearance();
-    for (r = 0; r < newEncs.length; r++) buildEncGeom(newEncs[r]);
+    for (r = 0; r < newEncs.length; r++) { buildEncGeom(newEncs[r]); ensureBreachEdge(newEncs[r]); }
     // re-home animals
     for (k = 0; k < S.animals.length; k++) {
       var a = S.animals[k], at = tileOf(a.x, a.z), ne = S.tileEnc[at];
@@ -3523,7 +3643,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== STAFF ======================
-  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : 2.2; }
+  function staffSpeed(s) {
+    return s.type === 'security' ? 2.7
+      : s.type === 'electrician' ? 2.6
+      : s.type === 'mechanic' ? 2.5
+      : s.type === 'cleaner' ? 1.9
+      : s.type === 'handyman' ? 1.85
+      : 2.2;
+  }
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
@@ -3707,7 +3834,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     var r = findRoute(s.ti, function (t) { return t === tgt; });
     if (!r) return false;
-    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic') ? 'Patrolling (radio ready)' : 'Walking the paths';
+    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Walking the paths';
     return true;
   }
 
@@ -3740,6 +3867,88 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     return false;
   }
 
+  function pickBreachedEnc(s, sc0, preferElec) {
+    var best = null, bs = -1e9;
+    for (var k = 0; k < S.enclosures.length; k++) {
+      var e = S.enclosures[k];
+      if (!(e.breach > 0) || !e.viewTiles.length || !encReachesComp(e, sc0)) continue;
+      if (claimed('e' + e.id, s)) continue;
+      var E = RT.encx[e.id], isElec = !!(E && E.elec);
+      var dx = e.cx - s.x, dz = e.cz - s.z, dist = Math.sqrt(dx * dx + dz * dz);
+      var sc = (preferElec && isElec ? 1000 : 0) + (e.animals.length ? 100 : 0) - dist * 0.01;
+      if (!best || sc > bs) { best = e; bs = sc; }
+    }
+    return best;
+  }
+  function assignPowerTask(s, sc0, allowCut, nodeGenDur, cutDur) {
+    if (!Z.Power || !Z.Power.pickPowerTarget) return false;
+    var pt = Z.Power.pickPowerTarget(s, sc0, claimed, allowCut);
+    if (!pt) return false;
+    var r = findRoute(s.ti, function (t) { return t === pt.tile; });
+    if (!r) return false;
+    RT.claim[pt.claimKey] = { by: s.id, until: S.day + S.time + 0.4 };
+    var dur = pt.kind === 'cut' ? (cutDur !== undefined ? cutDur : nodeGenDur) : nodeGenDur;
+    s.tk = { k: 'power', target: pt, claimKey: pt.claimKey, ph: 'go', dur: dur };
+    s.route = r; s.ri = 0;
+    s.task = (pt.kind === 'cut' ? 'Restoring ' : 'Repairing ') + (pt.name || 'power');
+    return true;
+  }
+  function assignFenceTask(s, sc0, preferElec, dur) {
+    var e = pickBreachedEnc(s, sc0, preferElec);
+    if (!e) return false;
+    var vs = new Set(e.viewTiles), r = findRoute(s.ti, function (t) { return vs.has(t); });
+    if (!r) return false;
+    RT.claim['e' + e.id] = { by: s.id, until: S.day + S.time + 0.4 };
+    s.tk = { k: 'fence', enc: e.id, ph: 'go', dur: dur };
+    s.route = r; s.ri = 0;
+    s.task = 'Repairing fence at ' + e.name;
+    return true;
+  }
+  function assignCoasterTask(s, sc0, dur, targetCond) {
+    if (!Z.Coaster || !Z.Coaster.pickMechanicTarget) return false;
+    var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
+    if (!mt) return false;
+    var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
+    if (!rm) return false;
+    RT.claim['c' + mt.station.id] = { by: s.id, until: S.day + S.time + 0.4 };
+    s.tk = { k: 'coaster', id: mt.station.id, ph: 'go', broken: mt.broken, dur: dur, targetCond: targetCond };
+    s.route = rm; s.ri = 0;
+    s.task = (mt.broken ? 'Repairing ' : 'Inspecting ') + BD[mt.station.type].name;
+    return true;
+  }
+  function assignCleanTask(s, dur) {
+    var mask = RT.binMask || (RT.binMask = new Uint8Array(NN)); mask.fill(0);
+    var bins = RT.byType.bin, ad = [], k;
+    for (k = 0; k < bins.length; k++) if ((bins[k].fill || 0) >= 10) { ad.length = 0; adjacentPathTiles(bins[k], ad); for (var q = 0; q < ad.length; q++) mask[ad[q]] = 1; }
+    var rc = findRoute(s.ti, function (t) { return (S.dirt[t] >= 40 || mask[t]) && !RT.claim['t' + t]; });
+    if (!rc) return false;
+    var tgt = rc.length ? rc[rc.length - 1] : s.ti;
+    RT.claim['t' + tgt] = { by: s.id, until: S.day + S.time + 0.1 };
+    s.tk = { k: 'clean', ph: 'go', t: 0, tile: tgt, dur: dur }; s.route = rc; s.ri = 0; s.task = 'Sweeping the paths';
+    return true;
+  }
+  function urgentTaskReady(s, scP) {
+    if (s.type === 'keeper') return keeperHasUrgentTask(s);
+    if (s.type === 'vet') return !!pickVetAnimal(s, scP);
+    if (s.type === 'cleaner') return hasCleanerWork(scP);
+    if (s.type === 'electrician') {
+      return !!(Z.Power && Z.Power.hasUrgentPowerWork && Z.Power.hasUrgentPowerWork(s, scP, claimed, true))
+        || !!pickBreachedEnc(s, scP, true);
+    }
+    if (s.type === 'mechanic') {
+      return !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, scP, claimed))
+        || !!(Z.Power && Z.Power.hasUrgentPowerWork && Z.Power.hasUrgentPowerWork(s, scP, claimed, false))
+        || !!pickBreachedEnc(s, scP, false);
+    }
+    if (s.type === 'handyman') {
+      return !!pickBreachedEnc(s, scP, false)
+        || !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, scP, claimed))
+        || !!(Z.Power && Z.Power.hasUrgentPowerWork && Z.Power.hasUrgentPowerWork(s, scP, claimed, true))
+        || hasCleanerWork(scP);
+    }
+    return false;
+  }
+
   function assignTask(s) {
     if (!staffOnPath(s)) return;
     var k, a, e, sc0 = RT.comp[s.ti];
@@ -3766,15 +3975,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         }
       }
     } else if (s.type === 'cleaner') {
-      var mask = RT.binMask || (RT.binMask = new Uint8Array(NN)); mask.fill(0);
-      var bins = RT.byType.bin, ad = [];
-      for (k = 0; k < bins.length; k++) if ((bins[k].fill || 0) >= 10) { ad.length = 0; adjacentPathTiles(bins[k], ad); for (var q = 0; q < ad.length; q++) mask[ad[q]] = 1; }
-      var rc = findRoute(s.ti, function (t) { return (S.dirt[t] >= 40 || mask[t]) && !RT.claim['t' + t]; });
-      if (rc) {
-        var tgt = rc.length ? rc[rc.length - 1] : s.ti;
-        RT.claim['t' + tgt] = { by: s.id, until: S.day + S.time + 0.1 };
-        s.tk = { k: 'clean', ph: 'go', t: 0, tile: tgt }; s.route = rc; s.ri = 0; s.task = 'Sweeping the paths'; return;
-      }
+      if (assignCleanTask(s, 1.6)) return;
     } else if (s.type === 'guide') {
       var cands = [];
       for (k = 0; k < S.enclosures.length; k++) if (S.enclosures[k].animals.length && S.enclosures[k].viewTiles.length && encReachesComp(S.enclosures[k], sc0)) cands.push(S.enclosures[k]);
@@ -3783,16 +3984,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var vs3 = new Set(e.viewTiles), r3 = findRoute(s.ti, function (t) { return vs3.has(t); });
         if (r3) { s.tk = { k: 'tour', ph: 'go', t: rng.range(8, 14) }; s.route = r3; s.ri = 0; s.task = 'Guiding visitors at ' + e.name; return; }
       }
-    } else if (s.type === 'mechanic' && Z.Coaster && Z.Coaster.pickMechanicTarget) {
-      var mt = Z.Coaster.pickMechanicTarget(s, sc0, claimed);
-      if (mt) {
-        var mSet = new Set(mt.tiles), rm = findRoute(s.ti, function (t) { return mSet.has(t); });
-        if (rm) {
-          RT.claim['c' + mt.station.id] = { by: s.id, until: S.day + S.time + 0.4 };
-          s.tk = { k: 'coaster', id: mt.station.id, ph: 'go', broken: mt.broken }; s.route = rm; s.ri = 0;
-          s.task = (mt.broken ? 'Repairing ' : 'Inspecting ') + BD[mt.station.type].name; return;
-        }
-      }
+    } else if (s.type === 'electrician') {
+      if (assignPowerTask(s, sc0, true, 1.8, 2.5)) return;
+      if (assignFenceTask(s, sc0, true, 2.0)) return;
+    } else if (s.type === 'mechanic') {
+      if (assignCoasterTask(s, sc0, 2.4, 100)) return;
+      if (assignPowerTask(s, sc0, false, 3.0, 3.0)) return;
+      if (assignFenceTask(s, sc0, false, 2.5)) return;
+    } else if (s.type === 'handyman') {
+      if (assignFenceTask(s, sc0, false, 5.5)) return;
+      if (assignCoasterTask(s, sc0, 5.5, 90)) return;
+      if (assignPowerTask(s, sc0, true, 6.0, 6.0)) return;
+      if (assignCleanTask(s, 2.5)) return;
     }
     if (!startPatrol(s)) { s.tk = null; s.state = 'idle'; s.speed = 0; s.task = 'Waiting for work'; }
   }
@@ -3803,16 +4006,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var tk = s.tk, a, enc, E;
     if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.speed = 0; s.state = 'idle'; s.task = 'Off sick'; return; }
     if (tk && s.type === 'security' && RT.escaped.length && (tk.k === 'patrol' || tk.k === 'tour')) { s.tk = null; tk = null; s.wt = 0; }
-    if (tk && tk.k === 'patrol' && (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic')) {
+    if (tk && tk.k === 'patrol' && (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician')) {
       tk.chk = (tk.chk === undefined ? 1 : tk.chk) - dt;
       if (tk.chk <= 0) {
         tk.chk = s.type === 'cleaner' ? 1.5 : 1.0;
         var st0 = tileOf(s.x, s.z), scP = RT.comp[S.path[st0] ? st0 : s.ti];
-        var urgent = s.type === 'keeper' ? keeperHasUrgentTask(s)
-          : s.type === 'vet' ? !!pickVetAnimal(s, scP)
-          : s.type === 'mechanic' ? !!(Z.Coaster && Z.Coaster.hasUrgentMechanicWork && Z.Coaster.hasUrgentMechanicWork(s, scP, claimed))
-          : hasCleanerWork(scP);
-        if (urgent) { s.tk = null; tk = null; s.route = null; s.wt = 0; }
+        if (urgentTaskReady(s, scP)) { s.tk = null; tk = null; s.route = null; s.wt = 0; }
       }
     }
     if (!tk) {
@@ -3831,7 +4030,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         else { s.state = 'work'; s.speed = 0; tk.t -= dt; if (tk.t <= 0) { s.tk = null; s.wt = 0; } }
         break;
       case 'clean':
-        if (tk.ph === 'go') { if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = 1.6; } }
+        if (tk.ph === 'go') { if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = tk.dur || 1.6; } }
         else {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
           if (tk.t <= 0) {
@@ -3864,7 +4063,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             if (tk.stage === 0) {
               var hadBreach = enc.breach > 0;
               enc.foodLevel = 1; enc.waterLevel = 1;
-              if (hadBreach) { enc.breach = 0; msg(s.name + ' secured the damaged fence at ' + enc.name + '.', 'good', false); }
+              if (hadBreach) { repairEnclosureBreach(enc, s.name); msg(s.name + ' secured the damaged fence at ' + enc.name + '.', 'good', false); }
               encStats(enc);
               tk.stage = 1; tk.t = 1.0; if (enc.poop <= 0) tk.ph = 'out';
             }
@@ -3907,12 +4106,47 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!RT.oById.has(tk.id)) { delete RT.claim['c' + tk.id]; s.tk = null; break; }
         RT.claim['c' + tk.id] = { by: s.id, until: S.day + S.time + 0.4 };
         if (tk.ph === 'go') {
-          if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster'; }
+          if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = tk.dur || 2.4; s.task = tk.broken ? 'Repairing rollercoaster' : 'Servicing rollercoaster'; }
         } else {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
           if (tk.t <= 0) {
-            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(tk.id, s.name);
+            if (Z.Coaster && Z.Coaster.onMechanicRepair) Z.Coaster.onMechanicRepair(tk.id, s.name, tk.targetCond);
             delete RT.claim['c' + tk.id]; s.tk = null; s.wt = 0.6; s.task = 'Ready';
+          }
+        }
+        break;
+      case 'power':
+        if (!tk.target || !Z.Power) { if (tk.claimKey) delete RT.claim[tk.claimKey]; s.tk = null; break; }
+        if (tk.target.kind === 'cut' && Z.Power.outageActive && !Z.Power.outageActive()) { delete RT.claim[tk.claimKey]; s.tk = null; s.wt = 0; break; }
+        if (tk.target.kind !== 'cut') {
+          var psNow = Z.Power.state && Z.Power.state();
+          var activeNow = tk.target.kind === 'gen'
+            ? (psNow && psNow.broken && psNow.broken[tk.target.id] && psNow.broken[tk.target.id].eta > S.day + S.time)
+            : (psNow && psNow.nodes && psNow.nodes[tk.target.id] && psNow.nodes[tk.target.id].eta > S.day + S.time);
+          if (!activeNow) { delete RT.claim[tk.claimKey]; s.tk = null; s.wt = 0; break; }
+        }
+        RT.claim[tk.claimKey] = { by: s.id, until: S.day + S.time + 0.4 };
+        if (tk.ph === 'go') {
+          if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = tk.dur || 2.0; }
+        } else {
+          s.state = 'work'; s.speed = 0; tk.t -= dt;
+          if (tk.t <= 0) {
+            if (Z.Power.onStaffRepair) Z.Power.onStaffRepair(tk.target, s.name);
+            delete RT.claim[tk.claimKey]; s.tk = null; s.wt = 0.5; s.task = 'Ready';
+          }
+        }
+        break;
+      case 'fence':
+        enc = RT.eMap[tk.enc];
+        if (!enc || !(enc.breach > 0)) { delete RT.claim['e' + tk.enc]; s.tk = null; s.wt = 0; break; }
+        RT.claim['e' + enc.id] = { by: s.id, until: S.day + S.time + 0.4 };
+        if (tk.ph === 'go') {
+          if (walkRoute(s, dt)) { tk.ph = 'work'; tk.t = tk.dur || 2.5; }
+        } else {
+          s.state = 'work'; s.speed = 0; tk.t -= dt;
+          if (tk.t <= 0) {
+            if (enc.breach > 0) { repairEnclosureBreach(enc, s.name); msg(s.name + ' repaired the damaged fence at ' + enc.name + '.', 'good', false); }
+            delete RT.claim['e' + enc.id]; s.tk = null; s.wt = 0.3; s.task = 'Ready';
           }
         }
         break;
@@ -4201,7 +4435,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var w = S.weather;
     if (w.type === 'storm' && rng.chance(0.12 * w.intensity)) {
       var cand = S.enclosures.filter(function (e) { return e.animals.length && !(e.breach > 0) && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); });
-      if (cand.length) { var e = rng.pick(cand); e.breach = 1; msg('Lightning has brought down a fence panel at ' + e.name + '. It is open to the elements until repaired, so the dinosaurs could slip out!', 'bad'); }
+      if (cand.length) { var e = rng.pick(cand); breachEnclosure(e); msg('Lightning has brought down a fence panel at ' + e.name + '. It is open to the elements until repaired, so the dinosaurs could slip out!', 'bad'); }
     }
   }
 
@@ -4263,7 +4497,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var wt = eff.weather, inten = Math.round(rng.range(0.85, 1) * 100) / 100, wh = wt === 'heatwave' ? rng.range(9, 13) : wt === 'storm' ? rng.range(3, 4.5) : rng.range(4, 6.5);
         wh = Math.round(wh * 2) / 2;
         var e1 = null;
-        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); }); if (cand.length) { e1 = rng.pick(cand); e1.breach = 1; } }
+        if (eff.breach) { var cand = S.enclosures.filter(function (e) { return e.animals.length && !(Z.Moats && Z.Moats.fenceless(e)) && !(Z.Realms && Z.Realms.noBreach(e)); }); if (cand.length) { e1 = rng.pick(cand); breachEnclosure(e1); } }
         if (S.weather.type === wt) { setWeather(wt, inten, wh); }
         else setWeather(wt, inten, wh, text);
         if (e1) msg('A fence panel at ' + e1.name + ' has been knocked down. Its dinosaurs could slip out until the repair crew finishes at midnight.', 'bad');
@@ -4338,7 +4572,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, a, e;
     if (!RT.wxInit) ensureInit();
     refreshEncAnimals();
-    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.dangerEsc = 0;
+    RT.escaped.length = 0; RT.guides.length = 0; RT.secCount = 0; RT.keeperCount = 0; RT.vetCount = 0; RT.mechCount = 0; RT.handyCount = 0; RT.elecCount = 0; RT.dangerEsc = 0;
     for (k = 0; k < S.animals.length; k++) if (S.animals[k].state === 'escaped') { RT.escaped.push(S.animals[k]); if (aDanger(S.animals[k]) >= 2) RT.dangerEsc++; }
     if (S.panic > 0) S.panic = Math.max(0, S.panic - 0.003 - (Z.Monorail ? Z.Monorail.panicRelief() : 0));   // monorail package: a working line calms the park faster
     if (RT.dangerEsc > 0 && !RT.lockdown) { RT.lockdown = true; msg('The gates are closed to new visitors until the dangerous dinosaur is back in its enclosure.', 'bad', false); }
@@ -4346,7 +4580,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;   // off sick
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
@@ -4485,7 +4719,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     S.day++; S.stats.guestsToday = 0;
     if (S.marketing.active) { S.marketing.daysLeft--; if (S.marketing.daysLeft <= 0) { S.marketing.active = false; msg('Your marketing campaign has ended.', 'info'); } }
     for (k = 0; k < S.enclosures.length; k++) {
-      var e = S.enclosures[k]; if (e.breach > 0) { e.breach--; if (e.breach <= 0) msg('The fence at ' + e.name + ' has been repaired.', 'good', false); }
+      var e = S.enclosures[k]; if (e.breach > 0) { e.breach--; if (e.breach <= 0) { repairEnclosureBreach(e, 'Overnight crew'); msg('The fence at ' + e.name + ' has been repaired.', 'good', false); } }
     }
     // animals: growth, illness, old age
     for (k = S.animals.length - 1; k >= 0; k--) {
@@ -4635,6 +4869,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     stepFights(dt);
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
+    stepBreachCrews(dt);
     researchStep(dt);
     RT.t1 += dt;
     if (RT.t1 >= 1) { RT.t1 -= 1; secondly(); }
@@ -5191,7 +5426,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   // ---- progression per sim step ----
   function researchStep(dt) {
     var R = S.research, dh = dt / DAY_SECONDS * 24, k, j;
-    if (R.labOffline > 0) { R.labOffline = Math.max(0, R.labOffline - dh); if (R.labOffline <= 0) { msg(R.labNote === 'power cut' ? 'The power is back on and the lab is running again.' : 'The lab has been decontaminated and is open again.', 'good'); R.labNote = ''; bus.emit('research'); } }
+    if (R.labOffline > 0) { R.labOffline = Math.max(0, R.labOffline - dh); if (R.labOffline <= 0) { R.labDeconCrew = false; msg(R.labNote === 'power cut' ? 'The power is back on and the lab is running again.' : 'The lab has been decontaminated and is open again.', 'good'); R.labNote = ''; bus.emit('research'); } }
     var on = labOnline();
     for (k = R.jobs.length - 1; k >= 0; k--) {
       j = R.jobs[k];
@@ -5939,8 +6174,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function enclosureReport(encId, extraSpecies) {
     var e = encById(encId); if (!e) return null;
     var E = RT.encx[e.id], out = { id: e.id, name: e.name, area: e.area, minFence: e.minFence, see: e.see, poop: e.poop, foodLevel: e.foodLevel, waterLevel: e.waterLevel,
+      breach: e.breach || 0, breachEdge: e.breachEdge || null, breachCrew: !!e.breachCrew, breachFix: Math.max(0, e.breachFix || 0), fenceCrewFee: FENCE_CREW_FEE,
       species: {}, suitability: {}, issues: [], animals: e.animals.length, viewTiles: e.viewTiles.length,
       relief: E.relief || 0, cliffTiles: E.cliffs || 0, plantsThriving: E.thrive || 0, plantsStruggling: E.struggle || 0 };
+    if (e.breach > 0) out.issues.push(e.breachCrew ? 'Fence panel broken — emergency repair crew on site (' + Math.max(1, Math.ceil(e.breachFix || 0)) + 's).' : 'Fence panel broken! Dinosaurs may escape until repaired by a ranger or emergency crew.');
     var extraReq = extraSpecies && animalSpaceRequirement(extraSpecies);
     var used = liveEnclosureDemand(e, E) + (extraReq ? extraReq.amount : 0), reserved = reservedEnclosureDemand(e);
     var capacity = enclosureCapacity(e, E);
@@ -6103,6 +6340,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     paintTerrain: paintTerrain, placePath: placePath, placeFence: placeFence, removeFence: removeFence, placeObject: placeObject, bulldoze: bulldoze,
     undo: undo, canUndo: canUndo, beginStroke: beginStroke, endStroke: endStroke, research: researchAPI,
     addAnimal: addAnimal, sellAnimal: sellAnimal, moveAnimal: moveAnimal, hireStaff: hireStaff, fireStaff: fireStaff, rangerCoverage: rangerCoverage,
+    callFenceCrew: callFenceCrew, breachEnclosure: breachEnclosure, callLabDecon: callLabDecon, FENCE_CREW_FEE: FENCE_CREW_FEE, LAB_DECON_FEE: LAB_DECON_FEE,
     setTicketPrice: setTicketPrice, setPrice: setPrice, attractionDemand: attractionDemand, takeLoan: takeLoan, repayLoan: repayLoan, loanQuote: loanQuote, loanSummary: loanSummary, startMarketing: startMarketing, renameEnclosure: renameEnclosure, setSpeed: setSpeed,
     enclosureAt: enclosureAt, enclosureReport: enclosureReport, animalReport: animalReport, ratingBreakdown: ratingBreakdown, isUnlocked: isUnlocked, walkable: walkable,
     animalSpaceRequirement: animalSpaceRequirement,

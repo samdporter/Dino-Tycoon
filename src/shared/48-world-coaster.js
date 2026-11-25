@@ -29,6 +29,10 @@
   var chainSegs = [];   // [{ stationId, x,y,z, fx,fy,fz, ux,uy,uz, rx,ry,rz, len }]
   var chainMeshes = []; // pool of moving chain link meshes
   var splashes = [];
+  var stBeacons = {};   // stationId -> { grp, sphere, diamond }
+  var brkParts = [];    // pooled smoke & spark particles in fxGrp
+  var brkEmitT = 0;
+  var MAX_BRK_PARTS = 96;
   var rideTrainId = 0;
   var followTrainId = 0;
   var overlayOn = false;
@@ -939,12 +943,83 @@
     }
   }
 
-  function updateTrains() {
+  var _brkRes = null;
+  function getBrkRes() {
+    if (!_brkRes) {
+      _brkRes = {
+        sphereGeo: new THREE.SphereGeometry(0.28, 8, 6),
+        diamondGeo: new THREE.OctahedronGeometry(0.32, 0),
+        partGeo: new THREE.SphereGeometry(0.18, 6, 4),
+        redMat: new THREE.MeshBasicMaterial({ color: 0xff2a2a }),
+        smokeMat: new THREE.MeshBasicMaterial({ color: 0x353940, transparent: true, opacity: 0.72 }),
+        sparkMat: new THREE.MeshBasicMaterial({ color: 0xffb82e })
+      };
+    }
+    return _brkRes;
+  }
+
+  function spawnBrkPart(kind, x, y, z) {
+    if (!fxGrp) return;
+    var R = getBrkRes(), slot = null;
+    for (var k = 0; k < brkParts.length; k++) {
+      if (!brkParts[k].active) { slot = brkParts[k]; break; }
+    }
+    if (!slot) {
+      if (brkParts.length >= MAX_BRK_PARTS) return;
+      var m = new THREE.Mesh(R.partGeo, R.smokeMat);
+      m.userData.shared = true;
+      fxGrp.add(m);
+      slot = { active: false, mesh: m, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, kind: 'smoke' };
+      brkParts.push(slot);
+    }
+    slot.active = true;
+    slot.kind = kind;
+    slot.mesh.material = kind === 'spark' ? R.sparkMat : R.smokeMat;
+    slot.mesh.position.set(x + (Math.random() - 0.5) * 0.45, y, z + (Math.random() - 0.5) * 0.45);
+    slot.mesh.visible = true;
+    if (kind === 'spark') {
+      slot.vx = (Math.random() - 0.5) * 2.2;
+      slot.vy = 2.2 + Math.random() * 1.8;
+      slot.vz = (Math.random() - 0.5) * 2.2;
+      slot.maxLife = 0.45 + Math.random() * 0.25;
+      slot.mesh.scale.setScalar(0.55);
+    } else {
+      slot.vx = (Math.random() - 0.5) * 0.45;
+      slot.vy = 1.15 + Math.random() * 0.75;
+      slot.vz = (Math.random() - 0.5) * 0.45;
+      slot.maxLife = 1.15 + Math.random() * 0.45;
+      slot.mesh.scale.setScalar(0.75);
+    }
+    slot.life = slot.maxLife;
+  }
+
+  function getStationBeacon(stId) {
+    var rec = stBeacons[stId];
+    if (rec) return rec;
+    var R = getBrkRes();
+    var g = new THREE.Group();
+    var sp = new THREE.Mesh(R.sphereGeo, R.redMat);
+    sp.userData.shared = true;
+    var dm = new THREE.Mesh(R.diamondGeo, R.redMat);
+    dm.position.set(0, 0.62, 0);
+    dm.userData.shared = true;
+    g.add(sp);
+    g.add(dm);
+    fxGrp.add(g);
+    rec = stBeacons[stId] = { grp: g, sphere: sp, diamond: dm };
+    return rec;
+  }
+
+  function updateTrains(dtReal) {
     if (!Z.state || !Z.state.coaster || !Z.Coaster) return;
     syncTrains();
     var trains = Z.state.coaster.trains;
     var pose = {};
-    var blink = Math.sin((Z.World && Z.World._G ? Z.World._G.t : 0) * 10) > 0;
+    var tNow = (Z.World && Z.World._G ? Z.World._G.t : 0);
+    var blink = Math.sin(tNow * 10) > 0;
+    var emitTick = false;
+    brkEmitT += (dtReal || 0);
+    if (brkEmitT >= 0.14) { brkEmitT = brkEmitT % 0.14; emitTick = true; }
     for (var k = 0; k < trains.length; k++) {
       var T = trains[k], rec = trainMeshes[T.id];
       if (!rec) continue;
@@ -953,9 +1028,11 @@
       rec.group.visible = hasLoop;
       if (!hasLoop) continue;
       rec.beacon.visible = (info.state === 'broken' || info.state === 'stalled') && blink;
+      var leadPose = null;
       for (var c = 0; c < rec.cars.length; c++) {
         var p = Z.Coaster.carPose(T, c, pose);
         if (!p) continue;
+        if (c === 0) leadPose = { x: p.x, y: p.y, z: p.z, ux: p.ux, uy: p.uy, uz: p.uz };
         var car = rec.cars[c];
         car.position.set(p.x, p.y, p.z);
         _vF.set(p.tx, p.ty, p.tz).normalize();
@@ -965,6 +1042,67 @@
         _mat4.makeBasis(_vR, _vU, _vF);
         car.quaternion.setFromRotationMatrix(_mat4);
       }
+      if (emitTick && info.state === 'broken' && leadPose) {
+        var sx = leadPose.x + leadPose.ux * 0.6;
+        var sy = leadPose.y + leadPose.uy * 0.6;
+        var sz = leadPose.z + leadPose.uz * 0.6;
+        spawnBrkPart('smoke', sx, sy, sz);
+        if (Math.random() < 0.45) spawnBrkPart('spark', sx, sy, sz);
+      }
+    }
+    return emitTick;
+  }
+
+  function updateBreakdowns(dtReal, emitTick) {
+    if (!fxGrp || !Z.Coaster) return;
+    var X = Z.Coaster.state();
+    var stations = (X && X.stations) || [];
+    var tNow = (Z.World && Z.World._G ? Z.World._G.t : 0);
+    var blink = Math.sin(tNow * 9) > -0.2;
+    var aliveSt = {};
+    for (var k = 0; k < stations.length; k++) {
+      var st = stations[k];
+      if (!st || !st.obj) continue;
+      var stId = st.obj.id;
+      var stInfo = Z.Coaster.stationInfo(stId);
+      if (stInfo && stInfo.broken && st.fp) {
+        aliveSt[stId] = 1;
+        var cx = (st.fp.i0 + st.fp.w * 0.5) * TILE;
+        var cz = (st.fp.j0 + st.fp.h * 0.5) * TILE;
+        var gy = Z.World && Z.World.groundY ? Z.World.groundY(cx, cz) : 0;
+        var by = gy + (CD.stationDeck || 1.8) + 3.65;
+        var sb = getStationBeacon(stId);
+        sb.grp.visible = true;
+        sb.grp.position.set(cx, by, cz);
+        sb.sphere.visible = blink;
+        sb.diamond.position.y = 0.62 + Math.sin(tNow * 5) * 0.14;
+        sb.diamond.rotation.y = tNow * 2.6;
+        if (emitTick) {
+          spawnBrkPart('smoke', cx, gy + (CD.stationDeck || 1.8) + 1.4, cz);
+          if (Math.random() < 0.4) spawnBrkPart('spark', cx, gy + (CD.stationDeck || 1.8) + 1.4, cz);
+        }
+      }
+    }
+    for (var id in stBeacons) {
+      if (!aliveSt[id]) stBeacons[id].grp.visible = false;
+    }
+    var dt = dtReal || 0;
+    for (k = 0; k < brkParts.length; k++) {
+      var pt = brkParts[k];
+      if (!pt.active) continue;
+      pt.life -= dt;
+      if (pt.life <= 0) {
+        pt.active = false;
+        pt.mesh.visible = false;
+        continue;
+      }
+      var u = pt.life / pt.maxLife;
+      if (pt.kind === 'spark') pt.vy -= 5.8 * dt;
+      pt.mesh.position.x += pt.vx * dt;
+      pt.mesh.position.y += pt.vy * dt;
+      pt.mesh.position.z += pt.vz * dt;
+      var sc = pt.kind === 'spark' ? Math.max(0.1, 0.55 * u) : (0.65 + (1 - u) * 1.15) * Math.min(1, u * 2.2);
+      pt.mesh.scale.setScalar(Math.max(0.08, sc));
     }
   }
 
@@ -1145,7 +1283,8 @@
       }
     }
     updateChains(dtGame);
-    updateTrains();
+    var emitTick = updateTrains(dtReal);
+    updateBreakdowns(dtReal, emitTick);
     updateSplashes(dtReal);
   }
 
@@ -1173,6 +1312,7 @@
       if (trackGrp) clearGroup(trackGrp);
       if (chainGrp) { clearGroup(chainGrp); chainSegs.length = 0; chainMeshes.length = 0; }
       if (trainGrp) { clearGroup(trainGrp); trainMeshes = {}; }
+      if (fxGrp) { clearGroup(fxGrp); stBeacons = {}; brkParts.length = 0; splashes.length = 0; brkEmitT = 0; }
       if (ovGrp) clearGroup(ovGrp);
     });
   }
