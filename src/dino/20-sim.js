@@ -89,6 +89,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function cxOf(t) { return (t % N) * TILE + TILE / 2; }
   function czOf(t) { return Math.floor(t / N) * TILE + TILE / 2; }
   function newId() { return S.nextId++; }
+  // Enclosures use their own ID counter so guest turnover, scenery and lab work cannot inflate it.
+  // Realm definitions (tanks, domes, virtual zones) and safari state share the enclosure namespace;
+  // live and away animal homes are included so an animal is never returned to a different enclosure
+  // that reused its old ID after a legacy save without the counter was loaded.
+  function newEncId() {
+    var max = 0, k;
+    for (k = 0; k < S.enclosures.length; k++) { var eid = S.enclosures[k] && S.enclosures[k].id; if (eid > max) max = eid; }
+    if (Z.Realms && Z.Realms.maxEncId) { var rid = Z.Realms.maxEncId(); if (rid > max) max = rid; }
+    if (Z.Safari && Z.Safari.maxEncId) { var sid = Z.Safari.maxEncId(); if (sid > max) max = sid; }
+    for (k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!a) continue; if (a.enc > max) max = a.enc; if (a.home > max) max = a.home; }
+    if (!(S.nextEncId > max)) S.nextEncId = max + 1;
+    return S.nextEncId++;
+  }
   function dryOf(args) { var l = args[args.length - 1]; return !!(l && typeof l === 'object' && l.dry); }
   function fail(msg) { return { ok: false, msg: msg }; }
   function okr(cost, extra) { var r = { ok: true, cost: cost || 0 }; if (extra) for (var k in extra) r[k] = extra[k]; return r; }
@@ -566,7 +579,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var tiles2 = regions[r], oe = assigned[r] !== undefined ? oldById[assigned[r]] : null, enc;
       if (oe) enc = oe;
       else {
-        enc = { id: newId(), name: 'Enclosure ' + (++maxNum), auto: true, poop: 0, foodLevel: 1, waterLevel: 1, breach: 0 };
+        enc = { id: newEncId(), name: 'Enclosure ' + (++maxNum), auto: true, poop: 0, foodLevel: 1, waterLevel: 1, breach: 0 };
       }
       enc.tiles = tiles2; enc.area = tiles2.length;
       var sx = 0, sz = 0;
@@ -5299,7 +5312,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     msg: msg, fmt: fmt, spend: spend, earn: earn, clamp: clamp, fail: fail, okr: okr, dryOf: dryOf,
     jBegin: jBegin, jOp: jOp, jEnd: jEnd, world: afterWorldChange, inMap: inMap, cliffT: cliffT, entranceTile: entranceTile, seaMask: seaMask, heightAt: heightAt,
     objFootprint: objFootprint, encById: encById, encOfTile: encOfTile, fxOf: fxOf, aDanger: aDanger, aMinFence: aMinFence, tileOf: tileOf, cxOf: cxOf, czOf: czOf, plural: plural, lc: lc,
-    WX: function () { return WX; }, isNight: isNight, DAY_SECONDS: DAY_SECONDS, turn: turn, newId: newId, say: say, hurtGuest: hurtGuest, removeAnimal: removeAnimal,
+    WX: function () { return WX; }, isNight: isNight, DAY_SECONDS: DAY_SECONDS, turn: turn, newId: newId, newEncId: newEncId, say: say, hurtGuest: hurtGuest, removeAnimal: removeAnimal,
     recapture: recapture, doEscape: doEscape, onEscape: onEscape, compatible: compatible, refreshEncAnimals: refreshEncAnimals, encStats: encStats,
     animalMetrics: animalMetrics, pushFromWalls: pushFromWalls,
     enclosureSpaceComfort: enclosureSpaceComfort

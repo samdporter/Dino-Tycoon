@@ -1096,6 +1096,19 @@ window.Z = window.Z || {}; var Z = window.Z;
     bus.emit('mainlandSighting', { animal: a, species: a.species, how: how, fine: fine });
     bus.emit('safari');
   }
+  // highest enclosure id still referenced by safari state: zone configs and mainland ("away") animals
+  A.maxEncId = function () {
+    var o = ST(), max = 0, k, e;
+    if (!o) return 0;
+    if (o.zones) for (var zid in o.zones) if (+zid > max) max = +zid;
+    if (o.away) for (k = 0; k < o.away.length; k++) {
+      e = o.away[k]; if (!e) continue;
+      if (e.home > max) max = e.home;
+      if (e.animal && e.animal.enc > max) max = e.animal.enc;
+      if (e.animal && e.animal.home > max) max = e.animal.home;
+    }
+    return max;
+  };
   A.awayList = function () { return ST().away.map(function (e) { return { id: e.id, species: e.species, name: e.name, day: e.day, state: e.state, until: e.until, lostDay: e.lostDay, danger: e.danger, how: e.how }; }); };
   A.sendExpedition = function (id, opts) {
     var o = ST(), e = o.away.filter(function (q) { return q.id === id; })[0]; if (!e || e.state !== 'missing') return fail('No missing animal to search for');

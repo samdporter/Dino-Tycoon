@@ -2374,7 +2374,7 @@ test('a walking dinosaur blocked by a resting herd-mate gives up instead of walk
   }
 });
 
-test('Dino enclosures remain recorded across many small enclosures, IDs above 32767, and legacy i16 save migration', () => {
+test('Dino enclosures remain recorded across many small enclosures, dedicated IDs, and legacy i16/high-ID migration', () => {
   const z = game();
   z.Sim.newGame({ seed: 4455, map: 'fern_meadow', difficulty: 'easy', money: 1e7 });
   const N = z.N;
@@ -2407,7 +2407,7 @@ test('Dino enclosures remain recorded across many small enclosures, IDs above 32
     assert.ok(e && e.area === 4, `small enclosure (${c},${r}) must be recorded`);
   }
 
-  // 2. IDs crossing signed 16-bit boundary (32767 -> 32768, 32769) and 65536
+  // 2. Enclosure IDs come from their own counter, independent of park-wide nextId
   z.state.nextId = 32767;
   buildBox(bx + 18, by, 3, 3);
   buildBox(bx + 22, by, 3, 3);
@@ -2415,40 +2415,150 @@ test('Dino enclosures remain recorded across many small enclosures, IDs above 32
   z.state.nextId = 65536;
   buildBox(bx + 18, by + 5, 3, 3);
 
-  const e32767 = z.Sim.enclosureAt(bx + 19, by + 1);
-  const e32768 = z.Sim.enclosureAt(bx + 23, by + 1);
-  const e32769 = z.Sim.enclosureAt(bx + 27, by + 1);
-  const e65536 = z.Sim.enclosureAt(bx + 19, by + 6);
+  const e65 = z.Sim.enclosureAt(bx + 19, by + 1);
+  const e66 = z.Sim.enclosureAt(bx + 23, by + 1);
+  const e67 = z.Sim.enclosureAt(bx + 27, by + 1);
+  const e68 = z.Sim.enclosureAt(bx + 19, by + 6);
   assert.equal(z.state.tileEnc.constructor.name, 'Int32Array', 'tileEnc must be Int32Array');
-  assert.equal(e32767 && e32767.id, 32767);
-  assert.equal(e32768 && e32768.id, 32768);
-  assert.equal(e32769 && e32769.id, 32769);
-  assert.equal(e65536 && e65536.id, 65536);
-  assert.equal(z.state.tileEnc[(bx + 23) + (by + 1) * N], 32768);
-  assert.equal(z.state.tileEnc[(bx + 19) + (by + 6) * N], 65536);
-  assert.equal(e32768.inscribedSpan, 3);
-  assert.equal(e65536.inscribedSpan, 3);
+  assert.deepEqual([e65.id, e66.id, e67.id, e68.id], [65, 66, 67, 68],
+    'enclosure IDs must stay sequential and ignore S.nextId');
+  assert.equal(z.state.tileEnc[(bx + 23) + (by + 1) * N], 66);
+  assert.equal(z.state.tileEnc[(bx + 19) + (by + 6) * N], 68);
+  assert.equal(e66.inscribedSpan, 3);
+  assert.equal(e68.inscribedSpan, 3);
 
-  // Unrelated fence edit must not churn high enclosure IDs
+  // Unrelated fence edit must not churn enclosure IDs
   assert.equal(z.Sim.placeFence({ axis: 'x', i: bx + 20, j: by + 15 }, 'low_wood').ok, true);
-  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
-  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 66);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 68);
 
   // Save/load round-trip preserves Int32Array IDs
   const saved = z.Sim.save();
   assert.equal(z.Sim.load(saved), true);
   assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
-  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
-  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 66);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 68);
 
   // Legacy Int16Array save with wrapped negative/zero tileEnc entries heals cleanly on load
   const parsed = JSON.parse(saved);
-  const legacyTE = new Int16Array(z.state.tileEnc);
-  assert.equal(legacyTE[(bx + 23) + (by + 1) * N], -32768);
-  assert.equal(legacyTE[(bx + 19) + (by + 6) * N], 0);
+  const tile66 = (bx + 23) + (by + 1) * N;
+  const tile68 = (bx + 19) + (by + 6) * N;
+  const i66 = parsed.s.enclosures.findIndex(e => e.id === 66);
+  const i68 = parsed.s.enclosures.findIndex(e => e.id === 68);
+  assert.ok(i66 >= 0 && i68 >= 0, 'test fixtures must still be present');
+  parsed.s.enclosures[i66].id = 32768;
+  parsed.s.enclosures[i68].id = 65536;
+  delete parsed.s.nextEncId;   // old saves predate the dedicated counter
+  const legacyTE = new Int16Array(z.unpackArray(parsed.s.tileEnc));
+  for (const t of parsed.s.enclosures[i66].tiles) legacyTE[t] = 32768;
+  for (const t of parsed.s.enclosures[i68].tiles) legacyTE[t] = 65536;
+  assert.equal(legacyTE[tile66], -32768);
+  assert.equal(legacyTE[tile68], 0);
   parsed.s.tileEnc = Object.assign(z.packArray(legacyTE), { __t: 'i16' });
   assert.equal(z.Sim.load(JSON.stringify(parsed)), true);
   assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
+  assert.equal(z.state.tileEnc[tile66], 32768);
+  assert.equal(z.state.tileEnc[tile68], 65536);
   assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
   assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+
+  // After loading high legacy IDs without a saved counter, allocation continues above them
+  buildBox(bx + 30, by + 10, 3, 3);
+  assert.equal(z.Sim.enclosureAt(bx + 31, by + 11).id, 65537);
+});
+
+test('Dino realm definitions share the dedicated enclosure ID namespace', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 91, map: 'fern_meadow', money: 500000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 10, 10, 30, 28);
+  z.state.nextId = 50000;   // heavy guest/scenery churn must not affect enclosure IDs
+
+  const vTiles = [];
+  for (let j = 10; j <= 12; j++) for (let i = 10; i <= 12; i++) vTiles.push(i + j * z.N);
+  const virtual = z.Sim.realms.place('virtual', 'land', vTiles, { band: 1 });
+  assert.equal(virtual.ok, true, virtual.msg);
+  assert.equal(virtual.id, 1);
+  assert.equal(z.Sim.enclosureAt(11, 11).id, virtual.id);
+
+  // A fenced paddock built afterwards must not reuse the realm enclosure ID
+  for (let i = 16; i <= 19; i++) {
+    z.Sim.placeFence({ axis: 'x', i, j: 16 }, 'reinforced');
+    z.Sim.placeFence({ axis: 'x', i, j: 20 }, 'reinforced');
+  }
+  for (let j = 16; j < 20; j++) {
+    z.Sim.placeFence({ axis: 'z', i: 16, j }, 'reinforced');
+    z.Sim.placeFence({ axis: 'z', i: 20, j }, 'reinforced');
+  }
+  const land = z.Sim.enclosureAt(18, 18);
+  assert.ok(land);
+  assert.equal(land.id, 2);
+  assert.equal(z.Sim.enclosureAt(11, 11).id, virtual.id, 'realm enclosure IDs must survive later recomputes');
+
+  // Another realm definition continues the same counter
+  const more = [];
+  for (let j = 22; j <= 24; j++) for (let i = 10; i <= 12; i++) more.push(i + j * z.N);
+  const virtual2 = z.Sim.realms.place('virtual', 'land', more, { band: 1 });
+  assert.equal(virtual2.ok, true, virtual2.msg);
+  assert.equal(virtual2.id, 3);
+  assert.equal(z.Sim.enclosureAt(11, 11).id, virtual.id, 'earlier realm enclosure IDs must remain stable');
+});
+
+test('Dino enclosure ID seeding covers persisted realm and safari references', () => {
+  // Leave one fence edge open so no paddock exists yet, inject a stale reference, then
+  // close the box. The new ID must clear every persisted reference already in the save.
+  const openBox = (z, i0, j0) => {
+    const edges = [];
+    for (let i = i0; i <= i0 + 4; i++) {
+      edges.push({ axis: 'x', i, j: j0 });
+      edges.push({ axis: 'x', i, j: j0 + 4 });
+    }
+    for (let j = j0; j < j0 + 4; j++) {
+      edges.push({ axis: 'z', i: i0, j });
+      edges.push({ axis: 'z', i: i0 + 4, j });
+    }
+    const last = edges.pop();
+    for (const edge of edges) assert.equal(z.Sim.placeFence(edge, 'reinforced').ok, true);
+    return () => {
+      assert.equal(z.Sim.placeFence(last, 'reinforced').ok, true);
+      return z.Sim.enclosureAt(i0 + 2, j0 + 2);
+    };
+  };
+
+  const cases = [
+    ['realm definition', (z) => {
+      const tiles = [];
+      for (let j = 20; j <= 22; j++) for (let i = 20; i <= 22; i++) tiles.push(i + j * z.N);
+      const res = z.Sim.realms.place('virtual', 'land', tiles, { band: 1 });
+      assert.equal(res.ok, true, res.msg);
+      // Simulate an undo/legacy state where the definition survives but its enclosure does not
+      z.state.enclosures = z.state.enclosures.filter(e => e.id !== res.id);
+      return res.id;
+    }],
+    ['feeding show', (z) => {
+      z.state.realms.show = { obj: 0, enc: 42000, from: 0, until: z.state.day + 1, x: 0, z: 0, tx: 0, tz: 0 };
+      return 42000;
+    }],
+    ['safari zone config', (z) => { z.state.safari.zones[43000] = { corr: 0 }; return 43000; }],
+    ['mainland away home', (z) => { z.state.safari.away.push({ id: 1, animal: { home: 0, enc: 0 }, home: 44000 }); return 44000; }],
+    ['mainland animal home', (z) => { z.state.safari.away.push({ id: 2, animal: { home: 45000, enc: 0 }, home: 0 }); return 45000; }],
+    ['live escaped animal', (z) => {
+      const a = z.Sim.spawnAnimal('dryosaurus', 5, 5);
+      a.enc = 0; a.home = 46000; a.state = 'escaped';
+      return 46000;
+    }],
+  ];
+
+  for (const [name, inject] of cases) {
+    const z = game();
+    z.Sim.newGame({ seed: 93, map: 'fern_meadow', money: 500000 });
+    z.state.unlocked.star = 5;
+    setupFlatZone(z, 10, 10, 30, 28);
+    const close = openBox(z, 10, 10);
+    const stale = inject(z);
+    z.state.nextEncId = 1;   // legacy save: persisted counter absent/behind
+    const enc = close();
+    assert.ok(enc, `${name} case should build a paddock`);
+    assert.equal(enc.id, stale + 1, `${name} must seed the enclosure counter past stale references`);
+  }
 });
