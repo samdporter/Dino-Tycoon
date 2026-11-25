@@ -13,7 +13,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     N = n; NN = n * n; EW = n + 1;
     DT4[0] = -n; DT4[1] = 1; DT4[2] = n; DT4[3] = -1;
     GATE_I0 = Math.floor(n / 2) - 1; GATE_J = n - 1;
-    if (RT) { RT.wallDist = new Uint8Array(NN); RT.clearDist = new Uint8Array(NN); }
+    if (RT) {
+      if (!RT.wallDist || RT.wallDist.length !== NN) RT.wallDist = new Uint8Array(NN);
+      if (!RT.clearDist || RT.clearDist.length !== NN) RT.clearDist = new Uint8Array(NN);
+      if (!RT.queue || RT.queue.length !== NN) { RT.queue = new Int32Array(NN); RT.prev = new Int32Array(NN); RT.stamp = new Int32Array(NN); }
+    }
     if (Z.moatCtx) Z.moatCtx.N = n;
     if (Z.realmCtx) Z.realmCtx.N = n;
     if (Z.powerCtx) Z.powerCtx.N = n;
@@ -5797,12 +5801,29 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return v;
     });
   }
-  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array, coasterRail: Uint8Array, coasterElev: Int8Array, coasterSpec: Uint8Array };
+  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int32Array, dirt: Uint8Array, ditch: Uint8Array, rail: Uint8Array, coasterRail: Uint8Array, coasterElev: Int8Array, coasterSpec: Uint8Array };
   function arrLenFor(n) {
     var nn = n * n;
     return { terrain: nn, path: nn, fenceX: n * (n + 1), fenceZ: (n + 1) * n, tileObj: nn, tileEnc: nn, dirt: nn, ditch: nn, rail: nn, coasterRail: nn, coasterElev: nn, coasterSpec: nn };
   }
   var ARR_OPTIONAL = { ditch: 1, rail: 1, coasterRail: 1, coasterElev: 1, coasterSpec: 1 };   // moats, monorail & coaster packages: old saves default to empty layers
+  function migrateTileEnc(v, enclosures) {
+    if (v instanceof Int32Array) return v;
+    var out = new Int32Array(v);
+    if (Array.isArray(enclosures)) {
+      for (var ei = 0; ei < enclosures.length; ei++) {
+        var enc = enclosures[ei];
+        if (!enc || !(enc.id > 0) || !Array.isArray(enc.tiles)) continue;
+        var wrapped = (enc.id << 16) >> 16;
+        if (wrapped === enc.id) continue;
+        for (var ti = 0; ti < enc.tiles.length; ti++) {
+          var t = enc.tiles[ti];
+          if (t >= 0 && t < out.length && out[t] === wrapped) out[t] = enc.id;
+        }
+      }
+    }
+    return out;
+  }
   function load(str) {
     var obj, ns, prevN = N, gridN = 56;
     try {
@@ -5817,6 +5838,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (v && v.__t) v = Z.unpackArray(v);
         if (!v && ARR_OPTIONAL[f]) v = new ARR_FIELDS[f](expLen[f]);
         if (!v || v.length !== expLen[f]) return false;
+        if (f === 'tileEnc') v = migrateTileEnc(v, ns.enclosures);
         ns[f] = v;
       }
       Z.setGridSize(gridN);

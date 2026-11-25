@@ -520,9 +520,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function encOfTile(t) { var id = S.tileEnc[t]; return id ? encById(id) : null; }
 
   function recomputeEnclosures() {
-    var old = S.enclosures || [], oldMap = {}, k;
+    var old = S.enclosures || [], oldTE = S.tileEnc.slice(), oldMap = {}, k;
     for (k = 0; k < old.length; k++) oldMap[old[k].id] = old[k];
-    var visited = new Uint8Array(NN), newEncs = [], nextEncId = 1;
+    var visited = new Uint8Array(NN), regions = [], newEncs = [], nextEncId = 1;
     for (k = 0; k < old.length; k++) if (old[k].id >= nextEncId) nextEncId = old[k].id + 1;
     S.tileEnc.fill(0);
     RT.encx = {}; RT.eMap = {};
@@ -550,24 +550,33 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (ti === N - 1) { if (!S.fenceZ[(ti + 1) + tj * (N + 1)]) leaks = true; }
         else if (!S.fenceZ[(ti + 1) + tj * (N + 1)]) { n = t + 1; if (!visited[n]) { visited[n] = 1; stack.push(n); } }
       }
-      if (leaks || tiles.length < 9 || tiles.length > MAX_ENC_TILES) continue;
-      // find existing matching enclosure
-      var match = null;
-      for (k = 0; k < tiles.length; k++) {
-        var prevId = oldMap ? 0 : 0; // look for overlap with old enclosures
-        for (var oid in oldMap) {
-          var oe = oldMap[oid];
-          if (oe && oe.tiles && oe.tiles.indexOf(tiles[k]) >= 0) { match = oe; delete oldMap[oid]; break; }
-        }
-        if (match) break;
-      }
+      if (leaks || tiles.length > MAX_ENC_TILES) continue;
+      regions.push(tiles);
+    }
+    // match existing enclosures by largest tile overlap
+    var pairs = [];
+    for (var r = 0; r < regions.length; r++) {
+      var cnt = {}, tl = regions[r];
+      for (k = 0; k < tl.length; k++) { var o = oldTE[tl[k]]; if (o) cnt[o] = (cnt[o] || 0) + 1; }
+      for (var oid in cnt) pairs.push([cnt[oid], r, +oid]);
+    }
+    pairs.sort(function (a, b) { return b[0] - a[0]; });
+    var assigned = new Array(regions.length), used = {};
+    for (k = 0; k < pairs.length; k++) {
+      var pr = pairs[k];
+      if (assigned[pr[1]] !== undefined || used[pr[2]]) continue;
+      assigned[pr[1]] = pr[2]; used[pr[2]] = 1;
+    }
+    for (r = 0; r < regions.length; r++) {
+      var tiles2 = regions[r];
+      var match = assigned[r] !== undefined ? oldMap[assigned[r]] : null;
       var eid = match ? match.id : nextEncId++;
       var name = match ? match.name : ('Enclosure ' + eid);
-      var enc = { id: eid, name: name, tiles: tiles, area: tiles.length, minFence: 99, see: 1, poop: match ? match.poop : 0, foodLevel: match ? match.foodLevel : 1, waterLevel: match ? match.waterLevel : 1, breach: match ? match.breach : 0, animals: [], species: [], suitability: {}, viewTiles: [] };
+      var enc = { id: eid, name: name, tiles: tiles2, area: tiles2.length, minFence: 99, see: 1, poop: match ? match.poop : 0, foodLevel: match ? match.foodLevel : 1, waterLevel: match ? match.waterLevel : 1, breach: match ? match.breach : 0, animals: [], species: [], suitability: {}, viewTiles: [] };
       var sx = 0, sz = 0;
-      for (k = 0; k < tiles.length; k++) { var et = tiles[k]; S.tileEnc[et] = eid; sx += cxOf(et); sz += czOf(et); }
-      enc.cx = tiles.length ? sx / tiles.length : N * TILE / 2;
-      enc.cz = tiles.length ? sz / tiles.length : N * TILE / 2;
+      for (k = 0; k < tiles2.length; k++) { var et = tiles2[k]; S.tileEnc[et] = eid; sx += cxOf(et); sz += czOf(et); }
+      enc.cx = tiles2.length ? sx / tiles2.length : N * TILE / 2;
+      enc.cz = tiles2.length ? sz / tiles2.length : N * TILE / 2;
       newEncs.push(enc); RT.eMap[eid] = enc;
     }
     S.enclosures = newEncs;
@@ -4792,8 +4801,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return v;
     });
   }
-  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int16Array, dirt: Uint8Array };
+  var ARR_FIELDS = { terrain: Uint8Array, path: Uint8Array, fenceX: Uint8Array, fenceZ: Uint8Array, tileObj: Int32Array, tileEnc: Int32Array, dirt: Uint8Array };
   var ARR_OPTIONAL = { coasterRail: Uint8Array, coasterElev: Int8Array, coasterSpec: Uint8Array };
+  function migrateTileEnc(v, enclosures) {
+    if (v instanceof Int32Array) return v;
+    var out = new Int32Array(v);
+    if (Array.isArray(enclosures)) {
+      for (var ei = 0; ei < enclosures.length; ei++) {
+        var enc = enclosures[ei];
+        if (!enc || !(enc.id > 0) || !Array.isArray(enc.tiles)) continue;
+        var wrapped = (enc.id << 16) >> 16;
+        if (wrapped === enc.id) continue;
+        for (var ti = 0; ti < enc.tiles.length; ti++) {
+          var t = enc.tiles[ti];
+          if (t >= 0 && t < out.length && out[t] === wrapped) out[t] = enc.id;
+        }
+      }
+    }
+    return out;
+  }
   function expectedArrLen(f, gn) {
     if (f === 'fenceX') return gn * (gn + 1);
     if (f === 'fenceZ') return (gn + 1) * gn;
@@ -4815,6 +4841,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var v = ns[f];
         if (v && v.__t) v = Z.unpackArray(v);
         if (!v || v.length !== expectedArrLen(f, gn)) return false;
+        if (f === 'tileEnc') v = migrateTileEnc(v, ns.enclosures);
         ns[f] = v;
       }
       for (var fo in ARR_OPTIONAL) {

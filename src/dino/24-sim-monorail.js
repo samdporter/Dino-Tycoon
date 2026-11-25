@@ -342,7 +342,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var s = S(), R = MD.viewRadius;
     for (var li = 0; li < x.lines.length; li++) {
       var L = x.lines[li], n = L.nodes.length;
-      L.ovE = new Int16Array(n * 3); L.ovW = new Float32Array(n * 3); L.ovD = new Uint8Array(n * 3);
+      L.ovE = new Int32Array(n * 3); L.ovW = new Float32Array(n * 3); L.ovD = new Uint8Array(n * 3);
       var over = {};
       for (var k = 0; k < n; k++) {
         var list = footprintOverlooks([L.nodes[k]], R);

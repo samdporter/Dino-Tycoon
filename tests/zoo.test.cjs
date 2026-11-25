@@ -3441,3 +3441,91 @@ test('a walking Zoo animal blocked by a resting herd-mate gives up instead of wa
     assert.ok(walkingInPlace < 60, `Walker kept its walk animation for ${walkingInPlace} ticks without moving`);
   }
 });
+
+test('Zoo records small enclosures (<9 tiles), many small enclosures, IDs above 32767, and migrates legacy i16 saves', () => {
+  const { z } = zoo();
+  z.Sim.newGame({ seed: 4456, map: 'grassland', money: 1e7 });
+  const N = z.N;
+  const { i0: mx0, j0: my0, i1: mx1, j1: my1 } = z.state.map;
+  for (let j = my0 + 1; j <= Math.min(my1 - 1, my0 + 30); j++) for (let i = mx0 + 1; i <= Math.min(mx1 - 1, mx0 + 36); i++) {
+    const t = i + j * N;
+    const oid = z.state.tileObj[t];
+    if (oid) {
+      const o = z.state.objects.find(x => x.id === oid);
+      if (o) z.Sim.bulldoze(o.i, o.j);
+    }
+    z.state.terrain[t] = 0;
+    z.state.elev[i + j * (N + 1)] = 0;
+  }
+
+  const putFence = (edge) => {
+    const r = z.Sim.placeFence(edge, 'low_wood');
+    assert.ok(r.ok || r.msg === 'Already there', `placeFence failed: ${r.msg}`);
+  };
+  const buildBox = (i0, j0, w, h) => {
+    for (let i = i0; i < i0 + w; i++) {
+      putFence({ axis: 'x', i, j: j0 });
+      putFence({ axis: 'x', i, j: j0 + h });
+    }
+    for (let j = j0; j < j0 + h; j++) {
+      putFence({ axis: 'z', i: i0, j });
+      putFence({ axis: 'z', i: i0 + w, j });
+    }
+  };
+
+  // 1. Small enclosures under 9 tiles (2x2 = 4 tiles, 2x4 = 8 tiles) and many small adjacent pens
+  const bx = mx0 + 2, by = my0 + 2;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    buildBox(bx + c * 2, by + r * 2, 2, 2);
+  }
+  buildBox(bx, by + 18, 4, 2);
+  assert.equal(z.state.enclosures.length, 65, 'all 64 2x2 enclosures and the 4x2 enclosure should be recorded');
+  assert.equal(z.Sim.enclosureAt(bx, by).area, 4);
+  assert.equal(z.Sim.enclosureAt(bx + 1, by + 19).area, 8);
+
+  // 2. IDs crossing signed 16-bit boundary (32767 -> 32768) and 65536
+  const lastEnc = z.state.enclosures[z.state.enclosures.length - 1];
+  lastEnc.id = 32767;
+  for (const t of lastEnc.tiles) z.state.tileEnc[t] = 32767;
+  buildBox(bx + 18, by, 3, 3);
+  const e32768 = z.Sim.enclosureAt(bx + 19, by + 1);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array', 'tileEnc must be Int32Array');
+  assert.equal(e32768 && e32768.id, 32768);
+  assert.equal(z.state.tileEnc[(bx + 19) + (by + 1) * N], 32768);
+  assert.equal(e32768.inscribedSpan, 3);
+
+  e32768.id = 65535;
+  for (const t of e32768.tiles) z.state.tileEnc[t] = 65535;
+  buildBox(bx + 22, by, 3, 3);
+  const e65536 = z.Sim.enclosureAt(bx + 23, by + 1);
+  assert.equal(e65536 && e65536.id, 65536);
+  assert.equal(z.state.tileEnc[(bx + 23) + (by + 1) * N], 65536);
+  assert.equal(e65536.inscribedSpan, 3);
+
+  // Adopting an animal into an enclosure with ID >= 65536 works
+  const adopt = z.Sim.addAnimal('ostrich', bx + 23, by + 1);
+  assert.equal(adopt.ok, true, `adopt failed: ${adopt.msg}`);
+
+  // Unrelated fence edit preserves high enclosure IDs
+  assert.equal(z.Sim.placeFence({ axis: 'x', i: bx + 20, j: by + 15 }, 'low_wood').ok, true);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 1).id, 65535);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 65536);
+
+  // Save/load round-trip preserves Int32Array IDs
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 1).id, 65535);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 65536);
+
+  // Legacy Int16Array save with wrapped negative/zero tileEnc entries heals cleanly on load
+  const parsed = JSON.parse(saved);
+  const legacyTE = new Int16Array(z.state.tileEnc);
+  assert.equal(legacyTE[(bx + 19) + (by + 1) * N], -1);
+  assert.equal(legacyTE[(bx + 23) + (by + 1) * N], 0);
+  parsed.s.tileEnc = Object.assign(z.packArray(legacyTE), { __t: 'i16' });
+  assert.equal(z.Sim.load(JSON.stringify(parsed)), true);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 1).id, 65535);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 65536);
+});

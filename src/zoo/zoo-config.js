@@ -13,7 +13,7 @@ window.Z.GameConfig = {
       elev: new Int8Array((n + 1) * (n + 1)), map: { id: 'meadow', name: 'Grassland Sanctuary', i0: 0, j0: 0, i1: n - 1, j1: n - 1 },
       terrain: new Uint8Array(n * n), path: new Uint8Array(n * n),
       fenceX: new Uint8Array(n * (n + 1)), fenceZ: new Uint8Array((n + 1) * n),
-      tileObj: new Int32Array(n * n), tileEnc: new Int16Array(n * n), dirt: new Uint8Array(n * n),
+      tileObj: new Int32Array(n * n), tileEnc: new Int32Array(n * n), dirt: new Uint8Array(n * n),
       coasterRail: new Uint8Array(n * n), coasterElev: new Int8Array(n * n), coasterSpec: new Uint8Array(n * n),
       coaster: { trains: [], nextTrain: 1, stats: { riders: 0, income: 0, boardings: 0, breakdowns: 0, maxExcitement: 0 } },
       objects: [], enclosures: [], animals: [], guests: [], staff: [], finance: { today: window.Z.emptyFinance(), history: [] },

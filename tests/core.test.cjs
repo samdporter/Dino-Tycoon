@@ -2373,3 +2373,82 @@ test('a walking dinosaur blocked by a resting herd-mate gives up instead of walk
     assert.ok(walkingInPlace < 60, `Walker kept its walk animation for ${walkingInPlace} ticks without moving`);
   }
 });
+
+test('Dino enclosures remain recorded across many small enclosures, IDs above 32767, and legacy i16 save migration', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 4455, map: 'fern_meadow', difficulty: 'easy', money: 1e7 });
+  const N = z.N;
+  const { i0: mx0, j0: my0, i1: mx1, j1: my1 } = z.state.map;
+  setupFlatZone(z, mx0 + 1, my0 + 1, Math.min(mx1 - 1, mx0 + 36), Math.min(my1 - 1, my0 + 30));
+
+  const putFence = (edge) => {
+    const r = z.Sim.placeFence(edge, 'low_wood');
+    assert.ok(r.ok || r.msg === 'Already there', `placeFence failed: ${r.msg}`);
+  };
+  const buildBox = (i0, j0, w, h) => {
+    for (let i = i0; i < i0 + w; i++) {
+      putFence({ axis: 'x', i, j: j0 });
+      putFence({ axis: 'x', i, j: j0 + h });
+    }
+    for (let j = j0; j < j0 + h; j++) {
+      putFence({ axis: 'z', i: i0, j });
+      putFence({ axis: 'z', i: i0 + w, j });
+    }
+  };
+
+  // 1. Many adjacent 2x2 small enclosures (8x8 = 64 pens)
+  const bx = mx0 + 2, by = my0 + 2;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    buildBox(bx + c * 2, by + r * 2, 2, 2);
+  }
+  assert.equal(z.state.enclosures.length, 64, 'all 64 small 2x2 enclosures should be recorded');
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const e = z.Sim.enclosureAt(bx + c * 2, by + r * 2);
+    assert.ok(e && e.area === 4, `small enclosure (${c},${r}) must be recorded`);
+  }
+
+  // 2. IDs crossing signed 16-bit boundary (32767 -> 32768, 32769) and 65536
+  z.state.nextId = 32767;
+  buildBox(bx + 18, by, 3, 3);
+  buildBox(bx + 22, by, 3, 3);
+  buildBox(bx + 26, by, 3, 3);
+  z.state.nextId = 65536;
+  buildBox(bx + 18, by + 5, 3, 3);
+
+  const e32767 = z.Sim.enclosureAt(bx + 19, by + 1);
+  const e32768 = z.Sim.enclosureAt(bx + 23, by + 1);
+  const e32769 = z.Sim.enclosureAt(bx + 27, by + 1);
+  const e65536 = z.Sim.enclosureAt(bx + 19, by + 6);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array', 'tileEnc must be Int32Array');
+  assert.equal(e32767 && e32767.id, 32767);
+  assert.equal(e32768 && e32768.id, 32768);
+  assert.equal(e32769 && e32769.id, 32769);
+  assert.equal(e65536 && e65536.id, 65536);
+  assert.equal(z.state.tileEnc[(bx + 23) + (by + 1) * N], 32768);
+  assert.equal(z.state.tileEnc[(bx + 19) + (by + 6) * N], 65536);
+  assert.equal(e32768.inscribedSpan, 3);
+  assert.equal(e65536.inscribedSpan, 3);
+
+  // Unrelated fence edit must not churn high enclosure IDs
+  assert.equal(z.Sim.placeFence({ axis: 'x', i: bx + 20, j: by + 15 }, 'low_wood').ok, true);
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+
+  // Save/load round-trip preserves Int32Array IDs
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+
+  // Legacy Int16Array save with wrapped negative/zero tileEnc entries heals cleanly on load
+  const parsed = JSON.parse(saved);
+  const legacyTE = new Int16Array(z.state.tileEnc);
+  assert.equal(legacyTE[(bx + 23) + (by + 1) * N], -32768);
+  assert.equal(legacyTE[(bx + 19) + (by + 6) * N], 0);
+  parsed.s.tileEnc = Object.assign(z.packArray(legacyTE), { __t: 'i16' });
+  assert.equal(z.Sim.load(JSON.stringify(parsed)), true);
+  assert.equal(z.state.tileEnc.constructor.name, 'Int32Array');
+  assert.equal(z.Sim.enclosureAt(bx + 23, by + 1).id, 32768);
+  assert.equal(z.Sim.enclosureAt(bx + 19, by + 6).id, 65536);
+});
