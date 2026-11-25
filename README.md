@@ -8,6 +8,16 @@ On iPhone, open the link in Safari and choose **Share → Add to Home Screen** f
 
 Choose **Dino Tycoon** (Amber Acres) or **Zoo Tycoon** (Wild Acres Zoo) on either title screen. Each game keeps its own park and settings.
 
+## Breakages, Outages & Maintenance Staff
+
+Breakages and outages appear directly in the 3D park on the affected fence panel, building, or ride, with pulsing hazard beacons, smoke/sparks, stopped animations, and clickable alert banners/Overview links.
+
+- **One-off emergency callouts (no permanent staff needed)**: Open any broken enclosure, rollercoaster, generator, substation/pylon, sealed lab (Dino), or power-cut screen/building and click **Call Fence Crew**, **Call Mechanic**, **Call Electrician**, **Call Line Crew**, or **Call Decon Crew** for a fast paid fix.
+- **Handyman (`🛠️`, £140 hire / £55/day)**: Budget generalist. Walks slower and takes ~5.5–8s per repair, but can fix broken fence panels, rollercoasters (to 90% condition), and power faults/cuts, and sweeps paths/empties bins when free.
+- **Mechanic (`🔧`, £300 hire / £75–£85/day)**: Ride & mechanical specialist. Rapidly services and repairs rollercoasters (to 100% condition, 2.4s), broken generators in Dino (3.0s), and breached fences (2.5s).
+- **Electrician (`⚡`, £320–£350 hire / £85–£90/day)**: Power specialist. Fastest repair for power cuts, downed substations/pylons, broken generators (1.8–2.5s), and breached fences (2.0–2.2s), and provides a 1.5× power-grid reliability/repair bonus in Dino.
+- **Ranger / Keeper (`🧑‍🌾`, £150 hire / £60/day)**: Feeds/waters/cleans enclosures and repairs fence breaches via radio dispatch.
+
 ## Saves
 
 Parks autosave in your browser. Saves stay with that browser and site address; they do not sync between devices or transfer automatically from localhost to the hosted game. Browser data can be cleared, private browsing may make saves temporary or unavailable, and abruptly closing the game can lose recent changes.
