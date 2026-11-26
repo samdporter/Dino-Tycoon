@@ -48,17 +48,34 @@
     return { x: fp.cx, z: fp.cz, y: Z.World.groundY(fp.cx, fp.cz) + 0.3 };
   }
   function ease(f) { return f * f * (3 - 2 * f); }
+  function disposeMesh(m) {
+    if (!m) return;
+    if (scene) scene.remove(m);
+    if (m.traverse) m.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+  }
   function frameBoats(dt) {
     var M = Z.Models.boats, seen = new Set();
     var vessels = Z.Boats.vessels ? Z.Boats.vessels() : [];
     vessels.forEach(function (v) {
       seen.add(v);
+      var wantKind = v.kind === 'ferry' ? (v.large ? 'large_ferry' : 'ferry') : 'service';
       var m = boatMeshes.get(v);
-      if (!m) { m = v.kind === 'ferry' ? (M.ferry ? M.ferry() : M.boat()) : (M.serviceBoat ? M.serviceBoat() : M.boat()); scene.add(m); boatMeshes.set(v, m); }
+      if (m && m.userData.vKind !== wantKind) {
+        disposeMesh(m);
+        boatMeshes.delete(v);
+        m = null;
+      }
+      if (!m) {
+        m = v.kind === 'ferry'
+          ? (v.large && M.largeFerry ? M.largeFerry() : (M.ferry ? M.ferry() : M.boat()))
+          : (M.serviceBoat ? M.serviceBoat() : M.boat());
+        m.userData.vKind = wantKind;
+        scene.add(m); boatMeshes.set(v, m);
+      }
       var wl = waterY(v.x, v.z);
       m.position.set(v.x, wl + 0.05 + bob(v.x, v.z), v.z); m.rotation.y = v.h;
       if (v.kind === 'ferry' && v.pax) {
-        for (var k = 0; k < v.pax.length; k++) v.pax[k].e.absY = wl + 0.35;
+        for (var k = 0; k < v.pax.length; k++) v.pax[k].e.absY = wl + (v.pax[k].seatY || 0.35);
       } else if (v.kind === 'service' && v.staff) {
         v.staff.absY = wl + 0.35;
       }
@@ -67,12 +84,12 @@
       if (!tr.air) return;
       seen.add(tr);
       var m = boatMeshes.get(tr);
-      if (!m) { m = M.heli(); scene.add(m); boatMeshes.set(tr, m); }
+      if (!m) { m = M.heli(); m.userData.vKind = 'heli'; scene.add(m); boatMeshes.set(tr, m); }
       var f = Math.min(1, tr.d / Math.max(1, tr.len)), a = padPose(tr.from.o.id), y = (a ? a.y : 0) + Math.sin(f * PI) * D.boats.airAlt;
       m.position.set(tr.x, y, tr.z); m.rotation.y = tr.h; m.userData.rotor.rotation.y += dt * 30;
       tr.e.absY = -6;
     });
-    boatMeshes.forEach(function (m, key) { if (!seen.has(key)) { scene.remove(m); boatMeshes.delete(key); } });
+    boatMeshes.forEach(function (m, key) { if (!seen.has(key)) { disposeMesh(m); boatMeshes.delete(key); } });
   }
   function frameHelis(dt) {
     var M = Z.Models.boats, seen = new Set();
@@ -89,8 +106,8 @@
   }
   function clearAll() {
     deckDirty = true;
-    boatMeshes.forEach(function (m) { scene && scene.remove(m); }); boatMeshes.clear();
-    helis.forEach(function (m) { scene && scene.remove(m); }); helis.clear();
+    boatMeshes.forEach(function (m) { disposeMesh(m); }); boatMeshes.clear();
+    helis.forEach(function (m) { disposeMesh(m); }); helis.clear();
   }
   function frame(dt) {
     if (!scene) { try { scene = Z.World.scene(); } catch (e) { scene = null; } if (!scene) return; }

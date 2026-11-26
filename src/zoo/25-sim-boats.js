@@ -7,8 +7,8 @@
   if (!Z || !C) return;
 
   var TILE = C.TILE, INF = C.INF, BD = C.BD;
-  var FERRY_SPEED = 6.5, SERVICE_SPEED = 7.5, HELI_SPEED = 12;
-  var FERRY_CAP = 16, FERRY_DWELL = 6, FERRY_MAX = 4;
+  var FERRY_SPEED = 6.5, LARGE_FERRY_SPEED = 8.0, SERVICE_SPEED = 7.5, HELI_SPEED = 12;
+  var FERRY_CAP = 16, LARGE_FERRY_CAP = 48, FERRY_DWELL = 6, FERRY_MAX = 4, LARGE_FERRY_MAX = 6;
   var SERVICE_PER_PIER = 2, SERVICE_MAX_PER_NET = 6;
   var PIER_QUEUE_LIMIT = 75;
   var LAND_T = 4, WAIT_T = 3, BOARD_T = 1.5, CLIMB_T = 4, HELI_ALT = 14, PAD_Y = 0.35;
@@ -19,7 +19,20 @@
   (function () {
     for (var r = 0; r < 8; r++) {
       var z = 1.65 - r * 0.48;
-      FERRY_SEATS.push({ x: -0.55, z: z }, { x: 0.55, z: z });
+      FERRY_SEATS.push({ x: -0.55, z: z, y: 0.3 }, { x: 0.55, z: z, y: 0.3 });
+    }
+  })();
+
+  // 48 distinct seats for double-deck large ferries: 24 lower deck (y=0.3) + 24 upper deck (y=1.35)
+  var LARGE_FERRY_SEATS = [];
+  (function () {
+    var cols = [-1.05, -0.35, 0.35, 1.05], r, c;
+    for (r = 0; r < 6; r++) {
+      var zr = 1.5 - r * 0.70;
+      for (c = 0; c < cols.length; c++) {
+        LARGE_FERRY_SEATS.push({ x: cols[c], z: zr, y: 0.3 });
+        LARGE_FERRY_SEATS.push({ x: cols[c], z: zr, y: 1.35 });
+      }
     }
   })();
 
@@ -33,6 +46,16 @@
     for (var k = 0; k < piers.length; k++) if (piers[k].o.id === id) return piers[k];
     return null;
   }
+  function netHasLargePier(net) {
+    for (var k = 0; k < piers.length; k++) {
+      var p = piers[k];
+      if (p.guest && p.net === net && BD[p.o.type] && BD[p.o.type].largePier) return true;
+    }
+    return false;
+  }
+  function ferryCapForNet(net) { return netHasLargePier(net) ? LARGE_FERRY_CAP : FERRY_CAP; }
+  function ferryMaxForNet(net) { return netHasLargePier(net) ? LARGE_FERRY_MAX : FERRY_MAX; }
+  function ferrySpeedForNet(net) { return netHasLargePier(net) ? LARGE_FERRY_SPEED : FERRY_SPEED; }
   function centreOf(o) {
     var fp = C.objFootprint(o);
     return { x: (fp.i0 + fp.w / 2) * TILE, z: (fp.j0 + fp.h / 2) * TILE };
@@ -162,7 +185,7 @@
     var ft = B ? frontTile(B) : -1;
     if (ft < 0 && fallbackTile >= 0 && C.getS().path[fallbackTile]) ft = fallbackTile;
     if (ft < 0) ft = nearestPathTile(g.x, g.z);
-    g.pend = null; g.absY = null;
+    g.pend = null; g.absY = null; g.boatY = 0;
     g.state = pend.state; g.gt = pend.gt; g.gid = pend.gid; g.dk = pend.dk; g.spot = pend.spot; g.pk = pend.pk;
     g.ni = -1; g.glide = 0; g.gAge = 0;
     if (ft >= 0) { g.x = C.cxOf(ft); g.z = C.czOf(ft); g.ti = ft; g.pv = RT.pathVer; }
@@ -182,7 +205,7 @@
     } else {
       C.releaseClaims(s); s.tk = null; s.route = null;
     }
-    s.hop = null; s.absY = null; s.state = advanceRoute ? 'walk' : 'idle'; s.speed = 0;
+    s.hop = null; s.absY = null; s.boatY = 0; s.state = advanceRoute ? 'walk' : 'idle'; s.speed = 0;
   }
 
   function moorPos(pier, idx, count, isFerry) {
@@ -236,36 +259,41 @@
 
   function placeFerryRiders(f) {
     var c = Math.cos(f.heading), s = Math.sin(f.heading), k, seat;
+    var seats = f.large ? LARGE_FERRY_SEATS : FERRY_SEATS;
     for (k = 0; k < f.pax.length; k++) {
       var px = f.pax[k], g = px.g;
       if (!g || g.state !== 'boat') continue;
-      seat = FERRY_SEATS[px.seat % FERRY_SEATS.length];
+      seat = seats[px.seat % seats.length];
       g.x = f.x + seat.x * c + seat.z * s;
       g.z = f.z - seat.x * s + seat.z * c;
+      g.boatY = seat.y || 0.3;
       g.heading = f.heading;
     }
     for (k = 0; k < f.staffPax.length; k++) {
       var sp = f.staffPax[k], st = sp.s;
       if (!st || st.state !== 'boat') continue;
-      seat = FERRY_SEATS[sp.seat % FERRY_SEATS.length];
+      seat = seats[sp.seat % seats.length];
       st.x = f.x + seat.x * c + seat.z * s;
       st.z = f.z - seat.x * s + seat.z * c;
+      st.boatY = seat.y || 0.3;
       st.heading = f.heading;
     }
   }
 
   function nextFreeSeat(f) {
-    var used = {}, k;
+    var used = {}, k, cap = f.cap || ferryCapForNet(f.net);
     for (k = 0; k < f.pax.length; k++) used[f.pax[k].seat] = true;
     for (k = 0; k < f.staffPax.length; k++) used[f.staffPax[k].seat] = true;
-    for (k = 0; k < FERRY_CAP; k++) if (!used[k]) return k;
+    for (k = 0; k < cap; k++) if (!used[k]) return k;
     return 0;
   }
 
   function spawnFerryAt(pier) {
     var mp = moorPos(pier, 0, 1, true);
+    var isLarge = netHasLargePier(pier.net);
     var f = {
       id: nextVid++, kind: 'ferry', net: pier.net, state: 'wait',
+      large: isLarge, cap: isLarge ? LARGE_FERRY_CAP : FERRY_CAP,
       atPier: pier, fromPier: null, toPier: null, dwell: FERRY_DWELL,
       pax: [], staffPax: [], pts: null, seg: TILE, d: 0, len: 0,
       x: mp.x, z: mp.z, heading: mp.heading, y: 0, retire: false
@@ -287,12 +315,13 @@
     return sb;
   }
 
-  function targetFerriesForNet(guestPiers) {
+  function targetFerriesForNet(net, guestPiers) {
     if (guestPiers.length < 2) return 0;
+    var maxF = ferryMaxForNet(net);
     var best = 0;
     for (var k = 0; k < guestPiers.length; k++) {
       var fv = guestPiers[k].o.ferries;
-      if (typeof fv === 'number' && fv >= 1) best = Math.max(best, Math.min(FERRY_MAX, Math.round(fv)));
+      if (typeof fv === 'number' && fv >= 1) best = Math.max(best, Math.min(maxF, Math.round(fv)));
     }
     var n = best || 1;
     if (best > 0) {
@@ -319,6 +348,8 @@
         var atP = f.atPier ? pierById(f.atPier.o.id) : null;
         if (atP && atP.guest && guestNets[atP.net] && guestNets[atP.net].length >= 2) {
           f.atPier = atP; f.net = atP.net;
+          f.large = netHasLargePier(f.net);
+          f.cap = ferryCapForNet(f.net);
           // Ensure riders' destinations are still valid on this net
           for (var i = f.pax.length - 1; i >= 0; i--) {
             var px = f.pax[i], dp = pierById(px.b);
@@ -334,6 +365,7 @@
               f.staffPax.splice(i, 1);
             }
           }
+          placeFerryRiders(f);
           keptFerries.push(f);
         } else {
           var fb = atP ? atP.front : nearestPathTile(f.x, f.z);
@@ -345,6 +377,8 @@
         var toP = f.toPier ? pierById(f.toPier.o.id) : null;
         if (toP && toP.guest && guestNets[toP.net] && guestNets[toP.net].length >= 2) {
           f.toPier = toP; f.fromPier = (fromP && fromP.net === toP.net) ? fromP : toP; f.net = toP.net;
+          f.large = netHasLargePier(f.net);
+          f.cap = ferryCapForNet(f.net);
           for (i = f.pax.length - 1; i >= 0; i--) {
             var px2 = f.pax[i], dp2 = pierById(px2.b);
             if (!dp2 || !dp2.guest || dp2.net !== f.net) px2.b = toP.o.id;
@@ -353,9 +387,12 @@
             var sp2 = f.staffPax[i], sdp2 = pierById(sp2.toPierId);
             if (!sdp2 || !sdp2.guest || sdp2.net !== f.net) { sp2.toPierId = toP.o.id; sp2.to = toP.front; }
           }
+          placeFerryRiders(f);
           keptFerries.push(f);
         } else if (fromP && fromP.guest && guestNets[fromP.net] && guestNets[fromP.net].length >= 2) {
           f.toPier = fromP; f.fromPier = fromP; f.net = fromP.net;
+          f.large = netHasLargePier(f.net);
+          f.cap = ferryCapForNet(f.net);
           reversePathFromCurrent(f, fromP);
           for (i = f.pax.length - 1; i >= 0; i--) {
             var px3 = f.pax[i], dp3 = pierById(px3.b);
@@ -365,6 +402,7 @@
             var sp3 = f.staffPax[i], sdp3 = pierById(sp3.toPierId);
             if (!sdp3 || !sdp3.guest || sdp3.net !== f.net) { sp3.toPierId = fromP.o.id; sp3.to = fromP.front; }
           }
+          placeFerryRiders(f);
           keptFerries.push(f);
         } else {
           var fb2 = toP ? toP.front : (fromP ? fromP.front : nearestPathTile(f.x, f.z));
@@ -377,8 +415,14 @@
 
     for (var net in guestNets) {
       var gps = guestNets[net];
-      if (gps.length < 2) continue;
-      var target = targetFerriesForNet(gps);
+      var maxF = ferryMaxForNet(+net);
+      if (gps.length < 2) {
+        for (k = 0; k < gps.length; k++) {
+          if (typeof gps[k].o.ferries === 'number') gps[k].o.ferries = Math.max(1, Math.min(maxF, Math.round(gps[k].o.ferries)));
+        }
+        continue;
+      }
+      var target = targetFerriesForNet(+net, gps);
       var cur = ferries.filter(function (x) { return x.net === +net && !x.retire; });
       if (cur.length < target) {
         while (cur.length < target) {
@@ -642,7 +686,7 @@
       var q = RT.bq[g.gid];
       if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
     }
-    g.pend = null; g.absY = null;
+    g.pend = null; g.absY = null; g.boatY = 0;
   }
 
   function onPierRemoved(o) {
@@ -812,10 +856,11 @@
           continue;
         }
         var hadRiders = (f.pax.length + f.staffPax.length) > 0;
+        var cap = f.cap || ferryCapForNet(f.net);
         if (!f.retire) {
-          // Board queuing guests FIFO up to FERRY_CAP
+          // Board queuing guests FIFO up to cap
           var q = RT.bq[atP.o.id];
-          while ((f.pax.length + f.staffPax.length) < FERRY_CAP && q && q.q.length) {
+          while ((f.pax.length + f.staffPax.length) < cap && q && q.q.length) {
             var gid = q.q.shift();
             var qg = RT.gById.get(gid);
             if (!qg || qg.state !== 'queue' || qg.gt !== 'pier' || qg.gid !== atP.o.id) continue;
@@ -826,7 +871,7 @@
               qg.gt = pend && pend.state === 'leave' ? 'exit' : '';
               qg.dk = qg.gt ? 'exit' : '';
               qg.state = pend && pend.state === 'leave' ? 'leave' : 'walk';
-              qg.pend = null; qg.gid = 0; qg.ni = -1; qg.glide = 0;
+              qg.pend = null; qg.gid = 0; qg.ni = -1; qg.glide = 0; qg.boatY = 0;
               continue;
             }
             if (fare > 0) {
@@ -843,12 +888,12 @@
           }
 
           // Board waiting staff at this guest pier for free
-          for (i = 0; i < ferryStaffQueue.length && (f.pax.length + f.staffPax.length) < FERRY_CAP; ) {
+          for (i = 0; i < ferryStaffQueue.length && (f.pax.length + f.staffPax.length) < cap; ) {
             var item = ferryStaffQueue[i];
             if (item.a === atP && item.b && item.b.guest && item.b.net === f.net) {
               ferryStaffQueue.splice(i, 1);
               var sSeat = nextFreeSeat(f);
-              item.s.state = 'boat'; item.s.speed = 0; item.s.absY = null;
+              item.s.state = 'boat'; item.s.speed = 0; item.s.absY = null; item.s.boatY = 0;
               f.staffPax.push({ s: item.s, from: item.from, to: item.to, toPierId: item.b.o.id, seat: sSeat });
             } else {
               i++;
@@ -859,7 +904,7 @@
         var total = f.pax.length + f.staffPax.length;
         if (!hadRiders && total > 0) f.dwell = FERRY_DWELL;
 
-        if (total >= FERRY_CAP) {
+        if (total >= cap) {
           var destId = f.pax.length ? f.pax[0].b : f.staffPax[0].toPierId;
           var destP = pierById(destId);
           if (destP && destP !== atP) departFerry(f, destP);
@@ -891,7 +936,7 @@
           if (bestPier) departFerry(f, bestPier);
         }
       } else { // 'sail'
-        f.d += FERRY_SPEED * dt;
+        f.d += ferrySpeedForNet(f.net) * dt;
         place(f);
         placeFerryRiders(f);
         if (f.d >= f.len) {
@@ -945,7 +990,7 @@
     sb.d = 0;
     sb.len = TILE * (sb.pts.length - 1);
     place(sb);
-    s.state = 'boat'; s.x = sb.x; s.z = sb.z; s.heading = sb.heading; s.speed = 0; s.absY = null;
+    s.state = 'boat'; s.x = sb.x; s.z = sb.z; s.heading = sb.heading; s.speed = 0; s.absY = null; s.boatY = 0;
     return true;
   }
 
@@ -1029,7 +1074,7 @@
         sb.d += SERVICE_SPEED * dt;
         place(sb);
         if (stf && stf.state === 'boat') {
-          stf.x = sb.x; stf.z = sb.z; stf.heading = sb.heading; stf.speed = 0; stf.absY = null;
+          stf.x = sb.x; stf.z = sb.z; stf.heading = sb.heading; stf.speed = 0; stf.absY = null; stf.boatY = 0;
         }
         if (sb.d >= sb.len) {
           var toP = sb.toPier;
@@ -1212,8 +1257,8 @@
   function afterLoad() {
     var S = C.getS();
     ferries = []; serviceBoats = []; ferryStaffQueue = []; serviceQueue = []; trips = []; helis = [];
-    S.guests.forEach(function (g) { g.pend = null; g.absY = null; });
-    S.staff.forEach(function (s) { s.hop = null; s.absY = null; });
+    S.guests.forEach(function (g) { g.pend = null; g.absY = null; g.boatY = 0; });
+    S.staff.forEach(function (s) { s.hop = null; s.absY = null; s.boatY = 0; });
     rebuild();
   }
 
@@ -1225,7 +1270,8 @@
   function setFerries(pierId, n) {
     var p = pierById(pierId);
     if (!p || !p.guest) return { ok: false, msg: 'Guest pier not found' };
-    var count = Math.max(1, Math.min(FERRY_MAX, Math.round(+n || 1)));
+    var maxF = ferryMaxForNet(p.net);
+    var count = Math.max(1, Math.min(maxF, Math.round(+n || 1)));
     for (var k = 0; k < piers.length; k++) {
       if (piers[k].guest && piers[k].net === p.net) piers[k].o.ferries = count;
     }
@@ -1243,21 +1289,30 @@
 
   function pierStats(o) {
     var RT = C.getRT(), p = o ? pierById(o.id) : null, linked = linkedCount(o);
+    var isLargePier = !!(o && BD[o.type] && BD[o.type].largePier);
     if (!p) {
+      var defMax = isLargePier ? LARGE_FERRY_MAX : FERRY_MAX;
       return {
-        linked: linked, ferries: o && o.ferries ? o.ferries : 1, ferryMax: FERRY_MAX,
-        capacity: FERRY_CAP, queueing: 0, serviceAvail: 0, serviceTotal: 0, staffWaiting: 0
+        linked: linked, ferries: o && o.ferries ? Math.max(1, Math.min(defMax, o.ferries)) : 1,
+        ferryMax: defMax, maxFerries: defMax,
+        capacity: isLargePier ? LARGE_FERRY_CAP : FERRY_CAP,
+        largeNet: isLargePier, isLargePier: isLargePier,
+        queueing: 0, serviceAvail: 0, serviceTotal: 0, staffWaiting: 0,
+        serviceMax: SERVICE_MAX_PER_NET, servicePerPier: SERVICE_PER_PIER
       };
     }
     if (p.guest) {
+      var maxF = ferryMaxForNet(p.net), cap = ferryCapForNet(p.net), largeNet = netHasLargePier(p.net);
       var q = RT.bq[o.id];
       var fCount = 0;
       for (var k = 0; k < ferries.length; k++) if (ferries[k].net === p.net && !ferries[k].retire) fCount++;
-      var configured = o.ferries || (fCount > 0 ? fCount : 1);
+      var configured = Math.max(1, Math.min(maxF, o.ferries || (fCount > 0 ? fCount : 1)));
       return {
         linked: linked, ferries: fCount || configured, configuredFerries: configured,
-        ferryMax: FERRY_MAX, capacity: FERRY_CAP, queueing: q ? q.q.length : 0,
-        serviceAvail: 0, serviceTotal: 0, staffWaiting: 0
+        ferryMax: maxF, maxFerries: maxF, capacity: cap, largeNet: largeNet, isLargePier: isLargePier,
+        queueing: q ? q.q.length : 0,
+        serviceAvail: 0, serviceTotal: 0, staffWaiting: 0,
+        serviceMax: SERVICE_MAX_PER_NET, servicePerPier: SERVICE_PER_PIER
       };
     }
     var svcs = serviceBoatsInNet(p.net), avail = 0, total = 0, waiting = 0;
@@ -1268,15 +1323,18 @@
     }
     for (i = 0; i < serviceQueue.length; i++) if (serviceQueue[i].a === p) waiting++;
     return {
-      linked: linked, ferries: 0, ferryMax: FERRY_MAX, capacity: FERRY_CAP, queueing: 0,
-      serviceAvail: avail, serviceTotal: total, staffWaiting: waiting
+      linked: linked, ferries: 0, ferryMax: FERRY_MAX, maxFerries: FERRY_MAX, capacity: FERRY_CAP,
+      largeNet: false, isLargePier: false, queueing: 0,
+      serviceAvail: avail, serviceTotal: total, staffWaiting: waiting,
+      serviceMax: SERVICE_MAX_PER_NET, servicePerPier: SERVICE_PER_PIER
     };
   }
 
   Z.Boats = {
-    FERRY_SPEED: FERRY_SPEED, SERVICE_SPEED: SERVICE_SPEED, FERRY_CAP: FERRY_CAP,
-    FERRY_DWELL: FERRY_DWELL, FERRY_MAX: FERRY_MAX, SERVICE_PER_PIER: SERVICE_PER_PIER,
-    SERVICE_MAX_PER_NET: SERVICE_MAX_PER_NET, PIER_QUEUE_LIMIT: PIER_QUEUE_LIMIT,
+    FERRY_SPEED: FERRY_SPEED, LARGE_FERRY_SPEED: LARGE_FERRY_SPEED, SERVICE_SPEED: SERVICE_SPEED,
+    FERRY_CAP: FERRY_CAP, LARGE_FERRY_CAP: LARGE_FERRY_CAP,
+    FERRY_DWELL: FERRY_DWELL, FERRY_MAX: FERRY_MAX, LARGE_FERRY_MAX: LARGE_FERRY_MAX,
+    SERVICE_PER_PIER: SERVICE_PER_PIER, SERVICE_MAX_PER_NET: SERVICE_MAX_PER_NET, PIER_QUEUE_LIMIT: PIER_QUEUE_LIMIT,
     rebuild: rebuild, placeCheck: placeCheck, plan: plan, start: start, board: board, leave: leave,
     queueLimit: queueLimit, release: release, onPierRemoved: onPierRemoved,
     staffHop: staffHop, vipLeave: vipLeave, liftOff: liftOff, step: step, afterLoad: afterLoad,

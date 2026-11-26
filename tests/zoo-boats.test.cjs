@@ -422,3 +422,104 @@ test('demolishing a pier cleans up queuing and aboard guests safely', () => {
   assert.equal(gQueue2.pend, null);
   assert.ok(S.path[gQueue2.ti] > 0);
 });
+
+test('large_guest_pier unlocks at Star 1, upgrades water to 48-cap double-deck ferries and 6 max', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  const def = z.DATA.buildings.find(b => b.id === 'large_guest_pier');
+  assert.ok(def, 'large_guest_pier exists in data');
+  assert.equal(def.star, 1);
+  assert.equal(def.largePier, true);
+  assert.equal(def.w, 3);
+  assert.equal(def.h, 3);
+
+  const west = build(z, 'guest_pier', WEST_PIER);
+  const east = build(z, 'large_guest_pier', [43, 39]);
+  S.time = 0.5;
+  assert.equal(z.Sim.canGuestReach(h.tile(30, ROW), h.tile(47, ROW)), true);
+
+  const stWest = z.Boats.pierStats(S.objects.find(o => o.id === west));
+  const stEast = z.Boats.pierStats(S.objects.find(o => o.id === east));
+  assert.equal(stWest.largeNet, true);
+  assert.equal(stWest.isLargePier, false);
+  assert.equal(stEast.isLargePier, true);
+  assert.equal(stWest.capacity, 48);
+  assert.equal(stWest.maxFerries, 6);
+
+  // Board 24 guests (>16) onto a single double-deck ferry with lower & upper deck positions
+  const target = h.tile(47, ROW);
+  const guests = [];
+  for (let i = 0; i < 24; i++) {
+    const g = addGuest(z, h.tile(36, ROW));
+    g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+    z.Boats.start(g, z.Boats.plan(g, 't' + target));
+    guests.push(g);
+  }
+  let sawLower = false, sawUpper = false, sawSingleLargeFerry = false;
+  const arrived = run(z, 60, () => {
+    const ferries = z.Boats.vehicles().filter(v => v.kind === 'ferry');
+    assert.equal(ferries.length, 1);
+    assert.equal(ferries[0].large, true);
+    assert.equal(ferries[0].cap, 48);
+    if (guests.every(g => g.state === 'boat')) {
+      sawSingleLargeFerry = true;
+      for (const g of guests) {
+        if (g.boatY < 0.5) sawLower = true;
+        if (g.boatY > 1.0) sawUpper = true;
+      }
+    }
+    return sawSingleLargeFerry && guests.every(g => g.state !== 'boat' && g.state !== 'queue');
+  });
+  assert.equal(arrived, true);
+  assert.equal(sawSingleLargeFerry, true, 'all 24 guests rode a single large ferry');
+  assert.equal(sawLower, true, 'some guests stood on lower deck');
+  assert.equal(sawUpper, true, 'upper-deck seats used');
+  assert.ok(guests.every(g => !g.boatY), 'boatY cleared on disembark');
+
+  // setFerries supports up to 6 and persists across save/load
+  assert.equal(z.Boats.setFerries(west, 6).ok, true);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 6);
+  z.Boats.setFerries(west, 99);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 6);
+  assert.equal(z.Sim.load(z.Sim.save()), true);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 6);
+  assert.equal(z.Boats.pierStats(z.state.objects.find(o => o.id === west)).capacity, 48);
+});
+
+test('demolishing the last large_guest_pier downgrades remaining piers cleanly without stranding', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  const west = build(z, 'guest_pier', WEST_PIER);
+  build(z, 'guest_pier', EAST_PIER);
+  h.lay(43, 50, 38);
+  build(z, 'large_guest_pier', [43, 35]);
+  S.time = 0.5;
+
+  z.Boats.setFerries(west, 6);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 6);
+  assert.equal(z.Boats.pierStats(S.objects.find(o => o.id === west)).capacity, 48);
+
+  // Put 20 guests onto a ferry bound for EAST_PIER so it sails mid-water
+  const target = h.tile(47, ROW);
+  const riders = [];
+  for (let i = 0; i < 20; i++) {
+    const g = addGuest(z, h.tile(36, ROW));
+    g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+    z.Boats.start(g, z.Boats.plan(g, 't' + target));
+    riders.push(g);
+  }
+  assert.equal(run(z, 15, () => riders.every(g => g.state === 'boat') && z.Boats.vehicles().some(v => v.kind === 'ferry' && v.state === 'sail' && v.pax.length === 20)), true);
+
+  // Demolish the large ferry terminal while the 20 guests are mid-water
+  assert.equal(z.Sim.bulldoze(43, 35).ok, true);
+
+  const stWest = z.Boats.pierStats(S.objects.find(o => o.id === west));
+  assert.equal(stWest.largeNet, false);
+  assert.equal(stWest.capacity, 16);
+  assert.equal(stWest.maxFerries, 4);
+
+  // All 20 aboard guests must finish crossing safely and excess ferries retire to 4
+  const finished = run(z, 60, () => riders.every(g => g.state !== 'boat' && g.state !== 'queue') && z.Boats.vehicles().filter(v => v.kind === 'ferry').length === 4);
+  assert.equal(finished, true, 'all aboard guests landed safely and fleet trimmed to 4');
+  for (const g of riders) assert.equal(h.rt().comp[g.ti], h.rt().comp[target]);
+});

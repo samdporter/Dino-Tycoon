@@ -5,7 +5,7 @@
   'use strict';
   var M = Z.Models; if (!M || !M.kit) return;
   var K = M.kit, B = K.B, mesh = K.mesh, grp = K.grp, shade = K.shade, PI = Math.PI;
-  var DEF = { guest_pier: [2, 2], service_pier: [2, 2], staff_helipad: [3, 3], vip_helipad: [5, 5] };
+  var DEF = { guest_pier: [2, 2], large_guest_pier: [3, 3], service_pier: [2, 2], staff_helipad: [3, 3], vip_helipad: [5, 5] };
   var MODELS = {};
   var wood = 0x9a7448, darkWood = 0x6a4a2c, conc = 0xb9b5aa, dark = 0x2f3438, steel = 0x7f8a92, white = 0xf0eee6, red = 0xb83a2e, teal = 0x2c8fa6, orange = 0xe8742a, gold = 0xd9b45a, glassC = 0x9fd4ea;
 
@@ -20,6 +20,39 @@
     g.add(mesh(b.build()));
   }
   MODELS.guest_pier = function (g) { pier(g, 0xe9e3cf, teal); };
+  MODELS.large_guest_pier = function (g) {   // 6 x 6 m: concrete quay + plank pier deck, pilings, ticket hall + signboard, twin waiting canopies, bollards, lifebuoys & warm beacon
+    var b = B(), x, z, k;
+    // Quay apron (entrance +z side) & timber pier decking (-z water side)
+    b.bevelBox(5.85, 0.24, 2.4, 0.04, 0, 0.46, 1.75, conc);
+    b.bevelBox(5.85, 0.16, 3.6, 0.03, 0, 0.52, -1.15, wood);
+    for (x = -2.6; x <= 2.7; x += 1.3) for (z = -2.7; z <= 2.7; z += 1.35) b.cyl(0.13, 0.13, 1.05, x, 0.08, z, darkWood, { seg: 8 });
+    // Ticket hall at entrance side (+z) with glass facade and signboard
+    b.bevelBox(3.8, 1.7, 1.5, 0.05, 0, 1.42, 1.75, 0xe9e3cf);
+    b.box(2.5, 0.9, 0.06, 0, 1.48, 2.52, glassC);
+    b.box(1.6, 0.36, 0.08, 0, 2.22, 2.56, dark);
+    b.box(1.4, 0.22, 0.04, 0, 2.22, 2.61, gold);
+    b.bevelBox(4.3, 0.16, 1.9, 0.04, 0, 2.36, 1.75, teal);
+    // Twin covered waiting canopies toward the water
+    for (k = -1; k <= 1; k += 2) {
+      var cx = k * 1.65;
+      b.cyl(0.08, 0.08, 1.8, cx - 0.85, 1.5, -0.1, steel, { seg: 6 });
+      b.cyl(0.08, 0.08, 1.8, cx + 0.85, 1.5, -0.1, steel, { seg: 6 });
+      b.cyl(0.08, 0.08, 1.8, cx - 0.85, 1.5, -2.1, steel, { seg: 6 });
+      b.cyl(0.08, 0.08, 1.8, cx + 0.85, 1.5, -2.1, steel, { seg: 6 });
+      b.bevelBox(2.1, 0.12, 2.5, 0.03, cx, 2.45, -1.1, shade(teal, 1.12));
+      b.box(1.5, 0.2, 0.45, cx, 0.72, -1.1, darkWood);
+    }
+    // Mooring bollards along water edge (-z)
+    for (k = -2; k <= 2; k += 2) b.cyl(0.12, 0.14, 0.42, k * 1.25, 0.8, -2.75, dark, { seg: 8 });
+    // Lifebuoys & warm pier beacon
+    for (k = -1; k <= 1; k += 2) {
+      b.cyl(0.24, 0.24, 0.09, k * 2.55, 1.15, -2.75, orange, { seg: 12 });
+      b.cyl(0.11, 0.11, 0.1, k * 2.55, 1.15, -2.75, white, { seg: 10 });
+    }
+    b.cyl(0.06, 0.08, 1.1, 2.5, 2.9, 1.75, steel, { seg: 6 });
+    b.sph(0.2, 0.2, 0.2, 2.5, 3.55, 1.75, 0xffe49c, { s: [10, 8] });
+    g.add(mesh(b.build()));
+  };
   MODELS.service_pier = function (g) {
     pier(g, 0xc9c5be, dark);
     var b = B(); b.bevelBox(0.8, 0.6, 0.8, 0.04, -1.2, 0.88, -0.6, orange); b.bevelBox(0.7, 0.5, 0.7, 0.04, -0.9, 1.4, -0.7, shade(orange, 0.85));
@@ -96,6 +129,70 @@
     for (var lb = -1; lb <= 1; lb += 2) {
       b.cyl(0.22, 0.22, 0.08, lb * 0.72, 1.66, -1.75, orange, { seg: 12 });
       b.cyl(0.1, 0.1, 0.09, lb * 0.72, 1.66, -1.75, white, { seg: 10 });
+    }
+    return mesh(b.build());
+  };
+  BT.largeFerry = function () {   // large double-deck ferry (~9.2m long, ~3.8m wide), bow at +z
+    var b = B(), k, s;
+    // broad double-deck hull & waterline trim
+    b.sph(1.9, 0.7, 4.6, 0, 0.06, 0, white, { s: [18, 12] });
+    b.sph(1.92, 0.24, 4.56, 0, 0.34, 0, teal, { s: [18, 6] });
+    b.sph(1.94, 0.1, 4.58, 0, 0.2, 0, dark, { s: [18, 6] });
+    // lower planked deck
+    b.box(3.3, 0.08, 7.2, 0, 0.44, 0, 0xb98d5a);
+    b.bevelBox(2.4, 0.08, 1.1, 0.03, 0, 0.44, 3.65, 0xb98d5a);
+    b.bevelBox(2.9, 0.08, 1.1, 0.03, 0, 0.44, -3.65, 0xb98d5a);
+    // lower railings & stanchions
+    for (s = -1; s <= 1; s += 2) {
+      b.box(0.06, 0.06, 6.9, s * 1.62, 0.92, -0.1, white);
+      b.box(0.05, 0.05, 6.9, s * 1.62, 0.68, -0.1, white);
+      for (k = -3.3; k <= 3.3; k += 1.1) b.box(0.06, 0.48, 0.06, s * 1.62, 0.68, k, white);
+      // structural pillars supporting upper deck
+      for (k = -2.8; k <= 2.6; k += 1.35) b.cyl(0.06, 0.06, 1.1, s * 1.5, 1.0, k, steel, { seg: 6 });
+    }
+    b.box(3.24, 0.06, 0.06, 0, 0.92, -3.55, white);
+    // lower deck bench rows (6 rows matching LARGE_FERRY_SEATS lower deck)
+    var lzs = [3.1, 2.35, 1.6, 0.85, 0.1, -0.65];
+    for (k = 0; k < lzs.length; k++) {
+      b.box(1.15, 0.18, 0.34, -0.9, 0.56, lzs[k], wood);
+      b.box(1.15, 0.18, 0.06, -0.9, 0.72, lzs[k] - 0.14, darkWood);
+      b.box(1.15, 0.18, 0.34, 0.9, 0.56, lzs[k], wood);
+      b.box(1.15, 0.18, 0.06, 0.9, 0.72, lzs[k] - 0.14, darkWood);
+    }
+    // stern lower cabin / stairwell enclosure
+    b.bevelBox(2.4, 1.08, 1.8, 0.06, 0, 0.98, -2.4, 0xe9e3cf);
+    b.box(1.8, 0.45, 0.06, 0, 1.08, -1.49, glassC);
+    // upper passenger deck (floor top ~1.54, passenger absY = 1.45)
+    b.bevelBox(3.15, 0.12, 6.6, 0.04, 0, 1.52, -0.2, white);
+    b.box(2.95, 0.04, 6.3, 0, 1.59, -0.2, 0xb98d5a);
+    // upper deck railings & stanchions
+    for (s = -1; s <= 1; s += 2) {
+      b.box(0.06, 0.06, 6.2, s * 1.52, 2.04, -0.2, white);
+      b.box(0.05, 0.05, 6.2, s * 1.52, 1.8, -0.2, white);
+      for (k = -3.1; k <= 2.9; k += 1.2) b.box(0.06, 0.48, 0.06, s * 1.52, 1.8, k, white);
+    }
+    b.box(3.04, 0.06, 0.06, 0, 2.04, 2.9, white);
+    b.box(3.04, 0.06, 0.06, 0, 2.04, -3.3, white);
+    // upper deck bench rows (6 rows matching LARGE_FERRY_SEATS upper deck)
+    var uzs = [2.5, 1.8, 1.1, 0.4, -0.3, -1.0];
+    for (k = 0; k < uzs.length; k++) {
+      b.box(1.05, 0.18, 0.32, -0.82, 1.7, uzs[k], wood);
+      b.box(1.05, 0.18, 0.06, -0.82, 1.86, uzs[k] - 0.13, darkWood);
+      b.box(1.05, 0.18, 0.32, 0.82, 1.7, uzs[k], wood);
+      b.box(1.05, 0.18, 0.06, 0.82, 1.86, uzs[k] - 0.13, darkWood);
+    }
+    // upper bridge / wheelhouse at stern
+    b.bevelBox(2.1, 1.05, 1.55, 0.06, 0, 2.12, -2.4, 0xe9e3cf);
+    b.box(1.75, 0.45, 0.06, 0, 2.24, -1.61, glassC);
+    b.box(0.06, 0.42, 1.0, -1.06, 2.24, -2.4, glassC);
+    b.box(0.06, 0.42, 1.0, 1.06, 2.24, -2.4, glassC);
+    b.bevelBox(2.35, 0.12, 1.85, 0.04, 0, 2.7, -2.4, teal);
+    b.cyl(0.05, 0.06, 0.7, 0, 3.08, -2.4, steel, { seg: 6 });
+    b.box(0.16, 0.16, 0.16, 0, 3.45, -2.4, gold);
+    // life buoys on upper deck / bridge sides
+    for (var lb = -1; lb <= 1; lb += 2) {
+      b.cyl(0.24, 0.24, 0.09, lb * 1.12, 2.25, -2.4, orange, { seg: 12 });
+      b.cyl(0.11, 0.11, 0.1, lb * 1.12, 2.25, -2.4, white, { seg: 10 });
     }
     return mesh(b.build());
   };

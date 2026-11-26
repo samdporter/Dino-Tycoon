@@ -42,6 +42,41 @@
     return g;
   }
 
+  function makeLargePier() {
+    var g = new THREE.Group(), W = 3 * T, Dp = 3 * T;
+    box(g, W, 0.18, Dp, 0, 0.10, 0, 0x9a7448);
+    for (var x = -W / 2 + 0.5; x < W / 2; x += 0.85) box(g, 0.04, 0.02, Dp, x, 0.20, 0, 0x7a5a36);
+    [[-1, -1], [0, -1], [1, -1], [-1, 1], [0, 1], [1, 1]].forEach(function (c) {
+      cyl(g, 0.11, 0.13, 0.78, c[0] * (W / 2 - 0.18), 0.48, c[1] * (Dp / 2 - 0.18), 0x5a4128);
+    });
+    // Grand blue-roofed terminal hall on the shore side
+    box(g, 2.7, 1.35, 1.7, -W / 4 + 0.1, 0.88, -Dp / 4, 0xe8dcc0);
+    box(g, 3.05, 0.16, 2.05, -W / 4 + 0.1, 1.62, -Dp / 4, 0x2563eb);
+    box(g, 2.7, 0.06, 1.7, -W / 4 + 0.1, 1.73, -Dp / 4, 0xf2c030);
+    box(g, 0.9, 0.42, 0.05, -W / 4 + 0.1, 1.05, -Dp / 4 + 0.87, 0xf2c030);
+    // Covered passenger waiting canopy
+    [[-0.2, 0.4], [1.8, 0.4], [-0.2, 2.2], [1.8, 2.2]].forEach(function (p) {
+      cyl(g, 0.05, 0.05, 1.35, p[0], 0.86, p[1], 0xf4f0e6);
+    });
+    box(g, 2.35, 0.12, 2.2, 0.8, 1.56, 1.3, 0x3b82f6);
+    box(g, 1.7, 0.16, 0.45, 0.8, 0.28, 1.3, 0x8a6238);
+    // Mooring bollards
+    [[-W / 2 + 0.35, Dp / 2 - 0.35], [0, Dp / 2 - 0.35], [W / 2 - 0.35, Dp / 2 - 0.35]].forEach(function (b) {
+      cyl(g, 0.08, 0.10, 0.36, b[0], 0.36, b[1], 0x334155);
+    });
+    // Red/white lifebuoys
+    [-0.95, 2.15].forEach(function (lz) {
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.05, 6, 14), mat(0xe84a4a));
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(W / 2 - 0.16, 0.56, lz - 0.6);
+      g.add(ring);
+    });
+    // Navigation beacon on corner piling
+    cyl(g, 0.05, 0.06, 1.25, W / 2 - 0.25, 0.82, -Dp / 2 + 0.25, 0xe2e8f0);
+    cyl(g, 0.11, 0.11, 0.22, W / 2 - 0.25, 1.52, -Dp / 2 + 0.25, 0x22c55e);
+    return g;
+  }
+
   function makePad(tiles, vip) {
     var g = new THREE.Group(), r = tiles * T / 2 - 0.2;
     box(g, tiles * T - 0.1, 0.12, tiles * T - 0.1, 0, 0.06, 0, 0x8d8a84);
@@ -99,6 +134,65 @@
     });
     return g;
   }
+  function makeLargeFerry() {
+    var g = new THREE.Group();
+    // Large double-deck ferry (~8.2m long, 3.4m wide)
+    box(g, 3.4, 0.40, 6.6, 0, 0.10, -0.45, 0x1e3a4c);
+    box(g, 2.38, 0.38, 2.38, 0, 0.10, 2.85, 0x1e3a4c).rotation.y = Math.PI / 4;
+    box(g, 3.48, 0.08, 6.4, 0, 0.28, -0.4, 0x2a7fb8);
+    box(g, 3.16, 0.06, 6.1, 0, 0.31, -0.4, 0xc49a6c);
+    // Lower deck railings
+    [-1.56, 1.56].forEach(function (rx) {
+      box(g, 0.06, 0.05, 5.4, rx, 0.72, -0.6, 0xf4f0e6);
+      [-3.1, -1.9, -0.7, 0.5, 1.7].forEach(function (rz) {
+        box(g, 0.06, 0.42, 0.06, rx, 0.52, rz, 0xf4f0e6);
+      });
+    });
+    box(g, 3.18, 0.05, 0.06, 0, 0.72, -3.3, 0xf4f0e6);
+    // Lower deck benches
+    [-0.70, 0.70].forEach(function (bx) {
+      box(g, 0.48, 0.18, 4.4, bx, 0.40, -0.6, 0x8a6238);
+    });
+    // Support pillars to upper deck
+    [[-1.48, -3.0], [1.48, -3.0], [-1.48, -0.6], [1.48, -0.6], [-1.48, 1.8], [1.48, 1.8]].forEach(function (p) {
+      cyl(g, 0.05, 0.05, 1.02, p[0], 0.82, p[1], 0xf4f0e6);
+    });
+    // Upper passenger deck (surface at y = 1.35)
+    box(g, 3.24, 0.08, 5.2, 0, 1.29, -0.6, 0x2a7fb8);
+    box(g, 3.04, 0.06, 5.0, 0, 1.33, -0.6, 0xc49a6c);
+    // Upper deck railings
+    [-1.50, 1.50].forEach(function (rx) {
+      box(g, 0.06, 0.05, 4.9, rx, 1.77, -0.6, 0xf4f0e6);
+      [-2.9, -1.7, -0.5, 0.7, 1.7].forEach(function (rz) {
+        box(g, 0.06, 0.42, 0.06, rx, 1.56, rz, 0xf4f0e6);
+      });
+    });
+    box(g, 3.06, 0.05, 0.06, 0, 1.77, -3.05, 0xf4f0e6);
+    // Upper deck benches
+    [-0.70, 0.70].forEach(function (bx) {
+      box(g, 0.46, 0.18, 3.8, bx, 1.44, -0.75, 0x8a6238);
+    });
+    // Upper wheelhouse forward
+    box(g, 1.8, 0.90, 1.15, 0, 1.80, 1.55, 0xf8f9fa);
+    box(g, 1.84, 0.26, 0.65, 0, 2.00, 1.82, 0x87ceeb);
+    box(g, 1.94, 0.10, 1.30, 0, 2.30, 1.55, 0x2a7fb8);
+    // Upper canopy over passenger seating
+    [[-1.42, -2.85], [1.42, -2.85], [-1.42, 0.8], [1.42, 0.8]].forEach(function (p) {
+      cyl(g, 0.045, 0.045, 1.35, p[0], 2.02, p[1], 0xf4f0e6);
+    });
+    box(g, 3.06, 0.10, 4.1, 0, 2.72, -1.0, 0x2563eb);
+    box(g, 2.74, 0.05, 3.7, 0, 2.79, -1.0, 0xf2c030);
+    // Lifebuoys on lower & upper rails
+    [-1.60, 1.60].forEach(function (lx) {
+      [0.62, 1.66].forEach(function (ly) {
+        var ring = new THREE.Mesh(new THREE.TorusGeometry(0.18, 0.05, 6, 14), mat(0xe84a4a));
+        ring.rotation.y = Math.PI / 2;
+        ring.position.set(lx, ly, 0.2);
+        g.add(ring);
+      });
+    });
+    return g;
+  }
   function makeServiceBoat() {
     var g = new THREE.Group();
     // Smaller utility workboat (~2.2m long, ~1.0m wide)
@@ -137,6 +231,7 @@
     var orig = Z.Models.createBuilding;
     Z.Models.createBuilding = function (id) {
       if (id === 'guest_pier') return makePier(2, 2, true);
+      if (id === 'large_guest_pier') return makeLargePier();
       if (id === 'service_pier') return makePier(1, 2, false);
       if (id === 'staff_helipad') return makePad(2, false);
       if (id === 'vip_helipad') return makePad(4, true);
@@ -184,9 +279,12 @@
     list.forEach(function (v) {
       seen[v.id] = true;
       var isWater = v.kind === 'ferry' || v.kind === 'service' || v.kind === 'boat';
+      var vKind = v.kind === 'ferry' ? (v.large ? 'large_ferry' : 'ferry') : (isWater ? 'service' : 'heli');
       var m = vehicles[v.id];
-      if (!m) {
-        m = vehicles[v.id] = v.kind === 'ferry' ? makeFerry() : isWater ? makeServiceBoat() : makeHeli();
+      if (!m || m.userData.vKind !== vKind) {
+        if (m) grp.remove(m);
+        m = vehicles[v.id] = vKind === 'large_ferry' ? makeLargeFerry() : vKind === 'ferry' ? makeFerry() : isWater ? makeServiceBoat() : makeHeli();
+        m.userData.vKind = vKind;
         grp.add(m);
       }
       var y = v.y;

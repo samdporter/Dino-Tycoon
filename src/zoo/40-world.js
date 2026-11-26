@@ -2004,7 +2004,7 @@ function updateEntities(dt, dtGame) {
       if (hasAbsY) { gy = e.absY; rec.gy = e.absY; rec.gy0 = groundY(x, z); }
       else {
         if (e.state === 'swim') gy = wl > -50 ? wl : groundY(x, z) + WATER_Y;
-        else if (e.state === 'boat' && wl > -50) gy = wl + 0.3;
+        else if (e.state === 'boat' && wl > -50) gy = wl + (e.boatY || 0.3);
         else {
           var ti = (x / T) | 0, tj = (z / T) | 0, onPath = ti >= 0 && tj >= 0 && ti < N && tj < N && s.path && s.path[ti + tj * N];
           gy = onPath && wl > -50 ? wl + PONTOON_Y : groundY(x, z) + (onPath ? PY : 0);

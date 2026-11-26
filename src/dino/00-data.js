@@ -1128,6 +1128,7 @@ window.Z.DATA.donors = [
     fare: 6, fareMax: 25, fareRef: 6,                      // default boat fare, slider maximum, fare guests consider "standard"
     speed: 5, minTrip: 8,                                  // ferry speed (units/s); shortest trip length counted (units)
     ferryCap: 16, ferryDwell: 6, ferryMax: 4,              // big guest ferry: capacity, pier wait (s), max ferries per water body
+    largeFerryCap: 48, largeFerryMax: 6, largeFerrySpeed: 6.5, // double-deck ferry (when a Large Ferry Terminal is on the water)
     servicePerPier: 2, serviceMaxPerBody: 6, serviceSpeed: 6.5,   // smaller service boats: per service pier, cap per water body, speed (units/s)
     queueLimit: 75,                                        // max queue wait (s) at a guest pier before a guest gives up
     airSpeed: 14, airAlt: 14,                              // staff helicopter hop: speed (units/s), cruising height
@@ -1138,7 +1139,11 @@ window.Z.DATA.donors = [
   );
   D.buildings.push(
     { id: 'guest_pier', name: 'Guest pier', emoji: '⛴️', cost: 3200, upkeep: 20, type: 'transport', price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 1, boats: 'guest',
-      info: 'A landing for guest boats. It must touch the shore with a path at its entrance. Piers on the same water carry guests between separate parts of the park.' },
+      desc: '16-guest ferries between piers on the same water (max 4 shared across all guest piers on this water).',
+      info: 'A landing for 16-guest ferries (max 4 shared across all guest piers on this water). Must touch the shore with a path at its entrance.' },
+    { id: 'large_guest_pier', name: 'Large Ferry Terminal', emoji: '🚢', cost: 7500, upkeep: 45, type: 'transport', price: 0, capacity: 0, w: 3, h: 3, satisfies: {}, star: 2, boats: 'guest', largePier: true,
+      desc: 'Upgrades this water to 48-guest double-deck ferries (up to 6 shared across all guest piers on the same water).',
+      info: 'Upgrades this water to 48-guest double-deck ferries (up to 6 shared across all guest piers on the same water). Must touch the shore with a path at its entrance.' },
     { id: 'service_pier', name: 'Service pier', emoji: '🚤', cost: 2400, upkeep: 12, type: 'transport', price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 2, boats: 'service',
       info: 'A staff-only landing. Keepers, vets, cleaners and mechanics use it to reach paths that cannot be walked to. Guests never use it.' },
     { id: 'staff_helipad', name: 'Staff helipad', emoji: '🚁', cost: 4500, upkeep: 25, type: 'transport', price: 0, capacity: 0, w: 3, h: 3, satisfies: {}, star: 2, boats: 'staff',

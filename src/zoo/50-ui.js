@@ -545,7 +545,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'coasters', name: 'Coasters', icon: 'coaster', items: function () {
         return UI.Coaster && UI.Coaster.items ? UI.Coaster.items(bd) : bd(['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'], 'stations')();
       } },
-      { id: 'transport', name: 'Transport', icon: 'boat', items: bd(['guest_pier', 'service_pier', 'staff_helipad', 'vip_helipad']), hint: 'Lay pontoons on water in the Paths tab. Piers go on the shore with a path in front; helipads must touch a path.' },
+      { id: 'transport', name: 'Transport', icon: 'boat', items: bd(['guest_pier', 'large_guest_pier', 'service_pier', 'staff_helipad', 'vip_helipad']), hint: 'Lay pontoons on water in the Paths tab. Guest piers (16-guest ferries, max 4 shared per water), Large ferry terminals (48-guest double-deck ferries, max 6 shared per water), and Service piers (2 small service boats each, max 6 per water) go on the shore with a path in front; helipads must touch a path.' },
       { id: 'decor', name: 'Scenery', icon: 'lamp', items: sc(['lamp', 'flower_bed', 'fountain', 'statue', 'picnic_table', 'sign', 'themepark_arch', 'bunting_poles', 'funhouse_mirror', 'balloon_arch', 'circus_lamp', 'clown_statue']) },
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
