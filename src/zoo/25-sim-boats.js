@@ -100,17 +100,15 @@
   function placeCheck(type, fp) {
     var def = BD[type];
     if (!def || !(def.boatPier || def.helipad)) return null;
+    if (def.helipad) return null;
     var S = C.getS(), N = C.getN();
-    if (def.helipad) return C.adjacentPathExists(fp) ? null : 'Must touch a path';
     var wet = false;
     for (var a = 0; a < fp.w && !wet; a++) for (var b = 0; b < fp.h && !wet; b++) {
       var i = fp.i0 + a, j = fp.j0 + b;
       wet = (i > 0 && S.terrain[i - 1 + j * N] === C.WATER) || (i < N - 1 && S.terrain[i + 1 + j * N] === C.WATER) ||
         (j > 0 && S.terrain[i + (j - 1) * N] === C.WATER) || (j < N - 1 && S.terrain[i + (j + 1) * N] === C.WATER);
     }
-    if (!wet) return 'Must be on the shore, touching water';
-    var front = C.frontList(fp).some(function (c) { return S.path[c.i + c.j * N]; });
-    return front ? null : 'Needs a path beside it';
+    return wet ? null : 'Must be on the shore, touching water';
   }
 
   function route(a, b) {

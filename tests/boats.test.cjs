@@ -72,13 +72,42 @@ test('guest piers link components on the same water and not across separate wate
   assert.notEqual(rt.reachComp[B], 1);
 });
 
-test('piers need a shore and an entrance path', () => {
+test('piers need a shore, can be placed before their path, and become usable once connected', () => {
   const z = world();
-  assert.match(z.Sim.placeObject('guest_pier', 8, 24, 0).msg, /path/);
+  const earlyPier = z.Sim.placeObject('guest_pier', 21, 22, 0);
+  assert.equal(earlyPier.ok, true);
+  assert.match(earlyPier.warn, /path/i);
+  assert.equal(z.Sim.objectReport(earlyPier.id).connected, false);
   lay(z, row(30, 31, 38));
   assert.match(z.Sim.placeObject('guest_pier', 30, 36, 0).msg, /touch open water/);
-  lay(z, row(8, 9, 26));
-  assert.equal(z.Sim.placeObject('guest_pier', 8, 24, 0).ok, true);
+  lay(z, [[27, 25], ...row(21, 27, 24)]);
+  assert.equal(z.Sim.objectReport(earlyPier.id).connected, true);
+});
+
+test('Dino Tycoon monorail stations, safari depots, and helipads can be placed without a path and connect later', () => {
+  const z = world();
+  for (let j = 16; j <= 25; j++) assert.ok(z.Sim.placePath(27, j, 'paved').ok);
+
+  const st = z.Sim.placeObject('monorail_station', 30, 20, 0);
+  assert.equal(st.ok, true);
+  assert.match(st.warn, /path/i);
+  assert.equal(z.Sim.objectReport(st.id).connected, false);
+  lay(z, row(28, 33, 22));
+  assert.equal(z.Sim.objectReport(st.id).connected, true);
+
+  const depot = z.Sim.placeObject('safari_depot', 30, 14, 0);
+  assert.equal(depot.ok, true);
+  assert.match(depot.warn, /path/i);
+  assert.equal(z.Sim.objectReport(depot.id).connected, false);
+  lay(z, row(28, 32, 16));
+  assert.equal(z.Sim.objectReport(depot.id).connected, true);
+
+  const pad = z.Sim.placeObject('staff_helipad', 30, 30, 0);
+  assert.equal(pad.ok, true);
+  assert.match(pad.warn, /path/i);
+  assert.equal(z.Sim.objectReport(pad.id).connected, false);
+  lay(z, row(28, 32, 33));
+  assert.equal(z.Sim.objectReport(pad.id).connected, true);
 });
 
 test('a guest with no walking route takes the boat, pays the fare and arrives at the far pier', () => {

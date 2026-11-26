@@ -589,13 +589,6 @@ window.Z = window.Z || {}; var Z = window.Z;
   // station placement rule (hooked from placeObject)
   M.placeCheck = function (type, fp) {
     var s = S(), B = BD()[type]; if (!B || !B.mono) return null;
-    var front = [], k, rot = fp.rot;
-    for (k = 0; k < (rot & 1 ? fp.h : fp.w); k++) {
-      var x, y;
-      if (rot === 0) { x = fp.i0 + k; y = fp.j0 + fp.h; } else if (rot === 2) { x = fp.i0 + k; y = fp.j0 - 1; } else if (rot === 1) { x = fp.i0 + fp.w; y = fp.j0 + k; } else { x = fp.i0 - 1; y = fp.j0 + k; }
-      if (x >= 0 && y >= 0 && x < N && y < N) front.push(x + y * N);
-    }
-    if (!front.some(function (t) { return s.path[t]; })) return { msg: 'A station needs a path touching its entrance' };
     for (var a = 0; a < fp.w; a++) for (var b = 0; b < fp.h; b++) if (s.rail[(fp.i0 + a) + (fp.j0 + b) * N]) return { msg: 'Remove the monorail track under the station first' };
     return null;
   };

@@ -104,11 +104,15 @@ test('only pontoons and guest piers are available at the start', () => {
   assert.equal(z.DATA.paths.find(p => p.id === 'pontoon').star || 0, 0);
 });
 
-test('piers need water beside them and a path in front', () => {
+test('piers need water beside them and can be placed before their path is built', () => {
   const h = setup(), { z } = h;
   landLayout(h);
   assert.equal(z.Sim.placeObject('guest_pier', 30, 36, 0).ok, false);
-  assert.equal(z.Sim.placeObject('guest_pier', EAST_PIER[0], 35, 0).ok, false);
+  const noPath = z.Sim.placeObject('guest_pier', EAST_PIER[0], 35, 0);
+  assert.equal(noPath.ok, true);
+  assert.match(noPath.warn, /path/i);
+  assert.equal(z.Sim.objectReport(noPath.id).connected, false);
+  assert.equal(z.Sim.bulldoze(EAST_PIER[0], 35).ok, true);
   assert.equal(z.Sim.placeObject('guest_pier', EAST_PIER[0], EAST_PIER[1], 0).ok, true);
 });
 
@@ -189,7 +193,11 @@ test('a VIP helipad flies in VIPs who pay the arrival fee, spend more and leave 
   const h = setup(), { z, S } = h;
   landLayout(h);
   const pad = build(z, 'vip_helipad', [30, 38]);
-  assert.equal(z.Sim.placeObject('vip_helipad', 12, 33, 0).ok, false, 'must touch a path');
+  const unlinkedPad = z.Sim.placeObject('vip_helipad', 12, 33, 0);
+  assert.equal(unlinkedPad.ok, true, 'can place VIP helipad without a path');
+  assert.match(unlinkedPad.warn, /path/i);
+  assert.equal(z.Sim.objectReport(unlinkedPad.id).connected, false);
+  assert.equal(z.Sim.bulldoze(12, 33).ok, true);
   S.time = 0.5; S.boats.vipT = 0;
   const fee = S.objects.find(o => o.id === pad).price, tickets = S.finance.today.tickets;
   assert.equal(run(z, 30, () => S.boats.vips > 0), true);

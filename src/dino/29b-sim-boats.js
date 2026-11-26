@@ -509,14 +509,7 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ============================================================ placement
   B.placeCheck = function (type, fp) {
-    var s = S(), def = C.BD()[type]; if (!def || !def.boats) return null;
-    var front = [], k, rot = fp.rot;
-    for (k = 0; k < (rot & 1 ? fp.h : fp.w); k++) {
-      var x, y;
-      if (rot === 0) { x = fp.i0 + k; y = fp.j0 + fp.h; } else if (rot === 2) { x = fp.i0 + k; y = fp.j0 - 1; } else if (rot === 1) { x = fp.i0 + fp.w; y = fp.j0 + k; } else { x = fp.i0 - 1; y = fp.j0 + k; }
-      if (x >= 0 && y >= 0 && x < N && y < N) front.push(x + y * N);
-    }
-    if (!front.some(function (t) { return s.path[t]; })) return { msg: 'The ' + def.name.toLowerCase() + ' needs a path touching its entrance' };
+    var def = C.BD()[type]; if (!def || !def.boats) return null;
     if ((def.boats === 'guest' || def.boats === 'service') && dockOf(fp) < 0) return { msg: 'A pier must touch open water on the shore' };
     return null;
   };

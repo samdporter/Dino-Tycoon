@@ -764,8 +764,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return false;
   }
   A.placeCheck = function (type, fp) {
-    var d = BD()[type], s = S(); if (!d || !d.safari) return null;
-    if (!adjPath(fp)) return { msg: 'A ' + d.name.toLowerCase() + ' needs a path touching its entrance' };
+    var d = BD()[type]; if (!d || !d.safari) return null;
     if (d.safari === 'sea') {
       var near = false; for (var a = -2; a <= fp.w + 1 && !near; a++) for (var b = -2; b <= fp.h + 1; b++) { var x = fp.i0 + a, y = fp.j0 + b; if (x >= 0 && y >= 0 && x < N && y < N && isWater(x + y * N)) { near = true; break; } }
       if (!near) return { msg: 'The harbour must be on the shore, within two tiles of open water' };
