@@ -6,7 +6,7 @@
 
   var T = Z.TILE || 2;
   var DECK_Y = 0.14;
-  var grp = null, deckMesh = null, floatMesh = null, deckSig = -1, sigT = 0, spin = 0;
+  var grp = null, deckMesh = null, floatMesh = null, deckSig = -1, sigT = 0, spin = 0, bobT = 0;
   var vehicles = {};
   var mats = {};
 
@@ -61,13 +61,55 @@
     return g;
   }
 
-  function makeBoat() {
+  function makeFerry() {
     var g = new THREE.Group();
-    box(g, 0.9, 0.3, 2.2, 0, 0.12, 0, 0xf4f0e6);
-    box(g, 0.5, 0.26, 0.5, 0, 0.12, 1.3, 0xf4f0e6).rotation.y = Math.PI / 4;
-    box(g, 0.96, 0.06, 2.0, 0, 0.3, -0.05, 0x3b82f6);
-    box(g, 0.7, 0.5, 0.6, 0, 0.5, 0.45, 0xe84a4a);
-    box(g, 0.74, 0.06, 0.7, 0, 0.78, 0.45, 0xffffff);
+    // Large multi-passenger ferry (~5.8m long, ~2.4m wide)
+    box(g, 2.4, 0.36, 4.9, 0, 0.10, -0.25, 0x264653);
+    box(g, 1.66, 0.34, 1.66, 0, 0.10, 2.20, 0x264653).rotation.y = Math.PI / 4;
+    box(g, 2.46, 0.08, 4.7, 0, 0.28, -0.2, 0x2a7fb8);
+    box(g, 2.22, 0.06, 4.5, 0, 0.31, -0.2, 0xc49a6c);
+    // Side railings
+    [-1.08, 1.08].forEach(function (rx) {
+      box(g, 0.06, 0.05, 3.8, rx, 0.72, -0.4, 0xf4f0e6);
+      [-2.1, -1.1, 0.0, 1.1].forEach(function (rz) {
+        box(g, 0.06, 0.42, 0.06, rx, 0.52, rz, 0xf4f0e6);
+      });
+    });
+    box(g, 2.22, 0.05, 0.06, 0, 0.72, -2.35, 0xf4f0e6);
+    // Wheelhouse forward
+    box(g, 1.4, 0.85, 0.95, 0, 0.74, 1.75, 0xf8f9fa);
+    box(g, 1.44, 0.24, 0.55, 0, 0.92, 1.98, 0x87ceeb);
+    box(g, 1.54, 0.10, 1.10, 0, 1.22, 1.75, 0x2a7fb8);
+    // Canopy roof & support posts over passenger deck
+    [[-1.02, -2.1], [1.02, -2.1], [-1.02, 0.9], [1.02, 0.9]].forEach(function (p) {
+      cyl(g, 0.04, 0.04, 1.55, p[0], 1.08, p[1], 0xf4f0e6);
+    });
+    box(g, 2.28, 0.10, 3.5, 0, 1.88, -0.6, 0x3b82f6);
+    box(g, 2.0, 0.04, 3.2, 0, 1.94, -0.6, 0xf2c030);
+    // Wooden deck benches
+    [-0.55, 0.55].forEach(function (bx) {
+      box(g, 0.42, 0.18, 3.3, bx, 0.40, -0.45, 0x8a6238);
+    });
+    // Life rings on cabin/rails
+    [-1.14, 1.14].forEach(function (lx) {
+      var ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.045, 6, 14), mat(0xe84a4a));
+      ring.rotation.y = Math.PI / 2;
+      ring.position.set(lx, 0.62, 0.55);
+      g.add(ring);
+    });
+    return g;
+  }
+  function makeServiceBoat() {
+    var g = new THREE.Group();
+    // Smaller utility workboat (~2.2m long, ~1.0m wide)
+    box(g, 0.96, 0.28, 1.95, 0, 0.11, -0.1, 0x475569);
+    box(g, 0.66, 0.26, 0.66, 0, 0.11, 0.88, 0x475569).rotation.y = Math.PI / 4;
+    box(g, 1.02, 0.06, 1.85, 0, 0.27, -0.08, 0xf97316);
+    box(g, 0.84, 0.04, 1.7, 0, 0.29, -0.08, 0xe2e8f0);
+    // Forward console & cargo crate
+    box(g, 0.62, 0.48, 0.52, 0, 0.52, 0.42, 0x2563eb);
+    box(g, 0.68, 0.07, 0.60, 0, 0.78, 0.42, 0xf4f0e6);
+    box(g, 0.52, 0.34, 0.48, 0, 0.46, -0.52, 0xb5844c);
     return g;
   }
   function makeHeli() {
@@ -138,12 +180,23 @@
   function syncVehicles(dt) {
     var list = Z.Boats ? Z.Boats.vehicles() : [], seen = {}, k;
     spin += dt * 30;
+    bobT += dt;
     list.forEach(function (v) {
       seen[v.id] = true;
+      var isWater = v.kind === 'ferry' || v.kind === 'service' || v.kind === 'boat';
       var m = vehicles[v.id];
-      if (!m) { m = vehicles[v.id] = v.kind === 'boat' ? makeBoat() : makeHeli(); grp.add(m); }
+      if (!m) {
+        m = vehicles[v.id] = v.kind === 'ferry' ? makeFerry() : isWater ? makeServiceBoat() : makeHeli();
+        grp.add(m);
+      }
       var y = v.y;
-      if (v.kind === 'boat') { var wl = Z.World.waterLevelAt(v.x, v.z); y = (wl > -50 ? wl : 0) + 0.05; }
+      if (isWater) {
+        var wl = Z.World.waterLevelAt(v.x, v.z);
+        var bob = Math.sin(bobT * 2.2 + v.id * 1.7) * 0.035;
+        y = (wl > -50 ? wl : 0) + 0.05 + bob;
+        m.rotation.z = Math.sin(bobT * 1.6 + v.id) * 0.018;
+        m.rotation.x = Math.cos(bobT * 1.9 + v.id) * 0.012;
+      }
       m.position.set(v.x, y, v.z);
       m.rotation.y = v.heading;
       if (m.userData.rotor) { m.userData.rotor.rotation.y = spin; m.userData.tail.rotation.x = spin; }

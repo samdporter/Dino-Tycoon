@@ -230,3 +230,195 @@ test('pontoons persist through save and load', () => {
   const rt = h.rt();
   assert.equal(rt.comp[h.tile(30, ROW)], rt.comp[h.tile(45, ROW)]);
 });
+
+test('multiple guests queue at a guest pier and share one big ferry with dwell and distinct deck seats', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  const west = build(z, 'guest_pier', WEST_PIER), east = build(z, 'guest_pier', EAST_PIER);
+  z.Sim.setPrice(west, 4);
+  S.time = 0.5;
+  const rt = h.rt(), target = h.tile(47, ROW);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 1);
+
+  const guests = [];
+  for (let i = 0; i < 5; i++) {
+    const g = addGuest(z, h.tile(35, ROW));
+    g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+    const p = z.Boats.plan(g, 't' + target);
+    assert.ok(p);
+    z.Boats.start(g, p);
+    guests.push(g);
+  }
+
+  // Advance until all 5 reach pier queue or board the ferry
+  assert.equal(run(z, 15, () => guests.every(g => g.state === 'queue' || g.state === 'boat')), true);
+  // Check queue limit helpers
+  const sampleQ = { gt: 'pier', pend: { state: 'walk' } };
+  assert.equal(z.Boats.queueLimit(sampleQ), z.Boats.PIER_QUEUE_LIMIT);
+  assert.equal(z.Boats.queueLimit({ gt: 'pier', pend: { state: 'leave' } }), Infinity);
+  assert.equal(z.Boats.queueLimit({ gt: 'bld' }), 22);
+
+  // Ferry should still be a single vessel and passengers should have distinct deck seat coordinates while aboard
+  let sawAllAboard = false, distinctCoords = 0;
+  const arrived = run(z, 40, () => {
+    const ferries = z.Boats.vehicles().filter(v => v.kind === 'ferry');
+    assert.equal(ferries.length, 1);
+    if (guests.every(g => g.state === 'boat')) {
+      sawAllAboard = true;
+      const pts = new Set(guests.map(g => `${g.x.toFixed(2)},${g.z.toFixed(2)}`));
+      distinctCoords = Math.max(distinctCoords, pts.size);
+    }
+    return sawAllAboard && guests.every(g => g.state !== 'boat' && g.state !== 'queue');
+  });
+  assert.equal(arrived, true);
+  assert.equal(sawAllAboard, true);
+  assert.equal(distinctCoords, 5, 'each guest sits at a distinct ferry deck offset');
+  for (const g of guests) assert.equal(rt.comp[g.ti], rt.comp[target]);
+  assert.equal(S.boats.income, 20);
+  assert.equal(S.boats.trips, 5);
+});
+
+test('ferry departs immediately at full capacity without waiting full dwell', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  build(z, 'guest_pier', WEST_PIER); build(z, 'guest_pier', EAST_PIER);
+  S.time = 0.5;
+  const target = h.tile(47, ROW);
+  const guests = [];
+  for (let i = 0; i < z.Boats.FERRY_CAP; i++) {
+    const g = addGuest(z, h.tile(36, ROW));
+    g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+    const p = z.Boats.plan(g, 't' + target);
+    z.Boats.start(g, p);
+    guests.push(g);
+  }
+  assert.equal(run(z, 5, () => {
+    const f = z.Boats.vehicles().find(v => v.kind === 'ferry');
+    return f && f.state === 'sail' && f.pax.length === z.Boats.FERRY_CAP;
+  }), true, 'full ferry departs immediately before dwell expires');
+});
+
+test('ferry count is adjustable up to FERRY_MAX and persists through save and load', () => {
+  const h = setup(), { z } = h;
+  landLayout(h);
+  const west = build(z, 'guest_pier', WEST_PIER);
+  const east = build(z, 'guest_pier', EAST_PIER);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 1);
+
+  assert.equal(z.Boats.setFerries(west, 3).ok, true);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 3);
+  assert.equal(z.Boats.pierStats(z.state.objects.find(o => o.id === east)).ferries, 3);
+
+  z.Boats.setFerries(west, 99);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, z.Boats.FERRY_MAX);
+
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, z.Boats.FERRY_MAX);
+
+  z.Boats.setFerries(west, 0);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'ferry').length, 1);
+});
+
+test('ferries keep operating after closing time so leaving guests on islands can exit', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  build(z, 'guest_pier', WEST_PIER); build(z, 'guest_pier', EAST_PIER);
+  S.time = 0.5;
+  const g = addGuest(z, h.tile(46, ROW));
+  z.Sim.setOpen(false);
+  let boated = false;
+  const returned = run(z, 60, () => {
+    boated = boated || g.state === 'boat';
+    return boated && g.state === 'leave' && h.rt().comp[g.ti] === h.rt().comp[h.tile(30, ROW)];
+  });
+  assert.equal(returned, true, 'leaving guest ferried back to mainland after closing');
+});
+
+test('service piers cap service boats and extra staff wait and cross once a boat frees up', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  // 1 service pier on west + 1 guest pier on east => 2 service boats total
+  build(z, 'service_pier', [37, 40]);
+  build(z, 'guest_pier', EAST_PIER);
+  S.time = 0.5;
+  const east = h.tile(45, ROW);
+  for (let i = 45; i <= 48; i++) S.dirt[h.tile(i, ROW)] = 240;
+
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'service').length, 2);
+
+  // Hire 4 cleaners simultaneously on west shore
+  for (let k = 0; k < 4; k++) assert.equal(z.Sim.hireStaff('cleaner', 35, ROW).ok, true);
+
+  let sawCapRespected = false;
+  const cleaned = run(z, 120, () => {
+    const svcs = z.Boats.vehicles().filter(v => v.kind === 'service');
+    assert.ok(svcs.length <= 2, 'service boats never exceed cap of 2');
+    const riding = S.staff.filter(s => s.state === 'boat').length;
+    assert.ok(riding <= 2, 'at most 2 staff ride service boats simultaneously');
+    if (riding === 2) sawCapRespected = true;
+    return [45, 46, 47, 48].every(i => S.dirt[h.tile(i, ROW)] < 40);
+  });
+  assert.equal(sawCapRespected, true);
+  assert.equal(cleaned, true);
+
+  // Adding more service piers caps at SERVICE_MAX_PER_NET (6)
+  h.lay(27, 37, 38); h.lay(27, 37, 47); h.lay(43, 50, 38);
+  build(z, 'service_pier', [37, 36]);
+  build(z, 'service_pier', [37, 45]);
+  build(z, 'service_pier', [43, 36]);
+  assert.equal(z.Boats.vehicles().filter(v => v.kind === 'service').length, z.Boats.SERVICE_MAX_PER_NET);
+});
+
+test('demolishing a pier cleans up queuing and aboard guests safely', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  build(z, 'guest_pier', WEST_PIER);
+  build(z, 'guest_pier', EAST_PIER);
+  S.time = 0.5;
+  const target = h.tile(47, ROW);
+  const gSail = addGuest(z, h.tile(36, ROW));
+  gSail.gt = 'enc'; gSail.dk = 't' + target; gSail.spot = target;
+  z.Boats.start(gSail, z.Boats.plan(gSail, 't' + target));
+
+  // Wait until ferry actually departs and is sailing mid-water
+  assert.equal(run(z, 20, () => {
+    const f = z.Boats.vehicles().find(v => v.kind === 'ferry');
+    return f && f.state === 'sail' && gSail.state === 'boat';
+  }), true);
+
+  // Now queue a second guest at WEST_PIER while the sole ferry is out on the water
+  const gQueue = addGuest(z, h.tile(36, ROW));
+  gQueue.gt = 'enc'; gQueue.dk = 't' + target; gQueue.spot = target;
+  z.Boats.start(gQueue, z.Boats.plan(gQueue, 't' + target));
+  assert.equal(run(z, 4, () => gQueue.state === 'queue'), true);
+
+  // Demolish destination pier while gSail is mid-water and gQueue is waiting for it
+  assert.equal(z.Sim.bulldoze(EAST_PIER[0], EAST_PIER[1]).ok, true);
+
+  assert.equal(run(z, 30, () => gSail.state !== 'boat' && gQueue.state !== 'boat' && gQueue.state !== 'queue'), true);
+  assert.equal(gSail.pend, null);
+  assert.equal(gQueue.pend, null);
+  assert.ok(S.path[gSail.ti] > 0, 'returning guest landed on a valid path tile');
+  assert.ok(S.path[gQueue.ti] > 0, 'queuing guest remains on a valid path tile');
+
+  // Also test demolishing the departure pier while a guest is queued at it (with 2 other piers remaining)
+  S.time = 0.5;
+  h.lay(43, 50, 36);
+  build(z, 'guest_pier', EAST_PIER);
+  build(z, 'guest_pier', [43, 34]);
+  // Fill the ferry with 16 guests so it departs immediately, leaving gQueue2 queuing at WEST_PIER
+  for (let i = 0; i < z.Boats.FERRY_CAP; i++) {
+    const fg = addGuest(z, h.tile(36, ROW));
+    fg.gt = 'enc'; fg.dk = 't' + target; fg.spot = target;
+    z.Boats.start(fg, z.Boats.plan(fg, 't' + target));
+  }
+  const gQueue2 = addGuest(z, h.tile(35, ROW));
+  gQueue2.gt = 'enc'; gQueue2.dk = 't' + target; gQueue2.spot = target;
+  z.Boats.start(gQueue2, z.Boats.plan(gQueue2, 't' + target));
+  assert.equal(run(z, 5, () => gQueue2.state === 'queue'), true);
+  assert.equal(z.Sim.bulldoze(WEST_PIER[0], WEST_PIER[1]).ok, true);
+  assert.notEqual(gQueue2.state, 'queue');
+  assert.equal(gQueue2.pend, null);
+  assert.ok(S.path[gQueue2.ti] > 0);
+});

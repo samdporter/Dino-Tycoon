@@ -59,14 +59,58 @@
   M.buildingFootprint = function (id) { return DEF[id] ? { w: DEF[id][0], h: DEF[id][1] } : of.apply(this, arguments); };
 
   var BT = M.boats = {};
-  BT.boat = function () {   // small passenger launch, bow at +z
-    var b = B();
-    b.sph(0.7, 0.4, 1.7, 0, 0.12, 0, white, { s: [12, 8] }); b.sph(0.72, 0.14, 1.65, 0, 0.36, 0, teal, { s: [12, 6] });
-    b.box(1.0, 0.06, 2.3, 0, 0.44, -0.1, 0xb98d5a);
-    b.bevelBox(0.8, 0.5, 0.9, 0.04, 0, 0.74, -0.2, 0xe9e3cf); b.box(0.9, 0.06, 1.0, 0, 1.02, -0.2, red);
-    b.box(0.5, 0.3, 0.3, 0, 0.55, -1.7, dark);
+  BT.ferry = function () {   // large multi-passenger ferry (~7m long, ~2.8m wide), bow at +z
+    var b = B(), k;
+    // broad hull & waterline trim
+    b.sph(1.4, 0.55, 3.5, 0, 0.08, 0, white, { s: [16, 10] });
+    b.sph(1.42, 0.2, 3.46, 0, 0.34, 0, teal, { s: [16, 6] });
+    b.sph(1.44, 0.09, 3.48, 0, 0.22, 0, dark, { s: [16, 6] });
+    // broad planked deck
+    b.box(2.35, 0.08, 5.4, 0, 0.44, 0, 0xb98d5a);
+    b.bevelBox(1.75, 0.08, 0.9, 0.03, 0, 0.44, 2.7, 0xb98d5a);
+    b.bevelBox(2.05, 0.08, 0.9, 0.03, 0, 0.44, -2.7, 0xb98d5a);
+    // side railings & stanchions
+    for (var s = -1; s <= 1; s += 2) {
+      b.box(0.06, 0.06, 5.0, s * 1.15, 0.92, -0.1, white);
+      b.box(0.05, 0.05, 5.0, s * 1.15, 0.68, -0.1, white);
+      for (k = -2.4; k <= 2.4; k += 1.2) b.box(0.06, 0.48, 0.06, s * 1.15, 0.68, k, white);
+    }
+    b.box(2.3, 0.06, 0.06, 0, 0.92, -2.6, white);
+    // roofed cabin / wheelhouse at stern
+    b.bevelBox(1.8, 1.05, 1.5, 0.06, 0, 1.0, -1.75, 0xe9e3cf);
+    b.box(1.5, 0.45, 0.06, 0, 1.15, -0.99, glassC);
+    b.box(0.06, 0.42, 1.0, -0.91, 1.15, -1.75, glassC);
+    b.box(0.06, 0.42, 1.0, 0.91, 1.15, -1.75, glassC);
+    b.bevelBox(2.05, 0.12, 1.8, 0.04, 0, 1.58, -1.75, teal);
+    b.cyl(0.04, 0.05, 0.55, 0, 1.9, -1.75, steel, { seg: 6 });
+    b.box(0.12, 0.12, 0.12, 0, 2.2, -1.75, gold);
+    // passenger bench rows
+    var zs = [2.1, 1.45, 0.8, 0.15];
+    for (k = 0; k < zs.length; k++) {
+      b.box(0.86, 0.18, 0.34, -0.62, 0.56, zs[k], wood);
+      b.box(0.86, 0.2, 0.06, -0.62, 0.72, zs[k] - 0.14, darkWood);
+      b.box(0.86, 0.18, 0.34, 0.62, 0.56, zs[k], wood);
+      b.box(0.86, 0.2, 0.06, 0.62, 0.72, zs[k] - 0.14, darkWood);
+    }
+    // life buoys on cabin roof / stern
+    for (var lb = -1; lb <= 1; lb += 2) {
+      b.cyl(0.22, 0.22, 0.08, lb * 0.72, 1.66, -1.75, orange, { seg: 12 });
+      b.cyl(0.1, 0.1, 0.09, lb * 0.72, 1.66, -1.75, white, { seg: 10 });
+    }
     return mesh(b.build());
   };
+  BT.serviceBoat = function () {   // smaller utilitarian service boat (~2.8m long, ~1.2m wide), bow at +z
+    var b = B();
+    b.sph(0.6, 0.35, 1.4, 0, 0.1, 0, 0x243b55, { s: [12, 8] });
+    b.sph(0.62, 0.14, 1.36, 0, 0.3, 0, orange, { s: [12, 6] });
+    b.box(0.86, 0.06, 1.9, 0, 0.38, -0.05, 0xb98d5a);
+    b.bevelBox(0.62, 0.42, 0.5, 0.03, 0, 0.62, 0.25, 0xe9e3cf);
+    b.box(0.56, 0.25, 0.05, 0, 0.85, 0.45, glassC);
+    b.bevelBox(0.52, 0.36, 0.52, 0.03, 0, 0.58, -0.45, orange);
+    b.box(0.36, 0.28, 0.26, 0, 0.46, -1.35, dark);
+    return mesh(b.build());
+  };
+  BT.boat = BT.serviceBoat;
   BT.heli = function () {   // compact helicopter, nose at +z; userData.rotor is the spinning part
     var g = new THREE.Group(), b = B();
     b.sph(0.8, 0.75, 1.5, 0, 0.9, 0, 0x2a2f36, { s: [14, 10] }); b.sph(0.82, 0.5, 1.1, 0, 0.9, 0.5, glassC, { s: [12, 8] });

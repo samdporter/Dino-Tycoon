@@ -1299,6 +1299,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     delete RT.bq[o.id];
     if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
+    if (Z.Boats && o.kind === 'building' && BD[o.type] && BD[o.type].boatPier) Z.Boats.onPierRemoved(o);
     bus.emit('objectRemoved', o);
   }
 
@@ -1883,6 +1884,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function releaseGuest(g) {
     if (Z.Coaster) Z.Coaster.release(g);
+    if (Z.Boats) Z.Boats.release(g);
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.bid = 0; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -2430,7 +2432,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         if (!anyCover || rng.chance(0.2)) g.stay = Math.min(g.stay, hr * rng.range(0.1, 0.7));
       }
     } else { g.wxd = 0; g.cov = 0; }
-    if (g.state !== 'leave') {
+    if (g.state !== 'leave' && !(g.pend && g.pend.state === 'leave')) {
       var inUse = g.state === 'use' && !g.shel;
       var leave = false;
       if (!S.open || S.time >= CLOSE_T + (inUse ? 0.04 : -0.004)) leave = true;
@@ -2511,8 +2513,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'watch') { g.idle = 0; watchTick(g, a); }
     else if (g.state === 'queue') {
       g.idle = 0; g.wt += a;
-      if (g.wt > 22) {
+      var qLim = (Z.Boats && Z.Boats.queueLimit) ? Z.Boats.queueLimit(g) : 22;
+      if (g.wt > qLim) {
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
+        g.pend = null;
         g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 2; g.nbuy = hr * 0.2; say(g, 'crowded');
       }
     } else if (g.state === 'sit') {
@@ -2630,7 +2634,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
       if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
-      if (BD[o.type].coasterStation) continue;
+      if (BD[o.type].coasterStation || BD[o.type].boatPier) continue;
       var cap = BD[o.type].capacity;
       while (q.q.length && q.use < cap) {
         var gq = RT.gById.get(q.q.shift());
@@ -3879,8 +3883,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function staffStep(s, dt) {
-    if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.speed = 0; s.task = 'Off sick'; return; }
-    if (s.tk && s.tk.k === 'patrol') {
+    var airborne = s.state === 'boat' || s.state === 'fly';
+    if (s.sickUntil > S.day + S.time && !airborne) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.speed = 0; s.task = 'Off sick'; return; }
+    if (s.tk && s.tk.k === 'patrol' && !airborne) {
       s.tk.chk = (s.tk.chk === undefined ? 1 : s.tk.chk) - dt;
       if (s.tk.chk <= 0) {
         s.tk.chk = s.type === 'cleaner' ? 1.5 : 1.0;
@@ -3895,14 +3900,14 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     if (s.route) {
-      if (s.tk && s.tk.k === 'vet') {
+      if (!airborne && s.tk && s.tk.k === 'vet') {
         var va = RT.aById.get(s.tk.id);
         if (!va || (!va.sick && !va.injured && va.health >= 65)) { releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return; }
       }
-      if ((s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop' || s.tk.k === 'fence')) && (!encById(s.tk.id) || (s.tk.k === 'fence' && !(encById(s.tk.id).breach > 0)))) {
+      if (!airborne && (s.tk && (s.tk.k === 'enc' || s.tk.k === 'feed' || s.tk.k === 'poop' || s.tk.k === 'fence')) && (!encById(s.tk.id) || (s.tk.k === 'fence' && !(encById(s.tk.id).breach > 0)))) {
         releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
       }
-      if (s.tk && s.tk.k === 'powerCut' && !powerCutActive()) {
+      if (!airborne && s.tk && s.tk.k === 'powerCut' && !powerCutActive()) {
         releaseClaims(s); s.tk = null; s.route = null; s.state = 'idle'; s.wt = 0; return;
       }
       if (walkRoute(s, dt)) {

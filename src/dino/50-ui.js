@@ -321,7 +321,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     setTxt(el.fName, 'fn', name); setTxt(el.fTxt, 'ft', txt);
   }
   UI.stateText = function (s) {
-    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', fly: 'Flying', leave: 'Heading home', work: 'Working' })[s] || s;
+    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', fly: 'Flying', leave: 'Heading home', work: 'Working', boat: 'Riding the ferry' })[s] || s;
   };
   UI.exitFollow = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; UI.snd('click'); };
   UI.followInfo = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; if (UI.sel) UI.Panel.open(UI.sel.kind, UI.sel.id); };

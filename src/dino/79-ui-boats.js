@@ -26,9 +26,33 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (var a = 0; a < fp.w; a++) for (var c = 0; c < fp.h; c++) tiles.push({ i: fp.i0 + a, j: fp.j0 + c });
     Z.World.setPreview({ type: 'tiles', tiles: tiles, ok: true });
     var info = h('div.mbx'), rStatus = mrow('Status'), r1 = mrow(kindOf === 'vip' ? 'VIPs welcomed' : kindOf === 'guest' ? 'Boat rides from here' : 'Linked to'), r2 = mrow(kindOf === 'vip' ? 'Arrival fees earned' : 'Fares taken here');
+    var rQueue = kindOf === 'guest' ? mrow('Queueing') : null;
+    var rSvc = kindOf === 'service' ? mrow('Service boats') : null;
+    var rWait = kindOf === 'service' ? mrow('Staff waiting') : null;
     info.appendChild(h('h4', { text: BLURB[kindOf] }));
-    [rStatus, r1].concat(kindOf === 'guest' || kindOf === 'vip' ? [r2] : []).forEach(function (r) { info.appendChild(r); });
+    [rStatus].concat(rQueue ? [rQueue] : []).concat([r1]).concat(kindOf === 'guest' || kindOf === 'vip' ? [r2] : []).concat(rSvc ? [rSvc, rWait] : []).forEach(function (r) { info.appendChild(r); });
     b.appendChild(info);
+    var rFerries = null, ferryMinus = null, ferryPlus = null;
+    if (kindOf === 'guest') {
+      rFerries = mrow('Ferries on this water');
+      ferryMinus = h('button.btn.sm.alt', { text: '-' });
+      ferryPlus = h('button.btn.sm.alt', { text: '+' });
+      function adjFerries(delta) {
+        var pi = B.pierInfo(id); if (!pi || pi.guestPeers < 2) return;
+        B.setFerries(id, pi.ferries + delta); UI.snd('click');
+        var np = B.pierInfo(id); if (np) paintFerries(np);
+      }
+      ferryMinus.addEventListener('click', function () { adjFerries(-1); });
+      ferryPlus.addEventListener('click', function () { adjFerries(1); });
+      b.appendChild(h('div.mbx', h('h4', { text: 'Ferry fleet' }), rFerries, h('div.btnrow', ferryMinus, ferryPlus)));
+    }
+    function paintFerries(pi) {
+      if (!rFerries) return;
+      var active = pi.guestPeers >= 2;
+      rFerries._v.textContent = active ? (pi.ferries + ' (cap ' + pi.ferryCap + ' each)') : '0 (needs 2+ guest piers)';
+      ferryMinus.disabled = !active || pi.ferries <= 1;
+      ferryPlus.disabled = !active || pi.ferries >= pi.ferryMax;
+    }
     var fareV = h('b'), slider = h('input', { type: 'range', min: '0', max: String(BC.fareMax), step: '0.5', 'aria-label': 'Fare' }), freeBtn = h('button.btn.sm.alt');
     function paintFare() {
       var q = P.find(Z.state.objects, id); if (!q) return; var free = !!q.mfree, fv = B.fareOf(q);
@@ -55,8 +79,15 @@ window.Z = window.Z || {}; var Z = window.Z;
         rStatus._v.textContent = !pi.connected ? 'No path at the entrance' : pi.kind !== 'vip' && pi.kind !== 'staff' && !pi.onWater ? 'Not touching water' : 'Open';
         rStatus.className = 'mr ' + (pi.connected && (pi.onWater || pi.kind === 'vip' || pi.kind === 'staff') ? 'ok' : 'bad');
         if (kindOf === 'vip') { r1._v.textContent = String(Z.state.boats.stats.vip); r2._v.textContent = fmt(Z.state.boats.stats.vipIncome); }
-        else if (kindOf === 'guest') { r1._v.textContent = String(pi.rides); r2._v.textContent = fmt(pi.income); }
-        else r1._v.textContent = pi.linked + (kindOf === 'staff' ? ' other helipad' : ' other pier') + (pi.linked === 1 ? '' : 's');
+        else if (kindOf === 'guest') {
+          rQueue._v.textContent = String(pi.queueing);
+          r1._v.textContent = String(pi.rides); r2._v.textContent = fmt(pi.income);
+          paintFerries(pi);
+        } else {
+          r1._v.textContent = pi.linked + (kindOf === 'staff' ? ' other helipad' : ' other pier') + (pi.linked === 1 ? '' : 's');
+          if (rSvc) rSvc._v.textContent = pi.serviceAvail + ' / ' + pi.serviceTotal + ' available';
+          if (rWait) rWait._v.textContent = String(pi.staffWaiting);
+        }
         if (kindOf === 'guest' && document.activeElement !== slider) paintFare();
         return true;
       }

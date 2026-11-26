@@ -196,3 +196,115 @@ test('boats state survives save/load and old saves load with defaults', () => {
   assert.equal(z.state.boats.vipT > 0, true);
   assert.equal(z.Boats.canReachComp(comp(z, 27, 30), comp(z, 8, 27)), true);
 });
+
+test('multiple guests queue and board a single big ferry that waits at the pier before departing', () => {
+  const z = world(); twoShores(z);
+  const S = z.state, W = comp(z, 8, 27), spot = 8 + 28 * z.N;
+  const ferries = z.Boats.vessels().filter(v => v.kind === 'ferry');
+  assert.equal(ferries.length, 1, 'one default ferry per water body');
+  assert.equal(ferries[0].state, 'wait');
+  const guests = [];
+  for (let k = 0; k < 5; k++) {
+    const g = guestAt(z, 22, 26);
+    assert.equal(z.Boats.shortcut(g, spot, { id: 999 }, null), true);
+    guests.push(g);
+  }
+  for (let n = 0; n < 40 && !guests.every(g => g.state === 'boat'); n++) z.Sim._step(0.25);
+  assert.ok(guests.every(g => g.state === 'boat'), 'all 5 guests boarded the ferry');
+  assert.equal(z.Boats.trips().length, 1, 'all guests share one ferry trip, not 5 individual boats');
+  assert.equal(ferries[0].pax.length, 5);
+  assert.equal(ferries[0].state, 'wait', 'ferry waits at the pier for ferryDwell before departing');
+  const coords = new Set(guests.map(g => `${g.x.toFixed(2)},${g.z.toFixed(2)}`));
+  assert.equal(coords.size, 5, 'passengers sit at distinct deck seats');
+  step(z, 30);
+  assert.ok(guests.every(g => g.state !== 'boat' && z.Sim._rt().comp[g.ti] === W), 'all 5 guests arrived on the far shore');
+  assert.equal(S.boats.stats.riders, 5);
+});
+
+test('setFerries adds and trims ferries up to ferryMax and survives save/load', () => {
+  const z = world(); twoShores(z);
+  const pier = z.state.objects.find(o => o.type === 'guest_pier' && o.i === 21);
+  assert.equal(z.Boats.pierInfo(pier.id).ferries, 1);
+  assert.equal(z.Boats.setFerries(pier.id, 2).ok, true);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'ferry').length, 2);
+  assert.equal(z.Boats.pierInfo(pier.id).ferries, 2);
+  assert.equal(z.Boats.setFerries(pier.id, 99).ok, true);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'ferry').length, z.DATA.boats.ferryMax);
+  const saved = z.Sim.save();
+  assert.equal(z.Sim.load(saved), true);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'ferry').length, z.DATA.boats.ferryMax);
+  assert.equal(z.Boats.setFerries(pier.id, 1).ok, true);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'ferry').length, 1);
+});
+
+test('service piers cap service boats and queue excess waiting staff', () => {
+  const z = world();
+  lay(z, row(8, 9, 26)); lay(z, [[8, 27], [8, 28]]);
+  assert.ok(z.Sim.placeObject('service_pier', 21, 24, 0).ok);
+  assert.ok(z.Sim.placeObject('guest_pier', 8, 24, 0).ok);
+  const sp = z.state.objects.find(o => o.type === 'service_pier');
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'service').length, 2, '1 service pier gives 2 service boats');
+  assert.equal(z.Boats.pierInfo(sp.id).serviceTotal, 2);
+  z.state.dirt.fill(0);
+  z.state.dirt[8 + 26 * z.N] = 200;
+  z.state.dirt[8 + 27 * z.N] = 200;
+  z.state.dirt[8 + 28 * z.N] = 200;
+  for (let k = 0; k < 3; k++) assert.ok(z.Sim.hireStaff('cleaner').ok);
+  let sawWait = false, maxSvc = 0;
+  for (let n = 0; n < 240; n++) {
+    z.Sim._step(0.25);
+    const svcs = z.Boats.vessels().filter(v => v.kind === 'service');
+    maxSvc = Math.max(maxSvc, svcs.length);
+    if (z.Boats.pierInfo(sp.id).staffWaiting > 0) sawWait = true;
+  }
+  assert.equal(maxSvc, 2, 'never spawns more than 2 service boats for 1 service pier');
+  assert.ok(sawWait, 'the 3rd staff member waited while both service boats were busy');
+  step(z, 80);
+  assert.equal(z.state.dirt[8 + 28 * z.N], 0, 'waiting staff crossed once a service boat returned');
+  assert.equal(z.state.dirt[8 + 26 * z.N], 0);
+  assert.equal(z.state.dirt[8 + 27 * z.N], 0);
+
+  // Adding 3 more service piers (4 total) caps at serviceMaxPerBody (6, not 8)
+  lay(z, [[21, 30], [22, 30]]);
+  assert.ok(z.Sim.placeObject('service_pier', 21, 28, 0).ok);
+  lay(z, [[8, 22], [8, 23]]);
+  assert.ok(z.Sim.placeObject('service_pier', 8, 20, 0).ok);
+  lay(z, [[14, 17], [15, 17]]);
+  assert.ok(z.Sim.placeObject('service_pier', 14, 18, 2).ok);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'service').length, z.DATA.boats.serviceMaxPerBody);
+});
+
+test('demolishing a pier cleans up queuing and aboard guests without stranding anyone', () => {
+  const z = world(); twoShores(z);
+  const spot = 8 + 28 * z.N;
+  const g1 = guestAt(z, 22, 26), g2 = guestAt(z, 22, 26);
+  z.Boats.shortcut(g1, spot, { id: 999 }, null);
+  z.Boats.shortcut(g2, spot, { id: 999 }, null);
+  for (let n = 0; n < 60 && g1.state !== 'boat'; n++) z.Sim._step(0.25);
+  assert.equal(g1.state, 'boat');
+  assert.equal(z.Sim.bulldoze(8, 24).ok, true);
+  assert.equal(z.Boats.vessels().filter(v => v.kind === 'ferry').length, 0);
+  for (const g of [g1, g2]) {
+    assert.notEqual(g.state, 'boat');
+    assert.notEqual(g.state, 'queue');
+    assert.equal(g.absY, null);
+    assert.ok(z.state.path[g.ti] > 0, 'guest landed safely on a path tile');
+  }
+});
+
+test('unrelated edits do not wipe an active ferry mid-crossing', () => {
+  const z = world(); twoShores(z);
+  const g = guestAt(z, 22, 26), spot = 8 + 28 * z.N, W = comp(z, 8, 27);
+  z.Boats.shortcut(g, spot, { id: 999 }, null);
+  for (let n = 0; n < 80; n++) {
+    z.Sim._step(0.25);
+    if (g.state === 'boat' && z.Boats.vessels()[0].state === 'sail') break;
+  }
+  assert.equal(z.Boats.vessels()[0].state, 'sail');
+  assert.equal(z.Sim.placePath(28, 30, 'paved').ok, true);
+  assert.equal(g.state, 'boat', 'guest remains aboard the sailing ferry after unrelated path edit');
+  assert.equal(z.Boats.vessels()[0].state, 'sail');
+  step(z, 35);
+  assert.notEqual(g.state, 'boat');
+  assert.equal(z.Sim._rt().comp[g.ti], W, 'ferry still finishes crossing to the far shore');
+});

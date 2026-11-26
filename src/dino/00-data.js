@@ -1126,7 +1126,10 @@ window.Z.DATA.donors = [
 (function (D) {
   D.boats = {
     fare: 6, fareMax: 25, fareRef: 6,                      // default boat fare, slider maximum, fare guests consider "standard"
-    speed: 5, minTrip: 8,                                  // boat speed (units/s); shortest trip length counted (units)
+    speed: 5, minTrip: 8,                                  // ferry speed (units/s); shortest trip length counted (units)
+    ferryCap: 16, ferryDwell: 6, ferryMax: 4,              // big guest ferry: capacity, pier wait (s), max ferries per water body
+    servicePerPier: 2, serviceMaxPerBody: 6, serviceSpeed: 6.5,   // smaller service boats: per service pier, cap per water body, speed (units/s)
+    queueLimit: 75,                                        // max queue wait (s) at a guest pier before a guest gives up
     airSpeed: 14, airAlt: 14,                              // staff helicopter hop: speed (units/s), cruising height
     vip: { fee: 150, every: [50, 110], spend: 5, demand: 8, flyIn: 7, flyOut: 6 }   // arrival fee, seconds between arrivals (before rating), spending multiple, happiness they demand, rotor times
   };

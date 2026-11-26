@@ -1369,6 +1369,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     delete RT.bq[o.id];
     if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
+    if (Z.Boats && o.kind === 'building' && BD[o.type] && BD[o.type].boats) Z.Boats.onPierRemoved(o);
     bus.emit('objectRemoved', o);
   }
   function bulldoze(i, j, opts) {
@@ -2065,7 +2066,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (g.state === 'ride' && g.sfv && Z.Safari) Z.Safari.release(g);   // safari package: step off the truck or boat
     else if (g.state === 'ride' && g.coasterTrain && Z.Coaster) Z.Coaster.release(g);   // coaster package: step off the train
     else if (g.state === 'ride' && g.rtr && Z.Monorail) Z.Monorail.release(g);   // monorail package: step off the train (alights at the nearest path)
-    if (g.state === 'boat' && Z.Boats) Z.Boats.release(g);   // boats package: leave the boat trip
+    if (Z.Boats) Z.Boats.release(g);   // boats package: leave the ferry/boat trip or pier queue/plan
     if (g.state === 'use' && g.ubid) { var q = RT.bq[g.ubid]; if (q && q.use > 0) q.use--; g.ubid = 0; }
     if (g.state === 'queue' && g.gid) { var q2 = RT.bq[g.gid]; if (q2) { var k = q2.q.indexOf(g.id); if (k >= 0) q2.q.splice(k, 1); } }
     if (g.state === 'sit' && g.bid) { if (RT.benchOcc[g.bid] > 0) RT.benchOcc[g.bid]--; g.x = cxOf(g.ti) + g.lo * 0.5; g.z = czOf(g.ti); }
@@ -2734,9 +2735,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     else if (g.state === 'queue') {
       g.idle = 0; g.wt += a;
       var qObj = g.gid ? RT.oById.get(g.gid) : null;
-      var qLim = Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0, (qObj && BD[qObj.type] && BD[qObj.type].coasterStation) ? 45 : 0);
-      if (g.wt > qLim) {   // monorail/safari/coaster package: platforms & stations are allowed a longer wait
+      var qLim = Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0, Z.Boats ? Z.Boats.queueLimit(g) : 0, (qObj && BD[qObj.type] && BD[qObj.type].coasterStation) ? 45 : 0);
+      if (g.wt > qLim) {   // monorail/safari/coaster/boats package: platforms, stations & piers are allowed a longer wait
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
+        if (Z.Boats) Z.Boats.release(g);
         g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 2; g.nbuy = hr * 0.2; say(g, 'crowded');
       }
     } else if (g.state === 'sit') {
@@ -2849,7 +2851,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
       if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
-      if (BD[o.type].coasterStation) continue;   // coaster package: trains board from RT.bq[id].q directly
+      if (BD[o.type].coasterStation || BD[o.type].boats) continue;   // coaster & boats packages: trains & ferries board from RT.bq[id].q directly
       var cap = BD[o.type].capacity;
       while (q.q.length && q.use < cap) {
         var gq = RT.gById.get(q.q.shift());
