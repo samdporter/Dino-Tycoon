@@ -60,3 +60,15 @@ body.sv-on #timerpop{display:none!important}
   #timerchip{order:5;height:30px;padding:0 8px;font-size:12px;gap:4px}
   body:not(.pt-hud-off) #stack{top:calc(130px + var(--sat))}
 }
+
+/* ===== Luxury Resort UI ===== */
+.tp-fbar{flex:0 0 auto;display:flex;flex-direction:column;flex-wrap:wrap;gap:4px;max-height:108px;align-content:flex-start;margin:0 4px 0 0;padding:2px 4px}
+.tp-chip{flex:0 0 auto;padding:5px 9px;border-radius:9px;border:1.5px solid rgba(255,255,255,.25);background:rgba(255,255,255,.14);color:#eef6e8;font:700 11.5px/1.1 var(--sans);white-space:nowrap}
+.tp-chip.active{background:var(--paper);color:var(--moss3);border-color:#d4af37;box-shadow:0 2px 0 rgba(0,0,0,.22)}
+.psec{display:flex;flex-direction:column;gap:5px;padding:8px 10px;border-radius:12px;background:rgba(240,179,50,.11);border:1.5px solid rgba(196,154,44,.4)}
+.psec .flex.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.psec .mb4{margin-bottom:3px}
+.badge.gold{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;background:linear-gradient(#f8dfa0,#dfb142);color:#4b3204;font:800 11px var(--sans);border:1px solid #b5851e}
+.psec .mr{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;gap:8px}
+.psec .mr b{font-variant-numeric:tabular-nums}
+.text-muted{color:var(--ink2)}

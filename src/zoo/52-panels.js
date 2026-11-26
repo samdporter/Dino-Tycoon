@@ -134,6 +134,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var breachBox = h('div', { style: 'display:none;flex-direction:column;gap:6px;margin:4px 0' }), breachKey = ''; b.appendChild(breachBox);
     var encTypeTxt = h('div.kv'); b.appendChild(encTypeTxt);
     var spaceTxt = h('div.kv'); b.appendChild(spaceTxt);
+    if (UI.Resort && UI.Resort.enclosureBlock) UI.Resort.enclosureBlock(e, b);
     var spBox = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(spBox);
     var iss = h('div'); b.appendChild(iss); var issKey = [], spKey = '';
     b.appendChild(rn);
@@ -278,6 +279,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       pv.textContent = UI.fmt2(o.price); pr(); hint.textContent = priceHint(o.price, def.price);
     }
     b.appendChild(stats);
+    if (UI.Resort && UI.Resort.objectBlock) UI.Resort.objectBlock(o, def, b);
     var refund = Math.floor(def.cost * 0.5);
     b.appendChild(h('div.btnrow', confirmBtn(ic('trash') + 'Demolish', 'Demolish for +' + fmt(refund) + '?', function () { Z.Sim.bulldoze(o.i, o.j); UI.snd('build'); Panel.hide(); }, 'alt')));
     var key = '';

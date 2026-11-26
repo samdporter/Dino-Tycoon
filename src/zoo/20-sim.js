@@ -954,6 +954,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var wts = 0.22 + 0.2 + 0.12 + wW + sW + rW + 0.1 + 0.06;
     var v = (terrain * 0.22 + space * 0.2 + foliage * 0.12 + water * wW + shelter * sW + rocks * rW + social * 0.1 + clean * 0.06) / wts;
     v = clamp(v, 0, 1);
+    var luxB = Z.Resort ? Z.Resort.enclosureBonus(enc) : null;
+    if (luxB && luxB.isLuxury && luxB.welfareBonus) v = clamp(v + luxB.welfareBonus, 0, 1);
     if (enc.minFence < sp.minFence) iss.push('Fence is too weak (needs strength ' + sp.minFence + ')');
     if (sp.needsCage && !enc.isCage) {
       iss.push('Needs a roofed cage enclosure (use Primate cage fences)');
@@ -976,6 +978,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (a.state !== 'sleep' && a.state !== 'sick' && !RT.shelter[tileOf(a.x, a.z)]) E.vis++;
     }
     E.happy = E.nAn ? E.happy / E.nAn : 60;
+    var luxB = Z.Resort ? Z.Resort.enclosureBonus(enc) : null;
+    if (luxB && luxB.isLuxury) {
+      if (luxB.appealMul) E.appeal *= luxB.appealMul;
+      if (luxB.welfareBonus) E.happy = clamp(E.happy + luxB.welfareBonus * 100, 0, 100);
+    }
     E.bySp = bySp;
     enc.badPlants = E.struggle || 0;
     enc.suitability = {};
@@ -999,6 +1006,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     recomputeEnclosures();
     if (Z.Coaster) Z.Coaster.updateGraph();
     if (Z.Coaster) Z.Coaster.update();
+    if (Z.Resort) Z.Resort.recompute();
     RT.value = arrivalValue();
   }
 
@@ -1300,6 +1308,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     delete RT.bq[o.id];
     if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
     if (Z.Boats && o.kind === 'building' && BD[o.type] && BD[o.type].boatPier) Z.Boats.onPierRemoved(o);
+    if (Z.Resort) Z.Resort.onObjectRemoved(o);
     bus.emit('objectRemoved', o);
   }
 
@@ -1932,14 +1941,16 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   function hurtGuest(g, an) {
     var d = aDanger(an), comp = Math.round(350 * d * rng.range(0.8, 1.4));
+    var aura = Z.Resort ? Z.Resort.securityAura(g.x, g.z) : null;
+    var damp = aura && aura.protected ? aura.panicDamp : 1;
     an.hurtT = 5;
     spend(comp, 'other');
     if (!S.stats) S.stats = {};
     S.stats.injuries = (S.stats.injuries || 0) + 1;
     S.stats.compensation = (S.stats.compensation || 0) + comp;
-    S.panic = Math.min(2, (S.panic || 0) + 0.3);
-    S.reputation = clamp(S.reputation - 3, 0, 100);
-    g.mood -= 40; g.happiness = Math.min(g.happiness, 8);
+    S.panic = Math.min(2, (S.panic || 0) + 0.3 * damp);
+    S.reputation = clamp(S.reputation - 3 * damp, 0, 100);
+    g.mood -= 40 * damp; g.happiness = Math.min(g.happiness, aura && aura.protected ? 25 : 8);
     msg('A guest was hurt by ' + an.name + ' the ' + lc(SP[an.species].name) + '! The zoo paid ' + fmt(comp) + ' in compensation.', 'bad');
     bus.emit('injury', { guest: g, animal: an, compensation: comp });
     startLeaving(g);
@@ -1950,6 +1961,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var best = null, bestPlan = null, bs = 1e9, k, rejected = 0, cand = 0, tolE = g.tol * clamp(WX.spend, 0.5, 1.6);
     for (k = 0; k < list.length; k++) {
       var o = list[k], def = BD[o.type];
+      if (def.resortRole === 'lodging') continue;
       if (kind === 'cover') { if (!gxIndoor(o)) continue; }
       else if (gxKind(o) !== kind) continue;
       if (def.coasterStation) { if (!Z.Coaster || !Z.Coaster.stationReady(o.id)) continue; }
@@ -2187,6 +2199,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (g.al[kind] > 0) g.al[kind]--;
       var cat = (def.type === 'food' || def.type === 'drink') ? 'food' : (def.type === 'toilet' ? 'other' : 'shops');
       earn(price, cat, g.x, g.z); o.income = (o.income || 0) + price;
+      if (def.resort && Z.Resort) Z.Resort.recordSpend(o, price);
     }
     q.use++; g.state = 'use'; g.ubid = o.id; g.speed = 0; g.seenB[o.id] = 1;
     g.wt = def.rideKind === 'coaster' ? 11 : def.type === 'ride' ? 9 : def.type === 'arcade' ? 5 : def.type === 'food' ? (kind === 'treat' ? 3 : 6) : def.type === 'toilet' ? 4 : def.type === 'drink' ? 3 : 4;
@@ -2417,6 +2430,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var gd = RT.guides[k], dx = gd.x - g.x, dz = gd.z - g.z;
       if (dx * dx + dz * dz < 144) { target += 8; g.fun = Math.min(100, g.fun + 1 * a); break; }
     }
+    var secAura = Z.Resort ? Z.Resort.securityAura(g.x, g.z) : null;
+    if (secAura && secAura.protected && secAura.safetyBonus) target += secAura.safetyBonus;
     if (RT.guestCrowd > 1.1) target -= (RT.guestCrowd - 1.1) * 6;
     g.happiness += (clamp(target, 0, 100) - g.happiness) * Math.min(1, 0.35 * a);
     if (WX.fun) g.happiness += WX.fun * a;
@@ -2434,17 +2449,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     } else { g.wxd = 0; g.cov = 0; }
     if (g.state !== 'leave' && !(g.pend && g.pend.state === 'leave')) {
       var inUse = g.state === 'use' && !g.shel;
+      var staysOvernight = S.open && Z.Resort && Z.Resort.shouldStayOvernight(g);
       var leave = false;
-      if (!S.open || S.time >= CLOSE_T + (inUse ? 0.04 : -0.004)) leave = true;
+      if (!S.open || (!staysOvernight && S.time >= CLOSE_T + (inUse ? 0.04 : -0.004))) leave = true;
       else if (!inUse && g.stay <= 0) {
-        if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
+        if (staysOvernight) { g.stay += hr; g.stay0 += hr; }
+        else if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
         else leave = true;
       } else if (!inUse) {
         if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, Math.max(hr * rng.range(0.35, 1.0), rng.range(6, 14))); }
         if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
         else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;
         else if (g.energy < 6 && g.nbt > 0) leave = true;
-        else if (S.time > CLOSE_T - 0.14) {
+        else if (!staysOvernight && S.time > CLOSE_T - 0.14) {
           var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = isParkConnected(g.ti) ? 35 : 0;
           if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01 - (g.lj === undefined ? (g.lj = rng.range(0, 0.07)) : g.lj)) leave = true;
         }
@@ -2471,9 +2488,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           if (ad >= 2) {
             releaseGuest(g);
             var bk = RT.bunkers.length ? pickBunker(g, an) : null;
+            var damp = secAura && secAura.protected ? secAura.panicDamp : 1;
             g.state = 'flee'; g.glide = 0; g.fx = an.x; g.fz = an.z; g.ni = -1;
-            if (bk) { g.gt = 'bunker'; g.gid = bk.id; g.dk = 'b' + bk.id; g.fleeT = 25; g.mood -= 2; }
-            else { g.gt = ''; g.dk = ''; g.fleeT = 7; g.mood -= RT.secCount > 0 ? 6 : 12; g.happiness -= 6; }
+            if (bk) { g.gt = 'bunker'; g.gid = bk.id; g.dk = 'b' + bk.id; g.fleeT = 25; g.mood -= 2 * damp; }
+            else { g.gt = ''; g.dk = ''; g.fleeT = 7; g.mood -= (RT.secCount > 0 ? 6 : 12) * damp; g.happiness -= 6 * damp; }
           }
           break;
         }
@@ -2568,6 +2586,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function guestStep(g, dt) {
+    if (g.state === 'resort_sleep') { g.speed = 0; g.glide = 0; return; }
     if (!RT.gocc) gxGrid();
     if (!g.al) gxPlan(g, gxHr(), 0);
     if (g.pv !== RT.pathVer) { if (revalidateGuest(g) === false) return; }
@@ -2623,7 +2642,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
-      if (s === 'ride' || s === 'boat' || s === 'fly') continue;
+      if (s === 'ride' || s === 'boat' || s === 'fly' || s === 'resort_sleep') continue;
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -3560,7 +3579,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== STAFF ======================
-  function staffSpeed(s) { return s.type === 'security' ? 2.7 : s.type === 'electrician' ? 2.6 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : s.type === 'handyman' ? 1.85 : 2.2; }
+  function staffSpeed(s) { return s.type === 'resort_guard' ? 2.7 * 1.25 : s.type === 'security' ? 2.7 : s.type === 'electrician' ? 2.6 : s.type === 'mechanic' ? 2.5 : s.type === 'cleaner' ? 1.9 : s.type === 'handyman' ? 1.85 : 2.2; }
   function walkRoute(s, dt) {
     var r = s.route;
     if (!r || s.ri >= r.length) { s.speed = 0; return true; }
@@ -3676,7 +3695,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function urgentTaskReady(s) {
     var t = tileOf(s.x, s.z), sc0 = RT.scomp[S.path[t] ? t : s.ti];
-    if (s.type === 'security') return hasEscapeeToCatch(s);
+    if (s.type === 'security' || s.type === 'resort_guard') return hasEscapeeToCatch(s);
     if (s.type === 'keeper') return !!pickKeeperEnc(s, sc0) || (RT.secCount === 0 && hasEscapeeToCatch(s));
     if (s.type === 'vet') return !!pickVetAnimal(s, sc0);
     if (s.type === 'cleaner') return hasCleanerWork(s, sc0);
@@ -3732,15 +3751,29 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
   function startPatrol(s) {
     s.state = 'idle'; s.speed = 0; s.wt = rng.range(0.5, 1.2); s.tk = null; s.route = null;
-    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Patrolling';
+    s.task = (s.type === 'keeper' || s.type === 'vet' || s.type === 'security' || s.type === 'resort_guard' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Patrolling';
     var pt = RT.pathTiles; if (!pt.length || !S.path[s.ti]) return;
     var sc0 = RT.scomp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.scomp[c] === sc0; }) : pt;
     if (!pool.length) return;
     var homeT = s.home >= 0 ? s.home : s.ti, hi = homeT % N, hj = (homeT - hi) / N;
     var tgt = pool[Math.floor(rng.next() * pool.length)];
-    for (var k = 0; k < 6; k++) {
-      var c = pool[Math.floor(rng.next() * pool.length)], ci = c % N, cj = (c - ci) / N;
-      if (Math.abs(ci - hi) + Math.abs(cj - hj) < 26) { tgt = c; break; }
+    var rPatrol = false;
+    if (s.type === 'resort_guard') {
+      var rSpots = [];
+      for (var ri = 0; ri < S.objects.length; ri++) {
+        var ro = S.objects[ri], rdef = ro && ro.kind === 'building' ? BD[ro.type] : null;
+        if (rdef && rdef.resort && buildingConnected(ro)) {
+          var apt = adjacentPathTiles(ro);
+          for (var ai = 0; ai < apt.length; ai++) if (!sc0 || RT.scomp[apt[ai]] === sc0) rSpots.push(apt[ai]);
+        }
+      }
+      if (rSpots.length) { tgt = rSpots[Math.floor(rng.next() * rSpots.length)]; rPatrol = true; }
+    }
+    if (!rPatrol) {
+      for (var k = 0; k < 6; k++) {
+        var c = pool[Math.floor(rng.next() * pool.length)], ci = c % N, cj = (c - ci) / N;
+        if (Math.abs(ci - hi) + Math.abs(cj - hj) < 26) { tgt = c; break; }
+      }
     }
     var r = findRoute(s.ti, function (t) { return t === tgt; });
     if (r && r.length) { s.tk = { k: 'patrol', chk: 1 }; s.route = r; s.ri = 0; s.state = 'walk'; }
@@ -3823,7 +3856,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var k, enc, a;
     if (!staffOnPath(s)) { s.state = 'idle'; s.speed = 0; s.wt = 1; s.task = 'Waiting for path'; return; }
     var sc0 = RT.scomp[s.ti];
-    if (s.type === 'security') {
+    if (s.type === 'security' || s.type === 'resort_guard') {
       if (RT.escaped.length) {
         for (k = 0; k < RT.escaped.length; k++) {
           a = RT.escaped[k]; if (claimed('a' + a.id, s)) continue;
@@ -4088,10 +4121,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var w = RATING_WEIGHTS, raw = w.animals * animalsC + w.welfare * animalWelfare + w.guests * guests + w.facilities * facilities + w.cleanliness * clean + w.scenery * scenery;
     var baseStars = 5 * Math.pow(clamp(raw, 0, 1), 1.15);
     var spCap = n === 0 ? 0.5 : (0.55 + Math.min(4.45, nSp * 0.26 + Math.min(n, 35) * 0.02));
-    var attractionBonus = attractionRatingBonus(ref), stars = clamp(Math.min(baseStars, spCap) + attractionBonus - 0.6 * (S.panic || 0), 0, 5);
+    var resortBonus = Z.Resort ? Z.Resort.ratingBonus() : 0;
+    var attractionBonus = attractionRatingBonus(ref), stars = clamp(Math.min(baseStars, spCap) + attractionBonus + resortBonus - 0.6 * (S.panic || 0), 0, 5);
 
     return { stars: stars, animals: animalsC, welfare: animalWelfare, guests: guests, facilities: facilities, cleanliness: clean, scenery: scenery, diversity: clamp(nSp / 14, 0, 1), panic: S.panic || 0, rating: S.rating,
-      weights: w, baseStars: baseStars, collectionCap: spCap, attractionBonus: attractionBonus,
+      weights: w, baseStars: baseStars, collectionCap: spCap, attractionBonus: attractionBonus, resortBonus: resortBonus,
       speciesCount: nSp, animalCount: n, serviceDemand: ref, services: facility.services,
       cleanPaths: cleanP, cleanEnclosures: nEncA ? ce / nEncA : 1 };
   }
@@ -4443,7 +4477,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security' || st.type === 'resort_guard') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
@@ -4460,7 +4494,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var rb = computeRating(); S.rating += (rb.stars - S.rating) * 0.015; S.rating = clamp(S.rating, 0, 5);
     checkUnlocks();
     var t = S.time;
-    if (t >= CLOSE_T + 0.08 || t < OPEN_T - 0.03) { for (k = gs.length - 1; k >= 0; k--) removeGuest(gs[k]); }
+    if (t >= CLOSE_T + 0.08 || t < OPEN_T - 0.03) {
+      for (k = gs.length - 1; k >= 0; k--) {
+        if (Z.Resort && Z.Resort.shouldStayOvernight(gs[k])) continue;
+        removeGuest(gs[k]);
+      }
+    }
     for (k = 0; k < S.enclosures.length; k++) {
       e = S.enclosures[k]; var E = RT.encx[e.id]; if (!e.animals.length || !E) continue;
       for (var spId in E.breakdown) {
@@ -4563,6 +4602,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     wages = Math.round(wages * (DIFF.costs || 1));
     if (up) spend(up, 'upkeep'); if (wages) spend(wages, 'wages');
     if (Z.Coaster) Z.Coaster.newDay();
+    if (Z.Resort) Z.Resort.onNewDay();
     if (S.loan > 0) { var intr = Math.round(S.loan * (DIFF.interest || 0.004)); if (intr) spend(intr, 'other'); }
     var t = S.finance.today;
     var income = t.tickets + t.food + t.shops + (t.boats || 0) + t.donations, costs = -(t.upkeep + t.wages + t.marketing);
@@ -4710,6 +4750,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = gs.length - 1; k >= 0; k--) { if (k < gs.length) guestStep(gs[k], dt); }
     if (Z.Coaster) Z.Coaster.step(dt);
     if (Z.Boats) Z.Boats.step(dt);
+    if (Z.Resort) Z.Resort.step(dt);
     updateQueues();
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
@@ -5008,6 +5049,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     ensureInit();
     if (Z.Coaster) Z.Coaster.afterLoad();
     if (Z.Boats) Z.Boats.afterLoad();
+    if (Z.Resort) Z.Resort.afterLoad();
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to your new zoo! Build an enclosure, add some animals, and open the gates.', 'info', false);
     bus.emit('reset');
@@ -5114,6 +5156,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         var g = S.guests[k];
         g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
         if (g.state === 'ride' && g.coasterTrain) { /* re-attached by Z.Coaster.afterLoad */ }
+        else if (g.state === 'resort_sleep') { /* re-attached by Z.Resort.afterLoad */ }
         else if (g.state === 'boat' || g.state === 'fly') { g.state = g.vip ? 'leave' : 'walk'; g.gt = g.vip ? 'exit' : ''; g.dk = g.vip ? 'exit' : ''; }
         else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; }
         else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
@@ -5141,6 +5184,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       recomputeEnclosures();
       if (Z.Coaster) Z.Coaster.afterLoad();
       if (Z.Boats) Z.Boats.afterLoad();
+      if (Z.Resort) Z.Resort.afterLoad();
       secondly();
       bus.emit('reset');
       return true;
@@ -5300,6 +5344,43 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     objFootprint: objFootprint, frontPathTiles: frontPathTiles, frontList: frontList, adjacentPathExists: adjacentPathExists,
     sourcesFor: sourcesFor, getField: getField, isParkConnected: isParkConnected,
     spawnGuest: spawnGuest, removeGuest: removeGuest, openNow: openNow
+  };
+
+  function objFront(o) {
+    if (!o) return { x: 0, z: 0 };
+    var fpt = frontPathTiles(o);
+    if (fpt && fpt.length) {
+      var t = fpt[Math.floor(fpt.length / 2)];
+      return { x: cxOf(t), z: czOf(t) };
+    }
+    var fl = frontList(objFootprint(o));
+    if (fl && fl.length) {
+      var f0 = fl[Math.floor(fl.length / 2)];
+      return { x: (f0.i + 0.5) * TILE, z: (f0.j + 0.5) * TILE };
+    }
+    return objCenter(o);
+  }
+
+  Z.resortCtx = {
+    S: function () { return S; },
+    RT: function () { return RT; },
+    D: function () { return D; },
+    BD: function () { return BD; },
+    SD: function () { return SC; },
+    FD: function () { return D.fences; },
+    OPEN_T: OPEN_T,
+    CLOSE_T: CLOSE_T,
+    DAY_SECONDS: DAY_SECONDS,
+    TILE: TILE,
+    MAX_GUESTS: MAX_GUESTS,
+    getN: function () { return N; },
+    earn: earn,
+    spawnGuest: spawnGuest,
+    objCenter: objCenter,
+    objFront: objFront,
+    isConnected: buildingConnected,
+    msg: msg,
+    rng: rng
   };
 
   Z.Sim = {

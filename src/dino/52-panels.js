@@ -150,6 +150,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var rlBox = UI.Realms ? UI.Realms.encBlock(id) : null; if (rlBox) b.appendChild(rlBox.el);   // realms package
     var pwBox = UI.Power ? UI.Power.encBlock(id) : null; if (pwBox) b.appendChild(pwBox.el);   // power package: electric fence state
     var sfBox = UI.Safari ? UI.Safari.encBlock(id) : null; if (sfBox) b.appendChild(sfBox.el);   // safari package: zone status, corridor, lockdown
+    if (UI.Resort && UI.Resort.enclosureBlock) UI.Resort.enclosureBlock(e, b);
     var spBox = h('div', { style: 'display:flex;flex-direction:column;gap:6px' }); b.appendChild(spBox);
     var iss = h('div'); b.appendChild(iss); var issKey = [], spKey = '';
     b.appendChild(rn);
@@ -289,6 +290,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (def.safariPortal) return 'Safari barrier';
     if (def.safariRanger) return 'Safari rangers';
     if (def.rideKind === 'coaster') return 'Rollercoaster';
+    if (def.resort) return 'Luxury Resort';
     return ({ food: 'Food stall', drink: 'Drinks stall', toilet: 'Toilets', shop: 'Shop', ride: 'Ride', arcade: 'Arcade & game stall', info: 'Information', staff: 'Staff building', science: 'Science building', transport: 'Transport building', utility: 'Utility building' })[def.type] || '';
   }
   function openObject(id) {
@@ -321,6 +323,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (isB && def.realm && UI.Realms && UI.Realms.objectBlock && (def.realm === 'tower' && def.id === 'tagging_tower' || def.realm === 'plant')) { var rlo = UI.Realms.objectBlock(id); b.appendChild(rlo.el); var prevR = sciUpd; sciUpd = function () { rlo.update(); }; }
     if (isB && def.moat && UI.Moats) { var mo = UI.Moats.objectBlock(id); b.appendChild(mo.el); var prevS = sciUpd; sciUpd = function () { mo.update(); }; }
     if (isB && UI.Power && (def.needsPower || def.gen || def.powerNode || def.battery)) { var pwo = UI.Power.objectBlock(id); b.appendChild(pwo.el); var prevP = sciUpd; sciUpd = function () { if (prevP) prevP(); pwo.update(); }; }   // power package
+    if (isB && UI.Resort && UI.Resort.objectBlock) UI.Resort.objectBlock(o, def, b);
     if (isB && def.type === 'science') {
       var sci = h('div.scibox'); b.appendChild(sci);
       b.appendChild(h('button.btn.sm.gold', { style: 'margin:6px 0', html: ic('flask') + (o.type === 'hatchery' ? 'Open hatchery research' : 'Open the lab'), on: { click: function () { UI.Research.open(o.type === 'hatchery' ? 'genomes' : 'lab'); } } }));

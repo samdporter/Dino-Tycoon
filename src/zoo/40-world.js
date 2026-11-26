@@ -1071,7 +1071,7 @@ function buildPathChunk(ci, cj) {
 var FC = {
   wood: { post: '#6a4222', rail: '#a06f3d', cap: '#4f3118' }, rail: { post: '#7d5d3b', rail: '#b38d5e' },
   chain: { post: '#8e969e' }, chainR: { post: '#454c53' }, cage: { post: '#384048', rail: '#2b3238', bar: '#46505a' },
-  glass: { post: '#b8c1c8' }, concrete: { wall: '#bcb8ae', cap: '#d3cfc5', plinth: '#9a968c' },
+  glass: { post: '#b8c1c8' }, gildedGlass: { post: '#d4af37', rail: '#b8922c' }, royalMarble: { post: '#f0ead6', rail: '#d4af37' }, concrete: { wall: '#bcb8ae', cap: '#d3cfc5', plinth: '#9a968c' },
   hedge: { a: '#2c6a2b', b: '#3b8a37' }
 };
 var FCL = null;
@@ -1209,13 +1209,15 @@ function fenceEdge(set, axis, i, j, f, contNext, broken) {
       fallenBox(solid, T * 0.48, 0.05, 0.04, 0.26, 0.03, 0.03, 0.95, 0.10, bc7.rail);
       hazardTrim(gap0, 0.52); hazardTrim(gap1, 0.52);
     } else if (st === 'glass') {
-      var bc4 = C.glass;
-      bx(solid, -0.04, -0.05, -0.04, 0.04, h * 0.52, 0.04, bc4.post);
-      if (!contNext) bx(solid, T - 0.04, -0.05, -0.04, T + 0.04, h * 0.48, 0.04, bc4.post);
-      bx(solid, gap0 - 0.04, -0.05, -0.04, gap0 + 0.03, h * 0.42, 0.04, bc4.post);
-      bx(solid, gap1 - 0.03, -0.05, -0.04, gap1 + 0.04, h * 0.38, 0.04, bc4.post);
-      bx(solid, 0, 0, -0.05, gap0, 0.1, 0.05, mul3(bc4.post, 0.9));
-      bx(solid, gap1, 0, -0.05, T, 0.1, 0.05, mul3(bc4.post, 0.9));
+      var bc4 = f.id === 'gilded_glass' ? C.gildedGlass : f.id === 'royal_marble' ? C.royalMarble : C.glass;
+      var bpw4 = f.id === 'royal_marble' ? 0.10 : f.id === 'gilded_glass' ? 0.055 : 0.04;
+      var brl4 = bc4.rail || mul3(bc4.post, 0.9);
+      bx(solid, -bpw4, -0.05, -bpw4, bpw4, h * 0.52, bpw4, bc4.post);
+      if (!contNext) bx(solid, T - bpw4, -0.05, -bpw4, T + bpw4, h * 0.48, bpw4, bc4.post);
+      bx(solid, gap0 - bpw4, -0.05, -bpw4, gap0 + 0.03, h * 0.42, bpw4, bc4.post);
+      bx(solid, gap1 - 0.03, -0.05, -bpw4, gap1 + bpw4, h * 0.38, bpw4, bc4.post);
+      bx(solid, 0, 0, -0.05, gap0, 0.1, 0.05, brl4);
+      bx(solid, gap1, 0, -0.05, T, 0.1, 0.05, brl4);
       panel(set.glass, 0.02, gap0 - 0.02, 0.1, h * 0.42, C.glassPane, 0.4, 0.4);
       panel(set.glass, gap1 + 0.02, T - 0.02, 0.1, h * 0.36, C.glassPane, 0.4, 0.4);
       fallenBox(solid, T * 0.46, 0.045, -0.22, 0.32, 0.035, 0.035, 0.42, 0.05, bc4.post);
@@ -1288,11 +1290,16 @@ function fenceEdge(set, axis, i, j, f, contNext, broken) {
     }
     panel(set.chain, 0, T, 0.09, ch - 0.08, [0.48, 0.52, 0.56], T, ch - 0.17);
   } else if (st === 'glass') {
-    var c4 = C.glass;
-    posts(0.04, h, c4.post);
-    bx(solid, 0, h - 0.09, -0.04, T, h, 0.04, c4.post);
-    bx(solid, 0, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
-    panel(set.glass, 0.02, T - 0.02, 0.1, h - 0.09, C.glassPane, 1, 1);
+    var c4 = f.id === 'gilded_glass' ? C.gildedGlass : f.id === 'royal_marble' ? C.royalMarble : C.glass;
+    var isRoyal = f.id === 'royal_marble', isGilded = f.id === 'gilded_glass';
+    var pw4 = isRoyal ? 0.11 : isGilded ? 0.055 : 0.04;
+    var cap4 = isRoyal ? c4.rail : isGilded ? c4.post : null;
+    var rail4 = c4.rail || mul3(c4.post, 0.9);
+    posts(pw4, h, c4.post, cap4);
+    bx(solid, 0, h - 0.09, -0.045, T, h, 0.045, isRoyal ? rail4 : c4.post);
+    bx(solid, 0, 0, -0.06, T, isRoyal ? 0.24 : 0.1, 0.06, isRoyal ? c4.post : rail4);
+    if (isRoyal) bx(solid, 0, 0.24, -0.05, T, 0.30, 0.05, rail4, true);
+    panel(set.glass, 0.02, T - 0.02, isRoyal ? 0.30 : 0.1, h - 0.09, C.glassPane, 1, 1);
   } else if (st === 'concrete') {
     var c5 = C.concrete, k5 = 0.94 + 0.12 * jit;
     bx(solid, 0, 0, -0.17, T, 0.22, 0.17, mul3(c5.plinth, k5));
@@ -1992,6 +1999,7 @@ function updateEntities(dt, dtGame) {
       var x = fin(e.x, 0), z = fin(e.z, 0);
       var dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz + cy * cy;
       var vis = isFin(d2) && d2 < far2;
+      if (vis && kind === 'guest' && e.state === 'resort_sleep') vis = false;
       if (vis && SV.blend > 0.4 && dx * dx + dz * dz < 0.9) vis = false; // street view: never draw a body around the camera
       var alt = (e.y || 0) + (e.flyAlt || 0);
       var hasAbsY = typeof e.absY === 'number' && isFin(e.absY);

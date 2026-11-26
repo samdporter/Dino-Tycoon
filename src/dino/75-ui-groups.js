@@ -11,6 +11,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     { id: 'g_hab', name: 'Habitats', icon: 'fence', cats: ['fences', 'moats', 'marine', 'aviary', 'tagging', 'safari', 'encl'] },
     { id: 'g_hatch', name: 'Hatch', icon: 'egg', cats: ['hatch'] },
     { id: 'g_guest', name: 'Guests', icon: 'cart', cats: ['fac', 'themepark', 'coasters', 'monorail', 'transport'] },
+    { id: 'g_resort', name: 'Resort', icon: '👑', cats: ['resort'] },
     { id: 'g_sci', name: 'Science', icon: 'flask', cats: ['sci', 'power'] },
     { id: 'g_staff', name: 'Staff', icon: 'person', cats: ['staff'] },
     { id: 'g_bull', name: 'Bulldoze', icon: 'trash', cats: ['bull'] }

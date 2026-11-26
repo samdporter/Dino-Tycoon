@@ -354,7 +354,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     setTxt(el.fName, 'fn', name); setTxt(el.fTxt, 'ft', txt);
   }
   UI.stateText = function (s) {
-    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', leave: 'Heading home', work: 'Working', boat: 'Riding the ferry', fly: 'Flying by helicopter' })[s] || s;
+    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', resort_sleep: 'Sleeping in resort suite', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', leave: 'Heading home', work: 'Working', boat: 'Riding the ferry', fly: 'Flying by helicopter' })[s] || s;
   };
   UI.exitFollow = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; UI.snd('click'); };
   UI.followInfo = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; if (UI.sel) UI.Panel.open(UI.sel.kind, UI.sel.id); };
@@ -431,6 +431,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     g.fillStyle = '#7fae5a'; g.fillRect(0, 0, 64, 64); g.fillStyle = def.colour; g.fillRect(12, 0, 40, 64);
     g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1.5;
     if (def.id === 'cobble') { for (var j = 0; j < 8; j++) for (var i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10 + (j & 1) * 5, 4 + j * 8, 3.6, 0, 7); g.stroke(); } }
+    else if (def.id === 'marble_promenade') { g.strokeStyle = 'rgba(212,175,55,.65)'; g.strokeRect(14, 2, 36, 60); for (j = 1; j < 4; j++) { g.beginPath(); g.moveTo(14, j * 16); g.lineTo(50, j * 16); g.stroke(); } }
     else if (def.id === 'paved') { for (j = 1; j < 4; j++) { g.beginPath(); g.moveTo(12, j * 16); g.lineTo(52, j * 16); g.stroke(); } g.beginPath(); g.moveTo(32, 0); g.lineTo(32, 64); g.stroke(); }
     else { g.fillStyle = 'rgba(0,0,0,.18)'; for (i = 0; i < 18; i++) g.fillRect(14 + (i * 37 % 36), (i * 23) % 62, 3, 2); }
     return c;
@@ -441,7 +442,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var s = def.style, i;
     if (s === 'wood' || s === 'rail') { g.fillStyle = s === 'wood' ? '#a0723f' : '#c79a62'; var ph = s === 'wood' ? 26 : 32; for (i = 0; i < 3; i++) g.fillRect(8 + i * 22, 52 - ph, 6, ph); g.fillRect(6, 52 - ph + 4, 52, 5); if (s === 'rail') g.fillRect(6, 52 - ph + 16, 52, 5); else g.fillRect(6, 52 - ph + 14, 52, 5); }
     else if (s === 'chain') { g.fillStyle = def.strength > 3 ? '#4d545a' : '#8d979f'; g.fillRect(6, 14, 4, 40); g.fillRect(54, 14, 4, 40); g.fillRect(6, 14, 52, 3); g.strokeStyle = def.strength > 3 ? '#667078' : '#b8c1c8'; g.lineWidth = 1.5; for (i = -40; i < 70; i += 8) { g.beginPath(); g.moveTo(8 + i, 17); g.lineTo(8 + i + 36, 53); g.moveTo(8 + i + 36, 17); g.lineTo(8 + i, 53); g.stroke(); } g.save(); g.globalCompositeOperation = 'destination-over'; g.restore(); }
-    else if (s === 'glass') { g.fillStyle = 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); g.strokeStyle = '#6a8ea0'; g.lineWidth = 2; g.strokeRect(8, 16, 48, 38); g.strokeStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
+    else if (s === 'glass') { g.fillStyle = 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); g.strokeStyle = def.id === 'gilded_glass' || def.id === 'royal_marble' ? '#d4af37' : '#6a8ea0'; g.lineWidth = def.id === 'gilded_glass' || def.id === 'royal_marble' ? 3 : 2; g.strokeRect(8, 16, 48, 38); if (def.id === 'royal_marble') { g.fillStyle = '#f0ead6'; g.fillRect(6, 14, 6, 40); g.fillRect(52, 14, 6, 40); g.fillRect(6, 46, 52, 8); } g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
     else if (s === 'concrete') { g.fillStyle = '#a8a39a'; g.fillRect(4, 14, 56, 40); g.strokeStyle = '#7d786f'; g.lineWidth = 1.5; g.strokeRect(4, 14, 56, 40); g.beginPath(); g.moveTo(32, 14); g.lineTo(32, 54); g.moveTo(4, 34); g.lineTo(60, 34); g.stroke(); }
     else if (s === 'hedge') { g.fillStyle = '#2f7a3a'; for (i = 0; i < 5; i++) { g.beginPath(); g.arc(12 + i * 10, 38 - (i % 2) * 3, 12, 0, 7); g.fill(); } g.fillStyle = '#3f9a4a'; for (i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10, 32, 7, 0, 7); g.fill(); } }
     else if (s === 'cage') {
@@ -540,8 +541,10 @@ window.Z = window.Z || {}; var Z = window.Z;
           .concat(bd(['carousel', 'ferris_wheel', 'gift_shop', 'balloon_stand'], 'rides')())
           .concat(bd(['rubber_duck_stand', 'ring_toss_stand', 'high_striker', 'whack_a_mole', 'air_rifle_stand'], 'arcade')())
           .concat(bd(['toilets', 'info_kiosk', 'education_centre'], 'amenities')())
-          .concat(sc(['bench', 'bin'], 'amenities')());
+          .concat(sc(['bench', 'bin'], 'amenities')())
+          .filter(function (it) { return !(it.def && it.def.resort); });
       } },
+      (UI.Resort && typeof UI.Resort.catDef === 'function' ? UI.Resort.catDef(D) : null),
       { id: 'coasters', name: 'Coasters', icon: 'coaster', items: function () {
         return UI.Coaster && UI.Coaster.items ? UI.Coaster.items(bd) : bd(['coaster_wooden', 'coaster_mine', 'coaster_flume', 'coaster_steel', 'coaster_hyper'], 'stations')();
       } },
@@ -550,13 +553,15 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'staff', name: 'Staff', icon: 'person', items: function () { return D.staff.map(function (s) { return { kind: 'staff', id: s.id, name: s.name, cost: s.hireCost, unit: '+ £' + (s['wage/day'] || s.wage) + '/day', def: s, star: 0, emoji: s.emoji }; }).concat(bd(['keeper_hut', 'vet_clinic'])()); } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
     ];
+    CATS = CATS.filter(Boolean);
     UI.CATS = CATS;
   }
 
   function buildTabs() {
     el.tabs.innerHTML = '';
     CATS.forEach(function (c) {
-      var b = h('button.tab', { html: ic(c.icon) + '<span>' + c.name + '</span>', 'data-cat': c.id, on: { click: function () { UI.snd('click'); UI.openCat(c.id); } } });
+      var iconHtml = ic(c.icon) || (c.icon ? '<span style="font-size:18px;line-height:1.15">' + c.icon + '</span>' : '');
+      var b = h('button.tab', { html: iconHtml + '<span>' + c.name + '</span>', 'data-cat': c.id, on: { click: function () { UI.snd('click'); UI.openCat(c.id); } } });
       el.tabs.appendChild(b);
     });
   }
@@ -621,6 +626,10 @@ window.Z = window.Z || {}; var Z = window.Z;
       });
       cards.appendChild(cSeg);
       if (cMode !== 'all') items = items.filter(function (it) { return it.tpCat === cMode; });
+    } else if (c.id === 'resort' && UI.Resort && UI.Resort.renderFilterBar) {
+      var rBar = h('div');
+      UI.Resort.renderFilterBar(rBar, function () { UI.refreshCards(); });
+      cards.appendChild(rBar);
     }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star;

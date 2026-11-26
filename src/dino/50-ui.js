@@ -84,8 +84,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     leaf: 'M5 19C5 10 10 5 20 4c0 10-5 15-14 15zM5 19l8-8',
     bolt: ['fill', 'M13.500 2L5 13.500h5.500L9.500 22 19 10h-5.800z'],
     paper: 'M4 5h13v14H6a2 2 0 01-2-2zM17 8h3v9a2 2 0 01-2 2M7 8.500h7M7 12h7M7 15.500h4',
-    coaster: 'M3 19h18M5 19V11c2-5 5-5 7 0s5 5 7-2v10M8 15v4M12 11v8M16 14v5'
+    coaster: 'M3 19h18M5 19V11c2-5 5-5 7 0s5 5 7-2v10M8 15v4M12 11v8M16 14v5',
+    crown: 'M3 18h18v2H3zM4 16L2 7l5.5 4L12 4l4.5 7L22 7l-2 9z'
   };
+  P['👑'] = P.crown;
   function ic(n, cls) {
     var d = P[n]; if (!d) return '';
     var fill = Array.isArray(d); if (fill) d = d[1];
@@ -321,7 +323,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     setTxt(el.fName, 'fn', name); setTxt(el.fTxt, 'ft', txt);
   }
   UI.stateText = function (s) {
-    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', fly: 'Flying', leave: 'Heading home', work: 'Working', boat: 'Riding the ferry' })[s] || s;
+    return ({ idle: 'Relaxing', walk: 'Wandering about', run: 'Running', eat: 'Eating', drink: 'Drinking', sleep: 'Sleeping', play: 'Playing', swim: 'Swimming', sick: 'Feeling poorly', escaped: 'Escaped!', watch: 'Watching the animals', queue: 'Queueing', use: 'Using a facility', sit: 'Resting on a bench', flee: 'Running away!', fly: 'Flying', leave: 'Heading home', work: 'Working', boat: 'Riding the ferry', resort_sleep: 'Staying overnight' })[s] || s;
   };
   UI.exitFollow = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; UI.snd('click'); };
   UI.followInfo = function () { Z.World.follow(null); el.follow.classList.remove('on'); UI.following = null; if (UI.sel) UI.Panel.open(UI.sel.kind, UI.sel.id); };
@@ -391,6 +393,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     g.strokeStyle = 'rgba(0,0,0,.22)'; g.lineWidth = 1.5;
     if (def.id === 'cobble') { for (var j = 0; j < 8; j++) for (var i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10 + (j & 1) * 5, 4 + j * 8, 3.6, 0, 7); g.stroke(); } }
     else if (def.id === 'paved') { for (j = 1; j < 4; j++) { g.beginPath(); g.moveTo(12, j * 16); g.lineTo(52, j * 16); g.stroke(); } g.beginPath(); g.moveTo(32, 0); g.lineTo(32, 64); g.stroke(); }
+    else if (def.id === 'marble_promenade') { g.strokeStyle = '#d4af37'; g.lineWidth = 2; g.strokeRect(14, 2, 36, 60); g.strokeStyle = 'rgba(212,175,55,.45)'; g.beginPath(); g.moveTo(12, 32); g.lineTo(52, 32); g.stroke(); }
     else { g.fillStyle = 'rgba(0,0,0,.18)'; for (i = 0; i < 18; i++) g.fillRect(14 + (i * 37 % 36), (i * 23) % 62, 3, 2); }
     return c;
   }
@@ -400,7 +403,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var s = def.style, i;
     if (s === 'wood' || s === 'rail') { g.fillStyle = s === 'wood' ? '#a0723f' : '#c79a62'; var ph = s === 'wood' ? 26 : 32; for (i = 0; i < 3; i++) g.fillRect(8 + i * 22, 52 - ph, 6, ph); g.fillRect(6, 52 - ph + 4, 52, 5); if (s === 'rail') g.fillRect(6, 52 - ph + 16, 52, 5); else g.fillRect(6, 52 - ph + 14, 52, 5); }
     else if (s === 'chain') { g.fillStyle = def.strength > 3 ? '#4d545a' : '#8d979f'; g.fillRect(6, 14, 4, 40); g.fillRect(54, 14, 4, 40); g.fillRect(6, 14, 52, 3); g.strokeStyle = def.strength > 3 ? '#667078' : '#b8c1c8'; g.lineWidth = 1.5; for (i = -40; i < 70; i += 8) { g.beginPath(); g.moveTo(8 + i, 17); g.lineTo(8 + i + 36, 53); g.moveTo(8 + i + 36, 17); g.lineTo(8 + i, 53); g.stroke(); } g.save(); g.globalCompositeOperation = 'destination-over'; g.restore(); }
-    else if (s === 'glass') { g.fillStyle = 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); g.strokeStyle = '#6a8ea0'; g.lineWidth = 2; g.strokeRect(8, 16, 48, 38); g.strokeStyle = 'rgba(255,255,255,.8)'; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
+    else if (s === 'glass') { g.fillStyle = def.luxury ? 'rgba(190,235,255,.8)' : 'rgba(160,215,235,.75)'; g.fillRect(8, 16, 48, 38); if (def.id === 'royal_marble') { g.fillStyle = '#f0ead6'; g.fillRect(5, 14, 8, 40); g.fillRect(51, 14, 8, 40); g.fillRect(5, 48, 54, 6); } g.strokeStyle = def.luxury ? '#d4af37' : '#6a8ea0'; g.lineWidth = def.luxury ? 3 : 2; g.strokeRect(8, 16, 48, 38); g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(16, 46); g.lineTo(30, 22); g.stroke(); }
     else if (s === 'concrete') { g.fillStyle = '#a8a39a'; g.fillRect(4, 14, 56, 40); g.strokeStyle = '#7d786f'; g.lineWidth = 1.5; g.strokeRect(4, 14, 56, 40); g.beginPath(); g.moveTo(32, 14); g.lineTo(32, 54); g.moveTo(4, 34); g.lineTo(60, 34); g.stroke(); }
     else if (s === 'electric') { var hv = def.strength > 4; g.fillStyle = hv ? '#3d4348' : '#9a9d98'; g.fillRect(6, hv ? 8 : 16, 4, hv ? 46 : 38); g.fillRect(54, hv ? 8 : 16, 4, hv ? 46 : 38); g.strokeStyle = '#8fd0ff'; g.lineWidth = 2; for (i = 0; i < (hv ? 5 : 3); i++) { var wy = (hv ? 14 : 22) + i * (hv ? 9 : 13); g.beginPath(); g.moveTo(8, wy); g.lineTo(56, wy); g.stroke(); } g.fillStyle = '#f2c230'; g.beginPath(); g.moveTo(34, 20); g.lineTo(28, 33); g.lineTo(33, 33); g.lineTo(30, 45); g.lineTo(39, 29); g.lineTo(34, 29); g.fill(); }
     else if (s === 'hedge') { g.fillStyle = '#2f7a3a'; for (i = 0; i < 5; i++) { g.beginPath(); g.arc(12 + i * 10, 38 - (i % 2) * 3, 12, 0, 7); g.fill(); } g.fillStyle = '#3f9a4a'; for (i = 0; i < 4; i++) { g.beginPath(); g.arc(17 + i * 10, 32, 7, 0, 7); g.fill(); } }
@@ -492,9 +495,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     function sc(ids, tpCat) { return function () { return ids.map(function (id) { var d = UI.byId(D.scenery, id); return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, tpCat: tpCat }; }); }; }
     function bd(ids, tpCat) { return function () { return ids.map(function (id) { var d = UI.byId(D.buildings, id); return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, fp: [d.w || 1, d.h || 1], tpCat: tpCat }; }); }; }
     CATS = [
-      { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }); }, hint: 'Drag to lay a straight path. Guests and staff only walk on paths.' },
+      { id: 'paths', name: 'Paths', icon: 'path', items: function () { return D.paths.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'path', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: p.star || 0 }; }); }, hint: 'Drag to lay a straight path. Guests and staff only walk on paths.' },
       { id: 'terrain', name: 'Terrain', icon: 'mount', items: function () { return D.terrain.map(function (p) { return { kind: 'terrain', id: p.id, name: p.name, cost: p.cost, unit: '/tile', def: p, star: 0 }; }).concat(sculptItems()); } },
-      { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: 0, sub: 'Str ' + p.strength }; }); } },
+      { id: 'fences', name: 'Fences', icon: 'fence', items: function () { return D.fences.filter(function (p) { return !p.special; }).map(function (p) { return { kind: 'fence', id: p.id, name: p.name, cost: p.cost, unit: '/panel', def: p, star: p.star || 0, sub: 'Str ' + p.strength }; }); } },
       { id: 'hatch', name: 'Hatch', icon: 'egg', items: function () {
         var R = Z.Sim.research; return D.animals.filter(function (p) { return !p.modern && (!UI.Realms || UI.Realms.hatchShows(p)); }).map(function (p) { var gi = R.genomeInfo(p.id), ho = R.hatchOdds(p.id); return { kind: 'animal', id: p.id, name: p.name, cost: ho.cost, def: p, star: 0, genome: gi.genome, chance: ho.chance, locked: gi.genome < 50, odds: ho, rarity: p.rarity, realm: UI.Realms ? UI.Realms.realmOf(p) : 'land', tip: UI.Realms ? UI.Realms.hatchTip(p) : undefined }; })
           .sort(function (a, b) { return (a.locked - b.locked) || b.genome - a.genome; }).concat(UI.Realms && UI.Realms.hatchMore ? UI.Realms.hatchMore() : []); } },
@@ -513,7 +516,8 @@ window.Z = window.Z || {}; var Z = window.Z;
       { id: 'coasters', name: 'Coasters', icon: 'coaster', items: function () { return UI.Coaster ? UI.Coaster.items(bd) : []; } },
       { id: 'bull', name: 'Bulldoze', icon: 'trash', tool: { kind: 'bulldoze' } }
     ];
-    if (UI.extraCats) UI.extraCats.forEach(function (c) { CATS.splice(CATS.length - 1, 0, c); });   // other packages (moats) add build categories
+    if (UI.extraCats) UI.extraCats.forEach(function (c) { CATS.splice(CATS.length - 1, 0, c); });   // other packages (moats, resort) add build categories
+    if (UI.Resort && UI.Resort.catDef && !UI.byId(CATS, 'resort')) CATS.splice(CATS.length - 1, 0, UI.Resort.catDef(D));
     UI.CATS = CATS;
   }
 
@@ -588,6 +592,10 @@ window.Z = window.Z || {}; var Z = window.Z;
       });
       cards.appendChild(tpSeg);
       if (tpMode !== 'all') items = items.filter(function (it) { return it.tpCat === tpMode; });
+    } else if (c.id === 'resort' && UI.Resort && UI.Resort.renderFilterBar) {
+      var rBar = h('div', { style: 'margin: 0 4px 6px 4px;' });
+      UI.Resort.renderFilterBar(rBar, function () { UI.refreshCards(); });
+      cards.appendChild(rBar);
     }
     items.forEach(function (it) {
       var locked = it.star > S.unlocked.star || !!it.locked;
@@ -726,6 +734,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
   };
   UI.init = function () {
+    if (typeof document !== 'undefined' && document.head && !document.querySelector('style[data-resort]')) {
+      var rst = document.createElement('style'); rst.setAttribute('data-resort', '1');
+      rst.textContent = '.tp-fbar{flex:0 0 auto;align-self:center;display:inline-flex;border-radius:10px;overflow:hidden;border:2px solid rgba(58,42,26,.4);background:var(--paper2);margin:0 4px 6px 4px}' +
+        '.tp-chip{min-height:36px;padding:0 10px;font:700 12.5px var(--sans);color:var(--ink2);display:flex;align-items:center;gap:4px;border-right:1px solid rgba(58,42,26,.2);white-space:nowrap}' +
+        '.tp-chip:last-child{border-right:0}.tp-chip.active{background:var(--moss);color:var(--paper)}' +
+        '.psec{display:flex;flex-direction:column;gap:4px;padding:7px 9px;border-radius:11px;background:rgba(240,179,50,.12);border:1px solid rgba(176,127,12,.35)}' +
+        '.psec .flex.between{display:flex;justify-content:space-between;align-items:center;gap:6px}.psec .mb4{margin-bottom:2px}' +
+        '.psec .mr{display:flex;justify-content:space-between;font-size:12.5px;gap:8px}.psec .mr b{font-variant-numeric:tabular-nums}' +
+        '.badge.gold{font:800 10.5px var(--sans);background:var(--sun);color:var(--ink);border-radius:8px;padding:2px 7px}';
+      document.head.appendChild(rst);
+    }
     buildDOM(); defCats(); buildTabs(); hookBus();
     if (UI.Tools) UI.Tools.init(); if (UI.Panel) UI.Panel.init(); if (UI.Screens) UI.Screens.init(); if (UI.Tutorial) UI.Tutorial.init(); if (UI.Research) UI.Research.init();
     UI.reset();

@@ -1475,3 +1475,62 @@ window.Z.DATA.donors = [
     { id: 'gull_hardy', name: 'Scavenger constitution', emoji: '🐦', cost: 4600, donor: 'seagull', effect: 'Eats anything: cheaper to keep and rarely ill.', fx: { sick: 0.75, upkeep: 0.9, q: 6 }, look: { tint: [1.15, 1.15, 1.15] } }
   ].forEach(function (g) { D.traits.push(g); });
 })(window.Z.DATA);
+
+// ===== luxury resort package (overnight villas & hotels, fine dining, wellness, luxury enclosures, VIP security) =====
+(function (D) {
+  D.buildings.push(
+    { id: 'private_villa', name: 'Private Amber Villa', emoji: '🏡', cost: 5200, upkeep: 95, type: 'shop', price: 420, capacity: 4, w: 3, h: 3, satisfies: { energy: 0.8, fun: 0.5 }, star: 1, resort: true, resortRole: 'lodging', resortTab: 'stays',
+      info: 'Secluded ultra-private overnight villa with plunge pool. Rich guests stay 1–3 nights!' },
+    { id: 'luxury_hotel', name: 'Grand Palatial Hotel', emoji: '🏨', cost: 8500, upkeep: 180, type: 'shop', price: 320, capacity: 12, w: 4, h: 3, satisfies: { energy: 0.9, fun: 0.55 }, star: 2, resort: true, resortRole: 'lodging', resortTab: 'stays',
+      info: 'Flagship 5-star overnight resort hotel. Houses up to 12 wealthy overnight guests.' },
+    { id: 'sky_lodge', name: 'Amber Cliffside Suite', emoji: '🛖', cost: 6800, upkeep: 135, type: 'shop', price: 380, capacity: 6, w: 3, h: 2, satisfies: { energy: 0.85, fun: 0.65 }, star: 2, resort: true, resortRole: 'lodging', resortTab: 'stays',
+      info: 'Elevated panoramic overnight lodge overlooking dinosaur enclosures.' },
+    { id: 'michelin_restaurant', name: 'Five-Star Gastronomy', emoji: '🍽️', cost: 4800, upkeep: 110, type: 'food', price: 85, capacity: 12, w: 3, h: 2, satisfies: { hunger: 0.92, thirst: 0.45, fun: 0.35 }, star: 1, resort: true, resortRole: 'dining', resortTab: 'dining',
+      info: 'Michelin-starred fine dining terrace loved by wealthy resort guests.' },
+    { id: 'champagne_lounge', name: 'Champagne Rooftop Bar', emoji: '🥂', cost: 3600, upkeep: 85, type: 'drink', price: 55, capacity: 10, w: 2, h: 2, satisfies: { thirst: 0.9, fun: 0.45 }, star: 2, resort: true, resortRole: 'dining', resortTab: 'dining',
+      info: 'Exclusive bubbly & cocktail bar with huge profit margins.' },
+    { id: 'infinity_pool', name: 'Infinity Swimming Pool', emoji: '🏊', cost: 5500, upkeep: 120, type: 'ride', price: 60, capacity: 16, w: 4, h: 3, satisfies: { energy: 0.55, fun: 0.75, thirst: 0.25 }, star: 1, thrill: 1, resort: true, resortRole: 'wellness', resortTab: 'dining',
+      info: 'Shimmering turquoise infinity pool with sun loungers and cabanas.' },
+    { id: 'luxury_spa', name: 'Thermal Spa & Sauna', emoji: '🧖', cost: 4500, upkeep: 100, type: 'ride', price: 95, capacity: 8, w: 3, h: 2, satisfies: { energy: 0.95, fun: 0.55 }, star: 2, thrill: 0, resort: true, resortRole: 'wellness', resortTab: 'dining',
+      info: 'Steaming cedar & stone thermal sanctuary that fully restores guest energy.' },
+    { id: 'vip_viewing_lounge', name: 'Private VIP Viewing Lounge', emoji: '🔭', cost: 6200, upkeep: 125, type: 'ride', price: 110, capacity: 10, w: 3, h: 2, satisfies: { fun: 0.8, energy: 0.35 }, star: 1, thrill: 1, resort: true, resortRole: 'viewing', resortTab: 'enclosures',
+      info: 'Climate-controlled glass VIP deck. Upgrades nearby enclosures to Luxury status!' },
+    { id: 'grand_conservatory', name: 'Amber Crystal Sanctuary', emoji: '💎', cost: 9500, upkeep: 190, type: 'ride', price: 140, capacity: 16, w: 4, h: 3, satisfies: { fun: 0.95, energy: 0.4 }, star: 2, thrill: 2, resort: true, resortRole: 'enclosure_pavilion', resortTab: 'enclosures',
+      info: 'Ultra-expensive domed crystal biosphere pavilion with waterfall and private gallery.' },
+    { id: 'vip_gatehouse', name: 'VIP Security Gatehouse', emoji: '🛡️', cost: 3200, upkeep: 75, type: 'info', price: 0, capacity: 6, w: 2, h: 2, satisfies: { fun: 0.15 }, star: 1, resort: true, resortRole: 'security', resortTab: 'security',
+      info: 'Velvet-rope private security checkpoint. Protects guests in a 16-tile radius and attracts VIPs.' },
+    { id: 'valet_concierge', name: 'Concierge & Valet Pavilion', emoji: '🛎️', cost: 3800, upkeep: 80, type: 'info', price: 35, capacity: 8, w: 2, h: 2, satisfies: { fun: 0.3, energy: 0.2 }, star: 2, resort: true, resortRole: 'concierge', resortTab: 'security',
+      info: 'White-glove resort concierge boosting VIP happiness, tips, and resort prestige.' }
+  );
+  D.fences.push(
+    { id: 'gilded_glass', name: 'Gilded Panoramic Glass', cost: 180, strength: 5, height: 3.4, seeThrough: true, style: 'glass', star: 1, resort: true, luxury: true,
+      blurb: 'Brass-framed bulletproof viewing glass. Marks enclosures as Luxury!' },
+    { id: 'royal_marble', name: 'Royal Marble Sanctuary Wall', cost: 260, strength: 6, height: 4.0, seeThrough: true, style: 'glass', star: 2, resort: true, luxury: true,
+      blurb: 'Ornate marble & reinforced crystal barrier for top-tier private enclosures.' }
+  );
+  D.paths.push(
+    { id: 'marble_promenade', name: 'Marble Promenade', cost: 45, colour: '#ede6d6', speed: 1.25, star: 1, resort: true, luxury: true,
+      blurb: 'Polished ivory & gold inlaid walkway for your Luxury Resort.' }
+  );
+  D.scenery.push(
+    { id: 'heated_oasis_pool', name: 'Heated Sanctuary Oasis', emoji: '⛲', cost: 1800, kind: 'rock', biome: 'any', aesthetic: 9, inEnclosure: true, star: 1, resort: true, luxury: true,
+      info: 'Heated marble oasis pool inside enclosures. Upgrades enclosure to Luxury status!' },
+    { id: 'marble_pavilion_shelter', name: 'Royal Enclosure Pavilion', emoji: '🏛️', cost: 2400, kind: 'shelter', biome: 'any', aesthetic: 10, inEnclosure: true, star: 1, resort: true, luxury: true,
+      info: 'Colonnaded marble shelter for prized dinosaurs in private luxury enclosures.' },
+    { id: 'golden_enrichment', name: 'Gilded Enrichment Fountain', emoji: '✨', cost: 1400, kind: 'toy', biome: 'any', aesthetic: 8, inEnclosure: true, star: 1, resort: true, luxury: true,
+      info: 'Luxury enrichment centerpiece that delights animals and boosts enclosure prestige.' },
+    { id: 'cabana_lounger', name: 'Poolside Cabana', emoji: '🏖️', cost: 450, kind: 'deco', biome: 'any', aesthetic: 6, inEnclosure: false, star: 1, resort: true, luxury: true,
+      info: 'Plush shaded resort cabana where rich guests rest and recharge.' },
+    { id: 'gold_fountain', name: 'Grand Chandelier Fountain', emoji: '⛲', cost: 1200, kind: 'deco', biome: 'any', aesthetic: 12, inEnclosure: false, star: 1, resort: true, luxury: true,
+      info: 'Illuminated marble & gold centerpiece fountain.' },
+    { id: 'palm_colonnade', name: 'Illuminated Resort Palm', emoji: '🌴', cost: 350, kind: 'deco', biome: 'any', aesthetic: 5, inEnclosure: false, star: 1, resort: true, luxury: true,
+      info: 'Uplighted palm in a sculpted marble planter.' }
+  );
+  D.staff.push(
+    { id: 'resort_guard', name: 'Resort Bodyguard', emoji: '🕶️', 'wage/day': 140, hireCost: 650, badge: 'VIP Security',
+      tagline: 'Protects luxury resort guests & recaptures threats',
+      duties: 'Patrols luxury resort, shields VIPs from panic, rapid recapture',
+      effect: 'Creates a 12-tile VIP Safe Zone and recaptures escaped animals faster than standard security.',
+      star: 1, resort: true }
+  );
+})(window.Z.DATA);

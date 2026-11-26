@@ -952,6 +952,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var wts = HW.terrain + HW.space + HW.foliage + wW + sW + rW + HW.social + HW.clean + cW + HW.enrichment;
     var v = (terrain * HW.terrain + space * HW.space + foliage * HW.foliage + water * wW + shelter * sW + rocks * rW + social * HW.social + clean * HW.clean + carc * cW + enrich * HW.enrichment) / wts;
     v = clamp(v, 0, 1);
+    if (Z.Resort && enc) {
+      var luxB = Z.Resort.enclosureBonus(enc);
+      if (luxB && luxB.isLuxury && luxB.welfareBonus > 0) v = clamp(v + luxB.welfareBonus, 0, 1);
+    }
     var mf = Math.min(5, sp.minFence + geneFence(trs, nHere)) - (trs && trs.docile >= nHere ? 1 : 0);
     if (enc.minFence < mf) iss.push('Fence is too weak (needs strength ' + mf + ')');
     if (Z.Moats) { var mw = Z.Moats.advice(enc, spId, trs, nHere); if (mw) iss.unshift(mw); }   // moats package: ditch too narrow / shallow / swimmer
@@ -1014,6 +1018,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (a.state !== 'sleep' && a.state !== 'sick' && !RT.shelter[tileOf(a.x, a.z)]) E.vis++;
     }
     E.happy = E.nAn ? E.happy / E.nAn : 60;
+    if (Z.Resort) {
+      var luxB = Z.Resort.enclosureBonus(enc);
+      if (luxB && luxB.isLuxury) E.appeal *= luxB.appealMul;
+    }
     E.bySp = bySp;
     enc.suitability = {};
     E.breakdown = {};
@@ -1058,6 +1066,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (Z.Coaster) Z.Coaster.updateGraph();   // coaster package: track graph, loops, physics & overlooked enclosures (after enclosures are known)
       if (Z.Coaster) Z.Coaster.update();
       if (Z.Safari) Z.Safari.update();   // safari package: zones, routes, gates (after enclosures and realms are known)
+      if (Z.Resort && Z.Resort.recompute) Z.Resort.recompute();   // luxury resort package: prestige, luxury enclosures, beds
       RT.value = arrivalValue();
       RT.rbDirty = true;
     } finally {
@@ -1370,6 +1379,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     delete RT.bq[o.id];
     if (Z.Coaster && o.kind === 'building' && BD[o.type] && BD[o.type].coasterStation) Z.Coaster.onStationRemoved(o);
     if (Z.Boats && o.kind === 'building' && BD[o.type] && BD[o.type].boats) Z.Boats.onPierRemoved(o);
+    if (Z.Resort && Z.Resort.onObjectRemoved) Z.Resort.onObjectRemoved(o);
     bus.emit('objectRemoved', o);
   }
   function bulldoze(i, j, opts) {
@@ -1964,7 +1974,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var spCount = 0, seen = {};
     for (var k = 0; k < S.animals.length; k++) { var a = S.animals[k]; if (!seen[a.species] && a.enc) { seen[a.species] = 1; spCount++; } }
     RT.speciesCount = spCount;
-    var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) ap += aAppeal(q); } RT.appeal = ap;
+    var ap = 0; for (k = 0; k < S.animals.length; k++) { var q = S.animals[k]; if (q.enc && q.happiness > 40) { var qb = Z.Resort ? Z.Resort.enclosureBonus(RT.eMap[q.enc]) : null; ap += aAppeal(q) * (qb && qb.isLuxury ? qb.appealMul : 1); } } RT.appeal = ap;
     var attr = gxAttractionInfo(true), rideCount = attr.rides, arcadeCount = attr.arcades;
     var coasterValue = Z.Coaster ? Z.Coaster.valueBonus() : 0;
     var rideRaw = rideCount * 0.8 + arcadeCount * 0.35 + coasterValue;
@@ -2124,7 +2134,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var d = aDanger(an), comp = Math.round(350 * d * rng.range(0.8, 1.4));
     an.hurtT = 5;
     spend(comp, 'other'); S.stats.injuries++; S.stats.compensation += comp;
-    S.panic = Math.min(2, (S.panic || 0) + 0.3); S.reputation = clamp(S.reputation - 3, 0, 100);
+    var aura = Z.Resort ? Z.Resort.securityAura(g.x, g.z) : null;
+    S.panic = Math.min(2, (S.panic || 0) + 0.3 * (aura ? aura.panicDamp : 1)); S.reputation = clamp(S.reputation - 3, 0, 100);
     g.mood -= 40; g.happiness = Math.min(g.happiness, 8);
     msg('A guest was hurt by ' + an.name + ' the ' + lc(SP[an.species].name) + '! The park paid ' + fmt(comp) + ' in compensation.', 'bad');
     bus.emit('injury', { guest: g, animal: an, compensation: comp });
@@ -2378,6 +2389,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (g.al[kind] > 0) g.al[kind]--;
       var cat = (def.type === 'food' || def.type === 'drink') ? 'food' : (def.type === 'toilet' ? 'other' : 'shops');
       earn(price, cat, g.x, g.z); o.income = (o.income || 0) + price;
+      if (def.resort && price > 0 && Z.Resort) Z.Resort.recordSpend(o, price);
     }
     q.use++; g.state = 'use'; g.ubid = o.id; g.speed = 0; g.seenB[o.id] = 1;
     g.wt = def.rideKind === 'coaster' ? 11 : def.type === 'ride' ? 9 : def.type === 'arcade' ? 5 : def.type === 'food' ? (kind === 'treat' ? 3 : 6) : def.type === 'toilet' ? 4 : def.type === 'drink' ? 3 : 4;
@@ -2619,6 +2631,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var gd = RT.guides[k], dx = gd.x - g.x, dz = gd.z - g.z;
       if (dx * dx + dz * dz < 144) { target += 8; g.fun = Math.min(100, g.fun + 1 * a); break; }
     }
+    var rAura = Z.Resort ? Z.Resort.securityAura(g.x, g.z) : null;
+    if (rAura && rAura.protected) target += rAura.safetyBonus * 0.5;
     if (RT.guestCrowd > 1.1) target -= (RT.guestCrowd - 1.1) * 6;
     g.happiness += (clamp(target, 0, 100) - g.happiness) * Math.min(1, 0.35 * a);
     if (WX.fun) g.happiness += WX.fun * a;
@@ -2647,18 +2661,18 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (g.rleave) {
         if (g.state === 'walk' && !g.gt) { g.rleave = 0; startLeaving(g); return; }
       } else {
-        var leave = false;
-        if (!S.open || S.time >= CLOSE_T - 0.004) leave = true;
+        var leave = false, stayOvernight = !!(S.open && Z.Resort && Z.Resort.shouldStayOvernight(g));
+        if (!S.open || (!stayOvernight && S.time >= CLOSE_T - 0.004)) leave = true;
         else if (g.stay <= 0) {
           // still keen and still things unseen: stay a little longer (twice at most, never past closing)
           if (!g.done && (g.ext || 0) < 2 && g.nSeen < Math.ceil(g.thor * vc) && g.happiness > 45 && g.energy > 15 && S.time < CLOSE_T - 0.06) { g.ext = (g.ext || 0) + 1; g.stay += hr * 1.3; g.stay0 += hr * 1.3; }
-          else leave = true;
+          else if (!stayOvernight) leave = true;
         } else {
           if (!g.done && vc > 0 && g.nSeen >= Math.ceil(g.thor * vc)) { g.done = 1; g.stay = Math.min(g.stay, hr * rng.range(0.35, 1.0)); }
           if (g.happiness < 14 && g.stay < g.stay0 * 0.85) leave = true;
           else if ((g.hunger > 94 || g.thirst > 97) && g.stay < g.stay0 * 0.8) leave = true;      // went home hungry
-          else if (g.energy < 6 && g.nbt > 0) leave = true;
-          else if (S.time > CLOSE_T - 0.14) {
+          else if (g.energy < 6 && g.nbt > 0 && !stayOvernight) leave = true;
+          else if (!stayOvernight && S.time > CLOSE_T - 0.14) {
             var fe = getField('exit'), de = fe ? fe[g.ti] : 0; if (de === INF) de = isParkConnected(g.ti) ? 35 : 0;
             if (S.time + (de * TILE / (g.bs * 1.2)) / DAY_SECONDS > CLOSE_T - 0.01 - (g.lj === undefined ? (g.lj = rng.range(0, 0.07)) : g.lj)) leave = true;
           }
@@ -2691,7 +2705,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
             var bk = RT.bunkers.length ? pickBunker(g, an) : null;
             g.state = 'flee'; g.glide = 0; g.fx = an.x; g.fz = an.z; g.ni = -1;
             if (bk) { g.gt = 'bunker'; g.gid = bk.id; g.dk = 'b' + bk.id; g.fleeT = 25; g.mood -= 2; }
-            else { g.gt = ''; g.dk = ''; g.fleeT = 7; g.mood -= RT.secCount > 0 ? 6 : 12; g.happiness -= 6; }
+            else { var pd = rAura ? rAura.panicDamp : 1; g.gt = ''; g.dk = ''; g.fleeT = 7; g.mood -= (RT.secCount > 0 ? 6 : 12) * pd; g.happiness -= 6 * pd; }
           }
           break;
         }
@@ -2792,6 +2806,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   function guestStep(g, dt) {
+    if (g.state === 'resort_sleep') return;
     if (!RT.gocc) gxGrid();
     if (!g.al) gxPlan(g, gxHr(), 0);                       // guest from an older save: give them a visit plan
     if (g.pv !== RT.pathVer) { if (revalidateGuest(g) === false) return; }
@@ -2840,7 +2855,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     occ.fill(0); stand.fill(0); targ.fill(0); head.fill(-1);
     for (k = 0; k < gs.length && k < nxt.length; k++) {
       var g = gs[k], t = tileOf(g.x, g.z), s = g.state;
-      if (s === 'ride' || s === 'boat') continue;   // boats package: aboard a boat or helicopter; monorail package: riders are up in the carriages
+      if (s === 'ride' || s === 'boat' || s === 'resort_sleep') continue;   // boats package: aboard a boat or helicopter; monorail package: riders are up in the carriages; resort: sleeping indoors
       if (occ[t] < 255) occ[t]++;
       nxt[k] = head[t]; head[t] = k;
       if (s === 'watch' || s === 'queue' || s === 'use' || s === 'sit') { if (stand[t] < 255) stand[t]++; }
@@ -3646,7 +3661,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
 
   // ====================== STAFF ======================
   function staffSpeed(s) {
-    return s.type === 'security' ? 2.7
+    return s.type === 'resort_guard' ? 2.7 * 1.25
+      : s.type === 'security' ? 2.7
       : s.type === 'electrician' ? 2.6
       : s.type === 'mechanic' ? 2.5
       : s.type === 'cleaner' ? 1.9
@@ -3715,7 +3731,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < RT.escaped.length; k++) {
       var a = RT.escaped[k];
       if (a.er && a.er.realm !== 'land') continue;
-      if (s.type !== 'security' && aDanger(a) >= 2) continue;
+      if (s.type !== 'security' && s.type !== 'resort_guard' && aDanger(a) >= 2) continue;
       if (a.claim && a.claim !== s.id && RT.sById.has(a.claim)) continue;
       return true;
     }
@@ -3830,13 +3846,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var sc0 = RT.comp[s.ti], pool = sc0 ? pt.filter(function (c) { return RT.comp[c] === sc0; }) : pt;
     if (!pool.length) return false;
     var tgt = pool[Math.floor(rng.next() * pool.length)], hi = s.home % N, hj = (s.home - hi) / N;
-    for (var k = 0; k < 6; k++) {
-      var c = pool[Math.floor(rng.next() * pool.length)], ci = c % N, cj = (c - ci) / N;
-      if (Math.abs(ci - hi) + Math.abs(cj - hj) < 26) { tgt = c; break; }
+    if (s.type === 'resort_guard') {
+      var rPool = [];
+      for (var ro = 0; ro < S.objects.length; ro++) {
+        var rob = S.objects[ro];
+        if (!rob || rob.kind !== 'building' || !BD[rob.type] || !BD[rob.type].resort) continue;
+        var rfp = frontPathTiles(rob);
+        for (var rf = 0; rf < rfp.length; rf++) if (!sc0 || RT.comp[rfp[rf]] === sc0) rPool.push(rfp[rf]);
+      }
+      if (rPool.length) tgt = rPool[Math.floor(rng.next() * rPool.length)];
+    }
+    if (tgt === pool[0] || s.type !== 'resort_guard') {
+      for (var k = 0; k < 6; k++) {
+        var c = pool[Math.floor(rng.next() * pool.length)], ci = c % N, cj = (c - ci) / N;
+        if (Math.abs(ci - hi) + Math.abs(cj - hj) < 26) { tgt = c; break; }
+      }
     }
     var r = findRoute(s.ti, function (t) { return t === tgt; });
     if (!r) return false;
-    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Walking the paths';
+    s.tk = { k: 'patrol', ph: 'go', t: 0, chk: 1 }; s.route = r; s.ri = 0; s.task = s.type === 'guide' ? 'Leading a tour' : s.type === 'resort_guard' ? 'Guarding the resort' : s.type === 'security' ? 'On patrol' : (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician') ? 'Patrolling (radio ready)' : 'Walking the paths';
     return true;
   }
 
@@ -3846,7 +3874,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var k = 0; k < RT.escaped.length; k++) {
       var a = RT.escaped[k];
       if (a.er && a.er.realm !== 'land') continue;   // realms package: boats and drone teams handle these
-      if (s.type !== 'security' && aDanger(a) >= 2) continue;
+      if (s.type !== 'security' && s.type !== 'resort_guard' && aDanger(a) >= 2) continue;
       if (a.claim && a.claim !== s.id && RT.sById.has(a.claim)) continue;
       a.claim = s.id;
       s.tk = { k: 'cap', a: a.id, ph: 'go', t: 0, rr: 0 };
@@ -3954,7 +3982,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function assignTask(s) {
     if (!staffOnPath(s)) return;
     var k, a, e, sc0 = RT.comp[s.ti];
-    if (RT.escaped.length && (s.type === 'security' || (s.type === 'keeper' && RT.secCount === 0))) { if (tryRecapture(s)) return; }
+    if (RT.escaped.length && (s.type === 'security' || s.type === 'resort_guard' || (s.type === 'keeper' && RT.secCount === 0))) { if (tryRecapture(s)) return; }
     if (s.type === 'keeper') {
       var best = pickKeeperEnc(s, sc0);
       if (best) {
@@ -4007,7 +4035,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Boats && Z.Boats.staffTravelling(s)) return;   // boats package: aboard a boat or helicopter
     var tk = s.tk, a, enc, E;
     if (s.sickUntil > S.day + S.time) { if (s.tk || s.route || s.task !== 'Off sick') releaseClaims(s); s.tk = null; s.route = null; s.speed = 0; s.state = 'idle'; s.task = 'Off sick'; return; }
-    if (tk && s.type === 'security' && RT.escaped.length && (tk.k === 'patrol' || tk.k === 'tour')) { s.tk = null; tk = null; s.wt = 0; }
+    if (tk && (s.type === 'security' || s.type === 'resort_guard') && RT.escaped.length && (tk.k === 'patrol' || tk.k === 'tour')) { s.tk = null; tk = null; s.wt = 0; }
     if (tk && tk.k === 'patrol' && (s.type === 'keeper' || s.type === 'vet' || s.type === 'cleaner' || s.type === 'mechanic' || s.type === 'handyman' || s.type === 'electrician')) {
       tk.chk = (tk.chk === undefined ? 1 : tk.chk) - dt;
       if (tk.chk <= 0) {
@@ -4098,10 +4126,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           else if (!s.route) tk.ph = 'chase';
           tk.rr -= dt; if (tk.rr <= 0 && tk.ph === 'go') { tk.rr = 4; var dx = s.x - a.x, dz = s.z - a.z; if (dx * dx + dz * dz > 100) planCapRoute(s, a); }
         } else if (tk.ph === 'chase') {
-          if (walkTo(s, a.x, a.z, dt, staffSpeed(s) * 1.1)) { tk.ph = 'work'; tk.t = s.type === 'security' ? 2 : 3.5; a.held = 1; }
+          if (walkTo(s, a.x, a.z, dt, staffSpeed(s) * 1.1)) { tk.ph = 'work'; tk.t = s.type === 'resort_guard' ? 1.4 : s.type === 'security' ? 2 : 3.5; a.held = 1; }
         } else {
           s.state = 'work'; s.speed = 0; tk.t -= dt;
-          if (tk.t <= 0) { a.held = 0; var who = s.type === 'security' ? 'Security' : s.name + ' the ranger'; s.tk = null; s.wt = 0.5; recapture(a, who); }
+          if (tk.t <= 0) { a.held = 0; var who = (s.type === 'security' || s.type === 'resort_guard') ? 'Security' : s.name + ' the ranger'; s.tk = null; s.wt = 0.5; recapture(a, who); }
         }
         break;
       case 'coaster':
@@ -4242,9 +4270,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var aes = (Z.Moats ? Z.Moats.aesthetic() : 0) + (Z.Power ? Z.Power.aesthetic() : 0); for (k = 0; k < S.objects.length; k++) { var o = S.objects[k]; if (o.kind === 'scenery') aes += SC[o.type].aesthetic; }
     var scenery = Math.min(1, aes / 120);
     var w = RATING_WEIGHTS, baseStars = 5 * (w.animals * animalsC + w.welfare * welfare + w.guests * guests + w.facilities * fac + w.cleanliness * clean + w.scenery * scenery), attractionBonus = attractionRatingBonus(ref);
-    var stars = baseStars + attractionBonus - 0.6 * (S.panic || 0);
+    var resortBonus = Z.Resort ? Z.Resort.ratingBonus() : 0;
+    var stars = baseStars + attractionBonus + resortBonus - 0.6 * (S.panic || 0);
     return { animals: animalsC, welfare: welfare, guests: guests, facilities: fac, cleanliness: clean, scenery: scenery, panic: S.panic || 0, stars: clamp(stars, 0, 5), rating: S.rating,
-      weights: w, baseStars: baseStars, collectionCap: null, attractionBonus: attractionBonus,
+      weights: w, baseStars: baseStars, collectionCap: null, attractionBonus: attractionBonus, resortBonus: resortBonus,
       speciesCount: nSp, animalCount: n, serviceDemand: ref, services: facility.services,
       cleanPaths: cleanP, cleanEnclosures: nEncA ? ce / nEncA : 1 };
   }
@@ -4582,7 +4611,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (k = 0; k < S.staff.length; k++) {
       var st = S.staff[k];
       if (st.sickUntil > S.day + S.time) continue;   // off sick
-      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
+      if (st.type === 'guide') RT.guides.push(st); else if (st.type === 'security' || st.type === 'resort_guard') RT.secCount++; else if (st.type === 'keeper') RT.keeperCount++; else if (st.type === 'vet') RT.vetCount++; else if (st.type === 'mechanic') RT.mechCount++; else if (st.type === 'handyman') RT.handyCount++; else if (st.type === 'electrician') RT.elecCount++;
     }
     for (k = 0; k < S.enclosures.length; k++) encStats(S.enclosures[k]);
     var dc = 0; for (k = 0; k < RT.pathTiles.length; k++) if (S.dirt[RT.pathTiles[k]] >= 80) dc++;
@@ -4606,7 +4635,12 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     checkUnlocks();
     // closing: tidy up stragglers
     var t = S.time;
-    if (t >= CLOSE_T + 0.08 || t < OPEN_T - 0.03) { for (k = gs.length - 1; k >= 0; k--) removeGuest(gs[k]); }
+    if (t >= CLOSE_T + 0.08 || t < OPEN_T - 0.03) {
+      for (k = gs.length - 1; k >= 0; k--) {
+        if (Z.Resort && Z.Resort.shouldStayOvernight(gs[k])) continue;
+        removeGuest(gs[k]);
+      }
+    }
     // dirt decay on unused tiles is none; bins fill message
     // advice
     for (k = 0; k < S.enclosures.length; k++) {
@@ -4710,6 +4744,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Monorail) Z.Monorail.newDay();   // monorail package: train upkeep, daily station figures
     if (Z.Coaster) Z.Coaster.newDay();   // coaster package: train upkeep
     if (Z.Safari) Z.Safari.newDay();   // safari package: vehicle upkeep, daily figures
+    if (Z.Resort && Z.Resort.onNewDay) Z.Resort.onNewDay();   // luxury resort package: overnight room rollover & revenue
     var t = S.finance.today;
     var income = t.tickets + t.food + t.shops + t.donations, costs = -(t.upkeep + t.wages + t.marketing + (t.interest || 0));
     var profit = income - costs;
@@ -4865,6 +4900,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Coaster) Z.Coaster.step(dt);   // coaster package: trains, boarding, riders, physics
     if (Z.Safari) Z.Safari.step(dt);   // safari package: vehicles, gates, wildlife
     if (Z.Boats) Z.Boats.step(dt);   // boats package: boat trips, helicopters, VIP arrivals
+    if (Z.Resort && Z.Resort.step) Z.Resort.step(dt);   // luxury resort package: VIP arrivals, bookings, overnight stays
     var an = S.animals;
     for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
     separateAnimals(dt);
@@ -5605,6 +5641,41 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     fail: fail, okr: okr, dryOf: dryOf
   };
 
+  // Context for the shared luxury resort package (src/shared/22-sim-resort.js).
+  Z.resortCtx = {
+    S: function () { return S; },
+    RT: function () { return RT; },
+    D: function () { return D; },
+    BD: function () { return BD; },
+    SD: function () { return SC; },
+    FD: function () { return D.fences; },
+    getN: function () { return N; },
+    OPEN_T: OPEN_T,
+    CLOSE_T: CLOSE_T,
+    DAY_SECONDS: DAY_SECONDS,
+    MAX_GUESTS: MAX_GUESTS,
+    TILE: TILE,
+    earn: earn,
+    spawnGuest: spawnGuest,
+    objCenter: objCenter,
+    objFront: function (o) {
+      var fp = frontPathTiles(o);
+      if (fp.length) {
+        var ft = fp[Math.floor(fp.length / 2)];
+        return { x: cxOf(ft), z: czOf(ft) };
+      }
+      var fl = frontList(objFootprint(o));
+      if (fl.length) {
+        var fm = fl[Math.floor(fl.length / 2)];
+        return { x: cxOf(fm.i + fm.j * N), z: czOf(fm.i + fm.j * N) };
+      }
+      return objCenter(o);
+    },
+    isConnected: function (o) { return !!(o && (o.kind !== 'building' || (BD[o.type] && BD[o.type].utility) || buildingConnected(o))); },
+    msg: msg,
+    rng: function () { return rng.next(); }
+  };
+
   // ====================== NEW GAME / SAVE / LOAD ======================
   function rawPlace(type, i, j, rot) {
     var dk = defOf(type); if (!dk) return null;
@@ -6039,6 +6110,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Realms) { Z.Realms.reset(); Z.Realms.update(); }   // realms package
     if (Z.Safari) Z.Safari.afterLoad(true);   // safari package
     if (Z.News) Z.News.afterLoad(true);   // news package: empty feed
+    if (Z.Resort && Z.Resort.afterLoad) Z.Resort.afterLoad();   // luxury resort package
     RT.value = arrivalValue(); RT.rate = arrivalRate();
     msg('Welcome to Amber Acres! Your lab is ready: run an extraction, hatch a Dryosaurus and open the gates.', 'info', false);
     bus.emit('reset');
@@ -6121,6 +6193,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var g = S.guests[k];
       g.ti = tileOf(g.x, g.z); g.ni = -1; g.pv = 0; g.ubid = 0; g.bid = 0; g.wt = 0; g.speed = 0; g.glide = 0; g.spot = 0; g.shel = 0; g.nt = rng.next();
       if (g.state === 'ride') { g.gt = ''; g.dk = ''; }   // monorail package: riders stay on their train (relinked in Monorail.afterLoad)
+      else if (g.state === 'resort_sleep') { g.gt = ''; g.dk = ''; }   // luxury resort package: overnight sleepers stay tucked in lodge
       else if (g.state === 'leave') { g.gt = 'exit'; g.dk = 'exit'; } else { g.state = 'walk'; g.gt = ''; g.dk = ''; }
       if (g.gt === 'out') g.gt = 'exit';
     }
@@ -6163,6 +6236,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Realms) { Z.Realms.afterLoad(); Z.Realms.update(); }   // realms package: default state of old saves, derive towers and zones
     if (Z.Safari) Z.Safari.afterLoad();   // safari package: riders relink, derived routes and zones (after realms and enclosures)
     if (Z.News) Z.News.afterLoad();   // news package
+    if (Z.Resort && Z.Resort.afterLoad) Z.Resort.afterLoad();   // luxury resort package
     secondly();
     S.staff.forEach(function (s) { if (s.type === 'scientist') s.pv = -1; });
     bus.emit('reset');

@@ -1193,6 +1193,9 @@ function fcl() {
   FCL = {};
   Object.keys(FC).forEach(function (k) { FCL[k] = {}; Object.keys(FC[k]).forEach(function (kk) { FCL[k][kk] = lin3(FC[k][kk]); }); });
   FCL.glassPane = lin3('#a8e0ee');
+  FCL.gildedPost = lin3('#d4af37');
+  FCL.marblePost = lin3('#f0ead6');
+  FCL.crystalPane = lin3('#c6efff');
   FCL.hazRed = lin3('#e83028');
   FCL.hazAmb = lin3('#ffaa14');
   FCL.hazDark = lin3('#242629');
@@ -1314,23 +1317,29 @@ function fenceEdge(set, axis, i, j, f, contNext, broken) {
       panel(set.chain, 0, T, 0.07, h - 0.06, heavy ? [0.55, 0.58, 0.6] : [0.9, 0.93, 0.95], T, (h - 0.13));
     }
   } else if (st === 'glass') {
-    var c4 = C.glass;
+    var c4 = C.glass, isGilded = f.id === 'gilded_glass', isMarble = f.id === 'royal_marble';
+    var gPost = isGilded ? C.gildedPost : isMarble ? C.marblePost : c4.post;
+    var gRail = isGilded ? C.gildedPost : isMarble ? C.gildedPost : c4.post;
+    var gCap = (isGilded || isMarble) ? C.gildedPost : null;
+    var gPane = (isGilded || isMarble) ? C.crystalPane : C.glassPane;
+    var gPw = isMarble ? 0.11 : isGilded ? 0.055 : 0.04;
+    var gBase = isMarble ? 0.24 : 0.1;
     if (broken) {
-      posts(0.04, h * 0.45, c4.post);
-      bx(solid, 0, 0, -0.05, T * 0.26, 0.1, 0.05, mul3(c4.post, 0.9));
-      bx(solid, T * 0.74, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
-      panel(set.glass, 0.02, T * 0.23, 0.1, h * 0.40, C.glassPane, 1, 1);
-      panel(set.glass, T * 0.77, T - 0.02, 0.1, h * 0.40, C.glassPane, 1, 1);
-      flatDebris(set.glass, T * 0.42, 0.22, 0.34, 0.22, 0.03, 0.55, 0.01, C.glassPane);
-      flatDebris(set.glass, T * 0.58, -0.18, 0.30, 0.20, 0.03, -0.75, 0.01, C.glassPane);
-      flatDebris(set.glass, T * 0.50, 0.08, 0.26, 0.16, 0.03, 1.1, 0.02, C.glassPane);
-      flatDebris(solid, T * 0.48, -0.26, 0.55, 0.07, 0.05, -0.25, 0.01, c4.post);
+      posts(gPw, h * 0.45, gPost);
+      bx(solid, 0, 0, isMarble ? -0.09 : -0.05, T * 0.26, gBase, isMarble ? 0.09 : 0.05, mul3(gPost, 0.92));
+      bx(solid, T * 0.74, 0, isMarble ? -0.09 : -0.05, T, gBase, isMarble ? 0.09 : 0.05, mul3(gPost, 0.92));
+      panel(set.glass, 0.02, T * 0.23, gBase, h * 0.40, gPane, 1, 1);
+      panel(set.glass, T * 0.77, T - 0.02, gBase, h * 0.40, gPane, 1, 1);
+      flatDebris(set.glass, T * 0.42, 0.22, 0.34, 0.22, 0.03, 0.55, 0.01, gPane);
+      flatDebris(set.glass, T * 0.58, -0.18, 0.30, 0.20, 0.03, -0.75, 0.01, gPane);
+      flatDebris(set.glass, T * 0.50, 0.08, 0.26, 0.16, 0.03, 1.1, 0.02, gPane);
+      flatDebris(solid, T * 0.48, -0.26, 0.55, 0.07, 0.05, -0.25, 0.01, gPost);
       hazardEnds(0);
     } else {
-      posts(0.04, h, c4.post);
-      bx(solid, 0, h - 0.09, -0.04, T, h, 0.04, c4.post);
-      bx(solid, 0, 0, -0.05, T, 0.1, 0.05, mul3(c4.post, 0.9));
-      panel(set.glass, 0.02, T - 0.02, 0.1, h - 0.09, C.glassPane, 1, 1);
+      posts(gPw, h, gPost, gCap);
+      bx(solid, 0, h - 0.09, -0.045, T, h, 0.045, gRail);
+      bx(solid, 0, 0, isMarble ? -0.09 : -0.05, T, gBase, isMarble ? 0.09 : 0.05, isMarble ? gPost : mul3(gRail, 0.9));
+      panel(set.glass, 0.02, T - 0.02, gBase, h - 0.09, gPane, 1, 1);
     }
   } else if (st === 'concrete') {
     var c5 = C.concrete, k5 = 0.94 + 0.12 * jit;
@@ -2061,6 +2070,7 @@ function updateEntities(dt, dtGame) {
         if (kind === 'animal' && !!e.baby !== rec.baby) { entGroup.remove(rec.group); map.delete(e.id); rec = addEnt(kind, e); }
       }
       rec.stamp = G.frameNo;
+      if (kind === 'guest' && e.state === 'resort_sleep') { rec.vis_ = false; rec.imp = false; rec.group.visible = false; continue; }
       var x = fin(e.x, 0), z = fin(e.z, 0), ey = fin(e.y, 0);
       var dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz + cy * cy;
       var vis = isFin(d2) && d2 < far2;
