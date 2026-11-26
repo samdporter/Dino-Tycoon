@@ -1399,13 +1399,13 @@ window.Z.DATA.donors = [
 // ===== safari package (open-range zones, trucks and boats, wildlife from the mainland) =====  See notes/safari.md
 (function (D) {
   D.safari = {
-    trackCost: 5, waterTrackCost: 7, refund: 0.5,            // per route tile (dirt track) / per buoyed tile at sea; removal refunds 50%
+    trackCost: 5, waterTrackCost: 7, airTrackCost: 3, refund: 0.5,            // per route tile (dirt track) / per buoyed tile at sea; removal refunds 50%
     truckCost: 7500, boatCost: 6200, balloonCost: 9800, upkeep: { land: 24, sea: 20, air: 26 }, refundVeh: 0.6,
     capacity: { land: 8, sea: 10, air: 6 }, maxVeh: 4,   // seats, vehicles per depot / harbour
-    speed: { land: 4.2, sea: 3.4, air: 1.6 }, accel: 1.8, dwell: 6,   // units per second
-    fare: 6, fareMax: 25, fareRef: 6,
-    minZone: 36, minInside: 7, viewR: 15, closeR: 5,         // smallest zone (tiles), tiles of route inside the zone, view radius / close-encounter radius (world units)
-    gateTime: 0.9, nudgeChance: 0.0012, strandHours: 2.2, injuryChance: 0.00045,
+    speed: { land: 5.0, sea: 3.8, air: 2.0 }, accel: 2.1, dwell: 4.5,   // units per second
+    fare: 8, fareMax: 30, fareRef: 8,
+    minZone: 36, minInside: 7, viewR: 16, closeR: 5.5,         // smallest zone (tiles), tiles of route inside the zone, view radius / close-encounter radius (world units)
+    gateTime: 0.7, nudgeChance: 0.0012, strandHours: 2.2, injuryChance: 0.00045,
     breakdownPerHour: 0.01, fixTime: [20, 60],
     wild: { cap: { land: 7, sea: 4, air: 5 }, perHour: 1.1, stayHours: [5, 14], pingerMul: 0.3, scareMul: 0.35, fearR: 9, corridorFee: 0, pingerUp: 4, scareUp: 3 },
     escape: { shutterSec: 140, lockdownCost: 600, rangerBonus: 0.6, reconCost: 6500, reconDays: 3, finePer: 1800, closeDays: 2, mainlandLossRep: 12 }
@@ -1420,7 +1420,9 @@ window.Z.DATA.donors = [
     { id: 'safari_portal', name: 'Geofence portal', emoji: '🚧', cost: 4500, upkeep: 22, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 1, satisfies: {}, star: 3, needsPower: true, powerDraw: 0.15, powerClass: 'life', safariPortal: true,
       info: 'Cattle grid, bollards and a boom barrier at the edge of a virtual zone. Vehicles cross here; the boom locks shut if the power fails.' },
     { id: 'ranger_post', name: 'Ranger post', emoji: '🏕️', cost: 5500, upkeep: 50, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, safariRanger: true,
-      info: 'Rangers with a jeep and a hailer. They haze wildlife, tow stranded safari vehicles and cut recapture time on the mainland side.' }
+      info: 'Rangers with a jeep and a hailer. They haze wildlife, tow stranded safari vehicles and cut recapture time on the mainland side.' },
+    { id: 'safari_tent_camp', name: 'Game Reserve Tent Camp', emoji: '⛺', cost: 14000, upkeep: 140, type: 'shop', price: 550, capacity: 6, w: 3, h: 3, satisfies: { fun: 25, energy: 45 }, star: 3, resortRole: 'lodging', safariReserve: true, inEnclosure: true, prestige: 950,
+      info: 'Luxury glamping camp placed inside or beside a safari reserve. VIP guests pay huge nightly rates to sleep among dinosaurs under armed bodyguard protection. Connect by path or pass a Safari route within 6 tiles.' }
   );
   D.fences.push(
     { id: 'safari_gate', name: 'Safari airlock gate', cost: 5500, strength: 6, height: 2.6, seeThrough: true, style: 'gate', special: true, safariGate: 'land',
@@ -1453,6 +1455,15 @@ window.Z.DATA.donors = [
   D.guestThoughts.safariKill = ["I saw a hunt! Incredible!", "It caught a {animal} right in front of us.", "Nature is brutal, and brilliant.", "That was better than any film."];
   D.guestThoughts.safariKillSad = ["Poor {animal}...", "I cannot watch this.", "Take me away from here, the children are crying.", "Why do they let that happen?"];
   D.guestThoughts.safariWild = ["Wild {animal} came in from the mainland!", "A wild {animal} in the zone, how lovely.", "Look, a {animal} just wandered in."];
+  D.guestThoughts.safariCamp = [
+    "Sleeping in a luxury tent with a {animal} roaring outside — worth every penny!",
+    "The camp bodyguards kept us safe all night. Best stay of my life!",
+    "Woke up to a {animal} strolling past the game reserve campfire!"
+  ];
+  D.guestThoughts.safariCampDanger = [
+    "A {animal} is prowling right outside our tent! Where are the bodyguards?!",
+    "This game reserve camp needs more armed bodyguards!"
+  ];
   D.news.kinds.safari_open = { mood: 'good', head: ['Safari opens at {park}: trucks roll into the open range', '{park} unveils its safari: "no bars between you and the beasts"'], sub: ['The first passengers called it "the best seat on the island".'] };
   D.news.kinds.safari_doc = { mood: 'good', head: ['Nature documentary: {sp} hunt filmed from a {park} safari truck', 'Red in tooth and claw: {park} safari guests witness a hunt', 'Wild encounter at {park}: a {sp} falls to a predator'], sub: ['Visitors said it was "better than the telly".', 'A passing crew filmed the whole thing from the truck.'] };
   D.news.kinds.safari_protest = { mood: 'bad', head: ['Animal welfare groups protest {park}: "safari or slaughterhouse?"', 'Hunts in full view: {park} accused of staging kills for tourists'], sub: ['Campaigners say the wildlife corridor is a trap.'] };

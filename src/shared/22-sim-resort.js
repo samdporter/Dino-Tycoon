@@ -139,6 +139,10 @@
 
   function isConnected(o) {
     if (!o) return false;
+    var BD = getBD(), def = getBuildingDef(o.type, BD);
+    if (def && def.safariReserve && Z.Safari && typeof Z.Safari.campConnected === 'function') {
+      if (Z.Safari.campConnected(o)) return true;
+    }
     var c = ctx();
     if (typeof c.isConnected === 'function') return Boolean(c.isConnected(o));
     return o.connected !== false;
@@ -732,6 +736,18 @@
           factor = 0.5 + 0.5 * (1 - d / rConc);
           bonus += 3 * factor;
         }
+      } else if (def && def.safariReserve) {
+        var cg = o.campGuards === undefined ? 1 : (o.campGuards | 0);
+        if (cg > 0) {
+          ctr = objCenter(o);
+          dx = x - ctr.x; dz = z - ctr.z; dSq = dx * dx + dz * dz;
+          if (dSq <= rGuardSq) {
+            hasGuard = true;
+            d = Math.sqrt(dSq);
+            factor = 0.5 + 0.5 * (1 - d / rGuard);
+            bonus += (4 + Math.min(4, cg * 1.5)) * factor;
+          }
+        }
       }
     }
 
@@ -800,10 +816,13 @@
       var booked = occ[o.id] || 0;
       if (booked >= cap) continue;
 
-      var price = o.price != null ? o.price : (def.price || 0);
+      var price = (def.safariReserve && Z.Safari && typeof Z.Safari.campPrice === 'function')
+        ? Z.Safari.campPrice(o)
+        : (o.price != null ? o.price : (def.price || 0));
       if (funds < price) continue;
 
       var tier = def.prestige || def.luxury || def.price || price;
+      if (def.safariReserve) tier = Math.max(tier, price * 1.45);
       // Super-rich guests strongly prefer higher-prestige villas/suites
       var score = (funds >= price * 2 ? tier * 2 : tier) + (cap - booked) * 0.5 - price * 0.05;
       if (score > bestScore) {

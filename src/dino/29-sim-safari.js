@@ -110,41 +110,77 @@ window.Z = window.Z || {}; var Z = window.Z;
     return null;
   }
 
-  // ------------------------------------------------------------------ derive: routes
+  // ------------------------------------------------------------------ derive: routes & depot orientation
   function depotOf(r) { var o = objById(r.depot), d = o && defOf(o); return o && d && d.safari === r.kind ? o : null; }
   function adjacent(a, b) { var d = Math.abs(a - b); return d === N || (d === 1 && tj(a) === tj(b)); }
   function realmOfEnc(enc) { return enc ? (enc.realm || 'land') : 'land'; }
-  // validate a tile list for a kind; returns {why, gates:[{k, key}], inside:{encId:count}}
-  function checkTiles(kind, tiles, depotObj) {
-    var s = S(), res = { why: '', cross: [], inside: {}, loop: false }, k, t;
-    if (!tiles || tiles.length < 4) { res.why = 'The route needs at least 4 tiles'; return res; }
+  // Front (+z at rot=0) is the guest path entrance; Back (-z at rot=0) is where safari vehicles launch & return.
+  function depotEnds(o) {
+    if (!o) return null;
+    var fp = C.objFootprint(o), rot = (o.rot | 0) & 3;
+    var fd = rot === 0 ? [0, 1] : rot === 1 ? [1, 0] : rot === 2 ? [0, -1] : [-1, 0];
+    var bd = [-fd[0], -fd[1]];
+    var backTiles = [], backRow = [], frontRow = [], k, x, y;
+    if (rot === 0) {
+      for (k = 0; k < fp.w; k++) { x = fp.i0 + k; y = fp.j0 - 1; if (x >= 0 && x < N && y >= 0 && y < N) backTiles.push(x + y * N); backRow.push(x + fp.j0 * N); y = fp.j0 + fp.h; if (x >= 0 && x < N && y >= 0 && y < N) frontRow.push(x + y * N); }
+    } else if (rot === 1) {
+      for (k = 0; k < fp.h; k++) { x = fp.i0 - 1; y = fp.j0 + k; if (x >= 0 && x < N && y >= 0 && y < N) backTiles.push(x + y * N); backRow.push(fp.i0 + y * N); x = fp.i0 + fp.w; if (x >= 0 && x < N && y >= 0 && y < N) frontRow.push(x + y * N); }
+    } else if (rot === 2) {
+      for (k = 0; k < fp.w; k++) { x = fp.i0 + k; y = fp.j0 + fp.h; if (x >= 0 && x < N && y >= 0 && y < N) backTiles.push(x + y * N); backRow.push(x + (fp.j0 + fp.h - 1) * N); y = fp.j0 - 1; if (x >= 0 && x < N && y >= 0 && y < N) frontRow.push(x + y * N); }
+    } else {
+      for (k = 0; k < fp.h; k++) { x = fp.i0 + fp.w; y = fp.j0 + k; if (x >= 0 && x < N && y >= 0 && y < N) backTiles.push(x + y * N); backRow.push((fp.i0 + fp.w - 1) + y * N); x = fp.i0 - 1; if (x >= 0 && x < N && y >= 0 && y < N) frontRow.push(x + y * N); }
+    }
+    var mid = Math.floor(backTiles.length / 2);
+    return { fp: fp, rot: rot, frontDir: fd, backDir: bd, backTiles: backTiles, backRow: backRow, frontTiles: frontRow, backCenter: backTiles.length ? backTiles[mid] : -1 };
+  }
+  A.depotEnds = function (idOrObj) { var o = typeof idOrObj === 'object' ? idOrObj : objById(idOrObj); return o ? depotEnds(o) : null; };
+  function isBackAnchor(o, t) {
+    var de = depotEnds(o); if (!de) return false;
+    return de.backTiles.indexOf(t) >= 0 || de.backRow.indexOf(t) >= 0;
+  }
+  function isFrontTile(o, t) {
+    var de = depotEnds(o); if (!de) return false;
+    return de.frontTiles.indexOf(t) >= 0;
+  }
+  // validate a tile list for a kind; opts: { partial, mode: 'loop'|'outback'|null }
+  function checkTiles(kind, tiles, depotObj, opts) {
+    var s = S(), partial = !!(opts && opts.partial), mode = opts && opts.mode || null;
+    var res = { why: '', partialWhy: '', cross: [], inside: {}, loop: false, canLoop: false, hardErr: false }, k, t;
+    if (!tiles || tiles.length < (partial ? 1 : 4)) { res.why = 'The route needs at least 4 tiles'; return res; }
     var seen = {};
     for (k = 0; k < tiles.length; k++) {
-      t = tiles[k]; if (seen[t]) { res.why = 'The route crosses itself'; return res; } seen[t] = 1;
-      if (k && !adjacent(tiles[k - 1], t)) { res.why = 'The route has a gap'; return res; }
+      t = tiles[k]; if (seen[t]) { res.why = 'The route crosses itself'; res.hardErr = true; return res; } seen[t] = 1;
+      if (k && !adjacent(tiles[k - 1], t)) { res.why = 'The route has a gap'; res.hardErr = true; return res; }
     }
     if (depotObj) {
       var fp = C.objFootprint(depotObj), a = tiles[0], ai = ti(a), aj = tj(a);
       var reach = kind === 'sea' ? 2 : 1;
-      if (ai < fp.i0 - reach || ai > fp.i0 + fp.w - 1 + reach || aj < fp.j0 - reach || aj > fp.j0 + fp.h - 1 + reach) { res.why = 'The route must start at the bay of the ' + (kind === 'land' ? 'depot' : kind === 'sea' ? 'harbour' : 'pad'); return res; }
+      if (ai < fp.i0 - reach || ai > fp.i0 + fp.w - 1 + reach || aj < fp.j0 - reach || aj > fp.j0 + fp.h - 1 + reach) {
+        res.why = 'Start the route at the rear bay of the ' + (kind === 'land' ? 'depot' : kind === 'sea' ? 'harbour' : 'pad'); res.hardErr = true; return res;
+      }
+      // For land depots, ensure the route leads out the BACK (not across the front guest path), while preserving legacy routes whose tile[1] enters the depot
+      if (kind === 'land' && isFrontTile(depotObj, a) && !(tiles.length > 1 && s.tileObj[tiles[1]] === depotObj.id)) {
+        res.why = 'Start the safari track from the rear bay (behind the depot), not across the front path'; res.hardErr = true; return res;
+      }
     }
     for (k = 0; k < tiles.length; k++) {
       t = tiles[k];
       var own = s.tileObj[t] === (depotObj && depotObj.id);
       var enc = s.tileEnc[t] ? RT().eMap[s.tileEnc[t]] : null;
       if (kind === 'land') {
-        if (isWater(t)) { res.why = 'A truck cannot drive through water'; return res; }
-        if (C.cliffT(t)) { res.why = 'Too steep for a truck'; return res; }
-        if (s.ditch[t]) { res.why = 'A ditch is in the way'; return res; }
-        if (!own && s.tileObj[t] && !(objById(s.tileObj[t]) && (defOf(objById(s.tileObj[t])) || {}).safariPortal)) { res.why = 'A building is in the way'; return res; }
-        if (enc && enc.realm === 'sea') { res.why = 'That is a sea enclosure'; return res; }
-        if (enc && enc.kind === 'tank') { res.why = 'Trucks cannot enter a tank'; return res; }
+        if (isWater(t)) { res.why = 'A truck cannot drive through water'; res.hardErr = true; return res; }
+        if (C.cliffT(t)) { res.why = 'Too steep for a truck'; res.hardErr = true; return res; }
+        if (s.ditch[t]) { res.why = 'A ditch is in the way'; res.hardErr = true; return res; }
+        if (s.path[t] && !(k === 0 && tiles.length > 1 && depotObj && s.tileObj[tiles[1]] === depotObj.id)) { res.why = 'Safari track cannot cross a guest path — lead it out the back of the depot'; res.hardErr = true; return res; }
+        if (!own && s.tileObj[t] && !(objById(s.tileObj[t]) && (defOf(objById(s.tileObj[t])) || {}).safariPortal)) { res.why = 'A building is in the way'; res.hardErr = true; return res; }
+        if (enc && enc.realm === 'sea') { res.why = 'That is a sea enclosure'; res.hardErr = true; return res; }
+        if (enc && enc.kind === 'tank') { res.why = 'Trucks cannot enter a tank'; res.hardErr = true; return res; }
       } else if (kind === 'sea') {
-        if (!isWater(t) && !(k < 2 && depotObj && !S().tileEnc[t])) { res.why = 'Boats stay on the water'; return res; }
-        if (enc && enc.realm !== 'sea') { res.why = 'That is a land enclosure'; return res; }
-        if (enc && enc.kind === 'tank') { res.why = 'Boats cannot enter a tank'; return res; }
+        if (!isWater(t) && !(k < 2 && depotObj && !S().tileEnc[t])) { res.why = 'Boats stay on the water'; res.hardErr = true; return res; }
+        if (enc && enc.realm !== 'sea') { res.why = 'That is a land enclosure'; res.hardErr = true; return res; }
+        if (enc && enc.kind === 'tank') { res.why = 'Boats cannot enter a tank'; res.hardErr = true; return res; }
       } else {
-        if (!own && s.tileObj[t] && (BD()[(objById(s.tileObj[t]) || {}).type] || {}).type === 'science') { res.why = 'Keep the flight path clear of the lab'; return res; }
+        if (!own && s.tileObj[t] && (BD()[(objById(s.tileObj[t]) || {}).type] || {}).type === 'science') { res.why = 'Keep the flight path clear of the lab'; res.hardErr = true; return res; }
       }
       if (enc) res.inside[enc.id] = (res.inside[enc.id] || 0) + 1;
       if (k) {
@@ -152,19 +188,19 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (e0 !== e1) {
           var ed = edgeBetween(p, t), f = ed && fenceDef(ed.v);
           if (f && f.safariGate) {
-            if (f.safariGate !== kind) { res.why = (kind === 'sea' ? 'Boats need a boat lock gate' : 'Trucks need an airlock gate'); return res; }
+            if (f.safariGate !== kind) { res.why = (kind === 'sea' ? 'Boats need a boat lock gate' : 'Trucks need an airlock gate'); res.hardErr = true; return res; }
             res.cross.push({ k: k - 1, key: gateKeyOf(ed.axis, ed.i, ed.j), ent: e1 !== 0 });
-          } else if (f) { res.why = 'A fence is in the way: use a safari gate there'; return res; }
+          } else if (f) { res.why = 'A fence is in the way: use a safari gate there'; res.hardErr = true; return res; }
           else {
             var en0 = e0 ? RT().eMap[e0] : null, en1 = e1 ? RT().eMap[e1] : null, virt = (en0 && en0.kind === 'virtual') || (en1 && en1.kind === 'virtual');
             if (kind === 'air') { /* balloons fly over everything */ }
             else if (virt && kind === 'land') {
               var pm = (tcx(p) + tcx(t)) / 2, pz = (tcz(p) + tcz(t)) / 2, por = portalNear(pm, pz, 4);
-              if (!por) { res.why = 'A zone edge needs a geofence portal within 4 tiles'; return res; }
+              if (!por) { res.why = 'A zone edge needs a geofence portal within 4 tiles'; res.hardErr = true; return res; }
               res.cross.push({ k: k - 1, key: 'p' + por.id, portal: por.id, ent: e1 !== 0 });
             } else if (virt && kind === 'sea') { res.cross.push({ k: k - 1, key: 'v', ent: e1 !== 0, virt: true }); }
-            else if (e0 && e1) { res.why = 'The route crosses between two zones without a gate'; return res; }
-            else { res.why = 'The route crosses a barrier without a gate'; return res; }
+            else if (e0 && e1) { res.why = 'The route crosses between two zones without a gate'; res.hardErr = true; return res; }
+            else { res.why = 'The route crosses a barrier without a gate'; res.hardErr = true; return res; }
           }
         }
       }
@@ -173,16 +209,29 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (k = 0; k < res.cross.length; k++) {
       var c = res.cross[k]; if (c.virt || c.portal) continue;
       var a0 = tiles[c.k - 1], a1 = tiles[c.k], a2 = tiles[c.k + 1], a3 = tiles[c.k + 2];
-      if (a0 === undefined || a3 === undefined || (a1 - a0) !== (a2 - a1) || (a3 - a2) !== (a2 - a1)) { res.why = 'Keep the track straight for two tiles either side of a gate'; return res; }
+      // while laying partial track right through a gate, allow a3 to be undefined until extended
+      if (partial && a3 === undefined && a0 !== undefined && (a1 - a0) === (a2 - a1)) continue;
+      if (a0 === undefined || a3 === undefined || (a1 - a0) !== (a2 - a1) || (a3 - a2) !== (a2 - a1)) { res.why = 'Keep the track straight for two tiles either side of a gate'; res.hardErr = true; return res; }
     }
+    var last = tiles[tiles.length - 1];
+    res.canLoop = tiles.length >= 6 && (adjacent(last, tiles[0]) || (!!depotObj && isBackAnchor(depotObj, last) && last !== tiles[0]));
+    res.loop = mode === 'outback' ? false : mode === 'loop' ? res.canLoop : res.canLoop;
     var nIn = 0, ea = null; for (var id in res.inside) { if (res.inside[id] > nIn) { nIn = res.inside[id]; ea = +id; } }
-    if (!ea || nIn < SD.minInside) { res.why = 'Drive at least ' + SD.minInside + ' tiles through a zone'; return res; }
+    if (!ea || nIn < SD.minInside) {
+      res.why = 'Extend into a dinosaur zone (' + nIn + '/' + SD.minInside + ' tiles inside)';
+      if (partial) { res.partialWhy = res.why; res.why = ''; }
+      return res;
+    }
     var encM = RT().eMap[ea];
     if (kind !== 'air' && encM && encM.area < SD.minZone) { res.why = 'That zone is too small for a safari (needs ' + SD.minZone + ' tiles)'; return res; }
     if (kind === 'land' && encM && encM.realm === 'air') { res.why = 'Use a balloon for sky zones'; return res; }
     if (kind === 'air' && encM && encM.realm === 'sea') { res.why = 'Balloons fly over land or sky zones'; return res; }
     res.main = ea;
-    res.loop = adjacent(tiles[tiles.length - 1], tiles[0]) && tiles.length >= 6;
+    if (mode === 'loop' && !res.canLoop) {
+      res.why = 'Bring the track back to the depot rear bay to close the Round Trip loop (or switch to Out & Back)';
+      if (partial) { res.partialWhy = res.why; res.why = ''; }
+      return res;
+    }
     return res;
   }
   function chaikin(pts, closed, n) {
@@ -200,8 +249,15 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function buildPath(r, chk, depotObj) {
     var tiles = r.tiles, cyc, loop = chk.loop, k;
-    if (loop) cyc = tiles.slice();
-    else { cyc = tiles.slice(); for (k = tiles.length - 2; k >= 1; k--) cyc.push(tiles[k]); }
+    if (loop) {
+      cyc = tiles.slice();
+      // If the loop closes across the rear bay (e.g. left bay to right bay, 2 tiles apart), bridge via the middle rear tile
+      var first = tiles[0], last = tiles[tiles.length - 1];
+      if (!adjacent(last, first) && depotObj) {
+        var de = depotEnds(depotObj);
+        if (de && de.backTiles.length >= 3 && de.backCenter >= 0 && de.backCenter !== first && de.backCenter !== last) cyc.push(de.backCenter);
+      }
+    } else { cyc = tiles.slice(); for (k = tiles.length - 2; k >= 1; k--) cyc.push(tiles[k]); }
     var raw = cyc.map(function (t) { return { x: tcx(t), z: tcz(t) }; });
     var pts = chaikin(raw, true, 2);
     if (!loop) {            // drive on the right: shift the out-and-back lanes apart
@@ -214,7 +270,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     var cum = [0], m2 = pts.length;
     for (k = 1; k <= m2; k++) { var a = pts[k - 1], b = pts[k % m2]; cum.push(cum[k - 1] + dist(a.x, a.z, b.x, b.z)); }
-    var P = { id: r.id, kind: r.kind, ok: true, why: '', loop: loop, pts: pts, cum: cum, len: cum[m2], tiles: tiles, cyc: cyc, depot: depotObj, gates: [], inside: chk.inside, main: chk.main, zones: Object.keys(chk.inside).map(Number) };
+    var P = { id: r.id, kind: r.kind, mode: r.mode || (loop ? 'loop' : 'outback'), ok: true, why: '', loop: loop, pts: pts, cum: cum, len: cum[m2], tiles: tiles, cyc: cyc, depot: depotObj, gates: [], inside: chk.inside, main: chk.main, zones: Object.keys(chk.inside).map(Number), appeal: 0, excitement: 0, speciesCount: 0, animalCount: 0 };
     // start: the point nearest to the first tile (the depot bay)
     var best = 0, bd = 1e9;
     for (k = 0; k < m2; k++) { var dd = dist(pts[k].x, pts[k].z, tcx(tiles[0]), tcz(tiles[0])); if (dd < bd) { bd = dd; best = k; } }
@@ -236,28 +292,60 @@ window.Z = window.Z || {}; var Z = window.Z;
       var mx = (tcx(ta) + tcx(tb)) / 2, mz = (tcz(ta) + tcz(tb)) / 2, bi = 0, bdist = 1e9;
       for (k = 0; k < P.pts.length; k++) { var dd2 = dist(P.pts[k].x, P.pts[k].z, mx, mz); if (dd2 < bdist) { bdist = dd2; bi = k; } }
       // out-and-back paths pass each crossing twice: take the occurrence nearest to the right index
-      var idx = Math.round(q * P.pts.length / nCyc); if (!loop || true) { var cand = -1, cd = 1e9; for (k = 0; k < P.pts.length; k++) { var d3 = dist(P.pts[k].x, P.pts[k].z, mx, mz); if (d3 < 1.6) { var dd4 = Math.min(Math.abs(k - idx), P.pts.length - Math.abs(k - idx)); if (dd4 < cd) { cd = dd4; cand = k; } } } if (cand >= 0) bi = cand; }
+      var idx = Math.round(q * P.pts.length / nCyc);
+      var cand = -1, cd = 1e9;
+      for (k = 0; k < P.pts.length; k++) { var d3 = dist(P.pts[k].x, P.pts[k].z, mx, mz); if (d3 < 1.6) { var dd4 = Math.min(Math.abs(k - idx), P.pts.length - Math.abs(k - idx)); if (dd4 < cd) { cd = dd4; cand = k; } } }
+      if (cand >= 0) bi = cand;
       P.gates.push({ key: key, kind: kindG, sg: P.cum[bi], sA: P.cum[bi] - 2.0, sB: P.cum[bi] + 2.0, ent: e1 !== 0, e: e1 || e0 });
     }
     P.gates.sort(function (a, b) { return a.sg - b.sg; });
+    scoreRoute(P);
     return P;
+  }
+  function scoreRoute(P) {
+    if (!P || !P.zones || !P.zones.length) { if (P) { P.appeal = 0; P.excitement = 0; P.speciesCount = 0; P.animalCount = 0; } return; }
+    var s = S(), spSet = {}, nAn = 0, appSum = 0, dangerMax = 0, zSet = {};
+    P.zones.forEach(function (zid) { zSet[zid] = 1; });
+    for (var k = 0; k < s.animals.length; k++) {
+      var a = s.animals[k]; if (!zSet[a.enc] || a.state === 'escaped') continue;
+      var sp = SP()[a.species]; if (!sp) continue;
+      nAn++;
+      var baseA = sp.appeal || 10;
+      if (!spSet[a.species]) { spSet[a.species] = 1; appSum += baseA * 1.4; }
+      else appSum += baseA * 0.25;
+      var d = C.aDanger(a); if (d > dangerMax) dangerMax = d;
+    }
+    var nSp = Object.keys(spSet).length;
+    var kindBonus = P.kind === 'air' ? 14 : P.kind === 'sea' ? 12 : 10;
+    var lenBonus = Math.min(18, P.tiles.length * 0.55) + (P.loop ? 6 : 0) + Math.min(12, (P.zones.length - 1) * 6);
+    var exc = nAn ? clamp(Math.round(28 + kindBonus + lenBonus + Math.min(34, appSum * 0.35) + dangerMax * 5 + Math.min(12, nSp * 3)), 0, 100) : Math.min(25, Math.round(10 + lenBonus * 0.5));
+    P.speciesCount = nSp; P.animalCount = nAn; P.appeal = appSum; P.excitement = exc;
+  }
+  function buildPartialPts(tiles) {
+    if (!tiles || tiles.length < 2) return [];
+    var raw = tiles.map(function (t) { return { x: tcx(t), z: tcz(t) }; });
+    return chaikin(raw, false, 1);
   }
   function deriveRoutes() {
     var o = ST(), out = {}, safe = [];
     o.routes.forEach(function (r) {
       var dep = depotOf(r), chk;
-      if (!dep) { out[r.id] = { id: r.id, kind: r.kind, ok: false, why: 'The ' + (r.kind === 'sea' ? 'harbour' : r.kind === 'air' ? 'pad' : 'depot') + ' is gone', tiles: r.tiles, gates: [], zones: [], inside: {}, pts: [], len: 0, cum: [0] }; return; }
-      chk = checkTiles(r.kind, r.tiles, dep);
-      if (chk.why) { out[r.id] = { id: r.id, kind: r.kind, ok: false, why: chk.why, tiles: r.tiles, gates: [], zones: [], inside: {}, pts: [], len: 0, cum: [0], depot: dep }; return; }
+      if (!dep) { out[r.id] = { id: r.id, kind: r.kind, mode: r.mode || 'outback', ok: false, why: 'The ' + (r.kind === 'sea' ? 'harbour' : r.kind === 'air' ? 'pad' : 'depot') + ' is gone', tiles: r.tiles, gates: [], zones: [], inside: {}, pts: [], len: 0, cum: [0], appeal: 0, excitement: 0, speciesCount: 0, animalCount: 0 }; return; }
+      chk = checkTiles(r.kind, r.tiles, dep, { mode: r.mode || null });
+      if (chk.why) {
+        var ppts = buildPartialPts(r.tiles);
+        out[r.id] = { id: r.id, kind: r.kind, mode: r.mode || (chk.canLoop ? 'loop' : 'outback'), ok: false, partial: !chk.hardErr, why: chk.why, tiles: r.tiles, gates: [], zones: Object.keys(chk.inside || {}).map(Number), inside: chk.inside || {}, pts: ppts, len: r.tiles.length * TILE, cum: [0], depot: dep, loop: false, appeal: 0, excitement: 0, speciesCount: 0, animalCount: 0 };
+        return;
+      }
       var P = buildPath(r, chk, dep); out[r.id] = P;
       for (var k = 0; k < P.gates.length; k++) { var g = P.gates[k]; if (g.key.charAt(0) !== 'p' && g.key !== 'v' && !X.gates[g.key]) { P.ok = false; P.why = 'A gate is missing'; } }
-      if (r.kind === 'land' && P.ok) r.tiles.forEach(function (t) { if (S().tileEnc[t] || true) safe.push(t); });
+      if (r.kind === 'land' && P.ok) r.tiles.forEach(function (t) { safe.push(t); });
     });
     X.routes = out;
     if (Z.Realms && Z.Realms.markSafe) { var cur = A._safeSig, sig = safe.length + ':' + (safe[0] || 0) + ':' + (safe[safe.length - 1] || 0); if (cur !== sig) { A._safeSig = sig; Z.Realms.markSafe('safari', safe); } }
   }
   A.route = function (id) { return X.routes[id] || null; };
-  A.routes = function () { return ST().routes.map(function (r) { var P = X.routes[r.id]; return { id: r.id, kind: r.kind, depot: r.depot, ok: !!(P && P.ok), why: P ? P.why : '', len: P ? Math.round(P.len / TILE) : 0, tiles: r.tiles.length, zones: P ? P.zones : [], loop: !!(P && P.loop) }; }); };
+  A.routes = function () { return ST().routes.map(function (r) { var P = X.routes[r.id]; return { id: r.id, kind: r.kind, mode: r.mode || (P && P.loop ? 'loop' : 'outback'), depot: r.depot, ok: !!(P && P.ok), partial: !!(P && P.partial), why: P ? P.why : '', len: P ? Math.round(P.len / TILE) : 0, tiles: r.tiles.length, zones: P ? P.zones : [], loop: !!(P && P.loop), excitement: P ? P.excitement : 0, speciesCount: P ? P.speciesCount : 0, animalCount: P ? P.animalCount : 0 }; }); };
 
   // ------------------------------------------------------------------ derive: zones (safari status, connection, corridor markers, deterrents), walking field to the causeway
   function zoneCfg(id) { var o = ST(); return o.zones[id] || (o.zones[id] = { corr: 1 }); }
@@ -586,39 +674,46 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function routesOfDepot(o) { return Object.keys(X.routes).map(function (k) { return X.routes[k]; }).filter(function (P) { return P.depot && P.depot.id === o.id && P.ok; }); }
   function serving(o) { var P = routesOfDepot(o)[0]; return P && ST().veh.some(function (v) { return v.route === P.id; }) && routeGo(P); }
-  A.queueLimit = function (g) { var o = RT().oById.get(g.gid); return o && (BD()[o.type] || {}).safari ? 90 : 0; };
+  A.queueLimit = function (g) { var o = RT().oById.get(g.gid); return o && (BD()[o.type] || {}).safari ? 110 : 0; };
   A.arrive = function (g, o) {
     var q = RT().bq[o.id] || (RT().bq[o.id] = { use: 0, q: [] });
     if (!serving(o) || ST().lockdown) { g.gt = ''; g.dk = ''; return; }
-    if (q.q.length >= 24) { g.gt = ''; g.dk = ''; C.say(g, 'crowded'); g.mood -= 1; return; }
+    if (q.q.length >= 32) { g.gt = ''; g.dk = ''; C.say(g, 'crowded'); g.mood -= 1; return; }
     g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; C.gxPlace(g, false);
     var c = C.objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
-    if (q.q.length > 5 && rng.chance(0.2)) C.say(g, 'safariQueue');
+    if (q.q.length > 8 && rng.chance(0.2)) C.say(g, 'safariQueue');
   };
   A.choose = function (g) {
     var o = ST(); if (!o || !o.veh.length || g.state !== 'walk' || o.lockdown) return false;
-    if (g.rn && now() < g.rn) return false;
-    if (!C.openNow() || g.stay < C.gxHr() * 1.2) return false;
-    var p = 0.16 + (g.thrill ? 0.08 : 0) + (g.happiness > 70 ? 0.04 : 0) - (g.hunger > 70 || g.thirst > 75 || g.bladder > 70 ? 0.08 : 0);
-    if (rng.next() > p * (g.sfr ? 0.3 : 1)) return false;
-    var best = null, bs = 1e9, WX = C.WX();
+    // Own safari cooldown (g.sfCd) so Monorail shortcuts/rides never lock guests out of the Safari!
+    if (g.sfCd && now() < g.sfCd) return false;
+    if (!C.openNow() || g.stay < C.gxHr() * 0.9) return false;
+    var best = null, bs = 1e9, bestExc = 0, WX = C.WX();
     S().objects.forEach(function (ob) {
       var d = BD()[ob.type]; if (!d || !d.safari) return;
       var fare = fareOf(ob);
-      if (fare > 0 && (fare > g.money * 0.7 || fare > SD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.25)) return;
+      if (fare > 0 && (fare > g.money * 0.75 || fare > SD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.45)) return;
       if (!serving(ob) || !depotConnected(ob)) return;
-      var f = C.getField('b' + ob.id); if (!f || !(f[g.ti] < INF) || f[g.ti] > 80) return;
-      var q = RT().bq[ob.id]; if (q && q.q.length > 14) return;
-      var P = routesOfDepot(ob)[0], seen = 0; if (P) seen = P.zones.length;
-      var sc = f[g.ti] * 1.5 + rng.next() * 10 - seen * 3 - (g.seen && g.seen.__sf ? 0 : 6);
-      if (sc < bs) { bs = sc; best = ob; }
+      var f = C.getField('b' + ob.id); if (!f || !(f[g.ti] < INF) || f[g.ti] > 160) return;
+      var q = RT().bq[ob.id]; if (q && q.q.length > 22) return;
+      var P = routesOfDepot(ob)[0]; if (!P) return;
+      var exc = P.excitement || 35;
+      var qPen = q ? q.q.length * 1.4 : 0;
+      var farePen = fare > 0 ? (fare / Math.max(1, SD.fareRef)) * 5 : -8;
+      var sc = f[g.ti] * 0.85 + qPen + farePen + rng.next() * 10 - exc * 0.65 - (P.speciesCount || 0) * 5 - (g.seen && g.seen.__sf ? 0 : 18);
+      if (sc < bs) { bs = sc; best = ob; bestExc = exc; }
     });
     if (!best) return false;
-    g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = 'ride'; g.rn = now() + 0.6; g.sfr = (g.sfr || 0) + 1;
+    // Safari is the star attraction of the park: strong pull especially for first-time riders and dinosaur-packed routes!
+    var needPen = (g.hunger > 75 || g.thirst > 78 || g.bladder > 75 ? 0.14 : 0);
+    var excBoost = clamp(bestExc / 100, 0.15, 1) * 0.28;
+    var p = 0.34 + excBoost + (g.thrill ? 0.12 : 0.04) + (g.vip ? 0.10 : 0) - needPen;
+    if (rng.next() > clamp(p * (g.sfr ? 0.35 : 1), 0.05, 0.88)) return false;
+    g.gt = 'bld'; g.gid = best.id; g.dk = 'b' + best.id; g.ni = -1; g.wt = 0; g.gAge = 0; g.pk = 'ride'; g.sfCd = now() + 0.08; g.sfr = (g.sfr || 0) + 1;
     return true;
   };
   A._why = function (g) {   // diagnostics for tests: why does this guest not choose a ride?
-    var out = [], o = ST(); if (!o.veh.length) out.push('no vehicles'); if (g.state !== 'walk') out.push('state ' + g.state); if (!C.openNow()) out.push('closed'); if (g.stay < C.gxHr() * 1.2) out.push('stay ' + g.stay + ' < ' + C.gxHr() * 1.2);
+    var out = [], o = ST(); if (!o.veh.length) out.push('no vehicles'); if (g.state !== 'walk') out.push('state ' + g.state); if (!C.openNow()) out.push('closed'); if (g.stay < C.gxHr() * 0.9) out.push('stay ' + g.stay + ' < ' + C.gxHr() * 0.9);
     S().objects.forEach(function (ob) { var d = BD()[ob.type]; if (!d || !d.safari) return; var f = C.getField('b' + ob.id); out.push('depot ' + ob.id + ' serving ' + serving(ob) + ' conn ' + depotConnected(ob) + ' field ' + (f ? f[g.ti] : 'none') + ' fare ' + fareOf(ob) + ' money ' + g.money + ' tol ' + g.tol); });
     return out;
   };
@@ -630,12 +725,12 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (!g || g.state !== 'queue') { q.q.splice(k, 1); k--; continue; }
       var fare = fareOf(o), WX = C.WX();
       q.q.splice(k, 1);
-      if (fare > 0 && (fare > g.money * 0.85 || fare > SD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.4)) { g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 1.5; g.rn = now() + 0.5; C.say(g, 'expensive'); return true; }
+      if (fare > 0 && (fare > g.money * 0.88 || fare > SD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.55)) { g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.mood -= 1.5; g.sfCd = now() + 0.12; C.say(g, 'expensive'); return true; }
       if (fare > 0) { g.money -= fare; g.spent = (g.spent || 0) + fare; C.earn(fare, 'shops', g.x, g.z); o.minc = (o.minc || 0) + fare; ST().stats.income += fare; }
       o.mrides = (o.mrides || 0) + 1; o.mtoday = (o.mtoday || 0) + 1;
       var used = {}, z, seat = 0; for (z = 0; z < rt.pax.length; z++) used[rt.pax[z].sfs] = 1; while (used[seat]) seat++;
       g.state = 'ride'; g.sfv = v.id; g.sfs = seat; g.speed = 0; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.wt = 0; g.sft = now(); g.sfn = 0; g.sfd = {}; g.sfw = {};
-      g.mood += 2; C.say(g, 'safari'); rt.pax.push(g);
+      g.mood += 3; C.say(g, 'safari'); rt.pax.push(g);
       var stt = ST().stats; stt.riders++; if (v.kind === 'sea') stt.sea++; else if (v.kind === 'air') stt.air++;
       placeRider(v, rt, g);
       return true;
@@ -651,10 +746,15 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (t < 0) { var fp = C.objFootprint(o), s = S(); outer: for (var r = 1; r <= 6; r++) for (var dj = -r; dj <= fp.h + r; dj++) for (var di = -r; di <= fp.w + r; di++) { var x = fp.i0 + di, y = fp.j0 + dj; if (x >= 0 && y >= 0 && x < N && y < N && s.path[x + y * N]) { t = x + y * N; break outer; } } }
     if (t < 0) { C.removeGuest(g); return; }
     g.x = tcx(t) + rng.range(-0.5, 0.5); g.z = tcz(t) + rng.range(-0.5, 0.5); g.y = 0; g.ti = t; g.ni = -1; g.state = 'walk'; g.glide = 0; g.speed = 0; g.gt = ''; g.dk = ''; g.gAge = 0; g.idle = 0; g.pv = 0;
-    g.heading = rng.range(-PI, PI); g.mood += 3; g.rn = now() + 0.5; g.sfv = 0; g.sfd = null; g.sfw = null;
+    g.heading = rng.range(-PI, PI);
+    var sawAny = (g.sfn || 0) > 0;
+    g.mood += sawAny ? 8 : 3;
+    g.happiness = Math.min(100, g.happiness + (sawAny ? 9 : 2));
+    g.sfCd = now() + 0.14; g.sfv = 0; g.sfd = null; g.sfw = null;
     g.seen.__sf = 1;
-    o.msat = o.msat === undefined ? g.happiness : o.msat + (g.happiness - o.msat) * 0.1;
-    if (rng.chance(0.4) && !g.thoughtT) C.say(g, 'safari');
+    var rideSat = clamp(g.happiness * 0.45 + (g.fun || 50) * 0.4 + Math.min(20, (g.sfn || 0) * 6), 0, 100);
+    o.msat = o.msat === undefined ? rideSat : o.msat + (rideSat - o.msat) * 0.2;
+    if (rng.chance(0.55) && !g.thoughtT) C.say(g, 'safari');
   }
   function ejectAll(v, quiet) {
     var rt = VR[v.id]; if (!rt) return; var pax = rt.pax.slice(); rt.pax.length = 0;
@@ -682,28 +782,69 @@ window.Z = window.Z || {}; var Z = window.Z;
     var v = vehById(g.sfv), rt = v && VR[v.id];
     if (!v || !rt || rt.pax.indexOf(g) < 0) { var dep = nearestDepot(g); if (dep) stepOff(g, dep); else C.removeGuest(g); return; }
     var st = ST().stats, list = rt.ov, closeR = SD.closeR, nsp = 0, seenHere = {}, danger = 0, dsp = '', k;
-    g.energy = Math.min(100, g.energy + 0.4 * a); g.mood += 0.2 * a; g.happiness = Math.min(100, g.happiness + 0.7 * a);
+    g.energy = Math.min(100, g.energy + 0.55 * a); g.mood += 0.35 * a; g.happiness = Math.min(100, g.happiness + 1.15 * a);
     if (v.st === 'stuck' || v.st === 'broken') { g.mood -= 0.9 * a; if (rng.chance(0.12)) C.say(g, 'safariStuck', list.length ? list[0].sp : undefined); }
     for (k = 0; k < list.length; k++) {
       var it = list[k]; if (!seenHere[it.sp]) { seenHere[it.sp] = 1; nsp++; }
-      if (!g.seen[it.sp]) { g.seen[it.sp] = 1; g.nsp = (g.nsp || 0) + 1; g.mood += 3; }
+      // Credit enclosure sighting (g.seenEnc / g.nSeen) just like Monorail so safari boosts guest happiness target & stay!
+      if (!it.wild && it.e && it.e.enc && g.seenEnc && !g.seenEnc[it.e.enc]) { g.seenEnc[it.e.enc] = 1; g.nSeen = (g.nSeen || 0) + 1; }
+      if (!g.seen[it.sp]) { g.seen[it.sp] = 1; g.nsp = (g.nsp || 0) + 1; g.sfn = (g.sfn || 0) + 1; g.mood += 4.5; }
       if (it.d < closeR && it.danger >= 2 && it.danger > danger) { danger = it.danger; dsp = it.sp; }
-      if (it.wild && !g.sfw[it.e.id]) { g.sfw[it.e.id] = 1; st.wildSeen++; if (rng.chance(0.5)) C.say(g, 'safariWild', it.sp); }
+      if (it.wild && !g.sfw[it.e.id]) { g.sfw[it.e.id] = 1; g.sfn = (g.sfn || 0) + 1; st.wildSeen++; if (rng.chance(0.5)) C.say(g, 'safariWild', it.sp); }
     }
-    var q = nsp ? clamp(0.45 + 0.2 * nsp + (danger >= 2 ? 0.55 : 0), 0, 2.4) : 0.12;
+    var q = nsp ? clamp(0.6 + 0.25 * nsp + (danger >= 2 ? 0.65 : 0), 0, 2.8) : 0.16;
     var crowdedItem = list.find(function (it) { return !it.wild && it.e.enc && C.enclosureCrowded(it.e.enc); });
     if (crowdedItem) { q *= 0.65; g.mood -= 0.8 * a; C.say(g, 'enclosureCrowded', crowdedItem.sp); }
-    g.fun = Math.min(100, g.fun + 6 * a * q); g.mood += 1.8 * a * q;
+    g.fun = Math.min(100, g.fun + 9 * a * q); g.mood += 2.4 * a * q;
     if (danger >= 2) {
-      var okA = !(v.st === 'stuck' && rt.stuckT > 30); g.mood += (okA ? 1.5 : -0.5) * danger * a;
-      var key = dsp; if (!g.sfd[key] && rng.chance(0.25 * a + 0.04)) { g.sfd[key] = 1; C.say(g, 'safariDanger', dsp); st.close++; }
+      var okA = !(v.st === 'stuck' && rt.stuckT > 30); g.mood += (okA ? 1.8 : -0.5) * danger * a;
+      var key = dsp; if (!g.sfd[key] && rng.chance(0.28 * a + 0.05)) { g.sfd[key] = 1; C.say(g, 'safariDanger', dsp); st.close++; }
     } else {
-      for (k = 0; k < list.length; k++) { var it2 = list[k]; if (it2.d < closeR && !it2.pred && it2.danger <= 1 && !g.sfd['f' + it2.sp] && rng.chance(0.06 * a)) { g.sfd['f' + it2.sp] = 1; g.mood += 4; C.say(g, 'safariFeed', it2.sp); st.fed++; if (g.money > 1) { var amt = Math.min(g.money, 1 + Math.floor(rng.next() * 3)); g.money -= amt; C.earn(amt, 'donations', g.x, g.z); S().stats.donations += amt; } break; } }
+      for (k = 0; k < list.length; k++) { var it2 = list[k]; if (it2.d < closeR && !it2.pred && it2.danger <= 1 && !g.sfd['f' + it2.sp] && rng.chance(0.08 * a)) { g.sfd['f' + it2.sp] = 1; g.mood += 5; C.say(g, 'safariFeed', it2.sp); st.fed++; if (g.money > 1) { var amt = Math.min(g.money, 2 + Math.floor(rng.next() * 4)); g.money -= amt; C.earn(amt, 'donations', g.x, g.z); S().stats.donations += amt; } break; } }
       if (!list.length && rng.chance(0.01)) C.say(g, 'safari');
     }
     if (g.stay <= 0) g.stay = 0;
   };
-  function nearestDepot(g) { var best = null; S().objects.forEach(function (o) { var d = BD()[o.type]; if (d && d.safari && !best) best = o; }); return best; }
+  function nearestDepot(g) {
+    var best = null, bd = 1e18;
+    S().objects.forEach(function (o) {
+      var d = BD()[o.type]; if (!d || !d.safari) return;
+      var c = C.objCentre(o), dd = (c.x - g.x) * (c.x - g.x) + (c.z - g.z) * (c.z - g.z);
+      if (dd < bd) { bd = dd; best = o; }
+    });
+    return best;
+  }
+  // Park rating, fun service, and guest arrival hooks (called from 20-sim.js)
+  A.funCount = function () {
+    var o = ST(); if (!o || o.lockdown) return 0;
+    var sum = 0;
+    o.routes.forEach(function (r) {
+      var P = X.routes[r.id]; if (!P || !P.ok || !P.depot || !serving(P.depot)) return;
+      sum += 1.2 + clamp((P.excitement || 30) / 50, 0.3, 1.8);
+    });
+    return sum;
+  };
+  A.arrivalBonus = function () {
+    var o = ST(); if (!o || o.lockdown) return 0;
+    var sum = 0;
+    o.routes.forEach(function (r) {
+      var P = X.routes[r.id]; if (!P || !P.ok || !P.depot || !serving(P.depot)) return;
+      sum += 14 + (P.excitement || 0) * 0.42 + Math.min(16, (P.speciesCount || 0) * 4);
+    });
+    return sum;
+  };
+  A.ratingBonus = function () {
+    var o = ST(); if (!o || o.lockdown) return 0;
+    var best = 0;
+    o.routes.forEach(function (r) {
+      var P = X.routes[r.id]; if (!P || !P.ok || !P.depot || !serving(P.depot)) return;
+      var rides = (P.depot.mrides || 0) + (P.depot.mtoday || 0);
+      if (rides < 1) return;
+      var score = Math.min(0.45, 0.15 + (P.excitement || 0) * 0.0025 + Math.min(0.12, rides * 0.004));
+      if (score > best) best = score;
+    });
+    return best;
+  };
 
   // ------------------------------------------------------------------ nudges, strandings, injuries
   function nudgeCheck(rt) {
@@ -772,40 +913,232 @@ window.Z = window.Z || {}; var Z = window.Z;
     return null;
   };
   function dedupe(tiles) { var out = []; for (var k = 0; k < tiles.length; k++) { if (out.length && out[out.length - 1] === tiles[k]) continue; out.push(tiles[k]); } return out; }
-  function routeCostOf(kind, n) { return Math.round(n * (kind === 'sea' ? SD.waterTrackCost : kind === 'air' ? 3 : SD.trackCost)); }
+  function routeCostOf(kind, n) { return Math.round(n * (kind === 'sea' ? SD.waterTrackCost : kind === 'air' ? (SD.airTrackCost || 3) : SD.trackCost)); }
+  function orthoBridge(a, b) {
+    var out = [], ai = ti(a), aj = tj(a), bi = ti(b), bj = tj(b);
+    while (ai !== bi) { ai += Math.sign(bi - ai); out.push(ai + aj * N); }
+    while (aj !== bj) { aj += Math.sign(bj - aj); out.push(ai + aj * N); }
+    return out;
+  }
   A.routeOfDepot = function (depotId) { var r = ST().routes.filter(function (q) { return q.depot === depotId; })[0]; return r || null; };
-  A.planRoute = function (depotId, tiles) {
+  A.setRouteMode = function (depotId, mode) {
+    if (mode !== 'loop' && mode !== 'outback') return fail('Invalid route mode');
+    var o = objById(depotId), r = A.routeOfDepot(depotId);
+    if (!o) return fail('No depot');
+    o.sfMode = mode;
+    if (r) { r.mode = mode; A.update(); }
+    else bus.emit('safari');
+    return okr(0);
+  };
+  A.routeModeOf = function (depotId) {
+    var r = A.routeOfDepot(depotId), o = objById(depotId);
+    if (r && (r.mode === 'loop' || r.mode === 'outback')) return r.mode;
+    if (o && (o.sfMode === 'loop' || o.sfMode === 'outback')) return o.sfMode;
+    if (r) { var P = X.routes[r.id]; if (P && P.loop) return 'loop'; }
+    return 'outback';
+  };
+  A.planRoute = function (depotId, tiles, opts) {
     var o = objById(depotId), d = o && defOf(o), r = { ok: false, cost: 0, n: 0, msg: '', ghost: { tiles: [], bad: {} } };
     if (!d || !d.safari) { r.msg = 'Pick a depot, harbour or pad first'; return r; }
     tiles = dedupe(tiles || []); r.ghost.tiles = tiles;
-    if (tiles.length < 2) { r.msg = 'Click along the route, starting at the bay'; return r; }
-    var chk = checkTiles(d.safari, tiles, o);
+    if (tiles.length < 2) { r.msg = 'Drag from the rear bay of the ' + (d.safari === 'sea' ? 'harbour' : d.safari === 'air' ? 'pad' : 'depot'); return r; }
+    var mode = (opts && opts.mode) || (o.sfMode || null);
+    var chk = checkTiles(d.safari, tiles, o, { mode: mode });
     r.n = tiles.length; r.cost = routeCostOf(d.safari, tiles.length);
     var old = A.routeOfDepot(depotId); if (old) r.cost -= Math.round(routeCostOf(old.kind, old.tiles.length) * SD.refund);
-    if (chk.why) { r.msg = chk.why; r.partial = true; return r; }
+    if (chk.why) { r.msg = chk.why; r.partial = !chk.hardErr; return r; }
     if (S().money < r.cost) { r.msg = 'Not enough money'; return r; }
-    r.ok = true; r.loop = chk.loop; r.inside = chk.inside;
+    r.ok = true; r.loop = chk.loop; r.mode = mode || (chk.loop ? 'loop' : 'outback'); r.inside = chk.inside;
     return r;
   };
   A.buildRoute = function (depotId, tiles, opts) {
-    var dry = !!(opts && opts.dry), r = A.planRoute(depotId, tiles);
+    var dry = !!(opts && opts.dry), r = A.planRoute(depotId, tiles, opts);
     if (!r.ok) return r; if (dry) return r;
-    var o = ST(), dep = objById(depotId), kind = defOf(dep).safari, old = A.routeOfDepot(depotId), oldTiles = old ? old.tiles.slice() : null, oldId = old ? old.id : 0;
+    var o = ST(), dep = objById(depotId), kind = defOf(dep).safari, old = A.routeOfDepot(depotId), oldTiles = old ? old.tiles.slice() : null, oldMode = old ? old.mode : null, oldId = old ? old.id : 0;
     if (old) o.routes.splice(o.routes.indexOf(old), 1);
-    var rt = { id: oldId || o.nextRoute++, kind: kind, depot: depotId, tiles: dedupe(tiles) }; o.routes.push(rt);
+    var mode = (opts && opts.mode) || dep.sfMode || (r.loop ? 'loop' : 'outback');
+    var rt = { id: oldId || o.nextRoute++, kind: kind, mode: mode, depot: depotId, tiles: dedupe(tiles) }; o.routes.push(rt);
     C.spend(Math.max(0, r.cost), 'construction'); if (r.cost < 0) C.earn(-r.cost, 'construction');
     C.jBegin('Safari route');
-    C.jOp({ k: 'x', net: r.cost, chk: function () { return null; }, ap: function () { var q = ST(); q.routes = q.routes.filter(function (z) { return z.id !== rt.id; }); if (oldTiles) q.routes.push({ id: rt.id, kind: kind, depot: depotId, tiles: oldTiles }); A.update(); } });
+    C.jOp({ k: 'x', net: r.cost, chk: function () { return null; }, ap: function () { var q = ST(); q.routes = q.routes.filter(function (z) { return z.id !== rt.id; }); if (oldTiles) q.routes.push({ id: rt.id, kind: kind, mode: oldMode, depot: depotId, tiles: oldTiles }); A.update(); } });
     C.jEnd();
     A.update();
     return r;
+  };
+  // Piece-by-piece route builder: merges a new drag segment onto the depot's existing route (or starts one snapped to the rear bay)
+  A.planSegment = function (depotId, segTiles, opts) {
+    var o = objById(depotId), d = o && defOf(o), res = { ok: false, complete: false, partial: false, cost: 0, n: 0, msg: '', mode: 'outback', loop: false, mergedTiles: [], newTiles: [], ghost: { tiles: [], bad: {} } };
+    if (!d || !d.safari) { res.msg = 'Pick a depot, harbour or pad first'; return res; }
+    var kind = d.safari, seg = dedupe(segTiles || []);
+    if (!seg.length) { res.msg = 'Drag from the rear bay or end of the track'; return res; }
+    var old = A.routeOfDepot(depotId), mode = (opts && opts.mode) || A.routeModeOf(depotId);
+    res.mode = mode;
+    var merged = null, de = depotEnds(o);
+    if (!old || !old.tiles || !old.tiles.length) {
+      // Starting a brand-new route: snap to rear bay if user starts on/near depot
+      var first = seg[0];
+      if (de && de.backTiles.length) {
+        var onBack = de.backTiles.indexOf(first) >= 0;
+        var inDepot = S().tileObj[first] === o.id;
+        if (!onBack) {
+          // Pick closest rear-bay tile to seg[0] (or backCenter)
+          var bestB = de.backCenter >= 0 ? de.backCenter : de.backTiles[0], bd = 1e9;
+          de.backTiles.forEach(function (bt) { var dd = dist(tcx(bt), tcz(bt), tcx(first), tcz(first)); if (dd < bd) { bd = dd; bestB = bt; } });
+          if (inDepot) {
+            // Strip any leading tiles inside the depot and anchor cleanly at the rear bay
+            var k0 = 0; while (k0 < seg.length && S().tileObj[seg[k0]] === o.id) k0++;
+            var rest = seg.slice(k0);
+            if (!rest.length) merged = [bestB];
+            else if (rest[0] === bestB) merged = rest;
+            else if (adjacent(bestB, rest[0])) merged = [bestB].concat(rest);
+            else merged = [bestB].concat(orthoBridge(bestB, rest[0])).concat(rest.slice(1));
+          } else if (Math.abs(ti(first) - ti(bestB)) + Math.abs(tj(first) - tj(bestB)) <= 2) {
+            merged = [bestB].concat(orthoBridge(bestB, first)).concat(seg.slice(1));
+          } else {
+            merged = seg.slice();
+          }
+        } else merged = seg.slice();
+      } else merged = seg.slice();
+    } else {
+      var base = old.tiles.slice(), tail = base[base.length - 1];
+      // Check if drag starts at or adjacent to the current tail (extending!)
+      var atIdx = base.indexOf(seg[0]);
+      if (seg[0] === tail) {
+        merged = base.concat(seg.slice(1));
+      } else if (adjacent(tail, seg[0])) {
+        merged = base.concat(seg);
+      } else if (atIdx >= 0) {
+        // Branch/re-route cleanly from an existing tile along the track
+        merged = base.slice(0, atIdx + 1).concat(seg.slice(1));
+      } else if (Math.abs(ti(tail) - ti(seg[0])) + Math.abs(tj(tail) - tj(seg[0])) <= 2) {
+        // Close to tail: smoothly bridge 1-2 tiles from tail
+        merged = base.concat(orthoBridge(tail, seg[0])).concat(seg.slice(1));
+      } else {
+        res.msg = 'Start dragging from the end of the track (or any existing track tile) to extend it';
+        res.ghost.tiles = seg;
+        return res;
+      }
+      // If dragging back onto tiles[0] to close a Round Trip loop, stop on the tile just before tiles[0] (so it's adjacent to tiles[0] without self-crossing!)
+      if (merged.length >= 7 && merged[merged.length - 1] === merged[0]) {
+        merged.pop();
+        if (mode !== 'outback') mode = 'loop';
+      }
+      // Trim any accidental overlap with existing tiles except closing onto rear bay
+      var seen = {}, clean = [];
+      for (var k = 0; k < merged.length; k++) {
+        var t = merged[k];
+        if (seen[t]) {
+          // If closing back onto tile 0 with >= 6 tiles, stop before tile 0 to form a clean loop
+          if (t === clean[0] && clean.length >= 6) break;
+          // Otherwise reject self-crossing
+          res.msg = 'The route crosses itself'; res.ghost.tiles = merged.slice(0, k + 1); return res;
+        }
+        seen[t] = 1; clean.push(t);
+      }
+      merged = clean;
+    }
+    merged = dedupe(merged);
+    // Validate with partial=true so players can build bit by bit!
+    var chkP = checkTiles(kind, merged, o, { partial: true, mode: mode });
+    var chkFull = checkTiles(kind, merged, o, { partial: false, mode: mode });
+    res.mergedTiles = merged;
+    var oldSet = {}; if (old) old.tiles.forEach(function (t) { oldSet[t] = 1; });
+    var newTiles = merged.filter(function (t) { return !oldSet[t]; });
+    var removedCount = old ? old.tiles.filter(function (t) { return merged.indexOf(t) < 0; }).length : 0;
+    res.newTiles = newTiles;
+    res.n = newTiles.length || merged.length;
+    res.cost = routeCostOf(kind, newTiles.length) - Math.round(routeCostOf(kind, removedCount) * SD.refund);
+    res.ghost.tiles = newTiles.length ? newTiles : merged;
+    if (chkP.why) {
+      res.msg = chkP.why;
+      res.ok = false;
+      res.partial = false;
+      return res;
+    }
+    if (S().money < res.cost) { res.msg = 'Not enough money'; return res; }
+    res.ok = true;
+    res.complete = !chkFull.why;
+    res.partial = !res.complete;
+    res.loop = chkFull.loop;
+    res.inside = chkFull.inside;
+    res.msg = res.complete ? '' : (chkFull.why || chkP.partialWhy || 'Keep extending the route');
+    return res;
+  };
+  A.addSegment = function (depotId, segTiles, opts) {
+    var dry = !!(opts && opts.dry), r = A.planSegment(depotId, segTiles, opts);
+    if (!r.ok) return r; if (dry) return r;
+    var o = ST(), dep = objById(depotId), kind = defOf(dep).safari, old = A.routeOfDepot(depotId);
+    var oldTiles = old ? old.tiles.slice() : null, oldMode = old ? old.mode : null, oldId = old ? old.id : 0;
+    var mode = (opts && opts.mode) || r.mode || A.routeModeOf(depotId);
+    dep.sfMode = mode;
+    if (old) o.routes.splice(o.routes.indexOf(old), 1);
+    var rt = { id: oldId || o.nextRoute++, kind: kind, mode: mode, depot: depotId, tiles: r.mergedTiles.slice() };
+    o.routes.push(rt);
+    if (r.cost > 0) C.spend(r.cost, 'construction'); else if (r.cost < 0) C.earn(-r.cost, 'construction');
+    C.jBegin('Safari track');
+    C.jOp({ k: 'x', net: r.cost, chk: function () { return null; }, ap: function () {
+      var q = ST(); q.routes = q.routes.filter(function (z) { return z.id !== rt.id; });
+      if (oldTiles) q.routes.push({ id: rt.id, kind: kind, mode: oldMode, depot: depotId, tiles: oldTiles });
+      A.update();
+    } });
+    C.jEnd();
+    A.update();
+    return r;
+  };
+  // Piece-by-piece tile removal: trims the route from the earliest erased tile back to the end (or removes all if tile 0 is hit)
+  A.planRemoveTiles = function (rmTiles) {
+    var set = {}; (rmTiles || []).forEach(function (t) { set[t] = 1; });
+    var hit = null, firstIdx = -1;
+    ST().routes.forEach(function (r) {
+      if (hit) return;
+      for (var k = 0; k < r.tiles.length; k++) {
+        if (set[r.tiles[k]]) { hit = r; firstIdx = k; break; }
+      }
+    });
+    if (!hit) return { ok: false, cost: 0, n: 0, msg: 'No safari track here', depot: 0, removed: [], keep: [] };
+    var removed = hit.tiles.slice(firstIdx), keep = hit.tiles.slice(0, firstIdx);
+    var refund = Math.round(routeCostOf(hit.kind, removed.length) * SD.refund);
+    return { ok: true, cost: -refund, n: removed.length, depot: hit.depot, routeId: hit.id, removed: removed, keep: keep, ghost: { tiles: removed } };
+  };
+  A.removeTiles = function (rmTiles, opts) {
+    var plan = A.planRemoveTiles(rmTiles);
+    if (!plan.ok) return fail(plan.msg);
+    if (opts && opts.dry) return plan;
+    var o = ST(), r = A.routeOfDepot(plan.depot); if (!r) return fail('No route');
+    var oldTiles = r.tiles.slice(), oldMode = r.mode, rid = r.id, kind = r.kind, depId = r.depot;
+    if (!plan.keep.length) {
+      o.veh.filter(function (v) { return v.route === r.id; }).forEach(function (v) { ejectAll(v); v.st = 'idle'; });
+      o.routes.splice(o.routes.indexOf(r), 1);
+    } else {
+      r.tiles = plan.keep.slice();
+    }
+    var refund = -plan.cost;
+    if (refund > 0) C.earn(refund, 'construction');
+    C.jBegin('Remove safari track');
+    C.jOp({ k: 'x', net: -refund, chk: function () { return null; }, ap: function () {
+      var q = ST(); q.routes = q.routes.filter(function (z) { return z.id !== rid; });
+      q.routes.push({ id: rid, kind: kind, mode: oldMode, depot: depId, tiles: oldTiles });
+      A.update();
+    } });
+    C.jEnd();
+    A.update();
+    return plan;
   };
   A.removeRoute = function (depotId, opts) {
     var o = ST(), r = A.routeOfDepot(depotId); if (!r) return fail('No route to remove');
     var refund = Math.round(routeCostOf(r.kind, r.tiles.length) * SD.refund);
     if (opts && opts.dry) return okr(-refund);
+    var oldTiles = r.tiles.slice(), oldMode = r.mode, rid = r.id, kind = r.kind;
     o.veh.filter(function (v) { return v.route === r.id; }).forEach(function (v) { ejectAll(v); v.st = 'idle'; });
-    o.routes.splice(o.routes.indexOf(r), 1); C.earn(refund, 'construction'); A.update();
+    o.routes.splice(o.routes.indexOf(r), 1); C.earn(refund, 'construction');
+    C.jBegin('Remove safari route');
+    C.jOp({ k: 'x', net: -refund, chk: function () { return null; }, ap: function () {
+      var q = ST(); q.routes = q.routes.filter(function (z) { return z.id !== rid; });
+      q.routes.push({ id: rid, kind: kind, mode: oldMode, depot: depotId, tiles: oldTiles });
+      A.update();
+    } });
+    C.jEnd();
+    A.update();
     return okr(-refund);
   };
   A.vehicleCost = function (kind) { return kind === 'sea' ? SD.boatCost : kind === 'air' ? SD.balloonCost : SD.truckCost; };
@@ -826,7 +1159,12 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.sellVehicle = function (id, opts) {
     var v = vehById(id); if (!v) return fail('No such vehicle');
     var refund = Math.round((v.paid || A.vehicleCost(v.kind)) * SD.refundVeh); if (opts && opts.dry) return okr(-refund);
-    sellNow(id); C.earn(refund, 'construction'); return okr(-refund);
+    var snap = { id: v.id, route: v.route, kind: v.kind, s: 0, v: 0, st: 'idle', dw: 0, brk: -1, why: '', paid: v.paid, rank: v.rank || 0 };
+    sellNow(id); C.earn(refund, 'construction');
+    C.jBegin('Sell safari vehicle');
+    C.jOp({ k: 'x', net: -refund, chk: function () { return null; }, ap: function () { var q = ST(); if (!vehById(snap.id)) { q.veh.push(snap); vrt(snap); fixVehicles(); bus.emit('safari'); } } });
+    C.jEnd();
+    return okr(-refund);
   };
   A.setFare = function (depotId, fare) { var o = objById(depotId); if (!o) return fail('No depot'); o.fare = clamp(Math.round((+fare || 0) * 2) / 2, 0, SD.fareMax); return okr(0); };
   A.setFree = function (depotId, on) { var o = objById(depotId); if (!o) return fail('No depot'); o.mfree = on ? 1 : 0; return okr(0); };
@@ -834,9 +1172,10 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.depotInfo = function (id) {
     var o = objById(id), d = o && defOf(o); if (!o || !d || !d.safari) return null;
     var r = A.routeOfDepot(id), P = r && X.routes[r.id], q = RT().bq[id], veh = A.vehiclesOf(id);
+    if (P && P.ok) scoreRoute(P);
     var gates = P ? P.gates.filter(function (g, k, arr) { return arr.findIndex(function (z) { return z.key === g.key; }) === k; }) : [];
-    return { id: id, name: d.name, kind: d.safari, fare: fareOf(o), free: !!o.mfree, queue: q ? q.q.length : 0, today: o.mtoday || 0, yesterday: o.mday || 0, rides: o.mrides || 0, income: Math.round(o.minc || 0), sat: o.msat === undefined ? null : Math.round(o.msat),
-      route: r ? { id: r.id, ok: !!(P && P.ok), why: P ? P.why : '', length: P ? Math.round(P.len / TILE) : 0, tiles: r.tiles.length, loop: !!(P && P.loop), zones: P ? P.zones : [], gates: gates.length, powered: P ? routeGo(P) : true } : null,
+    return { id: id, name: d.name, kind: d.safari, mode: A.routeModeOf(id), fare: fareOf(o), free: !!o.mfree, queue: q ? q.q.length : 0, today: o.mtoday || 0, yesterday: o.mday || 0, rides: o.mrides || 0, income: Math.round(o.minc || 0), sat: o.msat === undefined ? null : Math.round(o.msat),
+      route: r ? { id: r.id, ok: !!(P && P.ok), partial: !!(P && P.partial), mode: r.mode || (P && P.loop ? 'loop' : 'outback'), why: P ? P.why : '', length: P ? Math.round(P.len / TILE) : 0, tiles: r.tiles.length, loop: !!(P && P.loop), zones: P ? P.zones : [], gates: gates.length, powered: P ? routeGo(P) : true, excitement: P ? (P.excitement || 0) : 0, speciesCount: P ? (P.speciesCount || 0) : 0, animalCount: P ? (P.animalCount || 0) : 0 } : null,
       vehicles: veh.map(function (v) { var rt = VR[v.id] || {}; return { id: v.id, st: v.st, why: v.why, pax: rt.pax ? rt.pax.length : 0, cap: SD.capacity[v.kind], sell: Math.round((v.paid || 0) * SD.refundVeh), brk: Math.max(0, Math.round(v.brk)), kind: v.kind, stuck: rt.stuckT || 0 }; }),
       canBuy: !!(P && P.ok) && veh.length < SD.maxVeh, maxVeh: SD.maxVeh, cost: A.vehicleCost(d.safari), conn: depotConnected(o) };
   };
@@ -1135,6 +1474,112 @@ window.Z = window.Z || {}; var Z = window.Z;
     o.away = keep;
   }
 
+  // ------------------------------------------------------------------ Game Reserve Tent Camp & Bodyguards
+  var CAMP_GUARD_COST = 1200, CAMP_GUARD_UPKEEP = 90, CAMP_MAX_GUARDS = 4;
+  function campGuardsOf(o) { return o.campGuards === undefined ? 1 : clamp(o.campGuards | 0, 0, CAMP_MAX_GUARDS); }
+  function campNearRoute(o) {
+    var c = C.objCentre(o), rMax = 6.5 * TILE, routes = ST().routes;
+    for (var k = 0; k < routes.length; k++) {
+      var P = X.routes[routes[k].id]; if (!P || !P.ok || !P.depot || !serving(P.depot)) continue;
+      for (var j = 0; j < P.tiles.length; j++) {
+        if (dist(tcx(P.tiles[j]), tcz(P.tiles[j]), c.x, c.z) <= rMax) return P;
+      }
+    }
+    return null;
+  }
+  function campScanWildlife(o) {
+    var s = S(), c = C.objCentre(o), fp = C.objFootprint(o);
+    var campEnc = s.tileEnc[fp.i0 + fp.j0 * N] || 0;
+    var rScan = 14 * TILE, dinos = 0, preds = 0, spSet = {}, appSum = 0, topSp = '';
+    for (var k = 0; k < s.animals.length; k++) {
+      var a = s.animals[k]; if (a.state === 'escaped') continue;
+      var inSame = campEnc && a.enc === campEnc;
+      var d = dist(a.x, a.z, c.x, c.z);
+      if (!inSame && d > rScan) continue;
+      var sp = SP()[a.species]; if (!sp) continue;
+      dinos++;
+      if (!spSet[a.species]) { spSet[a.species] = 1; appSum += (sp.appeal || 10) * 1.3; }
+      else appSum += (sp.appeal || 10) * 0.2;
+      if (sp.predator) { preds++; if (!topSp) topSp = a.species; }
+      else if (!topSp) topSp = a.species;
+    }
+    var nSp = Object.keys(spSet).length;
+    var rangerNear = X.rangers.some(function (r) { return dist(r.x, r.z, c.x, c.z) <= 16 * TILE; });
+    var guards = campGuardsOf(o) + (rangerNear ? 1 : 0);
+    var needed = preds >= 3 ? 3 : preds >= 1 ? 2 : 1;
+    var bonusPct = clamp(Math.round(Math.min(100, appSum * 0.65 + nSp * 8 + preds * 12 + (campEnc ? 15 : 0))), 0, 100);
+    return { encId: campEnc, dinos: dinos, species: nSp, predators: preds, topSp: topSp, guards: campGuardsOf(o), totalGuards: guards, neededGuards: needed, rangerNear: rangerNear, safe: guards >= needed || (guards > 0 && preds === 0), bonusPct: bonusPct };
+  }
+  A.campConnected = function (o) {
+    if (!o) return false;
+    var d = defOf(o); if (!d || !d.safariReserve) return false;
+    if (depotConnected(o)) return true;
+    return !!campNearRoute(o);
+  };
+  A.campPrice = function (o) {
+    var d = defOf(o); if (!d) return 550;
+    var base = o.price != null ? o.price : (d.price || 550);
+    var w = campScanWildlife(o);
+    return Math.round(base * (1 + w.bonusPct / 100) / 10) * 10;
+  };
+  A.campInfo = function (id) {
+    var o = objById(id), d = o && defOf(o); if (!o || !d || !d.safariReserve) return null;
+    var w = campScanWildlife(o), viaPath = depotConnected(o), viaSafari = !!campNearRoute(o);
+    var campers = 0; S().guests.forEach(function (g) { if (g.resortLodging === o.id) campers++; });
+    return {
+      id: id, name: d.name, connected: viaPath || viaSafari, viaPath: viaPath, viaSafari: viaSafari,
+      basePrice: o.price != null ? o.price : (d.price || 550), nightlyPrice: A.campPrice(o),
+      capacity: d.capacity || 6, campers: campers, nightsSold: o.nightsSold || 0, income: Math.round(o.income || 0),
+      guards: w.guards, maxGuards: CAMP_MAX_GUARDS, neededGuards: w.neededGuards, rangerNear: w.rangerNear, safe: w.safe,
+      guardCost: CAMP_GUARD_COST, guardUpkeep: CAMP_GUARD_UPKEEP,
+      dinos: w.dinos, species: w.species, predators: w.predators, bonusPct: w.bonusPct, inReserve: !!w.encId
+    };
+  };
+  A.hireCampGuard = function (id) {
+    var o = objById(id), d = o && defOf(o); if (!o || !d || !d.safariReserve) return fail('No reserve camp');
+    var cur = campGuardsOf(o); if (cur >= CAMP_MAX_GUARDS) return fail('Maximum bodyguards already stationed');
+    if (S().money < CAMP_GUARD_COST) return fail('Not enough money');
+    C.spend(CAMP_GUARD_COST, 'staff'); o.campGuards = cur + 1;
+    C.msg('Bodyguard assigned to ' + d.name + ' (' + o.campGuards + ' on duty).', 'good', false);
+    bus.emit('safari'); return okr(CAMP_GUARD_COST);
+  };
+  A.dismissCampGuard = function (id) {
+    var o = objById(id), d = o && defOf(o); if (!o || !d || !d.safariReserve) return fail('No reserve camp');
+    var cur = campGuardsOf(o); if (cur <= 0) return fail('No bodyguards to dismiss');
+    o.campGuards = cur - 1; bus.emit('safari'); return okr(0);
+  };
+  function stepCamps() {
+    var s = S(), objs = s.objects;
+    for (var k = 0; k < objs.length; k++) {
+      var o = objs[k], d = defOf(o); if (!d || !d.safariReserve) continue;
+      var c = C.objCentre(o), w = campScanWildlife(o), guards = w.totalGuards;
+      // Bodyguards calmly deter dinosaurs that wander too close to the tent perimeter
+      if (guards > 0 && w.dinos > 0) {
+        var rPerim = 6.2;
+        for (var j = 0; j < s.animals.length; j++) {
+          var a = s.animals[j]; if (a.state === 'escaped') continue;
+          var dx = a.x - c.x, dz = a.z - c.z, dd = Math.sqrt(dx * dx + dz * dz);
+          if (dd > 0.1 && dd < rPerim && (C.aDanger(a) >= 2 || dd < 4.4)) {
+            a.tx = c.x + (dx / dd) * (rPerim + 4); a.tz = c.z + (dz / dd) * (rPerim + 4);
+            if (a.state === 'idle' || a.state === 'walk') { a.tg = 'wander'; a.state = 'walk'; }
+          }
+        }
+      }
+      // Reward or warn campers staying at this reserve camp
+      for (var gi = 0; gi < s.guests.length; gi++) {
+        var g = s.guests[gi]; if (g.resortLodging !== o.id) continue;
+        if (w.safe && w.dinos > 0) {
+          g.mood = Math.min(100, (g.mood || 50) + 0.35);
+          g.happiness = Math.min(100, (g.happiness || 50) + 0.25);
+          if (rng.chance(0.015) && w.topSp) C.say(g, 'safariCamp', w.topSp);
+        } else if (!w.safe && w.predators > 0) {
+          g.mood = Math.max(0, (g.mood || 50) - 0.9);
+          if (rng.chance(0.04) && w.topSp) C.say(g, 'safariCampDanger', w.topSp);
+        }
+      }
+    }
+  }
+
   // ------------------------------------------------------------------ per-step / per-second / per-day
   A.step = function (dt) {
     var o = ST(); if (!o) return;
@@ -1145,6 +1590,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   A.secondly = function () {
     var o = ensure(); if (!o) return;
+    for (var rid in X.routes) { var pr = X.routes[rid]; if (pr && pr.ok) scoreRoute(pr); }
+    stepCamps();
     if (X.zones && Object.keys(X.zones).length) { spawnTick(); leakTick(); }
     else for (var q in SH) delete SH[q];
     for (var k = W.list.length - 1; k >= 0; k--) { var w = W.list[k]; if (!X.zones[w.zone]) removeWild(w, 'gone'); }
@@ -1160,6 +1607,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.newDay = function () {
     var o = ensure(); if (!o) return;
     var up = 0; o.veh.forEach(function (v) { up += SD.upkeep[v.kind] || 20; });
+    S().objects.forEach(function (ob) { var d = defOf(ob); if (d && d.safariReserve) { var eg = Math.max(0, campGuardsOf(ob) - 1); up += eg * CAMP_GUARD_UPKEEP; } });
     if (up) C.spend(Math.round(up), 'upkeep');
     if (o.lockdown) C.spend(150, 'upkeep');
     S().objects.forEach(function (ob) { if (ob.mtoday !== undefined && (BD()[ob.type] || {}).safari) { ob.mday = ob.mtoday; ob.mtoday = 0; } });
@@ -1181,7 +1629,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       if (v && P && P.ok && rt && v.st !== 'idle') { rt.pax.push(g); g.sfd = {}; g.sfw = {}; }
       else { var dep = P && P.depot || nearestDepot(g); if (dep) stepOff(g, dep); else { g.state = 'walk'; g.y = 0; g.gt = ''; g.dk = ''; g.sfv = 0; } }
     }
-    o.veh.forEach(function (v) { var P = X.routes[v.route], rt = VR[v.id]; if (P && P.ok) { poseOf(v, P, rt); rt.pax.forEach(function (g) { placeRider(v, rt, g); }); } });
+    o.veh.forEach(function (v) { var P = X.routes[v.route], rt = VR[v.id]; if (P && P.ok) { if (v.st === 'board' && rt.pax.length) rt.alight = true; poseOf(v, P, rt); rt.pax.forEach(function (g) { placeRider(v, rt, g); }); } });
   };
 
   // ------------------------------------------------------------------ goals and queries for the UI

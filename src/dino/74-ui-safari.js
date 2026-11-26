@@ -40,7 +40,8 @@ window.Z = window.Z || {}; var Z = window.Z;
     erase: svg('<rect width="64" height="48" fill="#a8c47a"/><path d="M4 30C20 30 18 12 34 12S50 30 60 22" fill="none" stroke="#a4865a" stroke-width="7" opacity=".55"/><path d="M20 8l24 28M44 8L20 36" stroke="#c0392b" stroke-width="5" stroke-linecap="round"/>'),
     overlay: svg('<rect width="64" height="48" fill="#a8c47a"/><rect x="6" y="8" width="40" height="30" fill="#6ed99a" opacity=".85"/><rect x="42" y="18" width="16" height="10" fill="#f5d36a"/><rect x="20" y="28" width="8" height="8" fill="#ff7a3a"/>'),
     corridor: svg('<rect width="64" height="48" fill="#a8c47a"/><path d="M0 26h64" stroke="#7a5a30" stroke-width="10" opacity=".5"/><rect x="26" y="8" width="4" height="30" fill="#ff7a3a"/><rect x="34" y="8" width="4" height="30" fill="#ff7a3a"/><path d="M30 14h4M30 22h4M30 30h4" stroke="#fff" stroke-width="2"/>'),
-    ranger: svg('<rect width="64" height="48" fill="#a8c47a"/><rect x="10" y="18" width="44" height="22" fill="#6b8f45"/><path d="M6 20L32 6l26 14z" fill="#4a6a2a"/><rect x="26" y="26" width="12" height="14" fill="#3b4348"/>')
+    ranger: svg('<rect width="64" height="48" fill="#a8c47a"/><rect x="10" y="18" width="44" height="22" fill="#6b8f45"/><path d="M6 20L32 6l26 14z" fill="#4a6a2a"/><rect x="26" y="26" width="12" height="14" fill="#3b4348"/>'),
+    camp: svg('<rect width="64" height="48" fill="#a8c47a"/><path d="M8 36L24 12l16 24z" fill="#efe6cf"/><path d="M24 12l16 24h-8L24 22z" fill="#d8cba8"/><path d="M20 36l4-10 4 10z" fill="#ff9e3a"/><path d="M36 36L48 18l10 18z" fill="#efe6cf"/><circle cx="34" cy="40" r="4" fill="#ff7a2a"/>')
   };
   function bld(id, icon) { var d = UI.byId(D.buildings, id); if (!d) return null; return { kind: 'building', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, fp: [d.w || 1, d.h || 1], iconHtml: icon ? ICONS[icon] : undefined }; }
   function scn(id, icon) { var d = UI.byId(D.scenery, id); if (!d) return null; return { kind: 'scenery', id: id, name: d.name, cost: d.cost, emoji: d.emoji, def: d, star: d.star || 0, iconHtml: icon ? ICONS[icon] : undefined }; }
@@ -52,9 +53,9 @@ window.Z = window.Z || {}; var Z = window.Z;
       fenc('safari_gate', 'gate', 'An airlock: two doors that never open together. Put it on a fence panel, with straight road on either side.'),
       fenc('safari_boat_gate', 'boatgate', 'A boat lock for sea pens: two gates that never open together.'),
       bld('safari_portal', 'portal'), bld('safari_depot', 'depot'), bld('safari_harbour', 'harbour'), bld('safari_balloon', 'balloon'),
-      { kind: 'sfroute', id: 'route', name: 'Draw route', cost: SD.trackCost, unit: '/tile', star: depotStar, iconHtml: ICONS.route, tip: 'Drag from the bay of a depot, harbour or pad. Trucks follow the dirt track, boats the buoys. Pass through a safari gate or portal to enter a zone.' },
-      { kind: 'sfrm', id: 'erase', name: 'Remove route', cost: 0, star: depotStar, iconHtml: ICONS.erase, priceHtml: '<small style="font:600 10px var(--sans);color:var(--ink2)">' + Math.round(SD.refund * 100) + '% back</small>', tip: 'Drag over a route to take it away.' },
-      scn('wildlife_corridor', 'corridor'), scn('scarecrow'), scn('acoustic_pinger'), scn('bird_scarer'), bld('ranger_post', 'ranger'),
+      { kind: 'sfroute', id: 'route', name: 'Draw route', cost: SD.trackCost, unit: '/tile', star: depotStar, iconHtml: ICONS.route, tip: 'Build piece-by-piece like a coaster! Drag from the rear bay of a depot, then extend segment by segment. Choose Round Trip (loop) or Out & Back.' },
+      { kind: 'sfrm', id: 'erase', name: 'Remove track', cost: 0, star: depotStar, iconHtml: ICONS.erase, priceHtml: '<small style="font:600 10px var(--sans);color:var(--ink2)">' + Math.round(SD.refund * 100) + '% back</small>', tip: 'Click or drag over safari track tiles to trim back from that point.' },
+      scn('wildlife_corridor', 'corridor'), scn('scarecrow'), scn('acoustic_pinger'), scn('bird_scarer'), bld('ranger_post', 'ranger'), bld('safari_tent_camp', 'camp'),
       { kind: 'sfview', id: 'overlay', name: 'Safari overlay', cost: 0, star: 0, iconHtml: ICONS.overlay, priceHtml: on ? 'On' : 'Off', tip: 'Green: connected zones. Amber: connected but unpowered. Grey: closed. Yellow: where wildlife can wander in. Blue: gate tiles.' }
     ];
     return out.filter(Boolean);
@@ -74,17 +75,20 @@ window.Z = window.Z || {}; var Z = window.Z;
       UI.Tools.start({ kind: it.kind, id: it.id, name: it.name }); return;
     }
     var r = origCard.apply(this, arguments);
-    if (it.kind === 'fence' && it.def && it.def.safariGate && UI.tool && UI.tool.kind === 'fence') { UI.tool.mode = 'line'; UI.Tools.refresh && UI.Tools.refresh(); }
+    if (it.kind === 'fence' && it.def && it.def.safariGate && UI.tool && UI.tool.kind === 'fence') { UI.tool.mode = 'line'; UI.Tools.buildStrip ? UI.Tools.buildStrip() : (UI.Tools.refresh && UI.Tools.refresh()); }
     return r;
   };
 
-  // ---------------------------------------------------------------- the route tool
-  var T = UI.Tools, DT4 = [-N, 1, N, -1];
-  function route(pts) {          // the finger's path as a clean 4-connected tile list; loops back on itself are trimmed
+  // ---------------------------------------------------------------- the route tool (piece-by-piece + Round Trip / Out & Back)
+  var T = UI.Tools;
+  function route(pts) {          // the finger's path as a clean 4-connected tile list; allows closing onto pts[0] for loops
     var out = [], idx = {}, last = null, k;
     function push(i, j) {
       var t = i + j * N, at = idx[t];
-      if (at !== undefined) { for (var q = out.length - 1; q > at; q--) delete idx[out[q]]; out.length = at + 1; last = { i: i, j: j }; return; }
+      if (at !== undefined) {
+        if (at === 0 && out.length >= 6) { out.push(t); last = { i: i, j: j }; return; }
+        for (var q = out.length - 1; q > at; q--) delete idx[out[q]]; out.length = at + 1; last = { i: i, j: j }; return;
+      }
       idx[t] = out.length; out.push(t); last = { i: i, j: j };
     }
     for (k = 0; k < pts.length; k++) {
@@ -110,26 +114,42 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (t.kind !== 'sfroute') return;
     var list = depotsList(); if (!list.length) return;
     t.depot = curDepot();
+    t.sfMode = t.sfMode || A().routeModeOf(t.depot);
     var sel = h('select.sfsel', { 'aria-label': 'Which depot' });
     list.forEach(function (o) { var op = h('option', { value: String(o.id), text: depotLabel(o) }); if (o.id === t.depot) op.selected = true; sel.appendChild(op); });
-    sel.addEventListener('change', function () { t.depot = +sel.value; T.refresh(); UI.snd('click'); });
+    sel.addEventListener('change', function () { t.depot = +sel.value; t.sfMode = A().routeModeOf(t.depot); T.buildStrip ? T.buildStrip() : T.refresh(); UI.snd('click'); });
     s.appendChild(sel);
+    if (seg) {
+      s.appendChild(seg([['outback', '↔ Out & Back'], ['loop', '🔄 Round Trip']], t.sfMode, function (v) {
+        t.sfMode = v;
+        A().setRouteMode(t.depot, v);
+        T.refresh();
+      }));
+    }
   };
   T.PLAN.sfroute = function (d) {
     var t = UI.tool, dep = curDepot(), a = A();
     if (!dep) return { spec: null, ok: false, cost: 0, msg: 'Build a depot, harbour or balloon pad first', label: '', warn: '', run: function () { return { n: 0, cost: 0 }; } };
     t.depot = dep;
-    var rt = route(d.pts && d.pts.length ? d.pts : [d.a]), r = a.planRoute(dep, rt), ok = !!r.ok;
+    var mode = t.sfMode || a.routeModeOf(dep);
+    var rt = route(d.pts && d.pts.length ? d.pts : [d.a]), r = a.planSegment(dep, rt, { mode: mode }), ok = !!r.ok;
+    var modeLbl = (r.mode === 'loop' ? 'Round Trip' : 'Out & Back');
     return { spec: { type: 'safari', plan: r }, ok: ok, cost: r.cost || 0, n: r.n || 0, msg: ok ? '' : (r.msg || 'Cannot build here'),
-      label: ok ? r.n + ' tiles' + (r.loop ? ', loop' : ', out and back') : '', warn: ok && !r.inside || ok && !Object.keys(r.inside || {}).length ? 'Passes through no zone yet' : '',
-      run: function () { var q = a.buildRoute(dep, rt); if (!q.ok) { return { n: 0, cost: 0 }; } UI.toast('Route built. Buy a vehicle at the ' + (UI.byId(D.buildings, find(Z.state.objects, dep).type).name.toLowerCase()) + '.', 'good'); return { n: q.n, cost: q.cost }; } };
+      label: ok ? ('+' + r.n + ' tiles (' + r.mergedTiles.length + ' total, ' + modeLbl + ')') : '',
+      warn: ok && r.partial ? (r.msg || 'Keep extending into a dinosaur zone') : '',
+      run: function () {
+        var q = a.addSegment(dep, rt, { mode: mode });
+        if (!q.ok) { return { n: 0, cost: 0 }; }
+        if (q.complete) UI.toast('Safari route ready (' + (q.loop ? 'Round Trip' : 'Out & Back') + ')! Buy a vehicle at the ' + (UI.byId(D.buildings, find(Z.state.objects, dep).type).name.toLowerCase()) + '.', 'good');
+        else UI.toast('Track segment added (' + q.mergedTiles.length + ' tiles). ' + (q.msg || 'Drag from the blue end tile to keep building.'), 'info');
+        return { n: q.n, cost: q.cost };
+      } };
   };
   T.PLAN.sfrm = function (d) {
-    var a = A(), pts = d.pts || [d.a], set = {}, k; pts.forEach(function (p) { set[p.i + p.j * N] = 1; });
-    var hit = null; Z.state.safari.routes.forEach(function (r) { if (!hit && r.tiles.some(function (t) { return set[t]; })) hit = r; });
-    var ok = !!hit, q = ok ? a.removeRoute(hit.depot, { dry: true }) : null;
-    return { spec: { type: 'safari', plan: ok ? { ok: false, partial: true, ghost: { tiles: hit.tiles } } : null }, ok: ok, cost: ok ? q.cost : 0, n: ok ? hit.tiles.length : 0, msg: ok ? '' : 'No route here', label: ok ? hit.tiles.length + ' tiles' : '', warn: '',
-      run: function () { var z = a.removeRoute(hit.depot); return { n: z.ok ? hit.tiles.length : 0, cost: z.ok ? z.cost : 0 }; } };
+    var a = A(), pts = d.pts || [d.a], rm = pts.map(function (p) { return p.i + p.j * N; });
+    var plan = a.planRemoveTiles(rm), ok = !!plan.ok;
+    return { spec: { type: 'safari', plan: ok ? { ok: false, partial: true, ghost: plan.ghost } : null }, ok: ok, cost: ok ? plan.cost : 0, n: ok ? plan.n : 0, msg: ok ? '' : 'No safari track here', label: ok ? ('Remove ' + plan.n + ' tile' + (plan.n === 1 ? '' : 's')) : '', warn: '',
+      run: function () { var z = a.removeTiles(rm); return { n: z.ok ? z.n : 0, cost: z.ok ? z.cost : 0 }; } };
   };
   function wantsOverlay(t) { return !!t && (t.kind === 'sfroute' || t.kind === 'sfrm' || (t.kind === 'fence' && t.def && t.def.safariGate) || (t.kind === 'building' && t.def && (t.def.safari || t.def.safariPortal)) || (t.kind === 'scenery' && t.def && t.def.safariCorridor)); }
   var oStart = T.start, oCancel = T.cancel;
@@ -150,7 +170,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     var P = UI.Panel && UI.Panel.kit; if (!P || !A()) return false;
     if (kind === 'safari_veh') return openVeh(id, P);
     if (kind === 'wild') return openWild(id, P);
-    if (kind === 'object') { var o = find(Z.state.objects, id); var d = o && UI.byId(D.buildings, o.type); if (d && d.safari) return openDepot(o, d, P); }
+    if (kind === 'object') { var o = find(Z.state.objects, id); var d = o && UI.byId(D.buildings, o.type); if (d && d.safari) return openDepot(o, d, P); if (d && d.safariReserve) return openCamp(o, d, P); }
     return false;
   };
 
@@ -158,10 +178,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     var id = o.id, a = A(), kind = def.safari, f = P.frame(P.thumbBox('building', o.type, 96, def.emoji || '🚙'), def.name, kind === 'land' ? 'Safari truck depot' : kind === 'sea' ? 'Tour boat harbour' : 'Balloon pad'), b = f.body;
     var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tl = []; if (fp) for (var q = 0; q < fp.w; q++) for (var c = 0; c < fp.h; c++) tl.push({ i: fp.i0 + q, j: fp.j0 + c });
     if (tl.length) Z.World.setPreview({ type: 'tiles', tiles: tl, ok: true });
-    var rt = h('div.sfx'), rS = mrow('Route'), rL = mrow('Length'), rZ = mrow('Safari zones'), rG = mrow('Gates'), rV = mrow('Vehicles'), warn = h('div.mw');
-    rt.appendChild(h('h4', { text: 'Tour route' })); [rS, rL, rZ, rG, rV].forEach(function (r) { rt.appendChild(r); }); rt.appendChild(warn);
-    var drawBtn = h('button.btn.sm.gold', { html: ic('pencil') + 'Draw route', on: { click: function () { UI.snd('click'); UI.Panel.hide(); UI.Tools.start({ kind: 'sfroute', id: 'route', name: 'Draw route' }); if (UI.tool) { UI.tool.depot = id; T.refresh(); } } } });
-    var rmBtn = P.confirmBtn(ic('trash') + 'Remove route', function () { var r = a.removeRoute(id, { dry: true }); return 'Remove for +' + fmt(-r.cost) + '?'; }, function () { a.removeRoute(id); UI.snd('build'); key = ''; }, 'alt');
+    var rt = h('div.sfx'), rS = mrow('Route'), rM = mrow('Trip mode'), rL = mrow('Length'), rEx = mrow('Excitement'), rZ = mrow('Safari zones'), rG = mrow('Gates'), rV = mrow('Vehicles'), warn = h('div.mw');
+    rt.appendChild(h('h4', { text: 'Tour route' })); [rS, rM, rL, rEx, rZ, rG, rV].forEach(function (r) { rt.appendChild(r); }); rt.appendChild(warn);
+    var outBackBtn = h('button.btn.sm.alt', { text: '↔ Out & Back', on: { click: function () { a.setRouteMode(id, 'outback'); UI.snd('click'); key = ''; } } });
+    var loopBtn = h('button.btn.sm.alt', { text: '🔄 Round Trip', on: { click: function () { a.setRouteMode(id, 'loop'); UI.snd('click'); key = ''; } } });
+    rt.appendChild(h('div.btnrow', outBackBtn, loopBtn));
+    var drawBtn = h('button.btn.sm.gold', { html: ic('pencil') + 'Build / Extend route', on: { click: function () { UI.snd('click'); UI.Panel.hide(); UI.Tools.start({ kind: 'sfroute', id: 'route', name: 'Draw route', depot: id, sfMode: a.routeModeOf(id) }); } } });
+    var rmBtn = P.confirmBtn(ic('trash') + 'Clear route', function () { var r = a.removeRoute(id, { dry: true }); return r.ok ? 'Remove for +' + fmt(-r.cost) + '?' : 'No route to remove'; }, function () { a.removeRoute(id); UI.snd('build'); key = ''; }, 'alt');
     rt.appendChild(h('div.btnrow', drawBtn, rmBtn));
     var qb = h('div.sfx'), rQ = mrow('Waiting at the bay'), rT = mrow('Riders today'), rI = mrow('Fares taken'), rSat = mrow('Rider satisfaction'), satBar = h('div.mbar', h('i'));
     qb.appendChild(h('h4', { text: 'Guests' })); [rQ, rT, rI, rSat].forEach(function (r) { qb.appendChild(r); }); qb.appendChild(satBar);
@@ -191,8 +214,13 @@ window.Z = window.Z || {}; var Z = window.Z;
       kind: 'object', update: function () {
         var i = a.depotInfo(id); if (!i || !find(Z.state.objects, id)) return false;
         var R = i.route;
-        setRow(rS, !R ? 'Not drawn yet' : R.ok ? 'Ready' : 'Blocked', R && R.ok ? 'ok' : 'bad');
-        setRow(rL, R ? R.length + ' tiles' + (R.loop ? ', loop' : ', out and back') : '-');
+        setRow(rS, !R ? 'Not drawn yet' : R.ok ? 'Ready' : (R.partial ? 'In progress' : 'Blocked'), R && R.ok ? 'ok' : 'bad');
+        setRow(rM, i.mode === 'loop' ? 'Round Trip (Loop)' : 'Out & Back');
+        outBackBtn.className = 'btn sm' + (i.mode === 'outback' ? '' : ' alt');
+        loopBtn.className = 'btn sm' + (i.mode === 'loop' ? '' : ' alt');
+        rmBtn.disabled = !R;
+        setRow(rL, R ? R.length + ' tiles' + (R.loop ? ', closed loop' : ', out & back') : '-');
+        setRow(rEx, R && R.ok ? (R.excitement + '/100 (' + R.speciesCount + ' species, ' + R.animalCount + ' dinos)') : '-', R && R.ok && R.excitement >= 60 ? 'ok' : '');
         setRow(rZ, R && R.zones.length ? R.zones.map(encName).join(', ') : 'None yet', R && R.zones.length ? '' : 'bad');
         setRow(rG, R ? (R.gates ? R.gates + ' crossing' + (R.gates === 1 ? '' : 's') + (R.powered ? '' : ', unpowered') : 'None') : '-', R && !R.powered ? 'bad' : '');
         setRow(rV, i.vehicles.length + ' of ' + i.maxVeh);
@@ -257,6 +285,40 @@ window.Z = window.Z || {}; var Z = window.Z;
     b.appendChild(box);
     var DO = { arrive: 'Arriving', graze: 'Grazing', roam: 'Wandering', flee: 'Fleeing', leave: 'Leaving', hunted: 'Being hunted', rest: 'Resting' };
     P.setCur({ kind: 'wild', update: function () { var w = a.wildInfo(id); if (!w) return false; setRow(rZ, w.zone ? encName(w.zone) : '-'); setRow(rPh, DO[w.phase] || String(w.phase || 'Roaming')); return true; } });
+    return true;
+  }
+
+  function openCamp(o, def, P) {
+    var id = o.id, a = A(), f = P.frame(P.thumbBox('building', o.type, 96, def.emoji || '⛺'), def.name, 'Luxury Safari Game Reserve Camp'), b = f.body;
+    var fp = Z.Sim.footprint(o.type, o.i, o.j, o.rot), tl = []; if (fp) for (var q = 0; q < fp.w; q++) for (var c = 0; c < fp.h; c++) tl.push({ i: fp.i0 + q, j: fp.j0 + c });
+    if (tl.length) Z.World.setPreview({ type: 'tiles', tiles: tl, ok: true });
+    var stBox = h('div.sfx'), rConn = mrow('Access'), rRate = mrow('Nightly rate'), rWild = mrow('Nearby reserve'), rBeds = mrow('VIP campers'), rRev = mrow('Total revenue'), warn = h('div.mw');
+    stBox.appendChild(h('h4', { text: 'Game Reserve Stay' })); [rConn, rRate, rWild, rBeds, rRev].forEach(function (r) { stBox.appendChild(r); }); stBox.appendChild(warn);
+    var secBox = h('div.sfx'), rG = mrow('Bodyguards'), rSec = mrow('Perimeter status');
+    secBox.appendChild(h('h4', { text: 'Bodyguard Detail' })); secBox.appendChild(rG); secBox.appendChild(rSec);
+    var hireBtn = h('button.btn.sm.gold', { html: ic('plus') + 'Hire bodyguard ' + fmt(1200), on: { click: function () { var r = a.hireCampGuard(id); if (r.ok) UI.snd('build'); else { UI.snd('bad'); UI.toast(r.msg, 'bad'); } } } });
+    var dimBtn = h('button.btn.sm.alt', { text: 'Dismiss', on: { click: function () { var r = a.dismissCampGuard(id); if (r.ok) UI.snd('click'); else UI.snd('bad'); } } });
+    secBox.appendChild(h('div.btnrow', hireBtn, dimBtn));
+    secBox.appendChild(h('div.nt', { text: '1 bodyguard is included. Extra bodyguards cost ' + fmt(90) + '/day and deter predators around the tents. Nearby Ranger posts also add +1 security.' }));
+    var refund = Math.floor(def.cost * 0.5);
+    var demo = P.confirmBtn(ic('trash') + 'Demolish', 'Demolish for +' + fmt(refund) + '?', function () { Z.Sim.bulldoze(o.i, o.j); UI.snd('build'); UI.Panel.hide(); }, 'alt');
+    b.appendChild(stBox); b.appendChild(secBox); b.appendChild(h('div.btnrow', demo));
+    P.setCur({
+      kind: 'object', update: function () {
+        var i = a.campInfo(id); if (!i || !find(Z.state.objects, id)) return false;
+        setRow(rConn, i.viaPath && i.viaSafari ? 'Path + Safari shuttle' : i.viaSafari ? 'Safari shuttle' : i.viaPath ? 'Path connected' : 'Unreachable', i.connected ? 'ok' : 'bad');
+        setRow(rRate, fmt(i.nightlyPrice) + '/night' + (i.bonusPct ? ' (+' + i.bonusPct + '% reserve)' : ''));
+        setRow(rWild, i.dinos + ' dinos (' + i.species + ' species' + (i.predators ? ', ' + i.predators + ' predators' : '') + ')');
+        setRow(rBeds, i.campers + ' / ' + i.capacity + ' (' + i.nightsSold + ' nights sold)');
+        setRow(rRev, fmt(i.income));
+        setRow(rG, i.guards + ' / ' + i.maxGuards + (i.rangerNear ? ' (+1 Ranger post)' : ''));
+        setRow(rSec, i.safe ? 'Protected perimeter' : ('Needs ' + i.neededGuards + ' guards!'), i.safe ? 'ok' : 'bad');
+        warn.textContent = !i.connected ? 'Connect a path or run a Safari route within 6 tiles so VIP campers can reach the camp.' : (!i.safe ? 'Predators nearby! Hire more bodyguards or place a Ranger post.' : '');
+        hireBtn.disabled = i.guards >= i.maxGuards || Z.state.money < i.guardCost;
+        dimBtn.disabled = i.guards <= 0;
+        return true;
+      }
+    });
     return true;
   }
 

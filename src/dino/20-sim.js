@@ -1346,8 +1346,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if ((fp.w > 1 || fp.h > 1) && fenceInside(fp)) return fail('Blocked by a fence');
     if (dk.kind === 'building') {
       if (!footprintFlat(fp, def.realm === 'gallery' ? 3.2 : 1, pierOh && pierOh.wet)) return fail('Too steep \u2014 level the ground first');
-      if (inEnc) return fail("Buildings can't go inside an enclosure");
-      if (!def.utility && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
+      if (inEnc && !def.inEnclosure) return fail("Buildings can't go inside an enclosure");
+      if (!def.utility && !def.safariReserve && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
       if (def.boats && Z.Boats) { var bt = Z.Boats.placeCheck(type, fp); if (bt && bt.msg) return fail(bt.msg); }   // boats package: piers touch water, every pier and pad needs a path at its entrance
       if (def.mono && Z.Monorail) { var mn = Z.Monorail.placeCheck(type, fp); if (mn && mn.msg) return fail(mn.msg); if (mn && mn.warn) warn = mn.warn; }   // monorail package: a station needs a path at its entrance
       if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp, rot); if (cr) return fail(cr); }   // coaster package: buildings cannot overlap coaster track
@@ -1991,7 +1991,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var coasterValue = Z.Coaster ? Z.Coaster.valueBonus() : 0;
     var rideRaw = rideCount * 0.8 + arcadeCount * 0.35 + coasterValue;
     var rideValue = 4.5 * (1 - Math.exp(-rideRaw / 4.5));
-    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + rideValue + (Z.Monorail ? Z.Monorail.valueBonus() : 0);
+    return 6 + S.rating * 3.5 + Math.min(8, spCount) * 0.9 + rideValue + (Z.Monorail ? Z.Monorail.valueBonus() : 0) + (Z.Safari && Z.Safari.arrivalBonus ? Z.Safari.arrivalBonus() * 0.08 : 0);
   }
 
   // ---- visit-plan helpers (all durations are in GAME hours, derived from DAY_SECONDS) ----
@@ -2356,8 +2356,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           pickBuilding(g, bt.fun, 'act', (actRoll - baseActChance) / bargainChance)) return;
       }
     }
+    if (Z.Safari && Z.Safari.choose(g)) return;   // safari package: truck, boat or balloon ride (top attraction!)
     if (Z.Monorail && Z.Monorail.choose(g)) return;   // monorail package: tour ride
-    if (Z.Safari && Z.Safari.choose(g)) return;   // safari package: truck or boat ride
     if (g.strollNext) { g.strollNext = 0; if (gxStroll(g)) return; }
     if (!g.done && pickExhibit(g)) return;
     if (g.fun < 40) say(g, 'bored');
@@ -4229,6 +4229,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       return !Z.Power || Z.Power.usable(o);
     });
     if (Z.Monorail && Z.Monorail.funCount) b.fun += Z.Monorail.funCount();
+    if (Z.Safari && Z.Safari.funCount) b.fun += Z.Safari.funCount();
     var needed = { food: Math.ceil(ref / 40), drink: Math.ceil(ref / 50), toilet: Math.ceil(ref / 40), bench: Math.ceil(ref / 30), bin: Math.ceil(ref / 25), fun: 1 + Math.floor(ref / 80) };
     var out = {}, sum = 0;
     Object.keys(b).forEach(function (key) { out[key] = { capacity: b[key], needed: needed[key] }; sum += Math.min(1, b[key] / needed[key]); });
@@ -4259,7 +4260,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       }
     }
     var completion = Math.min(1, weightedRiders / (ref * 0.35));
-    return 0.35 * (1 - Math.exp(-2.2 * completion)) / (1 - Math.exp(-2.2));
+    var base = 0.35 * (1 - Math.exp(-2.2 * completion)) / (1 - Math.exp(-2.2));
+    var sfBonus = Z.Safari && Z.Safari.ratingBonus ? Z.Safari.ratingBonus() : 0;
+    return Math.min(0.55, base + sfBonus);
   }
   var RATING_WEIGHTS = Object.freeze({ animals: 0.42, welfare: 0.13, guests: 0.13, facilities: 0.12, cleanliness: 0.08, scenery: 0.10 });
   function computeRating() {

@@ -5,16 +5,20 @@
   'use strict';
   var M = Z.Models; if (!M || !M.kit) return;
   var K = M.kit, B = K.B, mesh = K.mesh, grp = K.grp, shade = K.shade, PI = Math.PI;
-  var DEF = { safari_depot: [3, 2], safari_harbour: [3, 2], safari_balloon: [2, 2], safari_portal: [2, 1], ranger_post: [2, 2] };
+  var DEF = { safari_depot: [3, 2], safari_harbour: [3, 2], safari_balloon: [2, 2], safari_portal: [2, 1], ranger_post: [2, 2], safari_tent_camp: [3, 3] };
   var MODELS = {}, SCEN = {};
   var khaki = 0xb7a26a, olive = 0x6b7448, dark = 0x2f3438, steel = 0x7f8a92, conc = 0xb9b5aa, red = 0xb83a2e, orange = 0xe8742a, white = 0xf0eee6, teal = 0x2c8fa6, glassC = 0x9fd4ea, wood = 0x7a5233;
 
-  MODELS.safari_depot = function (g) {   // 6 x 4 m garage: arched truss roof, two open bays, beveled ticket kiosk
+  MODELS.safari_depot = function (g) {   // 6 x 4 m safari lodge & dispatch garage: front (+z) guest entrance & ticket hall, rear (-z) open double truck bays
     var b = B();
+    // concrete base slab + rear dispatch apron extending toward -z exit
     b.bevelBox(5.9, 0.16, 3.9, 0.04, 0, 0.08, 0, conc);
-    b.bevelBox(5.4, 2.45, 0.26, 0.04, 0, 1.38, -1.7, shade(khaki, 0.95));
+    b.bevelBox(5.2, 0.10, 0.7, 0.02, 0, 0.05, -2.05, shade(conc, 0.88));
+    // side walls
     b.bevelBox(0.26, 2.45, 3.4, 0.04, -2.75, 1.38, 0, shade(khaki, 0.9));
     b.bevelBox(0.26, 2.45, 3.4, 0.04, 2.75, 1.38, 0, shade(khaki, 0.9));
+    // front (+z) lodge wall separating guest path from rear vehicle bays, with central boarding passage & ticket kiosk
+    b.bevelBox(5.4, 2.45, 0.26, 0.04, 0, 1.38, 1.72, shade(khaki, 0.96));
     // arched truss garage roof (axis:'x' => u=Y, v=Z)
     b.bevelBox(5.85, 0.16, 4.05, 0.03, 0, 2.68, 0, shade(olive, 0.92));
     b.extrude([
@@ -23,19 +27,26 @@
     for (var k = -2; k <= 2; k++) {
       b.tube([[k * 1.35, 2.66, -2.02], [k * 1.35, 3.22, -1.0], [k * 1.35, 3.46, 0], [k * 1.35, 3.22, 1.0], [k * 1.35, 2.66, 2.02]], 0.045, shade(olive, 0.75), { seg: 6, steps: 2 });
     }
-    b.bevelBox(2.6, 0.85, 0.10, 0.02, -1.45, 2.28, 1.96, orange);
-    b.bevelBox(2.6, 0.12, 0.12, 0.02, -1.45, 1.80, 1.97, dark);
-    b.bevelBox(0.22, 2.3, 0.22, 0.03, -2.7, 1.2, 1.95, dark);
-    b.bevelBox(0.22, 2.3, 0.22, 0.03, 0.0, 1.2, 1.95, dark);
-    // beveled ticket kiosk + awning
-    b.bevelBox(1.8, 1.1, 0.16, 0.03, 1.85, 1.2, 1.9, 0xe9e3cf);
-    b.box(1.5, 0.6, 0.06, 1.85, 1.5, 1.99, glassC);
-    b.bevelBox(1.94, 0.12, 0.52, 0.025, 1.85, 0.7, 2.1, wood);
-    b.bevelBox(2.4, 0.18, 0.92, 0.03, 1.85, 2.3, 2.3, red, { rot: [0.16, 0, 0] });
-    b.box(2.4, 0.19, 0.28, 1.85, 2.3, 2.3, white, { rot: [0.16, 0, 0] });
-    b.box(0.7, 0.9, 0.06, 2.6, 2.35, 1.97, 0xfff1c4);
-    for (k = 0; k < 3; k++) b.box(0.55, 0.12, 0.06, -2.2 + k * 0.8, 2.58, 2.00, k === 1 ? 0x2c6a3a : orange);
-    b.lathe([[0.18, 0], [0.20, 0.18], [0.18, 0.56], [0.20, 0.70], [0, 0.72]], 0x2d2d2d, { x: -2.9, y: 0.12, z: 1.9, seg: 10, cap0: true });
+    // REAR (-z) open double truck dispatch bays + overhead clearance lintel & hazard stripes
+    b.bevelBox(5.4, 0.42, 0.16, 0.02, 0, 2.44, -1.94, orange);
+    b.bevelBox(5.4, 0.10, 0.18, 0.02, 0, 2.20, -1.95, dark);
+    b.bevelBox(0.24, 2.35, 0.24, 0.03, -2.68, 1.22, -1.92, dark);
+    b.bevelBox(0.24, 2.35, 0.24, 0.03, 0.0, 1.22, -1.92, dark);
+    b.bevelBox(0.24, 2.35, 0.24, 0.03, 2.68, 1.22, -1.92, dark);
+    for (k = 0; k < 5; k++) b.box(0.55, 0.12, 0.06, -2.0 + k * 1.0, 2.44, -2.03, (k & 1) ? dark : 0xf2c94c);
+    // FRONT (+z) guest entrance doorway, safari signboard & beveled ticket kiosk with awning
+    b.bevelBox(1.5, 1.95, 0.14, 0.02, -1.45, 1.06, 1.88, shade(wood, 0.85));
+    b.box(1.1, 1.65, 0.08, -1.45, 0.96, 1.94, 0x262b2e);
+    b.bevelBox(2.4, 0.52, 0.10, 0.02, -1.45, 2.34, 1.96, orange);
+    b.bevelBox(2.4, 0.10, 0.12, 0.02, -1.45, 2.04, 1.97, dark);
+    for (k = 0; k < 3; k++) b.box(0.55, 0.12, 0.06, -2.2 + k * 0.8, 2.34, 2.02, k === 1 ? 0x2c6a3a : 0xfff1c4);
+    b.bevelBox(1.8, 1.1, 0.16, 0.03, 1.55, 1.2, 1.9, 0xe9e3cf);
+    b.box(1.5, 0.6, 0.06, 1.55, 1.5, 1.99, glassC);
+    b.bevelBox(1.94, 0.12, 0.52, 0.025, 1.55, 0.7, 2.1, wood);
+    b.bevelBox(2.4, 0.18, 0.92, 0.03, 1.55, 2.3, 2.3, red, { rot: [0.16, 0, 0] });
+    b.box(2.4, 0.19, 0.28, 1.55, 2.3, 2.3, white, { rot: [0.16, 0, 0] });
+    b.box(0.65, 0.85, 0.06, 2.55, 2.32, 1.97, 0xfff1c4);
+    b.lathe([[0.18, 0], [0.20, 0.18], [0.18, 0.56], [0.20, 0.70], [0, 0.72]], 0x2d2d2d, { x: -2.85, y: 0.12, z: 1.9, seg: 10, cap0: true });
     b.bevelBox(0.5, 0.06, 0.4, 0.015, 2.8, 0.55, -2.15, 0xcaa24a);
     g.add(mesh(b.build()));
   };
@@ -130,6 +141,49 @@
       b.cyl(0.20, 0.20, 0.13, 0.42, 0.20, 1.3 + k * 0.45, dark, { seg: 8, rot: [PI / 2, 0, 0] });
       b.cyl(0.20, 0.20, 0.13, 1.36, 0.20, 1.3 + k * 0.45, dark, { seg: 8, rot: [PI / 2, 0, 0] });
     }
+    g.add(mesh(b.build()));
+  };
+  MODELS.safari_tent_camp = function (g) {   // 6 x 6 m luxury Game Reserve glamping camp: two canvas tents, central campfire, guard watchpost, lantern stake perimeter
+    var b = B();
+    var canvas = 0xefe6cf, canvasShade = 0xd8cba8, deck = 0x8a643d, ember = 0xff7a2a, glow = 0xffe49e;
+    // sandy clearing + elevated timber decks under tents
+    b.bevelBox(5.7, 0.08, 5.7, 0.03, 0, 0.04, 0, 0xb89d6d);
+    b.bevelBox(2.4, 0.16, 2.2, 0.03, -1.4, 0.14, -1.3, deck);
+    b.bevelBox(2.4, 0.16, 2.2, 0.03, 1.4, 0.14, -1.3, deck);
+    // Two luxury pitched canvas safari tents (left & right rear)
+    [-1.4, 1.4].forEach(function (tx) {
+      b.extrude([[-1.05, 0], [1.05, 0], [0.92, 0.95], [0, 1.68], [-0.92, 0.95]], 1.9, tx, 0.22, -1.3, [0, 0, 0], canvas, { bev: 0.03 });
+      // olive rainfly canopy over ridge
+      b.extrude([[-1.12, 0.92], [0, 1.76], [1.12, 0.92], [1.04, 0.84], [0, 1.64], [-1.04, 0.84]], 2.1, tx, 0.22, -1.3, [0, 0, 0], olive, { bev: 0.02 });
+      // warm glowing tent entrance & timber poles
+      b.box(0.68, 0.95, 0.06, tx, 0.72, -0.34, 0x3b2a1a);
+      b.box(0.52, 0.78, 0.05, tx, 0.68, -0.31, glow);
+      b.cyl(0.04, 0.04, 1.65, tx, 1.05, -0.22, wood, { seg: 6 });
+      b.cyl(0.04, 0.04, 1.65, tx, 1.05, -2.38, wood, { seg: 6 });
+    });
+    // Central stone campfire ring + glowing fire + log benches
+    for (var k = 0; k < 8; k++) {
+      var an = k * PI / 4;
+      b.sph(0.16, 0.12, 0.16, Math.cos(an) * 0.52, 0.16, 0.85 + Math.sin(an) * 0.52, 0x77736c, { s: [5, 4] });
+    }
+    b.cone(0.32, 0.48, 0, 0.34, 0.85, ember, { seg: 6 });
+    b.cone(0.18, 0.36, 0, 0.42, 0.85, glow, { seg: 6 });
+    b.cyl(0.16, 0.16, 1.3, -1.1, 0.22, 0.95, wood, { seg: 7, rot: [PI / 2, 0, 0.3] });
+    b.cyl(0.16, 0.16, 1.3, 1.1, 0.22, 0.95, wood, { seg: 7, rot: [PI / 2, 0, -0.3] });
+    // Bodyguard watchpost platform (front-right corner) with spotlight & radio mast
+    b.bevelBox(1.2, 0.2, 1.2, 0.03, 1.95, 0.95, 1.85, wood);
+    [[-0.48, -0.48], [0.48, -0.48], [-0.48, 0.48], [0.48, 0.48]].forEach(function (p) {
+      b.cyl(0.055, 0.065, 2.3, 1.95 + p[0], 1.2, 1.85 + p[1], shade(wood, 0.8), { seg: 6 });
+    });
+    b.cone(0.95, 0.5, 1.95, 2.55, 1.85, shade(olive, 0.85), { seg: 4, rot: [0, PI / 4, 0] });
+    b.cyl(0.03, 0.03, 1.1, 2.35, 2.75, 1.55, steel, { seg: 5 });
+    b.sph(0.11, 0.11, 0.11, 1.55, 2.2, 1.55, glow, { s: [6, 4] });
+    // Perimeter wooden stakes with warm camp lanterns
+    var posts = [[-2.65, -2.65], [0, -2.65], [2.65, -2.65], [-2.65, 0], [2.65, 0], [-2.65, 2.65], [-1.0, 2.65], [1.0, 2.65]];
+    posts.forEach(function (pt, idx) {
+      b.cyl(0.06, 0.07, 0.95, pt[0], 0.5, pt[1], shade(wood, 0.85), { seg: 6 });
+      if ((idx & 1) === 0) b.sph(0.09, 0.11, 0.09, pt[0], 1.05, pt[1], glow, { s: [5, 4] });
+    });
     g.add(mesh(b.build()));
   };
   SCEN.wildlife_corridor = function (g) {   // a gap flanked by two stone piers with a rolled-up shutter and a deer sign
