@@ -617,6 +617,26 @@ function footBase(i, j, w, h) {
   for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) { var y = groundY((i + a) * T, (j + b) * T); if (y > m) m = y; }
   return m;
 }
+// piers may overhang water: only corners touching a dry tile set the deck height
+function pierWet(type, i, j, w, h) {
+  var s = Z.state, bd = Z.DATA.buildings.find(function (q) { return q.id === type; });
+  if (!s || !bd || !(bd.boats === 'guest' || bd.boats === 'service')) return null;
+  var W = Z.DATA.terrain.findIndex(function (q) { return q.id === 'water'; }), wet = [], n = 0, a, b;
+  for (b = 0; b < h; b++) for (a = 0; a < w; a++) { var v = s.terrain[(i + a) + (j + b) * Z.N] === W; wet.push(v); if (v) n++; }
+  return n && n < w * h ? wet : null;
+}
+function landCorner(wet, w, h, a, b) {
+  for (var db = -1; db <= 0; db++) for (var da = -1; da <= 0; da++) {
+    var qa = a + da, qb = b + db;
+    if (qa >= 0 && qb >= 0 && qa < w && qb < h && !wet[qa + qb * w]) return true;
+  }
+  return false;
+}
+function footBaseWet(i, j, w, h, wet) {
+  var m = -99;
+  for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) { if (!landCorner(wet, w, h, a, b)) continue; var y = groundY((i + a) * T, (j + b) * T); if (y > m) m = y; }
+  return m;
+}
 function footLow(i, j, w, h) {
   var m = 99;
   for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) { var y = groundY((i + a) * T, (j + b) * T); if (y < m) m = y; }
@@ -1655,9 +1675,10 @@ function collectLampMats(g) {
 function removeRec(rec) {
   if (rec.group) { objGroup.remove(rec.group); }
   if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
+  if (rec.posts) { objGroup.remove(rec.posts); rec.posts = null; }
 }
 // buildings stand on the highest corner of their (nearly flat) footprint, with a stone foundation filling the gap
-var skirtMat = null, skirtGeo = null;
+var skirtMat = null, skirtGeo = null, pierPostMat = null;
 function enableShadows(obj, cast, recv) {
   if (!obj) return;
   obj.traverse(function (o) {
@@ -1668,9 +1689,23 @@ function enableShadows(obj, cast, recv) {
   });
 }
 function placeBuilding(rec) {
-  var o = rec.obj, base = footBase(o.i, o.j, rec.w, rec.h), low = footLow(o.i, o.j, rec.w, rec.h);
+  var o = rec.obj, wet = pierWet(o.type, o.i, o.j, rec.w, rec.h);
+  var base = wet ? footBaseWet(o.i, o.j, rec.w, rec.h, wet) : footBase(o.i, o.j, rec.w, rec.h), low = footLow(o.i, o.j, rec.w, rec.h);
   rec.y = base; rec.group.position.y = base;
   if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
+  if (rec.posts) { objGroup.remove(rec.posts); rec.posts = null; }
+  if (wet) {   // deck on pilings over the water strip instead of a solid skirt
+    if (!skirtGeo) { skirtGeo = new THREE.BoxGeometry(1, 1, 1); skirtMat = new THREE.MeshLambertMaterial({ color: tcol('#8e877a') }); }
+    var pm = pierPostMat || (pierPostMat = new THREE.MeshLambertMaterial({ color: tcol('#6b4a2b') })), pg = new THREE.Group(), pa, pb;
+    for (pb = 0; pb <= rec.h; pb++) for (pa = 0; pa <= rec.w; pa++) {
+      if (landCorner(wet, rec.w, rec.h, pa, pb)) continue;
+      var px = (o.i + pa) * T, pz = (o.j + pb) * T, fl = Math.min(groundY(px, pz), base - 0.3), ph = base - fl + 0.05;
+      var post = new THREE.Mesh(skirtGeo, pm); post.scale.set(0.22, ph, 0.22); post.position.set(px, base - ph / 2 - 0.05, pz);
+      post.castShadow = true; pg.add(post);
+    }
+    objGroup.add(pg); rec.posts = pg;
+    return;
+  }
   if (base - low > 0.03) {
     if (!skirtGeo) { skirtGeo = new THREE.BoxGeometry(1, 1, 1); skirtMat = new THREE.MeshLambertMaterial({ color: tcol('#8e877a') }); }
     var hgt = base - low + 0.35, m = new THREE.Mesh(skirtGeo, skirtMat);
@@ -2953,7 +2988,8 @@ function setPreview(spec) {
     }
     var gh = ghostMake(kind, spec.id);
     var cx = (spec.i + w / 2) * T, cz = (spec.j + h / 2) * T;
-    gh.group.position.set(cx, kind === 'building' ? footBase(spec.i, spec.j, w, h) : groundY(cx, cz), cz);
+    var gwet = kind === 'building' ? pierWet(spec.id, spec.i, spec.j, w, h) : null;
+    gh.group.position.set(cx, kind === 'building' ? (gwet ? footBaseWet(spec.i, spec.j, w, h, gwet) : footBase(spec.i, spec.j, w, h)) : groundY(cx, cz), cz);
     gh.group.rotation.y = rot * PI / 2;
     if (gh.ok !== ok) {
       gh.ok = ok;

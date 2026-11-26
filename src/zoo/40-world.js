@@ -638,15 +638,39 @@ function waterLvlAt(x, z) {
   if (x < 0 || z < 0 || i >= N || j >= N) return -99;
   return WLT[i + j * N];
 }
+// Piers may overhang water: when a footprint mixes water and land, only corners of the dry tiles count.
+function footWet(i, j, w, h) {
+  var ter = Z.state && Z.state.terrain; if (!ter || waterIdx < 0) return null;
+  var wet = [], any = false, dry = false;
+  for (var b = 0; b < h; b++) for (var a = 0; a < w; a++) {
+    var x = i + a, y = j + b, v = x >= 0 && y >= 0 && x < N && y < N && ter[x + y * N] === waterIdx;
+    wet[a + b * w] = v; if (v) any = true; else dry = true;
+  }
+  return any && dry ? wet : null;
+}
+function footCorners(i, j, w, h, fn) {
+  var wet = footWet(i, j, w, h);
+  for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) {
+    if (wet) {
+      var near = false;
+      for (var db = -1; db <= 0 && !near; db++) for (var da = -1; da <= 0; da++) {
+        var ta = a + da, tb = b + db;
+        if (ta >= 0 && tb >= 0 && ta < w && tb < h && !wet[ta + tb * w]) { near = true; break; }
+      }
+      if (!near) continue;
+    }
+    fn(groundY((i + a) * T, (j + b) * T));
+  }
+}
 // highest ground over a tile footprint's corners (buildings stand on the plateau)
 function footBase(i, j, w, h) {
   var m = -99;
-  for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) { var y = groundY((i + a) * T, (j + b) * T); if (y > m) m = y; }
+  footCorners(i, j, w, h, function (y) { if (y > m) m = y; });
   return m;
 }
 function footLow(i, j, w, h) {
   var m = 99;
-  for (var b = 0; b <= h; b++) for (var a = 0; a <= w; a++) { var y = groundY((i + a) * T, (j + b) * T); if (y < m) m = y; }
+  footCorners(i, j, w, h, function (y) { if (y < m) m = y; });
   return m;
 }
 
@@ -1591,7 +1615,7 @@ function removeRec(rec) {
   if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
 }
 // buildings stand on the highest corner of their (nearly flat) footprint, with a stone foundation filling the gap
-var skirtMat = null, skirtGeo = null;
+var skirtMat = null, skirtGeo = null, postMat = null;
 function enableShadows(obj, cast, recv) {
   if (!obj) return;
   obj.traverse(function (o) {
@@ -1605,10 +1629,39 @@ function placeBuilding(rec) {
   var o = rec.obj, base = footBase(o.i, o.j, rec.w, rec.h), low = footLow(o.i, o.j, rec.w, rec.h);
   rec.y = base; rec.group.position.y = base;
   if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
-  if (base - low > 0.03) {
+  var wet = footWet(o.i, o.j, rec.w, rec.h);
+  if (base - low > 0.03 || wet) {
     if (!skirtGeo) { skirtGeo = new THREE.BoxGeometry(1, 1, 1); skirtMat = new THREE.MeshLambertMaterial({ color: tcol('#8e877a') }); }
-    var hgt = base - low + 0.35, m = new THREE.Mesh(skirtGeo, skirtMat);
-    m.scale.set(rec.w * T + 0.12, hgt, rec.h * T + 0.12); m.position.set(rec.x, base - hgt / 2 - 0.01, rec.z);
+  }
+  if (wet) {
+    // deck on pilings: stone foundation only under the dry tiles, wooden posts over the water tiles
+    if (!postMat) postMat = new THREE.MeshLambertMaterial({ color: tcol('#5b4630') });
+    var grp = new THREE.Group(), w = rec.w, h = rec.h, x0 = rec.x - w * T / 2, z0 = rec.z - h * T / 2;
+    var di0 = 99, di1 = -1, dj0 = 99, dj1 = -1, a, b;
+    for (b = 0; b < h; b++) for (a = 0; a < w; a++) if (!wet[a + b * w]) { if (a < di0) di0 = a; if (a > di1) di1 = a; if (b < dj0) dj0 = b; if (b > dj1) dj1 = b; }
+    var hgt = Math.max(base - low, 0) + 0.35, sk = new THREE.Mesh(skirtGeo, skirtMat);
+    sk.scale.set((di1 - di0 + 1) * T + 0.12, hgt, (dj1 - dj0 + 1) * T + 0.12);
+    sk.position.set(x0 + (di0 + di1 + 1) * T / 2 - rec.x, base - hgt / 2 - 0.01 - base, z0 + (dj0 + dj1 + 1) * T / 2 - rec.z);
+    sk.castShadow = true; sk.receiveShadow = true; grp.add(sk);
+    for (b = 0; b <= h; b++) for (a = 0; a <= w; a++) {
+      var tw = false, td = false;
+      for (var db = -1; db <= 0; db++) for (var da = -1; da <= 0; da++) {
+        var ta = a + da, tb = b + db; if (ta < 0 || tb < 0 || ta >= w || tb >= h) continue;
+        if (wet[ta + tb * w]) tw = true; else td = true;
+      }
+      if (!tw || td) continue;
+      var ti = o.i + a, tj = o.j + b, bed = groundY(ti * T, tj * T), top = base - 0.1, bot = Math.min(bed, top - 0.5) - 0.2;
+      var post = new THREE.Mesh(skirtGeo, postMat);
+      post.scale.set(0.3, top - bot, 0.3);
+      post.position.set(x0 + a * T - rec.x, (top + bot) / 2 - base, z0 + b * T - rec.z);
+      post.castShadow = true; grp.add(post);
+    }
+    grp.position.set(rec.x, base, rec.z);
+    sk.position.x = x0 + (di0 + di1 + 1) * T / 2 - rec.x; sk.position.z = z0 + (dj0 + dj1 + 1) * T / 2 - rec.z;
+    objGroup.add(grp); rec.skirt = grp;
+  } else if (base - low > 0.03) {
+    var hgt2 = base - low + 0.35, m = new THREE.Mesh(skirtGeo, skirtMat);
+    m.scale.set(rec.w * T + 0.12, hgt2, rec.h * T + 0.12); m.position.set(rec.x, base - hgt2 / 2 - 0.01, rec.z);
     m.castShadow = true; m.receiveShadow = true;
     objGroup.add(m); rec.skirt = m;
   }

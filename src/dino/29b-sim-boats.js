@@ -58,29 +58,69 @@ window.Z = window.Z || {}; var Z = window.Z;
   function labelWater() {
     var s = S(), W = waterIdx(), body = X.body, q = RT().queue, nb = 0, t, h, tl;
     body.fill(0);
+    // water tiles under a pier's overhang are decking, not sailable: keep them out of every body
+    var occ = X.pierWater || (X.pierWater = new Uint8Array(NN)), defs = C.BD(), ok, oo, fq, fa, fb;
+    occ.fill(0);
+    for (ok = 0; ok < s.objects.length; ok++) {
+      oo = s.objects[ok]; if (oo.kind !== 'building' || !defs[oo.type] || !(defs[oo.type].boats === 'guest' || defs[oo.type].boats === 'service')) continue;
+      fq = C.objFootprint(oo);
+      for (fa = 0; fa < fq.w; fa++) for (fb = 0; fb < fq.h; fb++) { t = (fq.i0 + fa) + (fq.j0 + fb) * N; if (s.terrain[t] === W) occ[t] = 1; }
+    }
     for (t = 0; t < NN; t++) {
-      if (s.terrain[t] !== W || s.path[t] || body[t]) continue;
+      if (s.terrain[t] !== W || s.path[t] || body[t] || occ[t]) continue;
       nb++; body[t] = nb; h = 0; tl = 0; q[tl++] = t;
       while (h < tl) {
         var u = q[h++], i = u % N;
-        if (u >= N && s.terrain[u - N] === W && !s.path[u - N] && !body[u - N]) { body[u - N] = nb; q[tl++] = u - N; }
-        if (u < NN - N && s.terrain[u + N] === W && !s.path[u + N] && !body[u + N]) { body[u + N] = nb; q[tl++] = u + N; }
-        if (i > 0 && s.terrain[u - 1] === W && !s.path[u - 1] && !body[u - 1]) { body[u - 1] = nb; q[tl++] = u - 1; }
-        if (i < N - 1 && s.terrain[u + 1] === W && !s.path[u + 1] && !body[u + 1]) { body[u + 1] = nb; q[tl++] = u + 1; }
+        if (u >= N && s.terrain[u - N] === W && !s.path[u - N] && !body[u - N] && !occ[u - N]) { body[u - N] = nb; q[tl++] = u - N; }
+        if (u < NN - N && s.terrain[u + N] === W && !s.path[u + N] && !body[u + N] && !occ[u + N]) { body[u + N] = nb; q[tl++] = u + N; }
+        if (i > 0 && s.terrain[u - 1] === W && !s.path[u - 1] && !body[u - 1] && !occ[u - 1]) { body[u - 1] = nb; q[tl++] = u - 1; }
+        if (i < N - 1 && s.terrain[u + 1] === W && !s.path[u + 1] && !body[u + 1] && !occ[u + 1]) { body[u + 1] = nb; q[tl++] = u + 1; }
       }
     }
   }
   // a free water tile touching the building's footprint
   function dockOf(fp) {
-    var body = X.body, a, b, x, y, t;
+    var body = X.body, a, b, x, y, t, first = -1, W = waterIdx(), s = S(), ax, ay, at;
     for (a = -1; a <= fp.w; a++) for (b = -1; b <= fp.h; b++) {
       if ((a >= 0 && a < fp.w) === (b >= 0 && b < fp.h)) continue;
       x = fp.i0 + a; y = fp.j0 + b;
       if (x < 0 || y < 0 || x >= N || y >= N) continue;
-      t = x + y * N; if (body[t]) return t;
+      t = x + y * N; if (!body[t]) continue;
+      if (first < 0) first = t;
+      // prefer a dock beside the overhanging deck (the footprint tile this dock touches is water)
+      ax = Math.min(Math.max(a, 0), fp.w - 1); ay = Math.min(Math.max(b, 0), fp.h - 1);
+      at = (fp.i0 + ax) + (fp.j0 + ay) * N;
+      if (s.terrain[at] === W) return t;
     }
-    return -1;
+    return first;
   }
+  // Piers may overhang water: a full edge strip (1 row for small piers, up to 2 for the large terminal) of the footprint.
+  // Returns null (no water under it), { msg } (not allowed) or { wet: bool per footprint tile (a + b * w) }.
+  B.pierOverhang = function (type, fp) {
+    var def = C.BD()[type]; if (!def || !(def.boats === 'guest' || def.boats === 'service')) return null;
+    var s = S(), W = waterIdx(), wet = [], n = 0, a, b, t;
+    for (b = 0; b < fp.h; b++) for (a = 0; a < fp.w; a++) {
+      t = (fp.i0 + a) + (fp.j0 + b) * N; var w = s.terrain[t] === W; wet.push(w); if (w) n++;
+    }
+    if (!n) return null;
+    var maxD = def.largePier ? 2 : 1, bad = { msg: 'Only the seaward edge of a pier may overhang water (' + (maxD === 1 ? 'one row' : 'up to two rows') + ', with land behind it)' };
+    var ok = false, d, side;
+    for (side = 0; side < 4 && !ok; side++) for (d = 1; d <= maxD && !ok; d++) {
+      var len = side < 2 ? fp.h : fp.w; if (d >= len) continue;
+      var match = true;
+      for (b = 0; b < fp.h && match; b++) for (a = 0; a < fp.w && match; a++) {
+        var inStrip = side === 0 ? b < d : side === 1 ? b >= fp.h - d : side === 2 ? a < d : a >= fp.w - d;
+        if (wet[a + b * fp.w] !== inStrip) match = false;
+      }
+      if (match) ok = true;
+    }
+    if (!ok) return bad;
+    for (b = 0; b < fp.h; b++) for (a = 0; a < fp.w; a++) if (wet[a + b * fp.w]) {
+      t = (fp.i0 + a) + (fp.j0 + b) * N;
+      if (s.tileEnc[t] || s.ditch[t] || s.path[t]) return { msg: 'A pier can only overhang open water' };
+    }
+    return { wet: wet };
+  };
   function pushEdge(list, a, b) { if (a && b && a !== b) list.push([a, b]); }
   function termOfId(id) { for (var k = 0; k < X.terms.length; k++) if (X.terms[k].o.id === id) return X.terms[k]; return null; }
   function termOf(o) { if (!o) return null; for (var k = 0; k < X.terms.length; k++) if (X.terms[k].o === o) return X.terms[k]; return null; }

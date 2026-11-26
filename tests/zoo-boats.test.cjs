@@ -531,3 +531,106 @@ test('demolishing the last large_guest_pier downgrades remaining piers cleanly w
   assert.equal(finished, true, 'all aboard guests landed safely and fleet trimmed to 4');
   for (const g of riders) assert.equal(h.rt().comp[g.ti], h.rt().comp[target]);
 });
+
+// ---- piers may overhang water along one edge strip ----
+const place = (z, type, i, j, rot) => z.Sim.placeObject(type, i, j, rot || 0);
+const wetten = (h, tiles) => tiles.forEach(([i, j]) => { h.S.terrain[h.tile(i, j)] = h.water; });
+
+test('a guest pier with one water column overhangs the river, and ferries dock and route around it', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  const west = place(z, 'guest_pier', 37, 40), east = place(z, 'guest_pier', 42, 40);
+  assert.equal(west.ok, true, west.msg); assert.equal(east.ok, true, east.msg);
+  assert.equal(S.terrain[h.tile(38, 40)], h.water, 'terrain under the overhang stays water');
+  S.time = 0.5;
+  const rt = h.rt(), g = addGuest(z, h.tile(30, ROW)), target = h.tile(47, ROW);
+  const p = z.Boats.plan(g, 't' + target);
+  assert.ok(p, 'a route exists');
+  g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+  z.Boats.start(g, p);
+  let boated = false;
+  const arrived = run(z, 150, () => { boated = boated || g.state === 'boat'; return boated && g.state !== 'boat'; });
+  assert.ok(arrived && boated);
+  assert.equal(rt.comp[g.ti], rt.comp[target]);
+});
+
+test('a guest pier with its whole footprint over water is refused; patchy water is refused', () => {
+  const h = setup(), { z } = h;
+  landLayout(h);
+  assert.equal(place(z, 'guest_pier', 38, 40).ok, false);
+  const patchy = (() => { wetten(h, [[37, 40]]); return place(z, 'guest_pier', 37, 40); })();
+  assert.equal(patchy.ok, false);
+  assert.match(patchy.msg, /overhang/i);
+  const diag = place(z, 'guest_pier', 37, 44);
+  assert.equal(diag.ok, true);
+  wetten(h, [[30, 46], [31, 47]]);
+  const d2 = place(z, 'guest_pier', 30, 46);
+  assert.equal(d2.ok, false);
+  assert.match(d2.msg, /overhang/i);
+});
+
+test('large terminal may overhang two water columns but not three', () => {
+  const h = setup(), { z } = h;
+  landLayout(h);
+  assert.equal(place(z, 'large_guest_pier', 36, 39).ok, true);
+  const h2 = setup(); landLayout(h2);
+  assert.equal(place(h2.z, 'large_guest_pier', 37, 39).ok, true);
+  const h3 = setup(); landLayout(h3);
+  assert.equal(place(h3.z, 'large_guest_pier', 38, 39).ok, false);
+  const h4 = setup(); landLayout(h4);
+  assert.equal(place(h4.z, 'large_guest_pier', 38, 39, 0).ok, false);
+});
+
+test('service pier may have one of its two tiles over water, not both', () => {
+  const h = setup(), { z } = h;
+  for (let i = 30; i <= 35; i++) wetten(h, [[i, 34], [i, 35]]);
+  assert.equal(place(z, 'service_pier', 32, 33).ok, true);
+  assert.equal(place(z, 'service_pier', 34, 34).ok, false);
+});
+
+test('steep shores no longer block a pier: only dry-tile corners must be flat', () => {
+  const h = setup(), { z, S, N } = h;
+  landLayout(h);
+  for (let j = 40; j <= 42; j++) S.elev[39 + j * (N + 1)] = -6;
+  const r = place(z, 'guest_pier', 37, 40);
+  assert.equal(r.ok, true, r.msg);
+  const h2 = setup(), z2 = h2.z; landLayout(h2);
+  h2.S.elev[37 + 41 * (h2.N + 1)] = -6;
+  const bad = place(z2, 'guest_pier', 36, 40);
+  assert.equal(bad.ok, false);
+  assert.match(bad.msg, /steep/i);
+});
+
+test('non-pier buildings still need dry land', () => {
+  const h = setup(), { z } = h;
+  const r = place(z, 'keeper_hut', 40, 40);
+  assert.equal(r.ok, false);
+  assert.match(r.msg, /dry land/i);
+  const v = place(z, 'vet_clinic', 37, 40);
+  assert.equal(v.ok, false);
+  assert.match(v.msg, /dry land/i);
+});
+
+test('boats never sail through a pier footprint', () => {
+  const h = setup(), { z, S } = h;
+  landLayout(h);
+  assert.ok(place(z, 'guest_pier', 37, 40).ok && place(z, 'guest_pier', 42, 40).ok);
+  S.time = 0.5;
+  const g = addGuest(z, h.tile(30, ROW)), target = h.tile(47, ROW);
+  const p = z.Boats.plan(g, 't' + target);
+  assert.ok(p);
+  g.gt = 'enc'; g.dk = 't' + target; g.spot = target;
+  z.Boats.start(g, p);
+  let inside = 0, seen = 0;
+  run(z, 150, () => {
+    z.Boats.vehicles().forEach(v => {
+      if (typeof v.x !== 'number') return;
+      seen++;
+      const ti = Math.floor(v.x / z.TILE), tj = Math.floor(v.z / z.TILE);
+      if ((ti === 38 && tj >= 40 && tj <= 41) || (ti === 42 && tj >= 40 && tj <= 41)) inside++;
+    });
+    return false;
+  });
+  assert.ok(seen > 0);
+  assert.equal(inside, 0);
+});

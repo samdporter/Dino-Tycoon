@@ -1562,9 +1562,9 @@ test('UI displays ranger and ranger station range badges, placement preview ring
   assert.equal(z.Sim.placePath(22, 24, 'paved').ok, true);
   assert.equal(z.Sim.placePath(22, 25, 'paved').ok, true);
 
-  // 1. Staff category cards display 32t for Ranger and 48t for Ranger station
+  // 1. Ranger card shows its Care role badge (like all staff cards); Ranger station shows 48t range
   z.UI.openCat('staff', true);
-  assert.equal(z.UI.el.cards.querySelector('.card[data-id="keeper"] .spb').textContent, '32t');
+  assert.equal(z.UI.el.cards.querySelector('.card[data-id="keeper"] .spb').textContent, 'Care');
   assert.equal(z.UI.el.cards.querySelector('.card[data-id="keeper_hut"] .spb').textContent, '48t');
 
   // 2. Selecting Ranger tool populates strip hint + PLAN.staff 32-tile range ring

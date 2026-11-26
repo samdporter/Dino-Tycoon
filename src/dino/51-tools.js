@@ -351,7 +351,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     var spec = { type: 'object', kind: t.kind, id: t.id, i: r0.i, j: r0.j, rot: t.rot, ok: r.ok, door: !isUtil }, sub = '';
     if (t.kind === 'building') {
       var tok = [], anyBad = false;
-      for (var jj = 0; jj < r0.h; jj++) for (var ii = 0; ii < r0.w; ii++) { var b = tileBlocked(r0.i + ii, r0.j + jj); if (b) anyBad = true; tok.push(!b); }
+      var pfp = def && def.boats && Z.Boats && Z.Boats.pierOverhang ? Z.Sim.footprint(t.id, r0.i, r0.j, t.rot) : null, poh = pfp ? Z.Boats.pierOverhang(t.id, pfp) : null;   // valid pier overhang water shows green
+      for (var jj = 0; jj < r0.h; jj++) for (var ii = 0; ii < r0.w; ii++) {
+        var b = tileBlocked(r0.i + ii, r0.j + jj);
+        if (b && poh && poh.wet && poh.wet[ii + jj * r0.w] && !Z.state.tileObj[(r0.i + ii) + (r0.j + jj) * N]) b = false;
+        if (b) anyBad = true; tok.push(!b);
+      }
       if (!r.ok && !anyBad) tok = tok.map(function () { return false; });
       spec.tileOk = r.ok ? tok.map(function () { return true; }) : tok;
       var fp = Z.Sim.footprint(t.id, r0.i, r0.j, t.rot), onPath = fp && fp.front.some(function (q) { return Z.state.path[q.i + q.j * N]; });

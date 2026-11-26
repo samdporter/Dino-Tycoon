@@ -83,14 +83,32 @@
     }
     return -1;
   }
+  // water tiles covered by any pier footprint (decks overhang water; boats never sail under them)
+  var pierWater = null;
+  function computePierWater() {
+    var S = C.getS(), N = C.getN(), k, a, b, fp;
+    pierWater = new Uint8Array(N * N);
+    for (k = 0; k < S.objects.length; k++) {
+      var o = S.objects[k];
+      if (o.kind !== 'building' || !BD[o.type] || !BD[o.type].boatPier) continue;
+      fp = C.objFootprint(o);
+      for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
+        var i = fp.i0 + a, j = fp.j0 + b;
+        if (i >= 0 && j >= 0 && i < N && j < N) pierWater[i + j * N] = 1;
+      }
+    }
+  }
   function waterBeside(o) {
     var S = C.getS(), N = C.getN(), fp = C.objFootprint(o), out = [];
+    if (!pierWater) computePierWater();
     for (var a = 0; a < fp.w; a++) for (var b = 0; b < fp.h; b++) {
       var i = fp.i0 + a, j = fp.j0 + b;
       [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(function (d) {
         var ni = i + d[0], nj = j + d[1];
         if (ni < 0 || nj < 0 || ni >= N || nj >= N) return;
         var t = ni + nj * N;
+        if (ni >= fp.i0 && ni < fp.i0 + fp.w && nj >= fp.j0 && nj < fp.j0 + fp.h) return;
+        if (pierWater[t]) return;
         if (S.terrain[t] === C.WATER && out.indexOf(t) < 0) out.push(t);
       });
     }
@@ -103,10 +121,11 @@
     if (def.helipad) return null;
     var S = C.getS(), N = C.getN();
     var wet = false;
+    function outside(x, y) { return !(x >= fp.i0 && x < fp.i0 + fp.w && y >= fp.j0 && y < fp.j0 + fp.h); }
+    function isW(x, y) { return x >= 0 && y >= 0 && x < N && y < N && outside(x, y) && S.terrain[x + y * N] === C.WATER; }
     for (var a = 0; a < fp.w && !wet; a++) for (var b = 0; b < fp.h && !wet; b++) {
       var i = fp.i0 + a, j = fp.j0 + b;
-      wet = (i > 0 && S.terrain[i - 1 + j * N] === C.WATER) || (i < N - 1 && S.terrain[i + 1 + j * N] === C.WATER) ||
-        (j > 0 && S.terrain[i + (j - 1) * N] === C.WATER) || (j < N - 1 && S.terrain[i + (j + 1) * N] === C.WATER);
+      wet = isW(i - 1, j) || isW(i + 1, j) || isW(i, j - 1) || isW(i, j + 1);
     }
     return wet ? null : 'Must be on the shore, touching water';
   }
@@ -122,7 +141,7 @@
       if (goal[t]) { found = t; break; }
       var i = t % N, j = (t - i) / N;
       [i > 0 ? t - 1 : -1, i < N - 1 ? t + 1 : -1, j > 0 ? t - N : -1, j < N - 1 ? t + N : -1].forEach(function (n) {
-        if (n >= 0 && prev[n] === -2 && S.terrain[n] === C.WATER) { prev[n] = t; q.push(n); }
+        if (n >= 0 && prev[n] === -2 && S.terrain[n] === C.WATER && !(pierWater && pierWater[n])) { prev[n] = t; q.push(n); }
       });
     }
     var r = null;
@@ -548,6 +567,7 @@
   function rebuild() {
     var S = C.getS(), RT = C.getRT(), N = C.getN(), NN = N * N, k, o, def;
     piers = []; pads = []; routes = {}; edges = {};
+    computePierWater();
     for (k = 0; k < S.objects.length; k++) {
       o = S.objects[k]; if (o.kind !== 'building') continue;
       def = BD[o.type]; if (!def || !(def.boatPier || def.helipad)) continue;

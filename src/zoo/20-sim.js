@@ -183,6 +183,36 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     return mx - mn <= maxSlope;
   }
+  // flatness over only the corners of the dry tiles of a footprint (dry = bool per tile, row-major a + b*w)
+  function footprintFlatDry(fp, maxSlope, dry) {
+    if (!S.elev) return true;
+    var mn = 99, mx = -99;
+    for (var b = 0; b < fp.h; b++) for (var a = 0; a < fp.w; a++) {
+      if (!dry[a + b * fp.w]) continue;
+      for (var db = 0; db <= 1; db++) for (var da = 0; da <= 1; da++) {
+        var h = S.elev[(fp.i0 + a + da) + (fp.j0 + b + db) * EW]; if (h < mn) mn = h; if (h > mx) mx = h;
+      }
+    }
+    return mx - mn <= maxSlope;
+  }
+  // Ferry piers may overhang water along ONE edge strip (depth 1; large terminals depth 2).
+  // wet = bool per tile. Returns null when the water pattern is legal, else an error message.
+  function pierOverhangCheck(def, fp, wet) {
+    var maxD = def.largePier ? 2 : 1, w = fp.w, h = fp.h, a, b, side, d, ok, any = false;
+    for (a = 0; a < wet.length; a++) if (wet[a]) { any = true; break; }
+    if (!any) return null;
+    for (side = 0; side < 4; side++) for (d = 1; d <= maxD; d++) {
+      var span = side < 2 ? w : h;
+      if (d >= span) continue;
+      ok = true;
+      for (b = 0; b < h && ok; b++) for (a = 0; a < w; a++) {
+        var inStrip = side === 0 ? a < d : side === 1 ? a >= w - d : side === 2 ? b < d : b >= h - d;
+        if (!!wet[a + b * w] !== inStrip) { ok = false; break; }
+      }
+      if (ok) return null;
+    }
+    return 'Only the seaward edge of a pier may overhang water (max ' + maxD + ' tile' + (maxD > 1 ? 's' : '') + ' deep, keep some land)';
+  }
   function aDanger(a) {
     if (!a || !SP[a.species]) return 0;
     return SP[a.species].danger || 0;
@@ -1255,7 +1285,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var dk = defOf(type); if (!dk) return fail('Unknown item');
     var def = dk.def, fp = footprint(def, i, j, rot);
     if ((def.star || 0) > S.unlocked.star) return fail('Unlocks at ' + def.star + ' stars');
-    var a, b, inEnc = false, warn = null;
+    var a, b, inEnc = false, warn = null, isPier = !!(def.boatPier), wet = null, anyWet = false;
+    if (isPier) wet = [];
     for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
       var x = fp.i0 + a, y = fp.j0 + b;
       if (!Z.inb(x, y) || !inMap(x, y)) return fail('Outside your land');
@@ -1264,12 +1295,19 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var t = (fp.i0 + a) + (fp.j0 + b) * N;
       if (S.tileObj[t]) return fail('Something is already here');
       if (S.path[t]) return fail('Clear the path first');
-      if (S.terrain[t] === WATER && type !== 'ice_floe') return fail('Needs flat dry land');
+      if (S.terrain[t] === WATER && type !== 'ice_floe' && !isPier) return fail('Needs flat dry land');
       if (S.tileEnc[t]) inEnc = true;
+    }
+    if (isPier) {
+      for (b = 0; b < fp.h; b++) for (a = 0; a < fp.w; a++) {
+        var wt = S.terrain[(fp.i0 + a) + (fp.j0 + b) * N] === WATER; wet[a + b * fp.w] = wt; if (wt) anyWet = true;
+      }
+      var oc = pierOverhangCheck(def, fp, wet); if (oc) return fail(oc);
     }
     if ((fp.w > 1 || fp.h > 1) && fenceInside(fp)) return fail('Blocked by a fence');
     if (dk.kind === 'building') {
-      if (!footprintFlat(fp, 1)) return fail('Too steep — level the ground first');
+      var dryFlat = anyWet ? footprintFlatDry(fp, 1, wet.map(function (v) { return !v; })) : footprintFlat(fp, 1);
+      if (!dryFlat) return fail('Too steep — level the ground first');
       if (inEnc) return fail("Buildings can't go inside an enclosure");
       if (Z.Coaster) { var cr = Z.Coaster.placeCheck(type, fp); if (cr) return fail(cr); }
       if (Z.Boats) { var br = Z.Boats.placeCheck(type, fp); if (br) return fail(br); }
@@ -1420,7 +1458,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           t = sn.tiles[k];
           if (W.occ[t]) return 'Something now stands where that was';
           if (W.path[t]) return 'A path now covers that spot';
-          if (W.terrain[t] === WATER && op.o.type !== 'ice_floe') return 'That spot is now water';
+          if (W.terrain[t] === WATER && op.o.type !== 'ice_floe' && !(sn.def && sn.def.boatPier)) return 'That spot is now water';
           if (S.tileEnc[t]) inEnc = true;
         }
         if (op.o.kind === 'building' && inEnc) return 'That spot is now inside an enclosure';

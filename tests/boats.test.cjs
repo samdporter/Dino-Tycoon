@@ -446,3 +446,56 @@ test('demolishing the last large_guest_pier downgrades ferries back to 16 cap / 
     assert.ok(z.state.path[g.ti] > 0, 'all guests safely on paths after crossing');
   }
 });
+
+// ---- piers overhanging the water (shores are too steep to build fully on land) ----
+test('a small pier may overhang one row of water and its ferries dock and route', () => {
+  const z = world(), N = z.N, S = z.state;
+  lay(z, row(8, 9, 26)); lay(z, [[8, 27], [8, 28], [21, 26]]);
+  const r = z.Sim.placeObject('guest_pier', 20, 24, 0);
+  assert.ok(r.ok, r.msg);
+  assert.equal(S.terrain[20 + 24 * N], z.DATA.terrain.findIndex(t => t.id === 'water'), 'terrain under the overhang stays water');
+  assert.ok(z.Sim.placeObject('guest_pier', 9, 24, 0).ok, 'west shore pier overhangs lake A too');
+  const info = z.Boats.pierInfo(S.objects.find(o => o.type === 'guest_pier' && o.i === 20).id);
+  assert.equal(info.onWater, true);
+  assert.equal(info.linked, 1);
+  step(z, 5);
+  for (const v of z.Boats.vessels()) {
+    if (v.kind !== 'ferry') continue;
+    const t = Math.floor(v.x / z.TILE) + Math.floor(v.z / z.TILE) * N;
+    assert.ok(!(t % N >= 20 && t % N <= 21 && Math.floor(t / N) >= 24 && Math.floor(t / N) <= 25), 'boats never sail under the pier');
+  }
+});
+test('a small pier or service pier with two water rows fails; all-water fails', () => {
+  const z = world();
+  for (const type of ['guest_pier', 'service_pier']) {
+    assert.ok(z.Sim.placeObject(type, 20, 24, 0, { dry: true }).ok, type + ' one row ok');
+    assert.match(z.Sim.placeObject(type, 19, 24, 0, { dry: true }).msg, /seaward edge/);
+    assert.match(z.Sim.placeObject(type, 15, 24, 0, { dry: true }).msg, /seaward edge/);
+  }
+});
+test('a large ferry terminal may overhang two rows of water but not three', () => {
+  const z = world();
+  assert.ok(z.Sim.placeObject('large_guest_pier', 20, 21, 0, { dry: true }).ok, 'one row');
+  assert.ok(z.Sim.placeObject('large_guest_pier', 19, 21, 0, { dry: true }).ok, 'two rows');
+  assert.match(z.Sim.placeObject('large_guest_pier', 18, 21, 0, { dry: true }).msg, /seaward edge/);
+  assert.ok(z.Sim.placeObject('large_guest_pier', 19, 21, 0).ok);
+});
+test('patchy or diagonal water under a pier is rejected', () => {
+  const z = world(), N = z.N, W = z.DATA.terrain.findIndex(t => t.id === 'water');
+  z.state.terrain[21 + 25 * N] = W;   // pond tile on the land side, diagonal to the lake edge
+  assert.match(z.Sim.placeObject('guest_pier', 20, 24, 0, { dry: true }).msg, /seaward edge/);
+  z.state.terrain[21 + 25 * N] = 0; z.state.terrain[20 + 24 * N] = 0;   // only the far corner of the strip is water
+  assert.match(z.Sim.placeObject('guest_pier', 20, 24, 0, { dry: true }).msg, /seaward edge/);
+});
+test('a steep drop into the water no longer blocks a pier, but steep land still does', () => {
+  const z = world(), N = z.N, EW = N + 1;
+  for (let j = 24; j <= 26; j++) z.state.elev[20 + j * EW] = -3;
+  assert.ok(z.Sim.placeObject('guest_pier', 20, 24, 0, { dry: true }).ok);
+  z.state.elev[22 + 24 * EW] = 3;   // a land corner is now steep
+  assert.match(z.Sim.placeObject('guest_pier', 20, 24, 0, { dry: true }).msg, /steep/i);
+});
+test('only piers may overhang water; other buildings still need flat dry land', () => {
+  const z = world();
+  const def = z.DATA.buildings.find(b => !b.boats && b.w === 2 && b.h === 2 && !b.utility) || z.DATA.buildings.find(b => !b.boats && b.w === 1 && b.h === 1);
+  assert.match(z.Sim.placeObject(def.id, 20, 24, 0, { dry: true }).msg, /flat dry land/);
+});
