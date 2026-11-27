@@ -121,8 +121,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     s.appendChild(sel);
     if (seg) {
       s.appendChild(seg([['outback', '↔ Out & Back'], ['loop', '🔄 Round Trip']], t.sfMode, function (v) {
+        t.depot = curDepot();
         t.sfMode = v;
-        A().setRouteMode(t.depot, v);
+        if (t.depot) A().setRouteMode(t.depot, v);
         T.refresh();
       }));
     }
@@ -224,7 +225,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         setRow(rZ, R && R.zones.length ? R.zones.map(encName).join(', ') : 'None yet', R && R.zones.length ? '' : 'bad');
         setRow(rG, R ? (R.gates ? R.gates + ' crossing' + (R.gates === 1 ? '' : 's') + (R.powered ? '' : ', unpowered') : 'None') : '-', R && !R.powered ? 'bad' : '');
         setRow(rV, i.vehicles.length + ' of ' + i.maxVeh);
-        warn.textContent = R && !R.ok ? R.why : (!i.conn ? 'This building must touch a path so guests can reach it.' : '');
+        warn.textContent = a.lockdown() ? 'Park lockdown is active: safari tours are suspended.' : (R && !R.ok ? R.why : (R && R.ok && !R.powered ? 'Safari gates or portals have no power: vehicles cannot depart.' : (!i.conn ? 'This building must touch a path so guests can reach it.' : '')));
         setRow(rQ, String(i.queue)); setRow(rT, i.today + ' (yesterday ' + i.yesterday + ')'); setRow(rI, fmt(i.income) + ' in all');
         setRow(rSat, i.sat === null ? 'No riders yet' : i.sat + '%'); satBar.firstChild.style.width = (i.sat === null ? 0 : i.sat) + '%';
         buyBtn.disabled = !i.canBuy || Z.state.money < i.cost;

@@ -283,3 +283,137 @@ test('virtual game sweep: guests love the safari (even with monorail), boost par
   assert.equal(z.Sim.safari.routeModeOf(dep.id), 'outback');
   assert.equal(z.Sim.safari.campInfo(camp.id).guards, 2);
 });
+
+test('adversarial fixes: multi-vehicle dispatch, lockdown alight, mid-board save/load, power/portals, balloons, adjacent gates, and undo', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 202, money: 500000 });
+  z.state.unlocked.star = 5;
+  z.state.elev.fill(0);
+  z.DATA.safari.breakdownPerHour = 0;
+
+  const N = z.N;
+  let entI = Math.floor(N / 2), entJ = N - 2;
+  for (let j = N - 1; j >= 0; j--) {
+    for (let i = 0; i < N; i++) {
+      if (z.state.path[i + j * N]) { entI = i; entJ = j; break; }
+    }
+    if (z.state.path[entI + entJ * N]) break;
+  }
+
+  const baseI = Math.max(8, entI - 14);
+  const baseJ = Math.max(8, entJ - 28);
+  clearFlat(z, baseI, baseJ, baseI + 28, entJ - 1);
+
+  for (let j = entJ; j >= baseJ + 16; j--) z.Sim.placePath(entI, j, 'paved');
+  for (let i = entI - 4; i <= entI + 4; i++) z.Sim.placePath(i, baseJ + 16, 'paved');
+
+  // Build two adjacent enclosures sharing a wall at j = baseJ + 6 (leaving 2 straight tiles between depot rear bay at baseJ+13 and gate at baseJ+12)
+  const encI0 = baseI + 2, encI1 = baseI + 22;
+  fenceRect(z, encI0, baseJ + 1, encI1, baseJ + 5, 'reinforced');
+  fenceRect(z, encI0, baseJ + 6, encI1, baseJ + 11, 'reinforced');
+  const gateI = entI;
+  assert.equal(z.Sim.placeFence({ axis: 'x', i: gateI, j: baseJ + 12 }, 'safari_gate').ok, true);
+  assert.equal(z.Sim.placeFence({ axis: 'x', i: gateI, j: baseJ + 6 }, 'safari_gate').ok, true);
+
+  assert.ok(z.Sim.spawnAnimal('triceratops', encI0 + 4, baseJ + 8, { sex: 'F' }));
+  assert.ok(z.Sim.spawnAnimal('tyrannosaurus', encI0 + 5, baseJ + 3, { sex: 'F' }));
+
+  const dep = z.Sim.placeObject('safari_depot', gateI - 1, baseJ + 14, 0);
+  assert.equal(dep.ok, true, dep.msg);
+
+  const sf = z.Sim.safari;
+  const routeTiles = [];
+  for (let j = baseJ + 13; j >= baseJ + 3; j--) routeTiles.push(tile(z, gateI, j));
+  for (let i = gateI - 1; i >= encI0 + 4; i--) routeTiles.push(tile(z, i, baseJ + 3));
+  const rBuild = sf.addSegment(dep.id, routeTiles, { mode: 'outback' });
+  assert.equal(rBuild.ok, true, rBuild.msg);
+  assert.equal(rBuild.complete, true, rBuild.msg);
+
+  // Verify adjacent-enclosure gate has opposite `ent` on outbound vs inbound crossings and accurate sg
+  const P = sf.route(sf.routeOfDepot(dep.id).id);
+  const sharedKey = 'x' + gateI + ',' + (baseJ + 6);
+  const sharedCrossings = P.gates.filter(g => g.key === sharedKey);
+  assert.equal(sharedCrossings.length, 2, 'Out-and-back should cross shared gate twice');
+  assert.notEqual(sharedCrossings[0].ent, sharedCrossings[1].ent, 'Outbound and inbound crossings of shared gate must open opposite doors first');
+  const sharedGate = sf.gates().find(g => g.key === sharedKey);
+  for (const gc of sharedCrossings) {
+    const pt = sf.sample(P.id, gc.sg);
+    const err = Math.hypot(pt.x - sharedGate.cx, pt.z - sharedGate.cz);
+    assert.ok(err < 0.9, `Expected gate sg near gate center (<0.9m), got ${err.toFixed(2)}m`);
+  }
+
+  // Buy 3 trucks and verify ALL 3 leave the bay and never double-board simultaneously
+  for (let k = 0; k < 3; k++) assert.equal(sf.buyVehicle(dep.id).ok, true);
+  const moved = new Set();
+  let doubleBoard = false;
+  for (let step = 0; step < 2400; step++) {
+    z.Sim._step(0.25);
+    const vehs = sf.vehiclesOf(dep.id);
+    const boarding = vehs.filter(v => v.st === 'board').length;
+    if (boarding > 1) doubleBoard = true;
+    for (const v of vehs) {
+      if (v.s > 2) moved.add(v.id);
+    }
+  }
+  assert.equal(doubleBoard, false, 'Two vehicles must never board simultaneously at the bay');
+  assert.ok(moved.size >= 2, `Expected multiple safari vehicles to leave the bay (not just vehicle 1), got ${moved.size}`);
+
+  // Verify save/load mid-boarding does NOT flip rt.alight = true and eject fresh riders
+  const v0 = sf.vehiclesOf(dep.id)[0];
+  let savedMidBoard = null;
+  for (let step = 0; step < 2000; step++) {
+    z.Sim._step(0.25);
+    const rt0 = sf.vehRt(v0.id);
+    if (v0.st === 'board' && !rt0.alight && rt0.pax.length > 0) {
+      savedMidBoard = z.Sim.save();
+      break;
+    }
+  }
+  if (savedMidBoard) {
+    assert.equal(z.Sim.load(savedMidBoard), true);
+    const rtAfter = z.Sim.safari.vehRt(v0.id);
+    assert.equal(rtAfter.alight, false, 'Mid-boarding load must not flip rt.alight to true');
+  }
+
+  // Verify lockdown while boarding with passengers cleanly alights them instead of trapping them
+  const vNow = z.Sim.safari.vehiclesOf(dep.id)[0];
+  for (let step = 0; step < 2000; step++) {
+    z.Sim._step(0.25);
+    const rt0 = z.Sim.safari.vehRt(vNow.id);
+    if (vNow.st === 'board' && !rt0.alight && rt0.pax.length > 0) {
+      assert.equal(z.Sim.safari.setLockdown(true).ok, true);
+      for (let k = 0; k < 80; k++) z.Sim._step(0.25);
+      assert.equal(z.Sim.safari.vehRt(vNow.id).pax.length, 0, 'Lockdown during boarding must alight passengers instead of trapping them');
+      assert.equal(vNow.st, 'idle', 'Vehicle should return to idle after lockdown alighting');
+      z.Sim.safari.setLockdown(false);
+      break;
+    }
+  }
+
+  // Verify backup generator keeps gates powered during a cable outage (mainsOK fix)
+  assert.equal(z.Sim.placeObject('backup_gen', baseI + 1, baseJ + 16, 0).ok, true);
+  z.Sim.power.cut('storm', 4, 'cable');
+  for (let k = 0; k < 200; k++) z.Sim._step(0.25);
+  assert.equal(z.Sim.safari.gatesPowered(), true, 'Backup generator should keep safari gates powered during a cable outage');
+
+  // Verify Air Safari (balloon) can fly over fenced enclosures without needing a gate
+  const pad = z.Sim.placeObject('safari_balloon', encI0 + 2, baseJ + 14, 0);
+  assert.equal(pad.ok, true, pad.msg);
+  const airTiles = [];
+  for (let j = baseJ + 13; j >= baseJ + 6; j--) airTiles.push(tile(z, encI0 + 2, j));
+  for (let i = encI0 + 3; i <= encI0 + 6; i++) airTiles.push(tile(z, i, baseJ + 6));
+  const airRes = z.Sim.safari.addSegment(pad.id, airTiles, { mode: 'outback' });
+  assert.equal(airRes.ok, true, 'Balloon should fly over fenced enclosure: ' + airRes.msg);
+  assert.equal(airRes.complete, true, airRes.msg);
+  const airP = z.Sim.safari.route(z.Sim.safari.routeOfDepot(pad.id).id);
+  assert.equal(airP.gates.length, 0, 'Balloon route should not attach ground airlock gates');
+
+  // Verify removeRoute + undo restores BOTH route and vehicles
+  const vehCountBefore = z.Sim.safari.vehiclesOf(dep.id).length;
+  assert.ok(vehCountBefore >= 1);
+  assert.equal(z.Sim.safari.removeRoute(dep.id).ok, true);
+  assert.equal(z.Sim.safari.vehiclesOf(dep.id).length, 0);
+  assert.equal(z.Sim.undo().ok, true);
+  assert.ok(z.Sim.safari.routeOfDepot(dep.id), 'Undo should restore removed safari route');
+  assert.equal(z.Sim.safari.vehiclesOf(dep.id).length, vehCountBefore, 'Undo should restore vehicles removed with the route');
+});

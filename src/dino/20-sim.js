@@ -2879,7 +2879,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     for (var id in RT.bq) {
       var q = RT.bq[id], o = RT.oById.get(+id);
       if (!o || o.kind !== 'building') { delete RT.bq[id]; continue; }
-      if (BD[o.type].coasterStation || BD[o.type].boats) continue;   // coaster & boats packages: trains & ferries board from RT.bq[id].q directly
+      if (BD[o.type].coasterStation || BD[o.type].boats || BD[o.type].safari) continue;   // coaster, boats & safari packages: vehicles board from RT.bq[id].q directly
       var cap = BD[o.type].capacity;
       while (q.q.length && q.use < cap) {
         var gq = RT.gById.get(q.q.shift());
