@@ -254,3 +254,56 @@ test('Dino arrivalRate, gxHr, and guest wallets scale cleanly over a simulated d
     assert.ok(g.money >= 0 && g.money <= 45, `active guest wallet ${g.money} should stay within [0, 45]`);
   }
 });
+
+test('Dino overnight clock advances 3x faster after exit window and returns to 1x at opening', () => {
+  const z = loadGame(false, false);
+  z.Sim.newGame({ seed: 505, map: 'fern_meadow', difficulty: 'normal', money: 500000 });
+  assert.equal(z.Sim.NIGHT_SPEED, 3);
+
+  const S = z.state;
+  const D = z.Sim.DAY_SECONDS;
+  const OPEN_T = 8 / 24;
+  const CLOSE_T = 20 / 24;
+  const dt = 0.5;
+  const step1x = dt / D;
+  const step3x = (3 * dt) / D;
+  const approx = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-12, `${msg}: got ${a}, expected ${b}`);
+
+  // 1x during open park hours (08:00 - 20:00)
+  for (const t of [OPEN_T, 0.5, CLOSE_T - 0.01]) {
+    S.time = t;
+    z.Sim._step(dt);
+    approx(S.time - t, step1x, `open hours at t=${t}`);
+  }
+
+  // 1x during evening exit window (CLOSE_T 20:00 to CLOSE_T + 0.08 21:55)
+  for (const t of [CLOSE_T, CLOSE_T + 0.04, CLOSE_T + 0.079]) {
+    S.time = t;
+    z.Sim._step(dt);
+    approx(S.time - t, step1x, `evening exit window at t=${t}`);
+  }
+
+  // 3x during overnight closed hours (S.time >= CLOSE_T + 0.08 and S.time < OPEN_T)
+  for (const t of [CLOSE_T + 0.08, 0.95, 0.0, 0.15, OPEN_T - 0.01]) {
+    S.time = t;
+    z.Sim._step(dt);
+    approx(S.time - t, step3x, `overnight closed hours at t=${t}`);
+  }
+
+  // Day rollover (S.time >= 1) stays at 3x until OPEN_T
+  const dayBefore = S.day;
+  S.time = 1 - (1.5 / D);
+  z.Sim._step(1.0); // 3 * 1.0 / D = 3.0 / D -> wraps to 1.5 / D
+  assert.equal(S.day, dayBefore + 1, 'midnight rollover increments S.day');
+  approx(S.time, 1.5 / D, 'midnight rollover wraps S.time cleanly at 3x');
+  const tAfterMidnight = S.time;
+  z.Sim._step(dt);
+  approx(S.time - tAfterMidnight, step3x, 'post-midnight before OPEN_T stays at 3x');
+
+  // Morning opening (S.time >= OPEN_T) transitions cleanly back to 1x
+  S.time = OPEN_T - step3x;
+  z.Sim._step(dt); // advances 3x -> reaches OPEN_T
+  approx(S.time, OPEN_T, 'step reaches OPEN_T cleanly at 3x');
+  z.Sim._step(dt); // now >= OPEN_T -> must advance at 1x
+  approx(S.time - OPEN_T, step1x, 'morning opening transitions cleanly back to 1x');
+});

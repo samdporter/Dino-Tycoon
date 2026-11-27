@@ -4,7 +4,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   'use strict';
   var N = Z.N, TILE = Z.TILE, NN = N * N, bus = Z.bus, rng = Z.rng;
   var D = Z.DATA;
-  var DAY_SECONDS = 900, OPEN_T = 8 / 24, CLOSE_T = 20 / 24, MAX_GUESTS = 340, MAX_ENC_TILES = 600, VERSION = 2;
+  var DAY_SECONDS = 900, NIGHT_SPEED = 3, OPEN_T = 8 / 24, CLOSE_T = 20 / 24, MAX_GUESTS = 340, MAX_ENC_TILES = 600, VERSION = 2;
   var INF = 65535;
   var PI = Math.PI, TAU = Math.PI * 2;
   var DT4 = [-N, 1, N, -1];
@@ -107,6 +107,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function okr(cost, extra) { var r = { ok: true, cost: cost || 0 }; if (extra) for (var k in extra) r[k] = extra[k]; return r; }
   function fmt(n) { n = Math.round(n); return (n < 0 ? '-' : '') + '£' + Math.abs(n).toLocaleString('en-GB'); }
   function isNight() { return S.time < 0.24 || S.time >= 0.9; }
+  function isNightFast() { return S.time < OPEN_T || S.time >= CLOSE_T + 0.08; }
   function openNow() { return S.open && S.time >= OPEN_T && S.time < CLOSE_T && !(Z.News && Z.News.closed()); }   // news package: the authorities can close the park for a day
   function lc(s) { return s.toLowerCase(); }
   function plural(sp) { var n = sp.name; var l = lc(n); if (/s$/.test(l)) return n; if (/ey$/.test(l) || /o$/.test(l) && l === 'hippopotamus') return n + 's'; if (/y$/.test(l)) return n.slice(0, -1) + 'ies'; if (/(ch|sh|x)$/.test(l)) return n + 'es'; if (/^(wolf)$/.test(l)) return 'Wolves'; if (/ish$/.test(l)) return n; return n + 's'; }
@@ -4885,10 +4886,11 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   function step(dt) {
     var k;
     if (!RT.wxInit) ensureInit();
-    S.time += dt / DAY_SECONDS;
+    var clockDt = isNightFast() ? dt * NIGHT_SPEED : dt;
+    S.time += clockDt / DAY_SECONDS;
     if (S.time >= 1) { S.time -= 1; newDay(); }
     // weather evolves in game hours
-    var dh = dt / DAY_SECONDS * 24;
+    var dh = clockDt / DAY_SECONDS * 24;
     S.weather.hoursLeft -= dh;
     if (S.weather.hoursLeft <= 0) advanceWeather();
     RT.wxAcc = (RT.wxAcc || 0) + dh; if (RT.wxAcc >= 1) { RT.wxAcc -= 1; hourlyWeather(); }
@@ -4917,7 +4919,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (Z.Boats) Z.Boats.step(dt);   // boats package: boat trips, helicopters, VIP arrivals
     if (Z.Resort && Z.Resort.step) Z.Resort.step(dt);   // luxury resort package: VIP arrivals, bookings, overnight stays
     var an = S.animals;
-    for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += dt / DAY_SECONDS; animalStep(a, dt); } }
+    for (k = an.length - 1; k >= 0; k--) { if (k < an.length) { var a = an[k]; a.age += clockDt / DAY_SECONDS; animalStep(a, dt); } }
     separateAnimals(dt);
     stepFights(dt);
     var sf = S.staff;
@@ -4926,7 +4928,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     researchStep(dt);
     RT.t1 += dt;
     if (RT.t1 >= 1) { RT.t1 -= 1; secondly(); }
-    RT.escAcc += dt;
+    RT.escAcc += clockDt;
     if (RT.escAcc >= DAY_SECONDS / 24) { RT.escAcc = 0; escapeRoll(); }
   }
 
@@ -6443,7 +6445,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     isSea: function (i, j) { return Z.inb(i, j) && !!seaMask()[i + j * N]; }, waterKind: waterKind, seaMask: seaMask, shoreDist: shoreDist, previewMap: previewMap,
     resolveSizeN: resolveSizeN, mapBounds: function (mapId, mapSize) { return scaleMapDef(mapDef(mapId), resolveSizeN(mapSize)).bounds; },
     isFresh: function (i, j) { return waterKind(i, j) === 'fresh'; }, isIsland: function () { return !!(S.map && S.map.island); },
-    arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, animalMetrics: function (speciesId, baby) { return animalMetrics(typeof speciesId === 'string' ? SP[speciesId] : speciesId, baby); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS,
+    arrivalRate: function () { return RT.rate; }, adultAge: function (id) { return adultAge(SP[id]); }, animalMetrics: function (speciesId, baby) { return animalMetrics(typeof speciesId === 'string' ? SP[speciesId] : speciesId, baby); }, MARKETING_COST: MARKETING_COST, MAX_GUESTS: MAX_GUESTS, DAY_SECONDS: DAY_SECONDS, NIGHT_SPEED: NIGHT_SPEED,
     weatherInfo: function () { return weatherInfo(); }, activeEvents: function () { return S.activeEvents.slice(); }, applyDifficulty: function (id, fresh) { return applyDifficulty(id, fresh); },
     difficultyInfo: function () { return { id: S.difficulty, income: DIFF.income, costs: DIFF.costs, arrivals: DIFF.arrivals, interest: DIFF.interest }; },
     _fireEvent: function (id) { return fireEvent(id); }, _setWeather: function (type, intensity, hours) { setWeather(type, intensity === undefined ? 1 : intensity, hours || 6); }, _wx: function () { return WX; },
