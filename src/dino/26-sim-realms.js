@@ -815,13 +815,17 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (loZ > hiZ) { var mz = (loZ + hiZ) * 0.5; loZ = hiZ = mz; }
     a.tx = cx + rng.range(loX, hiX); a.tz = cz + rng.range(loZ, hiZ);
   }
-  function steer(a, dt, spd, enc, free, turnK) {
+  function steer(a, dt, spd, enc, free, turnK, arriveD) {
     if (!isFinite(a.tx) || !isFinite(a.tz)) { a.speed = 0; return 1; }
     var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
-    if (!isFinite(d) || d < 0.35) { a.speed = 0; return 1; }
+    if (!isFinite(d) || d < (arriveD || 0.35)) { a.speed = 0; return 1; }
     a.heading = C.turn(a.heading, Math.atan2(dx, dz), dt * (turnK || 3));
     var step = Math.min(spd * dt, d), nx = a.x + dx / d * step, nz = a.z + dz / d * step;
-    if (!free && S().tileEnc[tileOf(nx, nz)] !== enc.id) { a.speed = 0; return 2; }
+    if (!free && S().tileEnc[tileOf(nx, nz)] !== enc.id) {
+      if (S().tileEnc[tileOf(nx, a.z)] === enc.id && Math.abs(nx - a.x) > 1e-4) { a.x = nx; a.speed = spd; return 0; }
+      if (S().tileEnc[tileOf(a.x, nz)] === enc.id && Math.abs(nz - a.z) > 1e-4) { a.z = nz; a.speed = spd; return 0; }
+      a.speed = 0; return 2;
+    }
     a.x = nx; a.z = nz; a.speed = spd; return 0;
   }
   function settleY(a, dt, vy) { var d = (a.ty === undefined ? a.y : a.ty) - a.y, m = vy * dt; a.y += d > m ? m : d < -m ? -m : d; }
@@ -911,66 +915,95 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   function perchY(E, t) { return E.rl && E.rl.perch && E.rl.perch.indexOf(t) >= 0 ? 0.45 : 0; }
   function walkableTile(t) { var s = S(); return !RT().block[t] && s.terrain[t] !== wi(); }
+  function finishAirTarget(a) {
+    if (a.tg === 'eat') { a.state = 'eat'; a.st = rng.range(3.5, 6); }
+    else if (a.tg === 'drink') { a.state = 'drink'; a.st = rng.range(2.5, 4.5); }
+    else if (a.tg === 'sleep') { a.state = 'sleep'; a.tg = ''; }
+    else { a.state = 'idle'; a.st = rng.range(3, 11); a.tg = ''; }
+    a.speed = 0; a.stuck = 0;
+  }
   function airMove(a, dt, enc, E, sp) {
     var n = R.needs(sp), rl = E.rl || {}, s = S(), t = tileOf(a.x, a.z);
     a.wb = undefined; a.er = null;
     var ceil = Math.max(1.6, (enc.H || 6) - 0.9), spd0 = sp.speed * C.fxOf(a).speed * (a.baby ? 0.8 : 1);
     if (a.ty === undefined || isNaN(a.ty)) a.ty = a.y;
-    if (!a.bolt && s.tileEnc[t] !== enc.id) { var rt = pickTile(enc, a, 0); a.x = C.cxOf(rt); a.z = C.czOf(rt); a.state = 'idle'; a.st = 0.5; a.y = 0; t = rt; }
+    if (!a.bolt && s.tileEnc[t] !== enc.id) { var rt = pickTile(enc, a, 0); a.x = C.cxOf(rt); a.z = C.czOf(rt); a.state = 'idle'; a.st = 0.5; a.y = 0; a.stuck = 0; t = rt; }
     if (a.bolt) { airBolt(a, dt, enc, spd0); return; }
-    var flying = a.y > 0.6;
-    if (a.sick) { a.state = 'sick'; a.speed = 0; a.ty = 0; settleY(a, dt, 2.4); return; }
+    if (a.sick) { a.state = 'sick'; a.speed = 0; a.ty = 0; a.stuck = 0; settleY(a, dt, 2.4); return; }
     switch (a.state) {
-      case 'sick': if (!a.sick) { a.state = 'idle'; a.st = 1; } a.speed = 0; a.ty = 0; break;
-      case 'sleep': a.speed = 0; a.ty = perchY(E, t); if (!C.isNight() && a.energy >= 60) { a.state = 'idle'; a.st = rng.range(0.5, 3); } break;
-      case 'eat': a.speed = 0; a.ty = 0; a.st -= dt; if (a.st <= 0) { a.hunger = Math.max(0, a.hunger - 65); enc.foodLevel = Math.max(0, enc.foodLevel - (sp.predator ? 0.15 : 0.1)); a.state = 'idle'; a.st = rng.range(1, 3); } break;
-      case 'drink': a.speed = 0; a.ty = 0; a.st -= dt; if (a.st <= 0) { a.thirst = 0; if (!rl.waterN) enc.waterLevel = Math.max(0, enc.waterLevel - 0.08); a.state = 'idle'; a.st = rng.range(1, 3); } break;
-      case 'idle': a.speed = 0; a.ty = perchY(E, t); a.st -= dt; if (a.st <= 0) decideAir(a, enc, E, sp, n, ceil); break;
+      case 'sick': if (!a.sick) { a.state = 'idle'; a.st = 1; } a.speed = 0; a.ty = 0; a.stuck = 0; break;
+      case 'sleep': a.speed = 0; a.ty = perchY(E, t); a.stuck = 0; if (!C.isNight() && a.energy >= 60) { a.state = 'idle'; a.st = rng.range(0.5, 3); } break;
+      case 'eat': a.speed = 0; a.ty = 0; a.stuck = 0; a.st -= dt; if (a.st <= 0) { a.hunger = Math.max(0, a.hunger - 65); enc.foodLevel = Math.max(0, enc.foodLevel - (sp.predator ? 0.15 : 0.1)); a.tg = ''; a.state = 'idle'; a.st = rng.range(1, 3); } break;
+      case 'drink': a.speed = 0; a.ty = 0; a.stuck = 0; a.st -= dt; if (a.st <= 0) { a.thirst = 0; if (!rl.waterN) enc.waterLevel = Math.max(0, enc.waterLevel - 0.08); a.tg = ''; a.state = 'idle'; a.st = rng.range(1, 3); } break;
+      case 'idle': a.speed = 0; a.ty = perchY(E, t); a.stuck = 0; if (C.cliffT(t)) { decideAir(a, enc, E, sp, n, ceil); break; } a.st -= dt; if (a.st <= 0) decideAir(a, enc, E, sp, n, ceil); break;
       case 'walk': case 'fly': case 'run': {
+        var overCliff = C.cliffT(t);
+        if (overCliff && !a.baby) { a.state = 'fly'; a.ty = a.cruise = a.cruise || 2.5; }
         var fly = a.state === 'fly' || a.ty > 0.6 || a.y > 0.6, sp2 = fly ? spd0 * 2.8 : spd0 * 1.1;
         var land = a.tg !== 'tour';
-        if (land && fly) { var dl = Math.sqrt(dist2(a.tx, a.tz, a.x, a.z)); a.ty = dl < 5.5 ? 0 : (a.cruise || 2.5); }
-        var r = steer(a, dt, sp2, enc, false, fly ? 2.6 : 5);
+        if (land && fly) { var dl = Math.sqrt(dist2(a.tx, a.tz, a.x, a.z)); a.ty = (dl < 5.5 && !overCliff) ? 0 : (a.cruise || 2.5); }
+        var tgtT = isFinite(a.tx) && isFinite(a.tz) ? tileOf(a.tx, a.tz) : -1;
+        var arriveD = (a.tg === 'eat' || a.tg === 'drink') && tgtT >= 0 && !walkableTile(tgtT) ? 1.25 : 0.35;
+        var px0 = a.x, pz0 = a.z;
+        var r = steer(a, dt, sp2, enc, false, fly ? 2.6 : 5, arriveD);
         if (r === 2) {   // hit the boundary: turn back to the middle
-          setTarget(a, pickTile(enc, a, 0), 0.5);
+          a.stuck = (a.stuck || 0) + dt;
+          if (a.tg !== 'eat' && a.tg !== 'drink') setTarget(a, pickTile(enc, a, 0), 0.5);
+          else if (a.stuck > 1.5) { a.state = 'idle'; a.st = 0.5; a.tg = ''; a.stuck = 0; }
         } else if (r === 1) {
+          a.stuck = 0;
           if (a.tg === 'tour') {
             a.ft -= 1;
             if (a.ft > 0) { setTarget(a, pickTile(enc, a, 0), 0.8); a.ty = a.cruise = rng.range(Math.min(1.8, ceil * 0.5), ceil); }
             else { a.tg = 'land'; var lt = landTile(enc, E); setTarget(a, lt, 0.3); a.ty = a.cruise; }
           } else if (a.y > 0.55) { a.speed = 0; a.ty = perchY(E, tileOf(a.x, a.z)); }   // hover down onto the spot
           else {
-            if (a.tg === 'eat') { a.state = 'eat'; a.st = rng.range(3.5, 6); }
-            else if (a.tg === 'drink') { a.state = 'drink'; a.st = rng.range(2.5, 4.5); }
-            else if (a.tg === 'sleep') { a.state = 'sleep'; a.tg = ''; }
-            else { a.state = 'idle'; a.st = rng.range(3, 11); }
-            a.speed = 0; if (a.state === 'idle' || a.state === 'sleep') a.tg = '';
+            finishAirTarget(a);
+          }
+        } else {
+          var moved = Math.sqrt(dist2(a.x, a.z, px0, pz0));
+          if (moved < Math.max(0.02, sp2 * 0.15) * dt) a.stuck = (a.stuck || 0) + dt;
+          else a.stuck = Math.max(0, (a.stuck || 0) - dt * 0.5);
+          if (a.stuck > 1.5) {
+            var dRem = Math.sqrt(dist2(a.tx, a.tz, a.x, a.z));
+            if ((a.tg === 'eat' || a.tg === 'drink' || a.tg === 'sleep') && dRem < TILE * 1.5) {
+              if (a.y > 0.55) { a.speed = 0; a.ty = perchY(E, tileOf(a.x, a.z)); }
+              else finishAirTarget(a);
+            } else if (!a.baby && !fly) {
+              // caught on a cliff edge or obstacle while walking: take off and fly over it
+              a.state = 'fly'; a.cruise = a.cruise || 2.5; a.ty = a.cruise; a.stuck = 0;
+            } else if (a.stuck > 2.5) {
+              a.state = 'idle'; a.st = rng.range(0.5, 2); a.tg = ''; a.speed = 0; a.stuck = 0;
+            }
           }
         }
         break;
       }
-      default: a.state = 'idle'; a.st = 0.5; break;
+      default: a.state = 'idle'; a.st = 0.5; a.stuck = 0; break;
     }
     settleY(a, dt, a.ty > a.y ? 1.7 : 2.2);
     if (a.y > 0.6 && (a.state === 'walk' || a.state === 'idle')) { if (a.state === 'walk' || a.speed > 0.1) a.state = 'fly'; }
     if (a.y <= 0.6 && a.state === 'fly' && a.speed > 0.05 && a.ty < 0.6) a.state = 'walk';
-    if (a.state === 'fly' && a.y < 0.02 && a.ty === 0 && a.speed < 0.05) { a.state = 'idle'; a.st = rng.range(2, 6); }
+    if (a.state === 'fly' && a.y < 0.02 && a.ty === 0 && a.speed < 0.05) { finishAirTarget(a); }
     C.pushFromWalls(a, enc, C.animalMetrics(sp, a), dt);
   }
   function landTile(enc, E) {
     var rl = E.rl, k; if (rl.perch.length && rng.chance(0.6)) return rl.perch[Math.floor(rng.next() * rl.perch.length)];
     for (k = 0; k < 8; k++) { var t = rl.ground.length ? rl.ground[Math.floor(rng.next() * rl.ground.length)] : enc.tiles[Math.floor(rng.next() * enc.tiles.length)]; if (walkableTile(t)) return t; }
-    return E.feed;
+    return E.feed >= 0 ? E.feed : enc.tiles[0];
   }
   function decideAir(a, enc, E, sp, n, ceil) {
     var rl = E.rl || {}, t;
+    a.stuck = 0;
     if (C.isNight() || a.energy < 18) { a.tg = 'sleep'; t = landTile(enc, E); setTarget(a, t, 0.3); goTo(a, t, ceil); return; }
     if (a.hunger > 55 && enc.foodLevel > 0.02) {
       a.tg = 'eat'; t = rl.pools && rl.pools.length ? rl.pools[Math.floor(rng.next() * rl.pools.length)] : E.water.length ? E.water[Math.floor(rng.next() * E.water.length)] : E.feed;
+      if (!(t >= 0)) t = landTile(enc, E);
       setTarget(a, t, 0.4); goTo(a, t, ceil); return;
     }
     if (a.thirst > 55 && (sp.needsWater || a.thirst > 80)) {
       a.tg = 'drink'; t = rl.pools && rl.pools.length ? rl.pools[Math.floor(rng.next() * rl.pools.length)] : E.drink.length ? E.drink[Math.floor(rng.next() * E.drink.length)] : E.feed;
+      if (!(t >= 0)) t = landTile(enc, E);
       setTarget(a, t, 0.4); goTo(a, t, ceil); return;
     }
     if (!a.baby && rng.chance(0.55)) {
@@ -980,9 +1013,9 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function goTo(a, t, ceil) {
     var d = Math.sqrt(dist2(a.tx, a.tz, a.x, a.z));
-    if (a.baby || d < 6.5 || !walkableTile(t)) { a.state = 'walk'; a.ty = 0; }
+    if (a.baby || d < 6.5) { a.state = 'walk'; a.ty = 0; }
     else { a.state = 'fly'; a.cruise = a.cruise || rng.range(Math.min(1.8, ceil * 0.5), ceil); a.ty = a.cruise; }
-    if (!walkableTile(t)) { a.state = 'fly'; a.cruise = a.cruise || 2.2; a.ty = a.cruise; a.tg = a.tg === 'sleep' ? a.tg : 'land'; }
+    if (!a.baby && !walkableTile(t)) { a.state = 'fly'; a.cruise = a.cruise || 2.2; a.ty = a.cruise; }
   }
   // a downed geofence: climb and leave the zone
   function airBolt(a, dt, enc, spd0) {

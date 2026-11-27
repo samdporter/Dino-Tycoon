@@ -2658,3 +2658,57 @@ test('Aviary replaces Thunder Dome with taller heights, zones build over trees/r
   assert.equal(zInfo.ok, true, 'massive zone should hold with 2 powered interior towers: ' + (zInfo.reasons || []).join('; '));
   assert.ok(zInfo.cap >= 12, 'combined capacity should include both towers');
 });
+
+test('flying dinosaurs in an aviary with a cliff edge do not get stuck and can feed and drink', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 212, map: 'fern_meadow', money: 800000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 8, 8, 28, 28);
+
+  // Build an Aviary over 10..16 x 10..16, then raise 14..16 to create a cliff edge inside
+  const domeTiles = [];
+  for (let j = 10; j <= 16; j++) for (let i = 10; i <= 16; i++) domeTiles.push(i + j * z.N);
+  const domeRes = z.Sim.realms.place('dome', 'air', domeTiles, { lvl: 2, mesh: 2 });
+  assert.equal(domeRes.ok, true, domeRes.msg);
+  const enc = z.Sim.enclosureAt(12, 12);
+  assert.ok(enc);
+
+  const poolRes = z.Sim.placeObject('fish_pool', 11, 12, 0);
+  assert.equal(poolRes.ok, true, poolRes.msg);
+
+  // Create a cliff strip along i = 14..16 inside the aviary
+  const N = z.N;
+  for (let j = 10; j <= 16; j++) {
+    for (let i = 14; i <= 16; i++) {
+      z.Sim.terraform(i, j, 'raise', 6, { sharp: true });
+    }
+  }
+  z.Sim.realms.refresh();
+
+  const dino = z.Sim.spawnAnimal('pteranodon', 11, 11);
+  assert.ok(dino, 'pteranodon should spawn');
+  dino.baby = false;
+
+  // Place dino right on the cliff edge, hungry and thirsty
+  const cliffTile = 14 + 12 * N;
+  dino.x = z.Sim.cxOf ? z.Sim.cxOf(cliffTile) : (14 + 0.5) * z.TILE;
+  dino.z = z.Sim.czOf ? z.Sim.czOf(cliffTile) : (12 + 0.5) * z.TILE;
+  dino.y = 0;
+  dino.state = 'idle';
+  dino.st = 0;
+  dino.hunger = 80;
+  dino.thirst = 80;
+  enc.foodLevel = 1;
+  enc.waterLevel = 1;
+  z.state.time = 0.5; // daytime
+
+  let ate = false, drank = false;
+  for (let k = 0; k < 400; k++) {
+    z.Sim.tick(0.1);
+    if (dino.hunger < 50) ate = true;
+    if (dino.thirst < 50) drank = true;
+    assert.ok(Number.isFinite(dino.x) && Number.isFinite(dino.y) && Number.isFinite(dino.z));
+  }
+  assert.equal(ate, true, 'flying dinosaur should feed instead of getting stuck on cliff edge');
+  assert.equal(drank, true, 'flying dinosaur should drink instead of getting stuck on cliff edge');
+});
