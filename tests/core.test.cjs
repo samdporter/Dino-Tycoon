@@ -826,7 +826,7 @@ test('bank loans specify circumstance-based interest rates and charge interest e
   z.state.guests = [];
   const moneyBefore = z.state.money;
   const startDay = z.state.day;
-  z.state.time = 0.998;
+  z.state.time = 1 - (0.5 / z.Sim.DAY_SECONDS);
   for (let k = 0; k < 20 && z.state.day === startDay; k++) z.Sim.tick(0.1);
   assert.equal(z.state.day, startDay + 1);
   const lastRec = z.state.finance.history[z.state.finance.history.length - 1];

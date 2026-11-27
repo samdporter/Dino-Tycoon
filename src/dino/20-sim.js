@@ -4,7 +4,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   'use strict';
   var N = Z.N, TILE = Z.TILE, NN = N * N, bus = Z.bus, rng = Z.rng;
   var D = Z.DATA;
-  var DAY_SECONDS = 420, OPEN_T = 8 / 24, CLOSE_T = 20 / 24, MAX_GUESTS = 340, MAX_ENC_TILES = 600, VERSION = 2;
+  var DAY_SECONDS = 900, OPEN_T = 8 / 24, CLOSE_T = 20 / 24, MAX_GUESTS = 340, MAX_ENC_TILES = 600, VERSION = 2;
   var INF = 65535;
   var PI = Math.PI, TAU = Math.PI * 2;
   var DT4 = [-N, 1, N, -1];
@@ -2625,7 +2625,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     // tile dirt
     if (S.dirt[g.ti] > 110 && rng.chance(0.15)) { say(g, 'dirty'); g.mood -= 1.5; }
     // passing the lab window: small donations to the research fund
-    if (RT.labNear[g.ti] && g.state === 'walk' && g.money > 3 && rng.chance(0.02)) { var da = rng.int(1, 3); g.money -= da; g.spent += da; labFunding(da); }
+    if (RT.labNear[g.ti] && g.state === 'walk' && g.money > 3 && rng.chance(0.02 * (420 / DAY_SECONDS))) { var da = rng.int(1, 3); g.money -= da; g.spent += da; labFunding(da); }
     if (g.state === 'walk' && S.dirt[g.ti] > 200) g.mood -= 0.5 * a;
     // scenery: walking through a pretty, clean park is a pleasure in itself
     var pretty = Math.min(1, RT.gaes[g.ti] / 4) * (1 - Math.min(1, S.dirt[g.ti] / 160));
@@ -2761,7 +2761,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     else if (g.state === 'queue') {
       g.idle = 0; g.wt += a;
       var qObj = g.gid ? RT.oById.get(g.gid) : null;
-      var qLim = Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0, Z.Boats ? Z.Boats.queueLimit(g) : 0, (qObj && BD[qObj.type] && BD[qObj.type].coasterStation) ? 45 : 0);
+      var qLim = Math.max(Z.Monorail ? Z.Monorail.queueLimit(g) : 22, Z.Safari ? Z.Safari.queueLimit(g) : 0, Z.Boats ? Z.Boats.queueLimit(g) : 0, (qObj && BD[qObj.type] && BD[qObj.type].coasterStation) ? 65 : 0);
       if (g.wt > qLim) {   // monorail/safari/coaster/boats package: platforms, stations & piers are allowed a longer wait
         var q = RT.bq[g.gid]; if (q) { var qi = q.q.indexOf(g.id); if (qi >= 0) q.q.splice(qi, 1); }
         if (Z.Boats) Z.Boats.release(g);
@@ -2779,7 +2779,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var dx = g.x - g.ix, dz = g.z - g.iz;
     if (dx * dx + dz * dz < 0.25) g.idle += a; else g.idle = 0;
     g.ix = g.x; g.iz = g.z; g.gAge += a;
-    if (g.idle > 4 || g.gAge > 70) {
+    if (g.idle > 4 || g.gAge > 160) {
       g.idle = 0; g.gAge = 0; g.ni = -1; g.unr++;
       var t = tileOf(g.x, g.z); if (S.path[t]) { g.ti = t; }
       if (g.state !== 'leave') { g.gt = ''; g.dk = ''; g.nbuy = 0; }
@@ -2809,7 +2809,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       if (E.babies > 0 && rng.chance(0.12)) say(g, 'baby', e.species[0]);
       if (q > 0.7) {
         if (rng.chance(0.1)) say(g, 'greatExhibit', e.species[0]);
-        if (g.money > 2 && rng.chance(0.008 * a * (RT.hasEdu ? 1.6 : 1) * (onPlat ? 1.5 : 1))) {
+        if (g.money > 2 && rng.chance(0.008 * a * (420 / DAY_SECONDS) * (RT.hasEdu ? 1.6 : 1) * (onPlat ? 1.5 : 1))) {
           var amt = Math.min(g.money, Math.round((1 + Math.floor(rng.next() * 3)) * (RT.hasEdu ? 1.5 : 1)));
           g.money -= amt; g.spent += amt; earn(amt, 'donations', g.x, g.z); S.stats.donations += amt; g.mood += 1.5;
         }
@@ -4385,7 +4385,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ====================== COST SCALING ======================
-  // Days are now 2.8x longer, so a day holds far more guest-hours while upkeep and wages are still charged once a day. To keep profit per game day
+  // Days are now 6x longer (900 s vs 150 s), so a day holds far more guest-hours while upkeep and wages are still charged once a day. To keep profit per game day
   // tight (not trivially positive) the daily running costs in the data are scaled once, in place, at load time, so every UI that reads
   // D.animals[].upkeep, D.buildings[].upkeep and D.staff[].wage shows the real figure.
   var UPKEEP_SCALE = 1.5, WAGE_SCALE = 1.5;
@@ -4397,7 +4397,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   })();
 
   // ====================== DIFFICULTY ======================
-  var DEBT_LIMIT = -5000, DEBT_GRACE = 0.12;   // the bank calls in debts below -5000, after a grace period of 0.12 days (about 50 s at 1x)
+  var DEBT_LIMIT = -5000, DEBT_GRACE = 0.12;   // the bank calls in debts below -5000, after a grace period of 0.12 days (about 108 s at 1x)
   var EV = { amber: 1 };                        // multipliers from active events that are not part of WX
   function difficultyDef(id) { for (var k = 0; k < D.difficulties.length; k++) if (D.difficulties[k].id === id) return D.difficulties[k]; return null; }
   // Sets S.difficulty and fills DIFF. With a truthy `fresh` (new game only) also sets the starting money.

@@ -5381,7 +5381,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     cxOf: cxOf, czOf: czOf, heightAt: heightAt, gxHr: gxHr,
     objFootprint: objFootprint, frontPathTiles: frontPathTiles, frontList: frontList, adjacentPathExists: adjacentPathExists,
     sourcesFor: sourcesFor, getField: getField, isParkConnected: isParkConnected,
-    spawnGuest: spawnGuest, removeGuest: removeGuest, openNow: openNow
+    spawnGuest: spawnGuest, removeGuest: removeGuest, openNow: openNow, DAY_SECONDS: DAY_SECONDS
   };
 
   function objFront(o) {

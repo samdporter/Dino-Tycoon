@@ -239,7 +239,8 @@ test('Dino Theme Park guests ride coasters, play arcade stands, eat candy floss,
     z.Sim._rt().gById.set(g.id, g);
   }
 
-  for (let step = 0; step < 300; step++) {
+  const steps = Math.ceil(300 * (z.Sim.DAY_SECONDS / 420));
+  for (let step = 0; step < steps; step++) {
     z.Sim._step(0.5);
     for (const g of z.state.guests) {
       g.stay = 300;

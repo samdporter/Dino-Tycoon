@@ -1098,7 +1098,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!T.length || !C.openNow()) return;
     s.boats.vipT -= dt;
     if (s.boats.vipT > 0) return;
-    s.boats.vipT = rng.range(BC.vip.every[0], BC.vip.every[1]) / (0.6 + 0.2 * s.rating);
+    s.boats.vipT = rng.range(BC.vip.every[0], BC.vip.every[1]) / (0.6 + 0.2 * s.rating) * ((C.DAY_SECONDS || 420) / 420);
     var free = T.filter(function (t) { return !padBusy(t.o); });
     if (free.length) startArrival(free[Math.floor(rng.next() * free.length)]);
   }

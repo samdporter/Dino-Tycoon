@@ -500,10 +500,11 @@ for (const zoo of [false, true]) {
     const gate = z.Sim.placeObject('vip_gatehouse', 29, 26, 0);         // 2x2 -> front at j=28
     assert.ok(villa.ok && dining.ok && pool.ok && gate.ok, `${label}: cluster placement failed`);
 
-    // Open park during daytime
+    // Open park during daytime (scaled by DAY_SECONDS so VIP arrival timer scales cleanly)
     z.state.open = true;
     z.state.time = 0.40;
-    for (let s = 0; s < 140; s++) z.Sim._step(0.25); // 35 sim seconds
+    const daySteps = Math.ceil((35 * (z.Sim.DAY_SECONDS / 420)) / 0.25);
+    for (let s = 0; s < daySteps; s++) z.Sim._step(0.25);
 
     const vips = z.state.guests.filter(g => g.resortVip === 1);
     const bookedVips = z.state.guests.filter(g => g.resortLodging);

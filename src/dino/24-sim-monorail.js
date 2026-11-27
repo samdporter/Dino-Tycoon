@@ -1247,7 +1247,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (!g.dg[e.id] && rng.chance(0.3)) { g.dg[e.id] = 1; C.say(g, 'monorailDanger', dsp); st.danger++; }
       } else if (rng.chance(0.04)) C.say(g, 'monorail', e.species[0]);
       if (E.babies > 0 && rng.chance(0.05)) C.say(g, 'baby', e.species[0]);
-      if (g.money > 2 && rng.chance(0.007 * a)) { var amt = Math.min(g.money, 1 + Math.floor(rng.next() * 3)); g.money -= amt; g.spent = (g.spent || 0) + amt; C.earn(amt, 'donations', g.x, g.z); S().stats.donations += amt; }
+      if (g.money > 2 && rng.chance(0.007 * a * (420 / (C.DAY_SECONDS || 420)))) { var amt = Math.min(g.money, 1 + Math.floor(rng.next() * 3)); g.money -= amt; g.spent = (g.spent || 0) + amt; C.earn(amt, 'donations', g.x, g.z); S().stats.donations += amt; }
     }
     if (!viewing && rng.chance(0.015)) C.say(g, 'monorail');
     // happiness while riding is lifted: this is the best seat in the park

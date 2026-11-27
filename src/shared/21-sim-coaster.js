@@ -1834,8 +1834,8 @@
       up += td.trainUpkeep + T.cars * td.carUpkeep + circuitUpkeep;
     }
     var DIFF = C.getDIFF();
-    // Train operation costs scale with the length of the in-game day.
-    up = Math.round(up * (C.DAY_SECONDS / 150) * (DIFF.costs || 1));
+    // Train operation costs scale with the length of the in-game day (capped at 2.8x for Dino).
+    up = Math.round(up * Math.min(2.8, C.DAY_SECONDS / 150) * (DIFF.costs || 1));
     if (up > 0) C.spend(up, 'upkeep');
   }
 
