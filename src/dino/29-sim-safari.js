@@ -535,7 +535,14 @@ window.Z = window.Z || {}; var Z = window.Z;
       var v = o.veh[vi], P = X.routes[v.route], rt = vrt(v);
       if (!P || !P.ok) { if (v.st !== 'idle') ejectAll(v); v.st = 'idle'; v.v = 0; v.s = 0; v.al = 0; poseOf(v, P, rt); continue; }
       L = P.len;
-      var q = RT().bq[P.depot.id], qn = q ? q.q.length : 0;
+      var q = RT().bq[P.depot.id], qn = pendingQ(P);
+      if ((!open || o.lockdown || !routeGo(P)) && q && q.q.length) {
+        while (q.q.length) {
+          var qg = guestById(q.q.shift());
+          if (qg && qg.state === 'queue') { qg.state = 'walk'; qg.glide = 0; qg.gt = ''; qg.dk = ''; qg.ni = -1; }
+        }
+        qn = 0;
+      }
       if (v.st === 'idle') {
         v.v = 0; v.s = 0; v.al = 0;
         if (v.rank === 0 && open && !o.lockdown && qn > 0 && routeGo(P) && !bayBusy(o, v.route, v.id)) {
@@ -744,7 +751,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   A.queueLimit = function (g) { var o = RT().oById.get(g.gid); return o && (BD()[o.type] || {}).safari ? 110 : 0; };
   A.arrive = function (g, o) {
     var q = RT().bq[o.id] || (RT().bq[o.id] = { use: 0, q: [] });
-    if (!serving(o) || ST().lockdown) { g.gt = ''; g.dk = ''; return; }
+    if (!serving(o) || ST().lockdown || !C.openNow()) { g.gt = ''; g.dk = ''; return; }
     if (q.q.length >= 32) { g.gt = ''; g.dk = ''; C.say(g, 'crowded'); g.mood -= 1; return; }
     g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; C.gxPlace(g, false);
     var c = C.objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);
@@ -1263,7 +1270,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     return { id: id, name: d.name, kind: d.safari, mode: A.routeModeOf(id), fare: fareOf(o), free: !!o.mfree, queue: q ? q.q.length : 0, today: o.mtoday || 0, yesterday: o.mday || 0, rides: o.mrides || 0, income: Math.round(o.minc || 0), sat: o.msat === undefined ? null : Math.round(o.msat),
       route: r ? { id: r.id, ok: !!(P && P.ok), partial: !!(P && P.partial), mode: r.mode || (P && P.loop ? 'loop' : 'outback'), why: P ? P.why : '', length: P ? Math.round(P.len / TILE) : 0, tiles: r.tiles.length, loop: !!(P && P.loop), zones: P ? P.zones : [], gates: gates.length, powered: P ? routeGo(P) : true, excitement: P ? (P.excitement || 0) : 0, speciesCount: P ? (P.speciesCount || 0) : 0, animalCount: P ? (P.animalCount || 0) : 0 } : null,
       vehicles: veh.map(function (v) { var rt = VR[v.id] || {}; return { id: v.id, st: v.st, why: v.why, pax: rt.pax ? rt.pax.length : 0, cap: SD.capacity[v.kind], sell: Math.round((v.paid || 0) * SD.refundVeh), brk: Math.max(0, Math.round(v.brk)), kind: v.kind, stuck: rt.stuckT || 0 }; }),
-      canBuy: !!(P && P.ok) && veh.length < SD.maxVeh, maxVeh: SD.maxVeh, cost: A.vehicleCost(d.safari), conn: depotConnected(o) };
+      canBuy: !!(P && P.ok) && veh.length < SD.maxVeh, maxVeh: SD.maxVeh, cost: A.vehicleCost(d.safari), conn: depotConnected(o), open: C.openNow(), lockdown: !!ST().lockdown };
   };
 
   // ------------------------------------------------------------------ lockdown

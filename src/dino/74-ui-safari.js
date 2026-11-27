@@ -225,17 +225,17 @@ window.Z = window.Z || {}; var Z = window.Z;
         setRow(rZ, R && R.zones.length ? R.zones.map(encName).join(', ') : 'None yet', R && R.zones.length ? '' : 'bad');
         setRow(rG, R ? (R.gates ? R.gates + ' crossing' + (R.gates === 1 ? '' : 's') + (R.powered ? '' : ', unpowered') : 'None') : '-', R && !R.powered ? 'bad' : '');
         setRow(rV, i.vehicles.length + ' of ' + i.maxVeh);
-        warn.textContent = a.lockdown() ? 'Park lockdown is active: safari tours are suspended.' : (R && !R.ok ? R.why : (R && R.ok && !R.powered ? 'Safari gates or portals have no power: vehicles cannot depart.' : (!i.conn ? 'This building must touch a path so guests can reach it.' : '')));
+        warn.textContent = a.lockdown() ? 'Park lockdown is active: safari tours are suspended.' : (R && !R.ok ? R.why : (R && R.ok && !R.powered ? 'Safari gates or portals have no power: vehicles cannot depart.' : (!i.conn ? 'This building must touch a path so guests can reach it.' : (!i.open ? 'Park is closed: safari tours resume at opening time.' : ''))));
         setRow(rQ, String(i.queue)); setRow(rT, i.today + ' (yesterday ' + i.yesterday + ')'); setRow(rI, fmt(i.income) + ' in all');
         setRow(rSat, i.sat === null ? 'No riders yet' : i.sat + '%'); satBar.firstChild.style.width = (i.sat === null ? 0 : i.sat) + '%';
         buyBtn.disabled = !i.canBuy || Z.state.money < i.cost;
-        var k2 = JSON.stringify(i.vehicles.map(function (v) { return [v.id, v.st, v.pax, Math.round(v.brk / 5), v.stuck > 0]; }));
+        var k2 = JSON.stringify(i.vehicles.map(function (v) { return [v.id, v.st, v.pax, v.why || '', Math.round(v.brk / 5), v.stuck > 0]; }));
         if (k2 !== key) {
           key = k2; vList.innerHTML = '';
           if (!i.vehicles.length) vList.appendChild(h('div', { style: 'font-size:12.5px;color:var(--ink2)', text: R && R.ok ? 'No vehicles yet. Buy one below.' : 'Draw a route first, then add a vehicle.' }));
           i.vehicles.forEach(function (v) {
             var s2 = VST[v.st] || ['', 'dim'];
-            vList.appendChild(h('div.svrow', h('div.tn', h('b', { text: vname(v) }), h('small', { text: v.pax + ' of ' + v.cap + ' aboard' })), h('span.chip' + (s2[1] ? '.' + s2[1] : ''), { text: s2[0] }),
+            vList.appendChild(h('div.svrow', h('div.tn', h('b', { text: vname(v) }), h('small', { text: v.pax + ' of ' + v.cap + ' aboard' + (v.why ? ' · ' + v.why : '') })), h('span.chip' + (s2[1] ? '.' + s2[1] : ''), { text: s2[0] }),
               h('button.btn.sm.alt', { text: 'View', on: { click: function () { UI.snd('click'); UI.Panel.open('safari_veh', v.id); Z.SafariWorld.follow(v.id); } } })));
           });
         }
