@@ -307,3 +307,180 @@ test('Dino overnight clock advances 3x faster after exit window and returns to 1
   z.Sim._step(dt); // now >= OPEN_T -> must advance at 1x
   approx(S.time - OPEN_T, step1x, 'morning opening transitions cleanly back to 1x');
 });
+
+test('land dinosaurs walk and run at lively full speed independent of DAY_SECONDS', () => {
+  const z = loadGame(false, false);
+  z.Sim.newGame({ seed: 606, map: 'fern_meadow', difficulty: 'easy', money: 500000 });
+  const S = z.state;
+  const N = z.N;
+  S.unlocked.star = 5;
+  S.time = 0.45;
+  clearFlatArea(z, 8, 8, 28, 28);
+
+  // Build two 16x6 fenced paddocks so each species walks freely without interacting
+  const buildBox = (i0, j0, i1, j1) => {
+    for (let i = i0; i <= i1; i++) {
+      assert.ok(z.Sim.placeFence({ axis: 'x', i, j: j0 }, 'reinforced').ok);
+      assert.ok(z.Sim.placeFence({ axis: 'x', i, j: j1 + 1 }, 'reinforced').ok);
+    }
+    for (let j = j0; j <= j1; j++) {
+      assert.ok(z.Sim.placeFence({ axis: 'z', i: i0, j }, 'reinforced').ok);
+      assert.ok(z.Sim.placeFence({ axis: 'z', i: i1 + 1, j }, 'reinforced').ok);
+    }
+  };
+  buildBox(10, 10, 25, 15);
+  buildBox(10, 18, 25, 23);
+
+  for (const [speciesId, spawnJ] of [['triceratops', 12], ['tyrannosaurus', 20]]) {
+    const sp = z.DATA.animals.find(s => s.id === speciesId);
+    const dino = z.Sim.spawnAnimal(speciesId, 13, spawnJ);
+    assert.ok(dino, `spawned ${speciesId}`);
+    dino.baby = false;
+    dino.injured = false;
+    dino.sick = false;
+    dino.traits = [];
+    dino.hunger = 10;
+    dino.thirst = 10;
+    dino.energy = 90;
+    dino.x = 13.5 * z.TILE;
+    dino.z = (spawnJ + 0.5) * z.TILE;
+    dino.heading = Math.PI / 2;
+    dino.state = 'walk';
+    dino.tg = 'wander';
+    dino.tx = 23.5 * z.TILE;
+    dino.tz = (spawnJ + 0.5) * z.TILE;
+    dino.wx = 0; dino.wz = 0; dino.aroute = null; dino.detours = 0; dino.stuck = 0;
+
+    const x0 = dino.x, z0 = dino.z;
+    for (let k = 0; k < 20; k++) { // 5 seconds at 1x sim time
+      dino.tx = 23.5 * z.TILE;
+      dino.tz = (spawnJ + 0.5) * z.TILE;
+      dino.state = 'walk';
+      z.Sim._step(0.25);
+    }
+    const distWalk = Math.hypot(dino.x - x0, dino.z - z0);
+    assert.ok(dino.speed >= sp.speed * 1.5, `${speciesId} walk speed (${dino.speed.toFixed(2)}) should be >= ${(sp.speed * 1.5).toFixed(2)}`);
+    assert.ok(distWalk >= sp.speed * 1.5 * 4.5, `${speciesId} should traverse >= ${(sp.speed * 1.5 * 4.5).toFixed(2)}u in 5s, got ${distWalk.toFixed(2)}u`);
+
+    // Check run speed as well
+    dino.x = 13.5 * z.TILE;
+    dino.z = (spawnJ + 0.5) * z.TILE;
+    dino.state = 'run';
+    dino.tx = 23.5 * z.TILE;
+    dino.tz = (spawnJ + 0.5) * z.TILE;
+    z.Sim._step(0.25);
+    assert.ok(dino.speed >= sp.speed * 2.5, `${speciesId} run speed (${dino.speed.toFixed(2)}) should be >= ${(sp.speed * 2.5).toFixed(2)}`);
+  }
+});
+
+test('marine and flying creatures move at full cruising and flight speeds', () => {
+  const z = loadGame(false, false);
+  z.Sim.newGame({ seed: 707, map: 'fern_meadow', difficulty: 'easy', money: 500000 });
+  const S = z.state;
+  const N = z.N;
+  S.unlocked.star = 5;
+  S.time = 0.45;
+  clearFlatArea(z, 6, 6, 36, 36);
+
+  // Sea tank (10x10)
+  const tankTiles = [];
+  for (let j = 8; j < 18; j++) for (let i = 8; i < 18; i++) tankTiles.push(i + j * N);
+  assert.equal(z.Sim.realms.place('tank', 'sea', tankTiles, { lvl: 2, wall: 5 }).ok, true);
+  const mosaSp = z.DATA.animals.find(s => s.id === 'mosasaurus');
+  const mosa = z.Sim.spawnAnimal('mosasaurus', 10, 13);
+  assert.ok(mosa);
+  mosa.baby = false;
+  mosa.traits = [];
+  mosa.x = 10.5 * z.TILE;
+  mosa.z = 13.5 * z.TILE;
+  mosa.tx = 16.5 * z.TILE;
+  mosa.tz = 13.5 * z.TILE;
+  mosa.ty = -0.5;
+  mosa.y = -0.5;
+  mosa.bp = 0;
+  mosa.show = 0;
+  mosa.tg = 'wander';
+  mosa.state = 'swim';
+
+  const mx0 = mosa.x, mz0 = mosa.z;
+  for (let k = 0; k < 12; k++) { // 3 seconds
+    mosa.tx = 16.5 * z.TILE;
+    mosa.tz = 13.5 * z.TILE;
+    mosa.state = 'swim';
+    mosa.bp = 0;
+    z.Sim._step(0.25);
+  }
+  const distSea = Math.hypot(mosa.x - mx0, mosa.z - mz0);
+  assert.ok(mosa.speed >= mosaSp.speed * 1.35, `mosasaurus swim speed (${mosa.speed.toFixed(2)}) should be >= ${(mosaSp.speed * 1.35).toFixed(2)}`);
+  assert.ok(distSea >= mosaSp.speed * 1.35 * 2.5, `mosasaurus should swim meaningfully in 3s, moved ${distSea.toFixed(2)}u`);
+
+  // Air dome (16x10)
+  const domeTiles = [];
+  for (let j = 22; j < 32; j++) for (let i = 8; i < 24; i++) domeTiles.push(i + j * N);
+  assert.equal(z.Sim.realms.place('dome', 'air', domeTiles, { lvl: 2, mesh: 3 }).ok, true);
+  const pteroSp = z.DATA.animals.find(s => s.id === 'pteranodon');
+  const ptero = z.Sim.spawnAnimal('pteranodon', 10, 27);
+  assert.ok(ptero);
+  ptero.baby = false;
+  ptero.traits = [];
+  ptero.x = 10.5 * z.TILE;
+  ptero.z = 27.5 * z.TILE;
+  ptero.y = 2.5;
+  ptero.ty = 2.5;
+  ptero.cruise = 2.5;
+  ptero.tg = 'tour';
+  ptero.ft = 5;
+  ptero.state = 'fly';
+  ptero.tx = 22.5 * z.TILE;
+  ptero.tz = 27.5 * z.TILE;
+
+  const px0 = ptero.x, pz0 = ptero.z;
+  for (let k = 0; k < 8; k++) { // 2 seconds (~13.4u < 24u span)
+    ptero.tx = 22.5 * z.TILE;
+    ptero.tz = 27.5 * z.TILE;
+    ptero.tg = 'tour';
+    ptero.state = 'fly';
+    z.Sim._step(0.25);
+  }
+  const distAir = Math.hypot(ptero.x - px0, ptero.z - pz0);
+  assert.ok(ptero.speed >= pteroSp.speed * 2.5, `pteranodon flight speed (${ptero.speed.toFixed(2)}) should be >= ${(pteroSp.speed * 2.5).toFixed(2)}`);
+  assert.ok(distAir >= pteroSp.speed * 2.5 * 1.5, `pteranodon should fly meaningfully in 2s, moved ${distAir.toFixed(2)}u`);
+});
+
+test('dinosaur daytime energy drain is scaled for 900s days and night sleep recovers fully', () => {
+  const z = loadGame(false, false);
+  z.Sim.newGame({ seed: 808, map: 'fern_meadow', difficulty: 'easy', money: 500000 });
+  const S = z.state;
+  clearFlatArea(z, 10, 10, 22, 22);
+  for (let i = 12; i <= 19; i++) {
+    assert.ok(z.Sim.placeFence({ axis: 'x', i, j: 12 }, 'reinforced').ok);
+    assert.ok(z.Sim.placeFence({ axis: 'x', i, j: 20 }, 'reinforced').ok);
+  }
+  for (let j = 12; j <= 19; j++) {
+    assert.ok(z.Sim.placeFence({ axis: 'z', i: 12, j }, 'reinforced').ok);
+    assert.ok(z.Sim.placeFence({ axis: 'z', i: 20, j }, 'reinforced').ok);
+  }
+
+  const dino = z.Sim.spawnAnimal('triceratops', 15, 15);
+  assert.ok(dino);
+  dino.energy = 100;
+  dino.hunger = 0;
+  dino.thirst = 0;
+
+  // Simulate full open park day: 08:00 -> 20:00 (450 sim-seconds at 1x)
+  S.time = 8 / 24;
+  for (let k = 0; k < 900; k++) {
+    z.Sim._step(0.5);
+  }
+  assert.ok(dino.energy >= 65, `healthy dino should retain >= 65 energy after full open day (got ${dino.energy.toFixed(1)})`);
+  assert.notEqual(dino.state, 'sleep', 'healthy dino should remain active rather than collapsing mid-day');
+
+  // Verify overnight sleep recovery remains brisk and restores energy to 100
+  dino.energy = 20;
+  dino.state = 'sleep';
+  S.time = 0.92; // early night (0.90..1.00..0.24 = 102s at 3x)
+  for (let k = 0; k < 160; k++) { // 80s sim time (stays night the entire time)
+    z.Sim._step(0.5);
+  }
+  assert.equal(dino.energy, 100, `overnight sleep should fully restore energy to 100, got ${dino.energy}`);
+});

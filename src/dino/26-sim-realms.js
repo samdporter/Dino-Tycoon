@@ -790,7 +790,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (a.sick) { a.state = 'sick'; a.speed = 0; a.ty = -0.15; settleY(a, dt, 0.5); return; }
     if (a.bp > 0) {   // breaching: an arc through the surface
       a.bp += dt / 1.9;
-      var u = Math.min(1, a.bp), fs = spd0 * 1.5;
+      var u = Math.min(1, a.bp), fs = spd0 * 2.2;
       a.ty = a.y = -0.7 + 2.0 * Math.sin(PI * u);
       var nx = a.x + Math.sin(a.heading) * fs * dt, nz = a.z + Math.cos(a.heading) * fs * dt;
       if (inEnc(enc, nx, nz)) { a.x = nx; a.z = nz; a.speed = fs; } else a.bp = 1;
@@ -805,7 +805,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       case 'drink': a.state = 'idle'; a.st = 1; break;
       case 'idle': a.speed = 0; a.st -= dt; if (a.st <= 0) decideSea(a, enc, E, sp, n, dep, low); break;
       case 'swim': case 'walk': case 'run': {
-        var r = steer(a, dt, spd0 * (a.tg === 'eat' || a.show > 0 ? 1.0 : 0.75), enc, false, 2.4);
+        var r = steer(a, dt, spd0 * (a.tg === 'eat' || a.show > 0 ? 1.7 : 1.4), enc, false, 2.4);
         if (r) {
           if (a.tg === 'eat') { a.state = 'eat'; a.st = rng.range(3.5, 6); a.speed = 0; }
           else { a.state = 'idle'; a.st = rng.chance(0.4) ? 0 : rng.range(0.5, 3); a.speed = 0; }
@@ -840,7 +840,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!(a.btx !== undefined) || rng.chance(dt * 0.1)) { var o = outsideSea(enc, a); if (o) { a.btx = o.x; a.btz = o.z; } }
     a.tx = a.btx !== undefined ? a.btx : a.x + 4; a.tz = a.btz !== undefined ? a.btz : a.z;
     a.state = 'swim'; a.ty = -0.35;
-    if (steer(a, dt, spd0 * 0.9, enc, true, 2.4)) { a.btx = undefined; }
+    if (steer(a, dt, spd0 * 1.8, enc, true, 2.4)) { a.btx = undefined; }
     settleY(a, dt, 0.5);
   }
   function outsideSea(enc, a) {
@@ -875,7 +875,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       case 'drink': a.speed = 0; a.ty = 0; a.st -= dt; if (a.st <= 0) { a.thirst = 0; if (!rl.waterN) enc.waterLevel = Math.max(0, enc.waterLevel - 0.08); a.state = 'idle'; a.st = rng.range(1, 3); } break;
       case 'idle': a.speed = 0; a.ty = perchY(E, t); a.st -= dt; if (a.st <= 0) decideAir(a, enc, E, sp, n, ceil); break;
       case 'walk': case 'fly': case 'run': {
-        var fly = a.state === 'fly' || a.ty > 0.6 || a.y > 0.6, sp2 = fly ? spd0 * 2.0 : spd0 * 0.55;
+        var fly = a.state === 'fly' || a.ty > 0.6 || a.y > 0.6, sp2 = fly ? spd0 * 2.8 : spd0 * 1.1;
         var land = a.tg !== 'tour';
         if (land && fly) { var dl = Math.sqrt(dist2(a.tx, a.tz, a.x, a.z)); a.ty = dl < 5.5 ? 0 : (a.cruise || 2.5); }
         var r = steer(a, dt, sp2, enc, false, fly ? 2.6 : 5);
@@ -936,13 +936,13 @@ window.Z = window.Z || {}; var Z = window.Z;
   function airBolt(a, dt, enc, spd0) {
     if (a.btx === undefined || rng.chance(dt * 0.08)) { var ang = rng.next() * PI * 2, r = 18 + rng.next() * 14; a.btx = clamp(enc.cx + Math.cos(ang) * r, 2, N * TILE - 2); a.btz = clamp(enc.cz + Math.sin(ang) * r, 2, N * TILE - 2); }
     a.tx = a.btx; a.tz = a.btz; a.state = 'fly'; a.ty = rng.range(3, 6);
-    if (steer(a, dt, spd0 * 2.0, enc, true, 2.6)) a.btx = undefined;
+    if (steer(a, dt, spd0 * 2.8, enc, true, 2.6)) a.btx = undefined;
     settleY(a, dt, 1.7);
   }
 
   // a land animal in a zone whose geofence is down walks out of it
   function landBolt(a, dt, enc, sp) {
-    var s = S(), spd = sp.speed * C.fxOf(a).speed * 0.9;
+    var s = S(), spd = sp.speed * C.fxOf(a).speed * 1.8;
     if (a.state === 'sleep' || a.state === 'eat' || a.state === 'drink' || a.state === 'idle' || a.state === 'sick' || a.state === 'play') a.state = 'walk';
     if (!isFinite(a.tx) || !isFinite(a.tz)) { var ang0 = rng.next() * PI * 2, r0 = 8 + rng.next() * 12; a.tx = clamp(enc.cx + Math.cos(ang0) * r0, 2, N * TILE - 2); a.tz = clamp(enc.cz + Math.sin(ang0) * r0, 2, N * TILE - 2); return; }
     var dx = a.tx - a.x, dz = a.tz - a.z, d = Math.sqrt(dx * dx + dz * dz);
@@ -1018,7 +1018,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     a.esc = (a.esc || 0) + dt; a.hunger = Math.min(100, a.hunger + 0.1 * dt);
     if (a.held) { a.speed = 0; return true; }
     if (a.hurtT > 0) a.hurtT -= dt;
-    var ad = C.aDanger(a), staff = rt.secCount > 0 || rt.keeperCount > 0, lim, spd = sp.speed * C.fxOf(a).speed * 1.05;
+    var ad = C.aDanger(a), staff = rt.secCount > 0 || rt.keeperCount > 0, lim, spd = sp.speed * C.fxOf(a).speed * 1.8;
     if (er.realm === 'sea') {
       if (er.where === 'land') {
         a.speed = 0; a.state = 'idle'; a.y = 0; a.wb = undefined; a.health -= 0.3 * dt; lim = staff ? 70 : 150;
@@ -1048,7 +1048,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         a.lk = 1.5; var g2 = ad >= 1 ? nearestGuest(a, 36) : null;
         if (g2) { a.tx = g2.x; a.tz = g2.z; a.lg = g2.id; a.cruise = 1.2; } else { a.lg = 0; a.tx = rng.range(6, W - 6); a.tz = rng.range(6, W - 6); a.cruise = rng.range(3, 7); }
       }
-      var dx2 = a.tx - a.x, dz2 = a.tz - a.z, d2 = Math.sqrt(dx2 * dx2 + dz2 * dz2), sp3 = spd * 2.1 * (a.lg ? 1.3 : 1);
+      var dx2 = a.tx - a.x, dz2 = a.tz - a.z, d2 = Math.sqrt(dx2 * dx2 + dz2 * dz2), sp3 = sp.speed * C.fxOf(a).speed * 2.8 * (a.lg ? 1.3 : 1);
       a.state = 'fly'; a.ty = a.cruise || 4; a.y += clamp(a.ty - a.y, -2 * dt, 2 * dt);
       if (d2 > 0.5) { a.x += dx2 / d2 * sp3 * dt; a.z += dz2 / d2 * sp3 * dt; a.speed = sp3; a.heading = C.turn(a.heading, Math.atan2(dx2, dz2), dt * 2.5); } else { a.speed = 0; a.lk = 0; }
       if (ad >= 1 && a.lg && a.hurtT <= 0) { var g3 = rt.gById.get(a.lg); if (g3 && dist2(g3.x, g3.z, a.x, a.z) < 7 && rng.chance(0.3 * dt * 2)) { C.hurtGuest(g3, a); a.hurtT = 6; } }

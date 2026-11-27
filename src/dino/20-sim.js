@@ -3357,7 +3357,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           if (f.attackers.indexOf(a.id) < 0 && f.defenders.indexOf(a.id) < 0) f.attackers.push(a.id);
           a.state = 'fight'; a.fid = f.id; a.tg = ''; a.speed = 0;
         } else {
-          a.state = 'run'; animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 1.7 * 1.12);
+          a.state = 'run'; animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 2.8 * 1.12);
         }
         return;
       }
@@ -3370,7 +3370,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if (a.hunt > 40) { a.tg = ''; a.state = 'idle'; a.st = rng.range(3, 6); a.speed = 0; return; }
     a.state = 'run';
-    animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 1.7 * 1.12);
+    animalMove(a, dt, sp.speed * fxOf(a).speed * (a.injured ? 0.65 : 1) * 2.8 * 1.12);
   }
   function fleeFrom(a, enc, hx, hz) {
     var best = -1, bd = -1;
@@ -3464,10 +3464,10 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     if (a.state === 'escaped') { escapedStep(a, dt, sp); return; }
     var enc = RT.eMap[a.enc], E = enc && RT.encx[a.enc];
     if (!enc || !E) return;
-    var sleeping = a.state === 'sleep';
-    a.hunger = Math.min(100, a.hunger + (sleeping ? 0.08 : 0.22) * dt);
-    a.thirst = Math.min(100, a.thirst + (sleeping ? 0.12 : 0.3) * dt);
-    a.energy = clamp(a.energy + (sleeping ? 1.2 : -0.12) * dt, 0, 100);
+    var sleeping = a.state === 'sleep', needMul = 420 / DAY_SECONDS;
+    a.hunger = Math.min(100, a.hunger + (sleeping ? 0.08 : 0.22) * needMul * dt);
+    a.thirst = Math.min(100, a.thirst + (sleeping ? 0.12 : 0.3) * needMul * dt);
+    a.energy = clamp(a.energy + (sleeping ? 1.2 : -0.12 * needMul) * dt, 0, 100);
     if (a.hunger >= 95 || a.thirst >= 95) a.health -= (a.thirst >= 95 ? 0.12 : 0.08) * dt;
     else if (a.sick) a.health -= 0.05 * dt;
     else if (a.injured) a.health -= 0.03 * dt;
@@ -3527,7 +3527,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         break;
       case 'walk': case 'run': case 'swim': {
         if (a.tg === 'hunt' || a.tg === 'fight_rival') { huntStep(a, dt, enc, E, sp); break; }
-        var spd = sp.speed * fxOf(a).speed * (a.baby ? 0.8 : 1) * (a.injured ? 0.65 : 1) * (a.state === 'run' ? 1.7 : a.state === 'swim' ? 0.6 : 0.75);
+        var spd = sp.speed * fxOf(a).speed * (a.baby ? 0.8 : 1) * (a.injured ? 0.65 : 1) * (a.state === 'run' ? 2.8 : a.state === 'swim' ? 1.2 : 1.6);
         if (inWater && a.state !== 'swim') spd *= 0.7;
         if (animalMove(a, dt, spd)) {
           var tg = a.tg;
@@ -3624,7 +3624,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var adg = aDanger(a), limit = adg >= 2 ? (RT.secCount > 0 ? 100 : 200) : (RT.secCount > 0 || RT.keeperCount > 0 ? 300 : 150);
     if (a.hurtT > 0) a.hurtT -= dt;
     if (a.esc > limit) { recapture(a, 'The response team'); return; }
-    var spdE = sp.speed * fxOf(a).speed * 1.1;
+    var spdE = sp.speed * fxOf(a).speed * 2.2;
     if (adg >= 2) {
       // a loose big predator picks out the nearest guest who has not taken cover and runs them down
       a.lk = (a.lk || 0) - dt;
@@ -3637,7 +3637,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
         a.lg = bg ? bg.id : 0;
       }
       var tg = a.lg ? RT.gById.get(a.lg) : null;
-      if (tg && !tg.shel) { a.tx = tg.x; a.tz = tg.z; spdE = sp.speed * fxOf(a).speed * 1.35; a.state = 'escaped'; animalMove(a, dt, spdE); return; }
+      if (tg && !tg.shel) { a.tx = tg.x; a.tz = tg.z; spdE = sp.speed * fxOf(a).speed * 2.8; a.state = 'escaped'; animalMove(a, dt, spdE); return; }
     }
     var arrived = animalMove(a, dt, spdE);
     if (arrived) {
@@ -4853,13 +4853,17 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           }
           if (minD2 >= req * req) continue;
           var dist = Math.sqrt(minD2), nx, nz;
-          if (dist < 1e-5) {
+          var cDx = b.x - a.x, cDz = b.z - a.z, cDist = Math.sqrt(cDx * cDx + cDz * cDz);
+          var dirDx = bestDx, dirDz = bestDz, dirD = dist;
+          if (cDx * bestDx + cDz * bestDz <= 0) { dirDx = cDx; dirDz = cDz; dirD = cDist; }
+          if (dirD < 1e-5) {
             var loId = a.id < b.id ? a.id : b.id, hiId = a.id < b.id ? b.id : a.id;
             var ang = (((loId * 73856093) ^ (hiId * 19349663)) & 1023) * (TAU / 1024);
             var sgn = a.id < b.id ? -1 : 1;
-            nx = Math.cos(ang) * sgn; nz = Math.sin(ang) * sgn; dist = 0;
+            nx = Math.cos(ang) * sgn; nz = Math.sin(ang) * sgn;
+            if (dist < 1e-5) dist = 0;
           } else {
-            nx = bestDx / dist; nz = bestDz / dist;
+            nx = dirDx / dirD; nz = dirDz / dirD;
           }
           var overlap = req - dist;
           var push = Math.min(overlap * 0.45, 3.2 * dt);
@@ -4925,7 +4929,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     var sf = S.staff;
     for (k = 0; k < sf.length; k++) staffStep(sf[k], dt);
     stepBreachCrews(dt);
-    researchStep(dt);
+    researchStep(dt, dh);
     RT.t1 += dt;
     if (RT.t1 >= 1) { RT.t1 -= 1; secondly(); }
     RT.escAcc += clockDt;
@@ -5479,8 +5483,9 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
   }
 
   // ---- progression per sim step ----
-  function researchStep(dt) {
-    var R = S.research, dh = dt / DAY_SECONDS * 24, k, j;
+  function researchStep(dt, dh) {
+    var R = S.research, k, j;
+    if (dh === undefined) dh = dt / DAY_SECONDS * 24;
     if (R.labOffline > 0) { R.labOffline = Math.max(0, R.labOffline - dh); if (R.labOffline <= 0) { R.labDeconCrew = false; msg(R.labNote === 'power cut' ? 'The power is back on and the lab is running again.' : 'The lab has been decontaminated and is open again.', 'good'); R.labNote = ''; bus.emit('research'); } }
     var on = labOnline();
     for (k = R.jobs.length - 1; k >= 0; k--) {
