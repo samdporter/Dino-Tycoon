@@ -3454,7 +3454,7 @@ function frame(dtReal) {
   updateLamps(dtReal);
   syncBreakageFX(dtReal);
   if (Z.PowerWorld) Z.PowerWorld.frame(dtReal);
-  if (Z.RealmsWorld) Z.RealmsWorld.preRender(dtReal, SV);   // realms package: dome crackle, geofence shimmer, underwater tint in tunnels
+  if (Z.RealmsWorld) Z.RealmsWorld.preRender(dtReal, SV);   // realms package: dome crackle, virtual-zone beacons, underwater tint in tunnels
   if (Z.CoasterWorld && Z.CoasterWorld.frame) Z.CoasterWorld.frame(dtReal, dtGame);
   updatePreview();
   renderer.render(scene, camera);

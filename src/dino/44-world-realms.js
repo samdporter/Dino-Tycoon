@@ -1,6 +1,6 @@
 // ===== 44-world-realms.js =====
 // Realms package, world side: sunk tank basins (vertex hook in 40-world calcVertex), glass tank walls + water volumes, sea-bed trenches under sea tunnels, the walk structures
-// (acrylic tunnel, mesh walk, glass pier, armoured skywalk), the tall clear-view Aviary dome with storm crackle, virtual-zone geofence shimmer + beacon posts, tower range rings,
+// (acrylic tunnel, mesh walk, glass pier, armoured skywalk), the tall clear-view Aviary dome with storm crackle, virtual-zone perimeter posts/buoys/overhead masts, tower range rings,
 // animal tags, and the underwater tint for street view inside tunnels. Hooks in 40-world.js call Z.RealmsWorld.{vtx, isWalk, deckY, preRender}; sea nets are the 'net' fence style.
 (function () {
   'use strict';
@@ -108,7 +108,13 @@
     if (geoBuilder.empty()) return null;
     var m = new THREE.Mesh(geoBuilder.geo(), mat); m.frustumCulled = false; if (order) m.renderOrder = order; root.add(m); built.push(m); return m;
   }
-  function clearBuilt() { built.forEach(function (m) { root.remove(m); if (m.geometry) m.geometry.dispose(); }); built.length = 0; if (domeLines) { domeLines.forEach(function (l) { root.remove(l); l.geometry.dispose(); }); } domeLines = []; sparkPool = []; zoneMats = []; }
+  function clearBuilt() {
+    built.forEach(function (m) { root.remove(m); if (m.geometry) m.geometry.dispose(); }); built.length = 0;
+    if (domeLines) { domeLines.forEach(function (l) { root.remove(l); l.geometry.dispose(); }); } domeLines = [];
+    if (zoneLines) { zoneLines.forEach(function (l) { root.remove(l); if (l.geometry) l.geometry.dispose(); if (l.material) l.material.dispose(); }); } zoneLines = [];
+    sparkPool = []; zoneBeacons = [];
+    if (beaconMesh) { beaconMesh.count = 0; beaconMesh.visible = false; }
+  }
 
   // ---------------------------------------------------------------- tanks: glass walls, rim, water
   function tileIn(enc, i, j) { return i >= 0 && j >= 0 && i < N && j < N && S().tileEnc[i + j * N] === enc.id; }
@@ -154,8 +160,9 @@
 
   // ---------------------------------------------------------------- walks
   function wAt(i, j) { return i >= 0 && j >= 0 && i < N && j < N ? walkOf[i + j * N] : 0; }
+  function pAt(s, i, j) { return i >= 0 && j >= 0 && i < N && j < N && s && s.path && s.path[i + j * N] > 0; }
   function buildWalks() {
-    var fr = new GB(), gl = new GB(), dk = new GB(), lt = new GB(), pg = new GB(), t, s = S();
+    var fr = new GB(), gl = new GB(), sgl = new GB(), dk = new GB(), lt = new GB(), pg = new GB(), t, s = S();
     for (t = 0; t < NN; t++) {
       var w = walkOf[t]; if (!w) continue;
       var i = t % N, j = (t - i) / N, x0 = i * T, z0 = j * T, cx = x0 + T / 2, cz = z0 + T / 2, base = gy(cx, cz) + PY;
@@ -208,25 +215,116 @@
         if (w === 2) { for (var sd2 = -1; sd2 <= 1; sd2 += 2) { var m0 = P(-h, sd2 * R, base), m1 = P(h, sd2 * R, base + 0.4); fr.box(Math.min(m0[0], m1[0]) - 0.03, base, Math.min(m0[2], m1[2]) - 0.03, Math.max(m0[0], m1[0]) + 0.03, base + 0.4, Math.max(m0[2], m1[2]) + 0.03, 0x6c7a70); } }
         continue;
       }
-      if (w === 4) {   // armoured skywalk: a steel corridor with narrow windows and a flat roof
-        var hw = 0.92, ht = 2.05, steel = 0x5b6770;
-        [-1, 1].forEach(function (sd) {
-          var a = P(-h, sd * hw, base), b = P(h, sd * hw + sd * 0.12, base + ht);
-          fr.box(Math.min(a[0], b[0]), base, Math.min(a[2], b[2]), Math.max(a[0], b[0]), base + 1.0, Math.max(a[2], b[2]), steel);
-          var c0 = P(-h, sd * hw, base + 1.0), c1 = P(h, sd * hw + sd * 0.12, base + 1.5);
-          gl.quad([c0[0], base + 1.0, c0[2]], [c1[0], base + 1.0, c1[2]], [c1[0], base + 1.5, c1[2]], [c0[0], base + 1.5, c0[2]], 0x9bd6e8);
-          fr.box(Math.min(c0[0], c1[0]), base + 1.5, Math.min(c0[2], c1[2]), Math.max(c0[0], c1[0]), base + ht, Math.max(c0[2], c1[2]), steel);
+      if (w === 4) {   // armoured skywalk: 4-way neighbour-aware, terrain-following panoramic glass corridor
+        var x1 = x0 + T, z1 = z0 + T, hw = 0.88, ht = 2.02;
+        var nS = wAt(i, j - 1) === 4, sS = wAt(i, j + 1) === 4, wS = wAt(i - 1, j) === 4, eS = wAt(i + 1, j) === 4;
+        var nP = pAt(s, i, j - 1), sP = pAt(s, i, j + 1), wP = pAt(s, i - 1, j), eP = pAt(s, i + 1, j);
+        var nOpen = nS || nP, sOpen = sS || sP, wOpen = wS || wP, eOpen = eS || eP;
+        var y00 = gy(x0, z0) + PY, y10 = gy(x1, z0) + PY, y01 = gy(x0, z1) + PY, y11 = gy(x1, z1) + PY;
+        var yAt = function (x, z) {
+          var u = (x - x0) / T, v = (z - z0) / T;
+          return (y00 * (1 - u) + y10 * u) * (1 - v) + (y01 * (1 - u) + y11 * u) * v;
+        };
+        var sbox = function (gb, xa, za, xb, zb, dy0, dy1, col) {
+          var xA = Math.min(xa, xb), xB = Math.max(xa, xb), zA = Math.min(za, zb), zB = Math.max(za, zb);
+          var c00 = yAt(xA, zA), c10 = yAt(xB, zA), c11 = yAt(xB, zB), c01 = yAt(xA, zB);
+          var a = [xA, c00 + dy0, zA], b = [xB, c10 + dy0, zA], c = [xB, c11 + dy0, zB], d = [xA, c01 + dy0, zB];
+          var e = [xA, c00 + dy1, zA], f = [xB, c10 + dy1, zA], g = [xB, c11 + dy1, zB], q = [xA, c01 + dy1, zB];
+          gb.quad(e, q, g, f, col);
+          gb.quad(a, b, c, d, shade(col, 0.7));
+          gb.quad(a, e, f, b, shade(col, 0.8));
+          gb.quad(d, c, g, q, shade(col, 0.85));
+          gb.quad(a, d, q, e, shade(col, 0.75));
+          gb.quad(b, f, g, c, shade(col, 0.9));
+        };
+        var addDeck = function (xa, za, xb, zb) {
+          sbox(dk, xa, za, xb, zb, -0.04, -0.005, 0xa2aeb8);
+          sbox(dk, xa, za, xb, zb, -0.10, -0.04, 0x5b6770);
+        };
+        var addSky = function (xa, za, xb, zb) {
+          sgl.quad(
+            [xa, yAt(xa, za) + 1.96, za],
+            [xa, yAt(xa, zb) + 1.96, zb],
+            [xb, yAt(xb, zb) + 1.96, zb],
+            [xb, yAt(xb, za) + 1.96, za],
+            0xc8eef8
+          );
+        };
+        var wallX = function (sz, xa, xb) {
+          var zw = cz + sz * (hw + 0.04);
+          sbox(fr, xa, cz + sz * hw, xb, cz + sz * (hw + 0.10), -0.04, 0.36, 0x53606a);
+          sgl.quad([xa, yAt(xa, zw) + 0.36, zw], [xb, yAt(xb, zw) + 0.36, zw], [xb, yAt(xb, zw) + 1.88, zw], [xa, yAt(xa, zw) + 1.88, zw], 0xc8eef8);
+          sbox(fr, xa, cz + sz * hw, xb, cz + sz * (hw + 0.12), 1.88, ht, 0x46525b);
+        };
+        var wallZ = function (sx, za, zb, trimEave) {
+          var xw = cx + sx * (hw + 0.04);
+          sbox(fr, cx + sx * hw, za, cx + sx * (hw + 0.10), zb, -0.04, 0.36, 0x53606a);
+          sgl.quad([xw, yAt(xw, za) + 0.36, za], [xw, yAt(xw, zb) + 0.36, zb], [xw, yAt(xw, zb) + 1.88, zb], [xw, yAt(xw, za) + 1.88, za], 0xc8eef8);
+          sbox(fr, cx + sx * hw, za, cx + sx * (hw + (trimEave ? 0.105 : 0.12)), zb, 1.88, ht, 0x46525b);
+        };
+
+        var sideZ = function (sz, open, portal) {
+          var zIn = cz + sz * hw, zOut = cz + sz * h;
+          if (open) {
+            addDeck(cx - hw, zIn, cx + hw, zOut);
+            addSky(cx - hw, zIn, cx + hw, zOut);
+            wallZ(-1, zOut, wOpen ? cz + sz * (hw + 0.105) : zIn, wOpen);
+            wallZ(1, zOut, eOpen ? cz + sz * (hw + 0.105) : zIn, eOpen);
+            sbox(fr, cx - hw, zIn - 0.04, cx + hw, zIn + 0.04, 1.94, 2.03, 0x46525b);
+          } else {
+            wallX(sz, cx - hw, cx + hw);
+            sbox(lt, cx - hw + 0.02, zIn, cx + hw - 0.02, zIn - sz * 0.04, 0.04, 0.09, 0xfff3cc);
+          }
+          if (portal) {
+            var zp0 = zOut + (sz < 0 ? -0.02 : -0.07), zp1 = zOut + (sz < 0 ? 0.07 : 0.02);
+            sbox(fr, cx - hw - 0.11, zp0, cx + hw + 0.11, zp1, 1.88, 2.04, 0x46525b);
+            sbox(fr, cx - hw - 0.11, zp0, cx - hw + 0.01, zp1, -0.04, 1.88, 0x46525b);
+            sbox(fr, cx + hw - 0.01, zp0, cx + hw + 0.11, zp1, -0.04, 1.88, 0x46525b);
+          }
+        };
+        var sideX = function (sx, open, portal) {
+          var xIn = cx + sx * hw, xOut = cx + sx * h;
+          if (open) {
+            addDeck(xIn, cz - hw, xOut, cz + hw);
+            addSky(xIn, cz - hw, xOut, cz + hw);
+            wallX(-1, xOut, nOpen ? cx + sx * (hw + 0.105) : xIn);
+            wallX(1, xOut, sOpen ? cx + sx * (hw + 0.105) : xIn);
+            sbox(fr, xIn - 0.04, cz - hw, xIn + 0.04, cz + hw, 1.94, 2.03, 0x46525b);
+          } else {
+            wallZ(sx, cz - hw, cz + hw, false);
+            sbox(lt, xIn, cz - hw + 0.02, xIn - sx * 0.04, cz + hw - 0.02, 0.04, 0.09, 0xfff3cc);
+          }
+          if (portal) {
+            var xp0 = xOut + (sx < 0 ? -0.02 : -0.07), xp1 = xOut + (sx < 0 ? 0.07 : 0.02);
+            sbox(fr, xp0, cz - hw - 0.11, xp1, cz + hw + 0.11, 1.88, 2.04, 0x46525b);
+            sbox(fr, xp0, cz - hw - 0.11, xp1, cz - hw + 0.01, -0.04, 1.88, 0x46525b);
+            sbox(fr, xp0, cz + hw - 0.01, xp1, cz + hw + 0.11, -0.04, 1.88, 0x46525b);
+          }
+        };
+
+        // Central bay deck & clear skylight roof
+        addDeck(cx - hw, cz - hw, cx + hw, cz + hw);
+        addSky(cx - hw, cz - hw, cx + hw, cz + hw);
+
+        // 4 cardinal sides: open stubs, closed panoramic walls + LED strips, and path portals
+        sideZ(-1, nOpen, nP && !nS);
+        sideZ(1, sOpen, sP && !sS);
+        sideX(-1, wOpen, wP && !wS);
+        sideX(1, eOpen, eP && !eS);
+
+        // 4 corner armoured steel pillars (0.11 x 0.11)
+        [-1, 1].forEach(function (sx) {
+          [-1, 1].forEach(function (sz) {
+            sbox(fr, cx + sx * (hw - 0.005), cz + sz * (hw - 0.005), cx + sx * (hw + 0.105), cz + sz * (hw + 0.105), -0.10, ht + 0.02, 0x46525b);
+          });
         });
-        var r0 = P(-h, -hw - 0.15, base + ht), r1 = P(h, hw + 0.15, base + ht + 0.14); fr.box(Math.min(r0[0], r1[0]), base + ht, Math.min(r0[2], r1[2]), Math.max(r0[0], r1[0]), base + ht + 0.14, Math.max(r0[2], r1[2]), 0x46525b);
-        var f2 = P(-h, -hw, base - 0.01), f3 = P(h, hw, base - 0.01); dk.box(Math.min(f2[0], f3[0]), base - 0.1, Math.min(f2[2], f3[2]), Math.max(f2[0], f3[0]), base - 0.02, Math.max(f2[2], f3[2]), 0x7c8790);
-        var s0 = P(0, -hw + 0.1, base + 1.9), s1 = P(0, hw - 0.1, base + 1.96); lt.box(Math.min(s0[0], s1[0]) - 0.04, base + 1.9, Math.min(s0[2], s1[2]) - 0.04, Math.max(s0[0], s1[0]) + 0.04, base + 1.96, Math.max(s0[2], s1[2]) + 0.04, 0xfff2c0);
       }
     }
-    add(dk, lam()); add(fr, lam()); add(lt, glow()); add(gl, glass(0.17), 4); add(pg, glass(0.5), 4);
+    add(dk, lam()); add(fr, lam()); add(lt, glow()); add(gl, glass(0.17), 4); add(sgl, glass(0.11), 4); add(pg, glass(0.5), 4);
   }
 
   // ---------------------------------------------------------------- the Aviary (tall, clear-view geodesic dome)
-  var domeLines = [], domeData = [], sparkPool = [], zoneMats = [], flash = 0, sparkT = 0, sparkHold = 0;
+  var domeLines = [], domeData = [], sparkPool = [], zoneLines = [], zoneBeacons = [], beaconMesh = null, beaconCap = 0, flash = 0, sparkT = 0, sparkHold = 0;
   function domeColour(enc) { return enc.mesh >= 3 ? 0xe0b56c : enc.mesh === 2 ? 0xdde8ee : 0xeef5f8; }
   function domeFrameCol(enc) { return enc.mesh >= 3 ? 0x5c666e : enc.mesh === 2 ? 0x76858f : 0x9aa8b0; }
   function buildDome(enc) {
@@ -347,46 +445,107 @@
     m.geometry.attributes.position.needsUpdate = true; m.visible = true;
   }
 
-  // ---------------------------------------------------------------- virtual zones: shimmering geofence curtain, ground stipple, beacon posts
-  var ZVS = 'varying vec3 vP; void main(){ vP = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position,1.0); }';
-  var ZFS = 'uniform float uTime; uniform vec3 uCol; uniform float uA; uniform float uDown; uniform vec3 uAn[6]; varying vec3 vP; void main(){ float gl0 = 0.0; for (int q = 0; q < 6; q++) { gl0 += uAn[q].y * smoothstep(4.5, 0.6, distance(vP.xz, uAn[q].xz)); } gl0 = min(gl0, 1.0); float st = 0.5+0.5*sin(vP.y*7.0 + uTime*2.2 + sin((vP.x+vP.z)*1.7 + uTime)*1.6); float sp = 0.5+0.5*sin((vP.x+vP.z)*3.1 - uTime*1.3); float fl = uDown > 0.5 ? (0.35+0.65*step(0.5, fract(uTime*3.0+vP.x))) : 1.0; gl_FragColor = vec4(mix(uCol, vec3(1.0), gl0*0.45), min(1.0, uA*(0.25+0.55*st*sp)*fl + gl0*0.5*uA*2.0)); }';
-  var nearArr = []; for (var nq = 0; nq < 6; nq++) nearArr.push(new THREE.Vector3(0, 0, 0));   // QA: tagged animals close to the camera focus; the curtain brightens near them (the approach warning)
-  function zoneMat(down) {
-    var m = new THREE.ShaderMaterial({ uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Color(down ? 0xff5a3a : 0x59e1ff) }, uA: { value: down ? 0.5 : 0.34 }, uDown: { value: down ? 1 : 0 }, uAn: { value: nearArr } }, vertexShader: ZVS, fragmentShader: ZFS, transparent: true, depthWrite: false, side: THREE.DoubleSide });
-    zoneMats.push(m); return m;
+  // ---------------------------------------------------------------- virtual zones: electric-collar boundary posts, marine buoys, overhead sky masts (optional blueprint overlay)
+  function beamBox(gb, cx, cz, dx, dz, s0, s1, hw, y0, y1, col) {
+    var px = -dz * hw, pz = dx * hw;
+    var ax = cx + dx * s0, az = cz + dz * s0, bx = cx + dx * s1, bz = cz + dz * s1;
+    var a0 = [ax - px, y0, az - pz], a1 = [ax + px, y0, az + pz], b1 = [bx + px, y0, bz + pz], b0 = [bx - px, y0, bz - pz];
+    var c0 = [ax - px, y1, az - pz], c1 = [ax + px, y1, az + pz], d1 = [bx + px, y1, bz + pz], d0 = [bx - px, y1, bz - pz];
+    gb.quad(c0, c1, d1, d0, col); gb.quad(a0, b0, b1, a1, shade(col, 0.7));
+    gb.quad(a0, c0, d0, b0, shade(col, 0.85)); gb.quad(a1, b1, d1, c1, shade(col, 0.9));
+    gb.quad(b0, d0, d1, b1, shade(col, 0.8)); gb.quad(a0, a1, c1, c0, shade(col, 0.75));
+  }
+  function strut(gb, x0, y0, z0, x1, y1, z1, r, col) {
+    var a = [x0 - r, y0, z0 - r], b = [x0 + r, y0, z0 - r], c = [x0 + r, y0, z0 + r], d = [x0 - r, y0, z0 + r];
+    var e = [x1 - r, y1, z1 - r], f = [x1 + r, y1, z1 - r], g = [x1 + r, y1, z1 + r], h = [x1 - r, y1, z1 + r];
+    gb.quad(a, b, f, e, col); gb.quad(b, c, g, f, shade(col, 0.85)); gb.quad(c, d, h, g, shade(col, 0.9)); gb.quad(d, a, e, h, shade(col, 0.78));
   }
   function buildZone(enc) {
-    var s = S(), set = {}, tiles = enc.tiles, down = !!enc.vdown, curtain = new GB(), top = new GB(), post = new GB(), glw = new GB();
+    var set = {}, tiles = enc.tiles, down = !!(enc.vdown || enc.down), post = new GB(), glw = new GB(), ov = new GB();
     tiles.forEach(function (t) { set[t] = 1; });
-    var band = enc.realm === 'air' ? RD.virtual.bands[clamp(enc.band || 1, 1, 3) - 1] : null, hh = enc.realm === 'land' ? 3.2 : 2.6, count = 0;
+    var band = enc.realm === 'air' ? RD.virtual.bands[clamp(enc.band || 1, 1, 3) - 1] : null;
     var inZ = function (i, j) { return i >= 0 && j >= 0 && i < N && j < N && set[i + j * N]; };
+    var edges = [], cablePos = [], vMap = {}, vList = [];
+    var step = enc.realm === 'air' ? 3 : 2;
+    function vkey(ci, cj) { return ci + cj * (N + 1); }
+    function considerVertex(ci, cj) {
+      var k = vkey(ci, cj); if (vMap[k]) return; vMap[k] = 1;
+      var tl = inZ(ci - 1, cj - 1) ? 1 : 0, tr = inZ(ci, cj - 1) ? 1 : 0, bl = inZ(ci - 1, cj) ? 1 : 0, br = inZ(ci, cj) ? 1 : 0;
+      var cnt = tl + tr + bl + br;
+      if (cnt === 0 || cnt === 4) return;
+      var isCorner = cnt === 1 || cnt === 3 || (cnt === 2 && tl === br && tl !== tr);
+      if (!isCorner && ((ci + cj) % step !== 0)) return;
+      var ix = (tr + br) * 0.5 - (tl + bl) * 0.5;
+      var iz = (bl + br) * 0.5 - (tl + tr) * 0.5;
+      var len = Math.sqrt(ix * ix + iz * iz);
+      if (len > 0.001) { ix /= len; iz /= len; } else { ix = 1; iz = 0; }
+      vList.push({ ci: ci, cj: cj, x: ci * T, z: cj * T, inX: ix, inZ: iz });
+    }
     tiles.forEach(function (t) {
       var i = t % N, j = (t - i) / N;
       [[0, -1, i, j, i + 1, j], [0, 1, i, j + 1, i + 1, j + 1], [-1, 0, i, j, i, j + 1], [1, 0, i + 1, j, i + 1, j + 1]].forEach(function (e) {
         if (inZ(i + e[0], j + e[1])) return;
-        var ax = e[2] * T, az = e[3] * T, bx = e[4] * T, bz = e[5] * T, ya, yb;
-        if (enc.realm === 'sea') { ya = SEA_Y - 1.3; yb = SEA_Y + 2.1; }
-        else if (enc.realm === 'air') { var g0 = (gy(ax, az) + gy(bx, bz)) / 2; ya = g0 + band.h0; yb = g0 + band.h1; }
-        else { ya = Math.min(gy(ax, az), gy(bx, bz)); yb = Math.max(gy(ax, az), gy(bx, bz)) + hh; }
-        curtain.quad([ax, ya, az], [bx, ya, bz], [bx, yb, bz], [ax, yb, az], 0xffffff);
-        count++;
-        if (count % 4 === 1) {   // a beacon post at the start of every fourth boundary edge
-          var gp = enc.realm === 'sea' ? SEA_Y : enc.realm === 'air' ? gy(ax, az) : gy(ax, az), ph = enc.realm === 'air' ? 1.6 : 2.2;
-          post.box(ax - 0.06, enc.realm === 'sea' ? SEA_Y - 0.5 : gp, az - 0.06, ax + 0.06, gp + ph, az + 0.06, 0x4a555e);
-          if (down) glw.box(ax - 0.07, gp + ph, az - 0.07, ax + 0.07, gp + ph + 0.85, az + 0.07, 0xff3b2a); else glw.box(ax - 0.14, gp + ph, az - 0.14, ax + 0.14, gp + ph + 0.26, az + 0.14, 0x4aff9a);   // power lost: a tall thin red spike, not just a colour change
-        }
+        var c0 = [e[2], e[3]], c1 = [e[4], e[5]];
+        edges.push({ c0: c0, c1: c1 });
+        considerVertex(c0[0], c0[1]);
+        considerVertex(c1[0], c1[1]);
       });
-      if (enc.realm === 'air') {   // top and bottom of the band
-        var x0 = i * T, z0 = j * T, x1 = x0 + T, z1 = z0 + T, gm = gy(x0 + T / 2, z0 + T / 2);
-        top.quad([x0, gm + band.h1, z0], [x0, gm + band.h1, z1], [x1, gm + band.h1, z1], [x1, gm + band.h1, z0], 0xffffff);
-        top.quad([x0, gm + band.h0, z0], [x0, gm + band.h0, z1], [x1, gm + band.h0, z1], [x1, gm + band.h0, z0], 0xffffff);
-      } else if (enc.realm === 'land' || overlayOn) {
-        var x2 = i * T + 0.14, z2 = j * T + 0.14, x3 = (i + 1) * T - 0.14, z3 = (j + 1) * T - 0.14, yy = enc.realm === 'sea' ? SEA_Y + 0.075 : Math.max(gy(x2, z2), gy(x3, z2), gy(x2, z3), gy(x3, z3)) + 0.08;
-        top.quad([x2, yy, z2], [x2, yy, z3], [x3, yy, z3], [x3, yy, z2], 0xffffff);
+      if (overlayOn) {
+        var x2 = i * T + 0.1, z2 = j * T + 0.1, x3 = (i + 1) * T - 0.1, z3 = (j + 1) * T - 0.1;
+        var yy = enc.realm === 'sea' ? SEA_Y + 0.075 : Math.max(gy(x2, z2), gy(x3, z2), gy(x2, z3), gy(x3, z3), SEA_Y) + 0.08;
+        ov.quad([x2, yy, z2], [x2, yy, z3], [x3, yy, z3], [x3, yy, z2], down ? 0xff5a3a : 0x59e1ff);
       }
     });
-    var cm = zoneMat(down); var cmesh = new THREE.Mesh(curtain.geo(), cm); cmesh.frustumCulled = false; cmesh.renderOrder = 7; root.add(cmesh); built.push(cmesh);
-    if (!top.empty()) { var tm = zoneMat(down); tm.uniforms.uA.value = overlayOn ? 0.3 : 0.14; var tmesh = new THREE.Mesh(top.geo(), tm); tmesh.frustumCulled = false; tmesh.renderOrder = 6; root.add(tmesh); built.push(tmesh); }
+    vList.forEach(function (v) {
+      var vx = v.x, vz = v.z, ph = (v.ci * 0.73 + v.cj * 1.19) % 1;
+      if (enc.realm === 'sea') {
+        post.box(vx - 0.26, SEA_Y - 0.35, vz - 0.26, vx + 0.26, SEA_Y - 0.05, vz + 0.26, 0x2b363d);
+        post.box(vx - 0.36, SEA_Y - 0.06, vz - 0.36, vx + 0.36, SEA_Y + 0.34, vz + 0.36, 0xf06a24);
+        post.box(vx - 0.375, SEA_Y + 0.14, vz - 0.375, vx + 0.375, SEA_Y + 0.24, vz + 0.375, 0xf4f7f8);
+        post.box(vx - 0.22, SEA_Y + 0.34, vz - 0.22, vx + 0.22, SEA_Y + 0.40, vz + 0.22, 0x38434b);
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(function (sc) {
+          strut(post, vx + sc[0] * 0.16, SEA_Y + 0.39, vz + sc[1] * 0.16, vx + sc[0] * 0.10, SEA_Y + 0.75, vz + sc[1] * 0.10, 0.028, 0x38434b);
+        });
+        post.box(vx - 0.14, SEA_Y + 0.74, vz - 0.14, vx + 0.14, SEA_Y + 0.80, vz + 0.14, 0x38434b);
+        zoneBeacons.push({ x: vx, y: SEA_Y + 0.93, z: vz, realm: 'sea', down: down, phase: ph, scale: 1.25 });
+      } else if (enc.realm === 'air') {
+        var gp = gy(vx, vz), topY = gp + band.h1;
+        post.box(vx - 0.12, gp - 0.15, vz - 0.12, vx + 0.12, gp + 0.22, vz + 0.12, 0x374149);
+        post.box(vx - 0.055, gp - 0.15, vz - 0.055, vx + 0.055, topY + 0.08, vz + 0.055, 0x46535d);
+        post.box(vx - 0.068, topY - 0.55, vz - 0.068, vx + 0.068, topY - 0.35, vz + 0.068, 0xf06a24);
+        beamBox(post, vx, vz, v.inX, v.inZ, 0, 1.04, 0.045, topY - 0.05, topY + 0.05, 0x55646f);
+        strut(post, vx, topY - 0.46, vz, vx + v.inX * 0.52, topY - 0.04, vz + v.inZ * 0.52, 0.028, 0x46535d);
+        beamBox(post, vx, vz, v.inX, v.inZ, 0.82, 1.02, 0.075, topY - 0.24, topY - 0.05, 0x36424a);
+        beamBox(glw, vx, vz, v.inX, v.inZ, 0.85, 1.00, 0.05, topY - 0.27, topY - 0.24, down ? 0xff5a3a : 0x59e1ff);
+        zoneBeacons.push({ x: vx, y: topY + 0.18, z: vz, realm: 'air', down: down, phase: ph, scale: 1.15 });
+      } else {
+        var gp2 = gy(vx, vz);
+        post.box(vx - 0.13, gp2 - 0.15, vz - 0.13, vx + 0.13, gp2 + 0.18, vz + 0.13, 0x3a434a);
+        post.box(vx - 0.06, gp2, vz - 0.06, vx + 0.06, gp2 + 1.95, vz + 0.06, 0x9aa6b0);
+        post.box(vx - 0.072, gp2 + 1.48, vz - 0.072, vx + 0.072, gp2 + 1.64, vz + 0.072, 0xe8b931);
+        post.box(vx - 0.11, gp2 + 1.84, vz - 0.11, vx + 0.11, gp2 + 2.02, vz + 0.11, 0x46525c);
+        post.box(vx - 0.02, gp2 + 2.02, vz - 0.02, vx + 0.02, gp2 + 2.38, vz + 0.02, 0x7c8a94);
+        zoneBeacons.push({ x: vx, y: gp2 + 2.44, z: vz, realm: 'land', down: down, phase: ph, scale: 0.85 });
+      }
+    });
+    if (enc.realm === 'air') {
+      edges.forEach(function (e) {
+        var x0 = e.c0[0] * T, z0 = e.c0[1] * T, x1 = e.c1[0] * T, z1 = e.c1[1] * T;
+        var y0 = gy(x0, z0) + band.h1, y1 = gy(x1, z1) + band.h1;
+        cablePos.push(x0, y0, z0, x1, y1, z1);
+        if ((e.c0[0] + e.c0[1]) % 2 === 0) {
+          var mx = (x0 + x1) * 0.5, my = (y0 + y1) * 0.5, mz = (z0 + z1) * 0.5;
+          post.box(mx - 0.11, my - 0.11, mz - 0.11, mx + 0.11, my + 0.11, mz + 0.11, 0xf06a24);
+        }
+      });
+      if (cablePos.length) {
+        var cgeo = new THREE.BufferGeometry();
+        cgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cablePos), 3));
+        var clines = new THREE.LineSegments(cgeo, new THREE.LineBasicMaterial({ color: 0x5a6872, transparent: true, opacity: 0.55, depthWrite: false }));
+        clines.frustumCulled = false; clines.renderOrder = 7; root.add(clines); zoneLines.push(clines);
+      }
+    }
+    if (overlayOn) add(ov, glass(0.18), 6);
     add(post, lam()); add(glw, glow());
   }
 
@@ -407,18 +566,6 @@
     if (gb.empty()) return;
     ringMesh = new THREE.Mesh(gb.geo(), new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide })); ringMesh.frustumCulled = false; ringMesh.renderOrder = 9; root.add(ringMesh);
   }
-  function nearFill(s) {
-    var cam = Z.World.cam, cx = cam && cam.target ? cam.target.x : 0, cz = cam && cam.target ? cam.target.z : 0, k, q, best = [];
-    for (q = 0; q < 6; q++) nearArr[q].y = 0;
-    for (k = 0; k < s.animals.length; k++) {
-      var a = s.animals[k]; if (!a.tag || a.bolt) continue;
-      var d = (a.x - cx) * (a.x - cx) + (a.z - cz) * (a.z - cz), at = best.length;
-      if (best.length === 6 && d >= best[5].d) continue;
-      while (at > 0 && best[at - 1].d > d) at--;
-      best.splice(at, 0, { d: d, a: a }); if (best.length > 6) best.length = 6;
-    }
-    for (q = 0; q < best.length; q++) { nearArr[q].set(best[q].a.x, 1, best[q].a.z); }
-  }
   function updateTags() {
     var s = S(); if (!s) return;
     if (!tagMesh) {
@@ -435,8 +582,68 @@
       _sc.setScalar(a.bolt ? 1.35 : 1); _mat4.compose(_pp, _q, _sc); tagMesh.setMatrixAt(n, _mat4);
       col.setHex(ok ? 0x59e1ff : 0xff5a3a).multiplyScalar(ok ? pulse : 1); tagMesh.setColorAt(n, col); n++;
     }
-    nearFill(s);
     tagMesh.count = n; tagMesh.visible = n > 0; tagMesh.instanceMatrix.needsUpdate = true; if (tagMesh.instanceColor) tagMesh.instanceColor.needsUpdate = true;
+  }
+  function updateBeacons() {
+    var n = zoneBeacons.length;
+    if (!n) { if (beaconMesh) { beaconMesh.count = 0; beaconMesh.visible = false; } return; }
+    if (!beaconMesh || n > beaconCap) {
+      if (beaconMesh) { root.remove(beaconMesh); beaconMesh.geometry.dispose(); beaconMesh.material.dispose(); }
+      beaconCap = Math.max(512, n);
+      var bg = new THREE.IcosahedronGeometry(0.11, 1);
+      beaconMesh = new THREE.InstancedMesh(bg, new THREE.MeshBasicMaterial({ color: 0xffffff }), beaconCap);
+      beaconMesh.frustumCulled = false; beaconMesh.renderOrder = 8;
+      beaconMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(beaconCap * 3), 3);
+      root.add(beaconMesh);
+      if (!_mat4) { _mat4 = new THREE.Matrix4(); _q = new THREE.Quaternion(); _sc = new THREE.Vector3(1, 1, 1); _pp = new THREE.Vector3(); }
+    }
+    var col = new THREE.Color();
+    for (var k = 0; k < n; k++) {
+      var b = zoneBeacons[k], sMul = 1.0, ph;
+      if (b.realm === 'sea') {
+        if (b.down) {
+          ph = ((t0 * 3.2 + b.phase) % 1 + 1) % 1;
+          var sOn = ph < 0.48;
+          col.setHex(sOn ? 0xff2e22 : 0x4a120e);
+          sMul = sOn ? 1.18 : 0.9;
+        } else {
+          ph = ((t0 * 0.85 + b.phase) % 1 + 1) % 1;
+          var bOn = ph < 0.22;
+          col.setHex(bOn ? (ph < 0.09 ? 0xfff2a6 : 0x66ffbb) : 0x20483e);
+          sMul = bOn ? 1.2 : 0.88;
+        }
+      } else if (b.realm === 'air') {
+        if (b.down) {
+          ph = ((t0 * 3.4 + b.phase) % 1 + 1) % 1;
+          var aDownOn = ph < 0.22 || (ph >= 0.34 && ph < 0.54);
+          col.setHex(aDownOn ? 0xff2e22 : 0x4a120e);
+          sMul = aDownOn ? 1.2 : 0.9;
+        } else {
+          ph = ((t0 * 1.1 + b.phase) % 1 + 1) % 1;
+          var s1 = ph < 0.11, s2 = ph >= 0.18 && ph < 0.28;
+          col.setHex(s1 ? 0xffe066 : s2 ? 0x66e8ff : 0x223844);
+          sMul = (s1 || s2) ? 1.18 : 0.88;
+        }
+      } else {
+        if (b.down) {
+          ph = ((t0 * 3.0 + b.phase) % 1 + 1) % 1;
+          var lOn = ph < 0.5;
+          col.setHex(lOn ? 0xff3b2a : 0x4a1410);
+          sMul = lOn ? 1.12 : 0.9;
+        } else {
+          var gp = 0.68 + 0.32 * Math.sin(t0 * 2.2 + b.phase * 6.283);
+          col.setHex(0x4aff9a).multiplyScalar(gp);
+        }
+      }
+      _pp.set(b.x, b.y, b.z);
+      _sc.setScalar(b.scale * sMul);
+      _mat4.compose(_pp, _q, _sc);
+      beaconMesh.setMatrixAt(k, _mat4);
+      beaconMesh.setColorAt(k, col);
+    }
+    beaconMesh.count = n; beaconMesh.visible = true;
+    beaconMesh.instanceMatrix.needsUpdate = true;
+    if (beaconMesh.instanceColor) beaconMesh.instanceColor.needsUpdate = true;
   }
 
   // ---------------------------------------------------------------- street view inside a tunnel: water tint and fog, cheap caustics overlay
@@ -494,7 +701,7 @@
     buildWalks(); buildRings();
     zoneSig = sig();
   }
-  function sig() { var s = S(), r = ''; if (s && s.enclosures) s.enclosures.forEach(function (e) { if (e.kind === 'virtual') r += (e.vdown ? 'd' : 'u'); if (e.kind === 'dome') r += RW.locked ? 'L' : 'o'; }); return r; }
+  function sig() { var s = S(), r = ''; if (s && s.enclosures) s.enclosures.forEach(function (e) { if (e.kind === 'virtual') r += ((e.vdown || e.down) ? 'd' : 'u') + (e.band || 1); if (e.kind === 'dome') r += RW.locked ? 'L' : 'o'; }); return r; }
   var lastCache = -1;
   function dirtyAll() { dirty = true; }
   Z.bus.on('enclosures', function () { dirty = true; cacheDirty = true; }); Z.bus.on('terrain', function () { dirty = true; cacheDirty = true; }); Z.bus.on('reset', function () { dirty = true; cacheDirty = true; });
@@ -515,8 +722,7 @@
     if (cacheDirty) { cacheDirty = false; refreshCache(); dirty = true; }
     if (accT > 0.5) { accT = 0; var sg = sig(); if (sg !== zoneSig) dirty = true; }
     if (dirty) { dirty = false; rebuild(); }
-    zoneMats.forEach(function (m) { m.uniforms.uTime.value = t0; });
-    crackle(dt || 0.016); updateTags(); splashes(dt || 0.016);
+    crackle(dt || 0.016); updateTags(); updateBeacons(); splashes(dt || 0.016);
     var target = tunnelBlend(SV); uw += (target - uw) * Math.min(1, (dt || 0.016) * 4);
     underwaterScene(uw, SV);
     if (uw > 0.01 || (uwEl && uwEl.style.opacity !== '0')) {
