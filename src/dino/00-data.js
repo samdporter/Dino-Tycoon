@@ -1191,8 +1191,8 @@ window.Z.DATA.donors = [
   D.buildings.push(
     { id: 'substation', name: 'Substation', emoji: '🔌', cost: 2200, upkeep: 14, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0, powerNode: { radius: 11 },
       info: 'Hands mains power to everything within 11 tiles. The island is one grid: sources feed every substation.' },
-    { id: 'power_pylon', name: 'Power pylon', emoji: '🗼', cost: 750, upkeep: 4, type: 'utility', utility: true, price: 0, capacity: 0, w: 1, h: 1, satisfies: {}, star: 0, powerNode: { radius: 6 },
-      info: 'A small relay: hands mains power to everything within 6 tiles.' },
+    { id: 'power_pylon', name: 'Power pylon', emoji: '🗼', cost: 750, upkeep: 4, type: 'utility', utility: true, price: 0, capacity: 0, w: 1, h: 1, satisfies: {}, star: 0, inEnclosure: true, powerNode: { radius: 6 },
+      info: 'A small relay: hands mains power to everything within 6 tiles. Can be placed inside enclosures, domes and zones.' },
     { id: 'diesel_gen', name: 'Diesel generator', emoji: '🛢️', cost: 3500, upkeep: 24, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 0,
       gen: { kind: 'diesel', kw: 45, noise: 8 }, info: 'Generates up to 45 kW on demand (burns £1.15/kWh of fuel, paid daily). Noisy and ugly: lowers scenery appeal nearby.' },
     { id: 'solar_field', name: 'Solar field', emoji: '☀️', cost: 5200, upkeep: 12, type: 'utility', utility: true, price: 0, capacity: 0, w: 3, h: 3, satisfies: {}, star: 1,
@@ -1276,7 +1276,7 @@ window.Z.DATA.donors = [
   };
 })(window.Z.DATA);
 
-// ===== realms package (marine tanks and sea pens, the Thunder Dome aviary, virtual tagged enclosures, viewing structures) =====
+// ===== realms package (marine tanks and sea pens, the Aviary dome, virtual tagged enclosures, viewing structures) =====
 (function (D) {
   // special fence types: sea nets (style 'net'). Hidden from the land Fences tab (special:true), sold in the Marine tab.
   D.fences.push(
@@ -1308,19 +1308,19 @@ window.Z.DATA.donors = [
     pen: { maxTiles: 420, upkeepTile: 1 },
     dome: {
       heights: [
-        { id: 1, name: 'Low dome', h: 4.0, cost: 55, label: '10 m' },
-        { id: 2, name: 'Standard dome', h: 7.0, cost: 80, label: '18 m' },
-        { id: 3, name: 'Grand dome', h: 10.0, cost: 115, label: '28 m' }
+        { id: 1, name: 'Standard aviary', h: 6.5, cost: 55, label: '16 m' },
+        { id: 2, name: 'Tall aviary', h: 10.5, cost: 80, label: '28 m' },
+        { id: 3, name: 'Grand aviary', h: 15.0, cost: 115, label: '42 m' }
       ],
       meshes: [
         { id: 1, name: 'Light mesh', strength: 2, mult: 1.0 },
         { id: 2, name: 'Steel mesh', strength: 3, mult: 1.35 },
         { id: 3, name: 'Reinforced mesh', strength: 4, mult: 1.85 }
       ],
-      maxTiles: 380, upkeepTile: 2
+      maxTiles: 900, upkeepTile: 2
     },
     virtual: {
-      tileCost: { land: 140, sea: 160, sky: 120 }, maxTiles: 360, upkeepTile: 6, tagUpkeep: 6,
+      tileCost: { land: 140, sea: 160, sky: 120 }, maxTiles: 1200, upkeepTile: 6, tagUpkeep: 6,
       bands: [
         { id: 1, name: 'Low airspace', h0: 0, h1: 4.5, mul: 1.0, label: 'to 12 m' },
         { id: 2, name: 'Mid airspace', h0: 0, h1: 8.0, mul: 1.5, label: 'to 22 m' },
@@ -1356,9 +1356,9 @@ window.Z.DATA.donors = [
     { id: 'feeding_grandstand', name: 'Feeding-show grandstand', emoji: '🎪', cost: 12500, upkeep: 90, type: 'info', price: 0, capacity: 60, w: 4, h: 2, satisfies: { fun: 0.6 }, star: 3, plat: true, realm: 'grandstand',
       info: 'Tiered seating beside a tank or sea pen (capacity 60, +60% fun). Rangers run feeding shows twice a day, boosting mood and spending.' },
     { id: 'canopy_tower', name: 'Canopy observation tower', emoji: '🗼', cost: 8500, upkeep: 55, type: 'info', price: 0, capacity: 16, w: 2, h: 2, satisfies: { fun: 0.4 }, star: 3, plat: true, realm: 'tower',
-      info: 'Tall lookout beside the Thunder Dome (capacity 16, +40% fun). Guests watch pterosaurs soar at eye level.' },
-    { id: 'tagging_tower', name: 'Tagging control tower', emoji: '📡', cost: 26000, upkeep: 140, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, needsPower: true, powerDraw: 25, powerClass: 'containment', realm: 'tower',
-      info: 'Projects an invisible geofence (10-tile range, 6 tags, strength 3 at level 1; upgradable). Draws 25 kW; power loss drops the fence.' },
+      info: 'Tall lookout beside the Aviary (capacity 16, +40% fun). Guests watch pterosaurs soar at eye level.' },
+    { id: 'tagging_tower', name: 'Tagging control tower', emoji: '📡', cost: 26000, upkeep: 140, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, inEnclosure: true, needsPower: true, powerDraw: 25, powerClass: 'containment', realm: 'tower',
+      info: 'Projects an invisible geofence (10-tile range, 6 tags, strength 3 at level 1; upgradable). Draws 25 kW; power loss drops the fence. Can be built right inside a zone.' },
     { id: 'boathouse', name: 'Recovery boathouse', emoji: '🚤', cost: 6000, upkeep: 45, type: 'utility', utility: true, price: 0, capacity: 0, w: 3, h: 2, satisfies: {}, star: 2, realm: 'boat',
       info: 'Keeps a rescue boat and divers. Escaped marine animals are recovered much faster. Build near the shore.' },
     { id: 'drone_hangar', name: 'Net-gun drone hangar', emoji: '🛸', cost: 7000, upkeep: 55, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, realm: 'drone',
@@ -1368,13 +1368,13 @@ window.Z.DATA.donors = [
     { id: 'kelp_bed', name: 'Kelp bed', emoji: '🌿', cost: 120, kind: 'deco', biome: 'water', aesthetic: 2, inEnclosure: true, aquatic: true, marine: 'kelp', info: 'Swaying kelp for tanks and sea pens. Enrichment for every marine animal (one per 10 water tiles).' },
     { id: 'reef_block', name: 'Reef block', emoji: '🪸', cost: 260, kind: 'deco', biome: 'water', aesthetic: 3, inEnclosure: true, aquatic: true, marine: 'reef', info: 'Coral-covered blocks that give fish and reptiles somewhere to hide. Enrichment (one per 14 water tiles).' },
     { id: 'fish_feeder', name: 'Fish feeder', emoji: '🐟', cost: 450, kind: 'toy', biome: 'water', aesthetic: 1, inEnclosure: true, aquatic: true, marine: 'feeder', info: 'A floating feeder that drops fish on the hour. Piscivores and predators in tanks and pens need one.' },
-    { id: 'perch_crag', name: 'Perch crag', emoji: '🪨', cost: 160, kind: 'rock', biome: 'rock', aesthetic: 2, inEnclosure: true, air: 'perch', info: 'A craggy outcrop with a flat top. Pterosaurs land and perch on it; counts as rocks and perches in the Thunder Dome.' },
-    { id: 'perch_pole', name: 'Perch pole', emoji: '🪵', cost: 90, kind: 'deco', biome: 'any', aesthetic: 1, inEnclosure: true, air: 'perch', info: 'A stout pole with a crossbar for resting. Counts as a perch in the Thunder Dome.' },
-    { id: 'fish_pool', name: 'Fish pool', emoji: '🐠', cost: 380, kind: 'toy', biome: 'water', aesthetic: 2, inEnclosure: true, air: 'pool', info: 'A small stocked pool. Fish-eating fliers dive into it; counts as water and a fish supply in the Thunder Dome.' }
+    { id: 'perch_crag', name: 'Perch crag', emoji: '🪨', cost: 160, kind: 'rock', biome: 'rock', aesthetic: 2, inEnclosure: true, air: 'perch', info: 'A craggy outcrop with a flat top. Pterosaurs land and perch on it; counts as rocks and perches in the Aviary.' },
+    { id: 'perch_pole', name: 'Perch pole', emoji: '🪵', cost: 90, kind: 'deco', biome: 'any', aesthetic: 1, inEnclosure: true, air: 'perch', info: 'A stout pole with a crossbar for resting. Counts as a perch in the Aviary.' },
+    { id: 'fish_pool', name: 'Fish pool', emoji: '🐠', cost: 380, kind: 'toy', biome: 'water', aesthetic: 2, inEnclosure: true, air: 'pool', info: 'A small stocked pool. Fish-eating fliers dive into it; counts as water and a fish supply in the Aviary.' }
   );
   D.goals.push(
     { id: 'realm_marine', text: 'Keep your first marine reptile in a tank or sea pen', type: 'realm', what: 'marine', target: 1, reward: 4000 },
-    { id: 'realm_ptero', text: 'Fly your first pterosaur in the Thunder Dome', type: 'realm', what: 'ptero', target: 1, reward: 5000 },
+    { id: 'realm_ptero', text: 'Fly your first pterosaur in the Aviary', type: 'realm', what: 'ptero', target: 1, reward: 5000 },
     { id: 'realm_tunnel', text: 'Send 500 guests through a transparent tunnel', type: 'realm', what: 'tunnel', target: 500, reward: 6000 },
     { id: 'realm_virtual', text: 'Hold 5 animals in a virtual enclosure for 5 days with no escapes', type: 'realm', what: 'virtual', target: 5, reward: 9000 }
   );
@@ -1416,7 +1416,7 @@ window.Z.DATA.donors = [
     { id: 'safari_harbour', name: 'Safari harbour', emoji: '⛵', cost: 8000, upkeep: 36, type: 'transport', price: 0, capacity: 0, w: 3, h: 2, satisfies: {}, star: 3, safari: 'sea',
       info: 'A boarding jetty with a boathouse for glass-bottom tour boats. Build on the shore with a path at the entrance, then draw a buoyed route out through a sea zone.' },
     { id: 'safari_balloon', name: 'Balloon pad', emoji: '🎈', cost: 7000, upkeep: 30, type: 'transport', price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 4, safari: 'air',
-      info: 'Tethered viewing balloons that drift over a sky zone or a Thunder Dome on a drawn flight route. Entrance must touch a path.' },
+      info: 'Tethered viewing balloons that drift over a sky zone or an Aviary on a drawn flight route. Entrance must touch a path.' },
     { id: 'safari_portal', name: 'Geofence portal', emoji: '🚧', cost: 4500, upkeep: 22, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 1, satisfies: {}, star: 3, needsPower: true, powerDraw: 0.15, powerClass: 'life', safariPortal: true,
       info: 'Cattle grid, bollards and a boom barrier at the edge of a virtual zone. Vehicles cross here; the boom locks shut if the power fails.' },
     { id: 'ranger_post', name: 'Ranger post', emoji: '🏕️', cost: 5500, upkeep: 50, type: 'utility', utility: true, price: 0, capacity: 0, w: 2, h: 2, satisfies: {}, star: 3, safariRanger: true,

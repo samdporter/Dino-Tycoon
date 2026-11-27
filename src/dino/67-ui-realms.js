@@ -1,6 +1,6 @@
 // ===== 67-ui-realms.js =====
 window.Z = window.Z || {}; var Z = window.Z;
-/* Amber Acres - realms UI: the Marine, Aviary and Tagging build categories, the area tool (tank, Thunder Dome, virtual zones) and the walkway
+/* Amber Acres - realms UI: the Marine, Aviary and Tagging build categories, the area tool (tank, Aviary, virtual zones) and the walkway
    tool (tunnel, pier, mesh walk, skywalk), enclosure and object panel blocks, the species requirement rows, the Hatch realm filter and the Guide.
    All behaviour lives in Z.Realms (26-sim-realms.js); this file only draws it.
    Hooks used: UI.extraCats / UI.onCard / UI.openCat (50-ui), Tools.stripHook / Tools.PLAN / Tools.refresh (51-tools), UI.Realms.* (50-ui, 52-panels, 57-guide). */
@@ -34,7 +34,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     dimorphodon: 'Not a dinosaur: a small pterosaur (flying reptile) with a big head.',
     rhamphorhynchus: 'Not a dinosaur: a pterosaur with a long tail, a fish-eater.',
     pteranodon: 'Not a dinosaur: a pterosaur, a flying reptile. Needs open air and a fish supply.',
-    quetzalcoatlus: 'Not a dinosaur: one of the largest flying animals ever. Needs a tall Grand dome and reinforced mesh.',
+    quetzalcoatlus: 'Not a dinosaur: one of the largest flying animals ever. Needs a tall Grand aviary and reinforced mesh.',
     seagull: 'A living bird, and birds are the living descendants of dinosaurs. Wild: it cannot be hatched.',
     heron: 'A living bird, descended from dinosaurs. Wild: it cannot be hatched.',
     seal: 'A living mammal, not a reptile. Wild: it cannot be hatched.',
@@ -44,7 +44,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   RL.realmOf = function (sp) { return (sp && sp.realm) || 'land'; };
   RL.hatchTip = function (sp) {
     var rl = RL.realmOf(sp);
-    return rl === 'sea' ? sp.name + ': a marine reptile (not a dinosaur). Needs a lagoon tank, sea pen or virtual sea zone.' : rl === 'air' ? sp.name + ': a flying reptile (not a dinosaur). Needs the Thunder Dome or a virtual sky zone.' : undefined;
+    return rl === 'sea' ? sp.name + ': a marine reptile (not a dinosaur). Needs a lagoon tank, sea pen or virtual sea zone.' : rl === 'air' ? sp.name + ': a flying reptile (not a dinosaur). Needs an Aviary or a virtual sky zone.' : undefined;
   };
   RL.hatchShows = function (sp) { return !UI.hatchRealm || UI.hatchRealm === 'all' || RL.realmOf(sp) === UI.hatchRealm; };
   RL.hatchFor = function (encId) {
@@ -91,7 +91,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---------------------------------------------------------------- build categories
   var AREA = {
     tank: { name: 'Lagoon tank', realm: 'sea', kind: 'tank' },
-    dome: { name: 'Thunder Dome', realm: 'air', kind: 'dome' },
+    dome: { name: 'Aviary', realm: 'air', kind: 'dome' },
     zl: { name: 'Land zone', realm: 'land', kind: 'virtual' },
     zs: { name: 'Sea zone', realm: 'sea', kind: 'virtual' },
     za: { name: 'Sky zone', realm: 'air', kind: 'virtual' }
@@ -101,8 +101,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   function areaItem(id) {
     var a = AREA[id], star = R().starNeeded(a.kind, a.realm), cost, unit = '/tile', icon, tip;
     if (id === 'tank') { cost = RD.tank.levels[0].cost; icon = tankIcon(2); tip = 'Dig a sunken basin on dry land with acrylic walls. Choose the depth and wall strength. Needs a pump or a sea connection. Volume is area times depth.'; }
-    else if (id === 'dome') { cost = Math.round(RD.dome.heights[0].cost * RD.dome.meshes[0].mult); icon = domeIcon(2); tip = 'A geodesic mesh dome for flying animals. Height and mesh strength matter. Add perches and a fish pool.'; }
-    else { cost = RD.virtual.tileCost[id === 'za' ? 'sky' : id === 'zs' ? 'sea' : 'land']; icon = zoneIcon(a.realm); tip = 'Paint a zone with no fence. Animals wear tags and a Tagging control tower holds them in with an invisible geofence. Needs power.'; }
+    else if (id === 'dome') { cost = Math.round(RD.dome.heights[0].cost * RD.dome.meshes[0].mult); icon = domeIcon(2); tip = 'A tall, clear-view geodesic aviary for flying animals. Height and mesh strength matter. Add perches and a fish pool.'; }
+    else { cost = RD.virtual.tileCost[id === 'za' ? 'sky' : id === 'zs' ? 'sea' : 'land']; icon = zoneIcon(a.realm); tip = 'Paint a zone with no fence (can cover trees and rocks). Animals wear tags and Tagging control towers — even placed inside the zone — hold them in with an invisible geofence. Needs power.'; }
     return { kind: 'rarea', id: id, name: a.name, cost: cost, unit: unit, star: star, iconHtml: icon, tip: tip, sub: 'from' };
   }
   function walkItem(w) {
@@ -126,7 +126,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   UI.extraCats = (UI.extraCats || []).concat([
     { id: 'marine', name: 'Marine', icon: 'wave', items: marine, hint: 'Tanks, sea pens and underwater viewing for sea animals.' },
-    { id: 'aviary', name: 'Aviary', icon: 'wing', items: aviary, hint: 'The Thunder Dome and viewing for pterosaurs and birds.' },
+    { id: 'aviary', name: 'Aviary', icon: 'wing', items: aviary, hint: 'Tall clear-view Aviary domes and viewing for pterosaurs and birds.' },
     { id: 'tagging', name: 'Tagging', icon: 'radar', items: tagging, hint: 'Fence-free virtual enclosures held by tagging towers.' }
   ]);
 
@@ -266,7 +266,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (r.salt === false) el.appendChild(h('div.rwarn', { text: 'Fresh water. Most marine animals need salt water.' }));
       } else if (r.kind === 'virtual') {
         var z = r.zone;
-        el.appendChild(row(z.tower ? 'ok' : 'bad', 'Tagging tower', z.tower ? 'Level ' + z.lvl + ', ' + Math.round((z.cover || 0) * 100) + '% covered' : 'None in range'));
+        el.appendChild(row(z.tower ? 'ok' : 'bad', 'Tagging tower', z.tower ? ((z.towerCount > 1 ? z.towerCount + ' towers (min Lv ' + z.lvl + ')' : 'Level ' + z.lvl) + ', ' + Math.round((z.cover || 0) * 100) + '% covered') : 'None in range'));
         el.appendChild(row(z.powered ? 'ok' : 'bad', 'Power', z.powered ? 'On' : 'Off: geofence down'));
         if (z.cap) el.appendChild(row(z.used > z.cap ? 'bad' : '', 'Tag capacity', z.used + ' of ' + z.cap));
         if (z.band) el.appendChild(row('', 'Airspace', z.band.name + ' ' + z.band.label));
@@ -340,7 +340,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       ['sea', 'Marine', function () { return speciesCards('sea').concat(buildCards(['sea_net', 'steel_sea_mesh', 'armoured_sea_barrier', 'acrylic_tunnel', 'glass_pier', 'underwater_gallery', 'feeding_grandstand', 'filtration_plant', 'boathouse', 'kelp_bed', 'reef_block', 'fish_feeder'])); },
         'Sea animals are marine reptiles and living mammals and fish, not dinosaurs. They live in a lagoon tank (dug on land), a sea pen (nets in the water) or a virtual sea zone. Volume is area times depth.'],
       ['air', 'Aviary', function () { return speciesCards('air').concat(buildCards(['mesh_walk', 'canopy_tower', 'drone_hangar', 'perch_crag', 'perch_pole', 'fish_pool'])); },
-        'Pterosaurs are flying reptiles, not dinosaurs; gulls and herons are living birds. They need the Thunder Dome (height and mesh strength matter) or a virtual sky zone. Loose flyers need a net-gun drone team.'],
+        'Pterosaurs are flying reptiles, not dinosaurs; gulls and herons are living birds. They need an Aviary (height and mesh strength matter) or a virtual sky zone. Loose flyers need a net-gun drone team.'],
       ['tags', 'Tagging', function () {
         var info = [h('div.box.gd-card.gd-rl', h('div.gd-head', h('span.gd-em', { text: '📡' }), h('div', h('b', { text: 'How virtual enclosures work' }))), h('div.gd-info', { text: 'Paint a zone on land, sea or sky. A powered Tagging control tower within range projects an invisible geofence and every animal is fitted with a tag (a fee each). Stronger species need a higher tower level. Tags can fail; keepers and vets keep them working. If the power goes out the fence drops and animals wander off within hours. Guests only walk through a zone on a skywalk or tunnel.' }))];
         return info.concat(buildCards(['tagging_tower', 'skywalk']));

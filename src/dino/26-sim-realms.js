@@ -4,7 +4,7 @@ window.Z = window.Z || {}; var Z = window.Z;
    Makes sea and air real. Enclosure kinds (enc.kind; missing = ordinary fenced land paddock):
      'tank'    lagoon tank: dug basin on land with acrylic walls, depth level, needs salt water (sea intake or filtration plant)       realm 'sea'
      'pen'     sea pen: auto-detected water region closed by net fences (D.fences style 'net') and the shore                           realm 'sea'
-     'dome'    the Thunder Dome: geodesic mesh over a land/cliff/water footprint, height level, mesh strength                           realm 'air'
+     'dome'    the Aviary: tall clear-view geodesic dome over a land/cliff/water footprint, height level, mesh strength                realm 'air'
      'virtual' painted zone (land | sea | sky band) held by electronic tags + a powered Tagging control tower; no physical barrier   realm land|sea|air
    SAVED: S.realms {defs[] (tank/dome/virtual definitions: id (= enclosure id), kind, realm, tiles[], params), stats, forced, show}; enclosure fields kind/realm/... are stamped on the
    enclosure objects each recompute; per animal: a.tag (1 = tagged), a.er (escape info), a.wb (absolute water surface for sea animals). Walks (tunnel, mesh walk, pier, skywalk) are
@@ -57,7 +57,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     n.tagCost = Math.round((RD.virtual.tagBase + (sp.cost || 500) * RD.virtual.tagK) / 10) * 10;
     return (needCache[key] = n);
   };
-  var KIND_NAME = { tank: 'lagoon tank', pen: 'sea pen', dome: 'Thunder Dome', virtual: 'virtual zone' };
+  var KIND_NAME = { tank: 'lagoon tank', pen: 'sea pen', dome: 'aviary', virtual: 'virtual zone' };
   R.kindName = function (enc) { return enc.kind ? (enc.kind === 'virtual' ? (enc.realm === 'sea' ? 'virtual sea zone' : enc.realm === 'air' ? 'virtual sky zone' : 'virtual land zone') : KIND_NAME[enc.kind]) : 'paddock'; };
   function encIsRealm(enc) { return !!(enc && enc.kind); }
 
@@ -128,7 +128,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
     return out;
   }
-  var NAMEC = { tank: 'Lagoon tank', dome: 'Thunder Dome', virtual: 'Virtual zone', pen: 'Sea pen' };
+  var NAMEC = { tank: 'Lagoon tank', dome: 'Aviary', virtual: 'Virtual zone', pen: 'Sea pen' };
   function nextName(kind, encs) {
     var base = NAMEC[kind], max = 0, re = new RegExp('^' + base + ' (\\d+)$');
     for (var k = 0; k < encs.length; k++) { var m = re.exec(encs[k].name || ''); if (m) max = Math.max(max, +m[1]); }
@@ -288,19 +288,20 @@ window.Z = window.Z || {}; var Z = window.Z;
       }
       e.supplied = !!(e.intake || (P && e.filter !== 'off') || (P && e.filter === 'off' && e.intake));
     }
-    // towers: pick one that covers every tile of each virtual zone; capacity counts animals
+    // towers: pick one that covers every tile of each virtual zone, or combine multiple overlapping towers for massive connected zones
     var used = {}, vz = encs.filter(function (e) { return e.kind === 'virtual'; });
     for (k = 0; k < vz.length; k++) {
-      var z = vz[k], best = null, bc = -1, bdist = 1e9;
+      var z = vz[k], best = null, bc = -1, bdist = 1e9, ov = [];
       for (q = 0; q < x.towers.length; q++) {
         var tw = x.towers[q], td = RD.virtual.towers[clamp(tw.o.lvl || 1, 1, 3) - 1], c = objCentre(tw.o), r2 = td.radius * td.radius * TILE * TILE, inn = 0;
         for (var u = 0; u < z.tiles.length; u++) { var tt = z.tiles[u]; if (dist2(C.cxOf(tt), C.czOf(tt), c.x, c.z) <= r2) inn++; }
-        var cov = inn / z.tiles.length, dd = dist2(c.x, c.z, z.cx, z.cz);
+        var cov = z.tiles.length ? inn / z.tiles.length : 0, dd = dist2(c.x, c.z, z.cx, z.cz);
+        if (inn > 0) ov.push({ tw: tw, td: td, c: c, r2: r2, cov: cov, dd: dd, pw: powered(tw.o) });
         if (cov > bc + 1e-6 || (Math.abs(cov - bc) < 1e-6 && dd < bdist)) { bc = cov; bdist = dd; best = tw; }
       }
-      var st = { tower: best ? best.o.id : 0, cover: bc < 0 ? 0 : bc, ok: false, reasons: [], powered: false, strength: 0, cap: 0 };
+      var st = { tower: best ? best.o.id : 0, towers: best ? [best.o.id] : [], towerCount: best ? 1 : 0, cover: bc < 0 ? 0 : bc, ok: false, reasons: [], powered: false, strength: 0, cap: 0 };
       if (!best) st.reasons.push('No tagging tower in range');
-      else {
+      else if (bc >= 0.999 || ov.length <= 1) {
         var td2 = RD.virtual.towers[clamp(best.o.lvl || 1, 1, 3) - 1];
         st.strength = td2.strength; st.cap = td2.capacity; st.lvl = best.o.lvl || 1; st.powered = powered(best.o);
         used[best.o.id] = (used[best.o.id] || 0) + z.animals.length;
@@ -309,6 +310,43 @@ window.Z = window.Z || {}; var Z = window.Z;
         if (st.cover < 0.999) st.reasons.push('The tower range does not cover the whole zone (' + Math.round((1 - st.cover) * 100) + '% outside)');
         if (st.used > td2.capacity) st.reasons.push('The tower can only tag ' + td2.capacity + ' animals');
         st.ok = st.powered && st.cover >= 0.999 && st.used <= td2.capacity;
+      } else {
+        // Multi-tower union coverage for massive connected zones
+        var allInn = 0, pwrInn = 0, pwrOv = ov.filter(function (v) { return v.pw; });
+        for (var u2 = 0; u2 < z.tiles.length; u2++) {
+          var t2 = z.tiles[u2], tx = C.cxOf(t2), tz = C.czOf(t2), hitAll = false, hitPwr = false;
+          for (q = 0; q < ov.length; q++) {
+            if (dist2(tx, tz, ov[q].c.x, ov[q].c.z) <= ov[q].r2) { hitAll = true; if (ov[q].pw) { hitPwr = true; break; } }
+          }
+          if (hitAll) allInn++;
+          if (hitPwr) pwrInn++;
+        }
+        var allCov = z.tiles.length ? allInn / z.tiles.length : 0;
+        var pwrCov = z.tiles.length ? pwrInn / z.tiles.length : 0;
+        var active = (pwrCov >= 0.999 && pwrOv.length) ? pwrOv : ov;
+        var minStr = 99, minLvl = 99, capSum = 0, usedSum = 0, share = Math.ceil(z.animals.length / active.length);
+        st.towers = [];
+        for (q = 0; q < active.length; q++) {
+          var av = active[q];
+          st.towers.push(av.tw.o.id);
+          if (av.td.strength < minStr) minStr = av.td.strength;
+          if ((av.tw.o.lvl || 1) < minLvl) minLvl = av.tw.o.lvl || 1;
+          capSum += av.td.capacity;
+          used[av.tw.o.id] = (used[av.tw.o.id] || 0) + share;
+          usedSum += used[av.tw.o.id];
+        }
+        st.tower = active[0].tw.o.id;
+        st.towerCount = active.length;
+        st.cover = allCov;
+        st.strength = minStr < 99 ? minStr : 0;
+        st.lvl = minLvl < 99 ? minLvl : 1;
+        st.cap = capSum;
+        st.used = usedSum;
+        st.powered = pwrOv.length > 0 && (pwrCov >= 0.999 || allCov < 0.999 && pwrOv.length === ov.length);
+        if (!st.powered) st.reasons.push('A tagging tower has no power: the geofence is down');
+        if (st.cover < 0.999) st.reasons.push('The tower range does not cover the whole zone (' + Math.round((1 - st.cover) * 100) + '% outside)');
+        if (st.used > st.cap) st.reasons.push('The towers can only tag ' + st.cap + ' animals');
+        st.ok = st.powered && pwrCov >= 0.999 && st.cover >= 0.999 && st.used <= st.cap;
       }
       x.vstat[z.id] = st; z.minFence = st.ok ? st.strength : 0; z.down = !st.ok;
     }
@@ -353,13 +391,13 @@ window.Z = window.Z || {}; var Z = window.Z;
     var nm = lc(sp.name), n = R.needs(sp);
     if (!kind) {
       if (rl === 'land') return undefined;
-      return rl === 'sea' ? 'Marine animals need a lagoon tank, a sea pen or a virtual sea zone (' + nm + ')' : 'Flying animals need the Thunder Dome or a virtual sky zone (' + nm + ')';
+      return rl === 'sea' ? 'Marine animals need a lagoon tank, a sea pen or a virtual sea zone (' + nm + ')' : 'Flying animals need an Aviary or a virtual sky zone (' + nm + ')';
     }
     if (rl === 'land') {
       if (kind === 'virtual' && enc.realm === 'land') { var m0 = virtualAdmit(enc, sp); return m0 || undefined; }
       return 'Land animals cannot live in a ' + R.kindName(enc) + '. Use a fenced paddock or a virtual land zone';
     }
-    if (rl !== enc.realm) return (rl === 'sea' ? 'Marine animals live in tanks, sea pens and virtual sea zones' : 'Flying animals live in the Thunder Dome and virtual sky zones') + ': a ' + R.kindName(enc) + ' is not right for ' + nm;
+    if (rl !== enc.realm) return (rl === 'sea' ? 'Marine animals live in tanks, sea pens and virtual sea zones' : 'Flying animals live in the Aviary and virtual sky zones') + ': a ' + R.kindName(enc) + ' is not right for ' + nm;
     var msg;
     if (kind === 'virtual') { msg = virtualAdmit(enc, sp); if (msg) return msg; }
     if (rl === 'sea') {
@@ -413,8 +451,22 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!C.inMap(i, j)) return 'Outside your land';
     if (C.entranceTile(i, j) && (kind !== 'virtual' || realm === 'land')) return 'Keep the entrance plaza clear';
     if (s.path[t]) return 'Clear the path first';
-    if (rt.block[t] && kind !== 'dome') return 'Something is in the way';
-    var oid = s.tileObj[t]; if (oid) { var o = rt.oById.get(oid); if (o && (o.kind === 'building' || kind === 'tank' || (kind === 'virtual' && realm !== 'land'))) return 'Clear the ' + (o.kind === 'building' ? BD()[o.type].name.toLowerCase() : 'scenery') + ' first'; }
+    if (rt.block[t] && kind !== 'dome' && kind !== 'virtual') return 'Something is in the way';
+    var oid = s.tileObj[t];
+    if (oid) {
+      var o = rt.oById.get(oid);
+      if (o) {
+        if (o.kind === 'building') {
+          var bdef = BD()[o.type];
+          if (!(bdef && bdef.inEnclosure && (kind === 'virtual' || kind === 'dome'))) return 'Clear the ' + (bdef ? bdef.name.toLowerCase() : 'building') + ' first';
+        } else if (kind === 'tank') {
+          return 'Clear the scenery first';
+        } else {
+          var sdef = C.SC()[o.type];
+          if (sdef && sdef.inEnclosure === false) return 'Clear the ' + sdef.name.toLowerCase() + ' first';
+        }
+      }
+    }
     if (s.ditch[t]) return 'Fill the ditch in first';
     for (var d = 0; d < 4; d++) { if (netAt(i, j, d)) return 'Remove the fence along this tile first'; }
     if (s.tileEnc[t] && !(tset && tset[t])) return 'Already inside an enclosure';
@@ -423,7 +475,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (kind === 'virtual' && realm === 'sea' && !sea) return 'A sea zone must be painted on sea water';
     if (kind === 'virtual' && realm === 'land' && sea) return 'A land zone cannot be painted on the sea';
     if (kind === 'virtual' && realm === 'land' && C.cliffT(t) && false) return 'Too steep';
-    if (kind === 'dome' && sea) return 'The Thunder Dome stands on land or fresh water';
+    if (kind === 'dome' && sea) return 'The Aviary stands on land or fresh water';
     return null;
   }
   function paramsCost(kind, realm, p, n, edges) {
@@ -516,7 +568,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   R.sceneryCheck = function (def, t) {
     var enc = C.encOfTile(t), onWater = S().terrain[t] === wi();
     if (def.aquatic) { if (!enc || enc.realm !== 'sea') return 'Kelp, reefs and feeders go inside a tank, sea pen or virtual sea zone'; return null; }
-    if (def.air) { if (!enc || enc.realm !== 'air') return 'This belongs in the Thunder Dome or a virtual sky zone'; return null; }
+    if (def.air) { if (!enc || enc.realm !== 'air') return 'This belongs in an Aviary or a virtual sky zone'; return null; }
     return undefined;
   };
 
@@ -557,7 +609,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       var enc = C.encOfTile(t); if (enc && enc.kind) inEnc++;
       if (s.path[t] !== pid) { newT.push(t); cost += def.cost; }
     }
-    if (!inEnc) return fail(w === 'tunnel' ? 'A tunnel must run through a lagoon tank, sea pen or virtual sea zone' : w === 'mesh' ? 'A mesh walk must run through a Thunder Dome or sky zone' : w === 'pier' ? 'A pier must cross a sea pen' : 'A skywalk must run through a virtual zone');
+    if (!inEnc) return fail(w === 'tunnel' ? 'A tunnel must run through a lagoon tank, sea pen or virtual sea zone' : w === 'mesh' ? 'A mesh walk must run through an Aviary or sky zone' : w === 'pier' ? 'A pier must cross a sea pen' : 'A skywalk must run through a virtual zone');
     if (!newT.length) return fail('Already built');
     if (s.money < cost) return fail('Not enough money (' + fmt(cost) + ' needed)');
     // connection hint: does the run touch an ordinary path at an end?
@@ -600,7 +652,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   R.towerInfo = function (objId) {
     var o = RT().oById.get(objId); if (!o || o.type !== 'tagging_tower') return null;
     var lvl = o.lvl || 1, td = RD.virtual.towers[lvl - 1], next = lvl < 3 ? RD.virtual.towers[lvl] : null, zones = [], used = 0;
-    S().enclosures.forEach(function (e) { if (e.kind === 'virtual') { var vs = X().vstat[e.id]; if (vs && vs.tower === objId) { zones.push({ id: e.id, name: e.name, animals: e.animals.length, ok: vs.ok }); used += e.animals.length; } } });
+    S().enclosures.forEach(function (e) { if (e.kind === 'virtual') { var vs = X().vstat[e.id]; if (vs && (vs.tower === objId || (vs.towers && vs.towers.indexOf(objId) >= 0))) { zones.push({ id: e.id, name: e.name, animals: e.animals.length, ok: vs.ok }); used += e.animals.length; } } });
     return { lvl: lvl, radius: td.radius, capacity: td.capacity, strength: td.strength, used: used, powered: powered(o), zones: zones, next: next ? { cost: next.upgrade, radius: next.radius, capacity: next.capacity, strength: next.strength } : null };
   };
   R.plantInfo = function (objId) {
@@ -1152,7 +1204,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (!quick) for (k = 0; k < s.animals.length; k++) {
       a = s.animals[k]; if (!a.enc || legacyWarned[a.id]) continue;
       var en = rt.eMap[a.enc]; if (!en) continue; var spx = C.SP()[a.species];
-      if (realmOf(spx) !== 'land' && !en.kind) { legacyWarned[a.id] = 1; C.msg(a.name + ' the ' + lc(spx.name) + ' lives in a paddock. ' + (realmOf(spx) === 'sea' ? 'Marine animals belong in a lagoon tank or sea pen.' : 'Flying animals belong in the Thunder Dome.') + ' Move it soon.', 'bad', false); }
+      if (realmOf(spx) !== 'land' && !en.kind) { legacyWarned[a.id] = 1; C.msg(a.name + ' the ' + lc(spx.name) + ' lives in a paddock. ' + (realmOf(spx) === 'sea' ? 'Marine animals belong in a lagoon tank or sea pen.' : 'Flying animals belong in an Aviary.') + ' Move it soon.', 'bad', false); }
     }
     if (quick) return;
     // guests inside walks: counted once, happy
@@ -1243,7 +1295,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (enc.kind === 'dome') { rep.height = RD.dome.heights[clamp(enc.lvl, 1, 3) - 1]; rep.mesh = RD.dome.meshes[clamp(enc.mesh || 1, 1, 3) - 1]; rep.H = enc.H; }
     if (enc.kind === 'pen') { rep.salt = enc.salt; }
     if (enc.kind === 'virtual') {
-      var vs = x.vstat[enc.id] || {}; rep.zone = { tower: vs.tower, lvl: vs.lvl, cover: vs.cover, cap: vs.cap, used: vs.used, powered: vs.powered, band: enc.realm === 'air' ? RD.virtual.bands[clamp(enc.band || 1, 1, 3) - 1] : null, hold: enc.hold || 0 };
+      var vs = x.vstat[enc.id] || {}; rep.zone = { tower: vs.tower, towerCount: vs.towerCount || (vs.tower ? 1 : 0), lvl: vs.lvl, cover: vs.cover, cap: vs.cap, used: vs.used, powered: vs.powered, band: enc.realm === 'air' ? RD.virtual.bands[clamp(enc.band || 1, 1, 3) - 1] : null, hold: enc.hold || 0 };
       rep.tags = enc.animals.map(function (id) { var a = RT().aById.get(id); return a ? { id: a.id, name: a.name, species: a.species, tag: !!a.tag } : null; }).filter(Boolean);
     }
     if (issues && !st.ok) st.reasons.forEach(function (r) { issues.unshift(r); });
@@ -1260,7 +1312,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       out.push('Extras: ' + (sp.predator || sp.diet === 'piscivore' ? 'fish feeder, ' : '') + 'kelp or reef' + (n.breach ? ' (breaches: keep it deep)' : ''));
       out.push(n.live ? 'Gives birth to live young (gestation pool, no egg)' : 'Lays eggs');
     } else if (rl === 'air') {
-      out.push('Home: Thunder Dome or virtual sky zone');
+      out.push('Home: Aviary or virtual sky zone');
       out.push('Air: at least ' + metres(n.needH) + ' m of height, ' + sp.space + ' tiles each');
       out.push('Barrier: mesh strength ' + n.minStr + '+');
       out.push('Extras: perches (crags, poles, trees)' + (sp.needsWater ? ', a fish pool' : '') + (sp.needsShelter ? ', a wind shelter' : '') + (sp.needsRocks ? ', rocks' : ''));

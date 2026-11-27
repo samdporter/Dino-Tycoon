@@ -2562,3 +2562,99 @@ test('Dino enclosure ID seeding covers persisted realm and safari references', (
     assert.equal(enc.id, stale + 1, `${name} must seed the enclosure counter past stale references`);
   }
 });
+
+test('Aviary replaces Thunder Dome with taller heights, zones build over trees/rocks, and towers/pylons work inside zones & aviaries', () => {
+  const z = game();
+  z.Sim.newGame({ seed: 108, map: 'fern_meadow', money: 800000 });
+  z.state.unlocked.star = 5;
+  setupFlatZone(z, 8, 8, 42, 34);
+
+  // 1. Aviary naming and taller heights
+  const domeTiles = [];
+  for (let j = 10; j <= 15; j++) for (let i = 10; i <= 15; i++) domeTiles.push(i + j * z.N);
+  const domeRes = z.Sim.realms.place('dome', 'air', domeTiles, { lvl: 2, mesh: 2 });
+  assert.equal(domeRes.ok, true, domeRes.msg);
+  const domeEnc = z.Sim.enclosureAt(12, 12);
+  assert.equal(domeEnc.name, 'Aviary 1');
+  assert.equal(z.Sim.realms.kindName(domeEnc), 'aviary');
+  assert.equal(domeEnc.H, 10.5);
+  assert.equal(z.DATA.realms.dome.heights[2].h, 15.0);
+
+  // 2. Power pylon and tagging tower can be placed right in the centre of the Aviary
+  const domePylon = z.Sim.placeObject('power_pylon', 12, 12, 0);
+  assert.equal(domePylon.ok, true, domePylon.msg);
+  const domeTower = z.Sim.placeObject('tagging_tower', 13, 12, 0);
+  assert.equal(domeTower.ok, true, domeTower.msg);
+  assert.equal(z.Sim.power.objPowered(domeTower.id), true, 'pylon inside Aviary should power tower inside Aviary');
+
+  // 3. Land and sky virtual zones can be placed over trees and rocks
+  const treeId = z.DATA.scenery.find(s => s.kind === 'tree').id;
+  const rockId = z.DATA.scenery.find(s => s.kind === 'rock').id;
+  assert.equal(z.Sim.placeObject(treeId, 20, 12, 0).ok, true);
+  assert.equal(z.Sim.placeObject(rockId, 22, 12, 0).ok, true);
+  assert.equal(z.Sim.placeObject(treeId, 20, 20, 0).ok, true);
+  assert.equal(z.Sim.placeObject(rockId, 22, 20, 0).ok, true);
+
+  const landTiles = [];
+  for (let j = 10; j <= 15; j++) for (let i = 18; i <= 25; i++) landTiles.push(i + j * z.N);
+  const landRes = z.Sim.realms.place('virtual', 'land', landTiles, {});
+  assert.equal(landRes.ok, true, 'land zone should build over trees and rocks: ' + landRes.msg);
+
+  const skyTiles = [];
+  for (let j = 18; j <= 23; j++) for (let i = 18; i <= 25; i++) skyTiles.push(i + j * z.N);
+  const skyRes = z.Sim.realms.place('virtual', 'air', skyTiles, { band: 2 });
+  assert.equal(skyRes.ok, true, 'sky zone should build over trees and rocks: ' + skyRes.msg);
+
+  // Non-enclosure buildings are still blocked from virtual zones
+  assert.equal(z.Sim.placeObject('toilets', 20, 13, 0).ok, false);
+
+  // 4. Sea zone can be built over sea tiles even with aquatic rock/reef scenery
+  const seaTiles = [];
+  for (let j = 0; j < z.N && seaTiles.length < 12; j++) {
+    for (let i = 0; i < z.N && seaTiles.length < 12; i++) {
+      const t = i + j * z.N;
+      if (z.Sim.isSea(i, j) && !z.state.tileEnc[t] && !z.state.tileObj[t] && !z.state.path[t]) {
+        // collect a contiguous 3x3 sea block if possible
+        const block = [];
+        for (let dj = 0; dj < 3; dj++) for (let di = 0; di < 3; di++) {
+          if (i + di < z.N && j + dj < z.N && z.Sim.isSea(i + di, j + dj) && !z.state.tileEnc[(i + di) + (j + dj) * z.N]) {
+            block.push((i + di) + (j + dj) * z.N);
+          }
+        }
+        if (block.length === 9) { seaTiles.push(...block); break; }
+      }
+    }
+  }
+  if (seaTiles.length === 9) {
+    const seaRes = z.Sim.realms.place('virtual', 'sea', seaTiles, {});
+    assert.equal(seaRes.ok, true, 'sea zone placement failed: ' + seaRes.msg);
+  }
+
+  // 5. Massive connected virtual zone with 2 interior tagging towers + power pylons
+  // Add a generator so the island grid has plenty of kW for 3 tagging towers (75 kW)
+  assert.equal(z.Sim.placeObject('geothermal_plant', 36, 10, 0).ok, true);
+  // Place one tower + pylon BEFORE painting the zone, and one AFTER painting the zone
+  const preTower = z.Sim.placeObject('tagging_tower', 15, 28, 0);
+  assert.equal(preTower.ok, true, preTower.msg);
+  const prePylon = z.Sim.placeObject('power_pylon', 17, 28, 0);
+  assert.equal(prePylon.ok, true, prePylon.msg);
+
+  const bigZoneTiles = [];
+  for (let j = 26; j <= 32; j++) for (let i = 9; i <= 38; i++) bigZoneTiles.push(i + j * z.N);
+  const bigRes = z.Sim.realms.place('virtual', 'land', bigZoneTiles, {});
+  assert.equal(bigRes.ok, true, 'massive zone should paint over interior tower/pylon: ' + bigRes.msg);
+
+  // Place second tower + pylon inside the far end of the massive zone
+  const postTower = z.Sim.placeObject('tagging_tower', 31, 28, 0);
+  assert.equal(postTower.ok, true, postTower.msg);
+  const postPylon = z.Sim.placeObject('power_pylon', 33, 28, 0);
+  assert.equal(postPylon.ok, true, postPylon.msg);
+
+  // Ensure both towers are powered and cover the massive zone together
+  z.Sim.realms.update();
+  const zInfo = z.Sim.realms.zoneInfo(bigRes.id);
+  assert.ok(zInfo, 'massive zone should have vstat');
+  assert.equal(zInfo.towerCount, 2, 'massive zone should combine both interior towers');
+  assert.equal(zInfo.ok, true, 'massive zone should hold with 2 powered interior towers: ' + (zInfo.reasons || []).join('; '));
+  assert.ok(zInfo.cap >= 12, 'combined capacity should include both towers');
+});

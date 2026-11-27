@@ -1524,7 +1524,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
           if (W.terrain[t] === WATER && op.o.type !== 'ice_floe') return 'That spot is now water';
           if (S.tileEnc[t]) inEnc = true;
         }
-        if (op.o.kind === 'building' && inEnc) return 'That spot is now inside an enclosure';
+        if (op.o.kind === 'building' && inEnc && !sn.def.inEnclosure) return 'That spot is now inside an enclosure';
         if (op.o.kind === 'scenery' && inEnc && sn.def.inEnclosure === false) return 'That spot is now inside an enclosure';
         var fp = sn.fp;
         for (var a = 0; a < fp.w; a++) for (var b = 0; b < fp.h; b++) {

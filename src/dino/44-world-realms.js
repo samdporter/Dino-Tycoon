@@ -1,6 +1,6 @@
 // ===== 44-world-realms.js =====
 // Realms package, world side: sunk tank basins (vertex hook in 40-world calcVertex), glass tank walls + water volumes, sea-bed trenches under sea tunnels, the walk structures
-// (acrylic tunnel, mesh walk, glass pier, armoured skywalk), the geodesic Thunder Dome with storm crackle, virtual-zone geofence shimmer + beacon posts, tower range rings,
+// (acrylic tunnel, mesh walk, glass pier, armoured skywalk), the tall clear-view Aviary dome with storm crackle, virtual-zone geofence shimmer + beacon posts, tower range rings,
 // animal tags, and the underwater tint for street view inside tunnels. Hooks in 40-world.js call Z.RealmsWorld.{vtx, isWalk, deckY, preRender}; sea nets are the 'net' fence style.
 (function () {
   'use strict';
@@ -225,11 +225,12 @@
     add(dk, lam()); add(fr, lam()); add(lt, glow()); add(gl, glass(0.17), 4); add(pg, glass(0.5), 4);
   }
 
-  // ---------------------------------------------------------------- the Thunder Dome
+  // ---------------------------------------------------------------- the Aviary (tall, clear-view geodesic dome)
   var domeLines = [], domeData = [], sparkPool = [], zoneMats = [], flash = 0, sparkT = 0, sparkHold = 0;
-  function domeColour(enc) { return enc.mesh >= 3 ? 0xffb347 : enc.mesh === 2 ? 0xfff1b0 : 0xf2f6f8; }
+  function domeColour(enc) { return enc.mesh >= 3 ? 0xe0b56c : enc.mesh === 2 ? 0xdde8ee : 0xeef5f8; }
+  function domeFrameCol(enc) { return enc.mesh >= 3 ? 0x5c666e : enc.mesh === 2 ? 0x76858f : 0x9aa8b0; }
   function buildDome(enc) {
-    var s = S(), tiles = enc.tiles, set = {}, k, H = enc.H || 6, Hw = H * 0.5;
+    var s = S(), tiles = enc.tiles, set = {}, k, H = enc.H || 10.5, Hw = H * 0.58;
     tiles.forEach(function (t) { set[t] = 1; });
     var cdist = {}, queue = [], inDome = function (i, j) { return i >= 0 && j >= 0 && i < N && j < N && set[i + j * N]; };
     function ckey(ci, cj) { return ci + cj * (N + 1); }
@@ -248,35 +249,59 @@
     function hAt(ci, cj) { var d = cdist[ckey(ci, cj)]; if (d === undefined) d = 0; var u = clamp(d / Rm, 0, 1); return Hw + (H - Hw) * Math.sqrt(1 - (1 - u) * (1 - u)); }
     function P(ci, cj) { var x = ci * T, z = cj * T; return [x, gy(x, z) + hAt(ci, cj), z]; }
     function G(ci, cj) { var x = ci * T, z = cj * T; return [x, gy(x, z), z]; }
-    var lines = [], gf = new GB(), colr = domeColour(enc), double = enc.mesh >= 2;
+    var lines = [], gf = new GB(), fr = new GB(), colr = domeColour(enc), fcol = domeFrameCol(enc), plinthCol = shade(fcol, 0.78);
     function seg(a, b) { lines.push(a[0], a[1], a[2], b[0], b[1], b[2]); }
+    var postDone = {};
+    function addPost(ci, cj, thick) {
+      var pk = ckey(ci, cj); if (postDone[pk]) return; postDone[pk] = 1;
+      var g0 = G(ci, cj), p0 = P(ci, cj), hw = thick ? 0.11 : 0.065;
+      fr.box(g0[0] - hw, g0[1] - 0.15, g0[2] - hw, g0[0] + hw, p0[1] + 0.08, g0[2] + hw, fcol);
+    }
     tiles.forEach(function (t) {
       var i = t % N, j = (t - i) / N, a = P(i, j), b = P(i + 1, j), c = P(i + 1, j + 1), d = P(i, j + 1);
       var even = (i + j) & 1;
-      gf.tri(a, d, c, 0xdcecf2); gf.tri(a, c, b, 0xdcecf2);
-      if (!inDome(i, j - 1)) seg(a, b); else { }
+      // Ultra-clear glazing panels so flying animals are clearly visible from outside and inside
+      gf.tri(a, d, c, 0xe4f3f8); gf.tri(a, c, b, 0xe4f3f8);
+      // Clean open geodesic vault ribs: perimeter eaves + every-other-tile structural ribs + open diamond diagonals
+      if (!inDome(i, j - 1)) seg(a, b);
       if (!inDome(i - 1, j)) seg(a, d);
       if (!inDome(i, j + 1)) seg(d, c);
       if (!inDome(i + 1, j)) seg(b, c);
-      if (inDome(i, j - 1)) seg(a, b); if (inDome(i - 1, j)) seg(a, d);
+      if (inDome(i, j - 1) && (j % 2 === 0)) seg(a, b);
+      if (inDome(i - 1, j) && (i % 2 === 0)) seg(a, d);
       if (even) seg(a, c); else seg(b, d);
-      if (double) { if (even) seg(b, d); else seg(a, c); }
-      // walls on boundary edges
+      // Perimeter walls: sleek low plinth, slender columns at corners & every 3 tiles, crisp eave beam, open see-through glass
       var edges = [[!inDome(i, j - 1), [i, j], [i + 1, j]], [!inDome(i, j + 1), [i, j + 1], [i + 1, j + 1]], [!inDome(i - 1, j), [i, j], [i, j + 1]], [!inDome(i + 1, j), [i + 1, j], [i + 1, j + 1]]];
       edges.forEach(function (e) {
-        if (!e[0]) return; var g0 = G(e[1][0], e[1][1]), g1 = G(e[2][0], e[2][1]), p0 = P(e[1][0], e[1][1]), p1 = P(e[2][0], e[2][1]);
-        gf.quad(g0, g1, p1, p0, 0xcfe6ee);
-        seg(g0, p0); seg(g1, p1); seg(g0, g1); var m0 = [g0[0], (g0[1] + p0[1]) / 2, g0[2]], m1 = [g1[0], (g1[1] + p1[1]) / 2, g1[2]]; seg(m0, m1);
-        if (even) seg(g0, p1); else seg(g1, p0);
-        if (double) { seg(g0, p1); seg(g1, p0); }
+        if (!e[0]) return;
+        var c0 = e[1], c1 = e[2], g0 = G(c0[0], c0[1]), g1 = G(c1[0], c1[1]), p0 = P(c0[0], c0[1]), p1 = P(c1[0], c1[1]);
+        gf.quad(g0, g1, p1, p0, 0xdcf0f7);
+        // Low architectural base plinth & eave ring beam
+        var minX = Math.min(g0[0], g1[0]) - 0.08, maxX = Math.max(g0[0], g1[0]) + 0.08;
+        var minZ = Math.min(g0[2], g1[2]) - 0.08, maxZ = Math.max(g0[2], g1[2]) + 0.08;
+        var baseY = Math.min(g0[1], g1[1]), topY = Math.max(g0[1], g1[1]) + 0.24;
+        fr.box(minX, baseY - 0.15, minZ, maxX, topY, maxZ, plinthCol);
+        var eaveY = (p0[1] + p1[1]) * 0.5;
+        fr.box(minX, eaveY - 0.08, minZ, maxX, eaveY + 0.08, maxZ, fcol);
+        // Subtle mid-height transom line & corner/periodic columns
+        var m0 = [g0[0], g0[1] + (p0[1] - g0[1]) * 0.5, g0[2]], m1 = [g1[0], g1[1] + (p1[1] - g1[1]) * 0.5, g1[2]];
+        seg(m0, m1);
+        seg(g0, p0); seg(g1, p1);
+        [c0, c1].forEach(function (pt) {
+          var ci2 = pt[0], cj2 = pt[1], cnt = 0;
+          if (inDome(ci2 - 1, cj2 - 1)) cnt++; if (inDome(ci2, cj2 - 1)) cnt++; if (inDome(ci2 - 1, cj2)) cnt++; if (inDome(ci2, cj2)) cnt++;
+          if (cnt === 1 || cnt === 3) addPost(ci2, cj2, true);
+          else if ((ci2 + cj2) % 3 === 0) addPost(ci2, cj2, false);
+        });
       });
     });
     var pos = new Float32Array(lines);
     var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    var lm = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: colr, transparent: true, opacity: 0.62, depthWrite: false })); lm.frustumCulled = false; lm.renderOrder = 6; root.add(lm); domeLines.push(lm);
-    var fm = new THREE.Mesh(gf.geo(), glass(enc.mesh >= 3 ? 0.07 : 0.045)); fm.frustumCulled = false; fm.renderOrder = 5; root.add(fm); built.push(fm);
+    var baseOp = enc.mesh >= 3 ? 0.34 : 0.26;
+    var lm = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: colr, transparent: true, opacity: baseOp, depthWrite: false })); lm.frustumCulled = false; lm.renderOrder = 6; root.add(lm); domeLines.push(lm);
+    var fm = new THREE.Mesh(gf.geo(), glass(enc.mesh >= 3 ? 0.042 : 0.026)); fm.frustumCulled = false; fm.renderOrder = 5; root.add(fm); built.push(fm);
     // airlock door: a small frame on the first boundary edge that touches a path
-    var door = null, fr = new GB();
+    var door = null;
     tiles.forEach(function (t) {
       if (door) return; var i = t % N, j = (t - i) / N;
       [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(function (o) { if (door) return; var ni = i + o[0], nj = j + o[1]; if (inDome(ni, nj) || ni < 0 || nj < 0 || ni >= N || nj >= N) return; if (s.path[ni + nj * N]) door = { i: i, j: j, o: o }; });
@@ -284,9 +309,9 @@
     if (door) {
       var dx = (door.i + 0.5 + door.o[0] * 0.5) * T, dz = (door.j + 0.5 + door.o[1] * 0.5) * T, gyd = gy(dx, dz), ax = door.o[0] ? 0.12 : 0.55, az = door.o[0] ? 0.55 : 0.12, locked = !!RW.locked;
       fr.box(dx - ax, gyd, dz - az, dx + ax, gyd + 1.9, dz + az, 0x4a555e); fr.box(dx - ax * 0.7, gyd, dz - az * 0.7, dx + ax * 0.7, gyd + 1.7, dz + az * 0.7, locked ? 0xa33a2c : 0x3a8f55);
-      add(fr, lam());
     }
-    domeData.push({ enc: enc.id, lines: lm, n: lines.length / 6, pos: pos });
+    add(fr, lam());
+    domeData.push({ enc: enc.id, lines: lm, n: lines.length / 6, pos: pos, baseOp: baseOp });
   }
   function makeSparks() {
     var geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(64 * 6), 3));
@@ -298,8 +323,8 @@
     flash = Math.max(0, flash - dt * 4);
     if (wi && wi.flash > 0.5) flash = 1;
     domeData.forEach(function (dd) {
-      var mat = dd.lines.material;
-      mat.opacity = 0.62 + (stormy ? 0.1 : 0) + flash * 0.35; mat.color.setHex(flash > 0.2 ? 0xdff0ff : domeColour(S().enclosures.filter(function (e) { return e.id === dd.enc; })[0] || {}));
+      var mat = dd.lines.material, bop = dd.baseOp || 0.26;
+      mat.opacity = bop + (stormy ? 0.08 : 0) + flash * 0.35; mat.color.setHex(flash > 0.2 ? 0xdff0ff : domeColour(S().enclosures.filter(function (e) { return e.id === dd.enc; })[0] || {}));
     });
     if (!stormy) { sparkPool.forEach(function (m) { m.visible = false; }); return; }
     sparkT -= dt; sparkHold -= dt; if (sparkHold < 0 && sparkPool[0]) sparkPool[0].visible = false;

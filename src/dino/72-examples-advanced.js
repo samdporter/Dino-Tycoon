@@ -88,8 +88,8 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ====================================================================== Sea, Sky and the Lab
   Ex.register({
     id: 'lab', title: 'Sea, Sky and the Lab', badge: 'good', minutes: 5,
-    blurb: 'An advanced tour: a monorail over the enclosures, a donor gene spliced into a dinosaur, a hybrid, and (when available) a marine tank, the Thunder Dome and a virtual tagged zone.',
-    topics: ['Monorail', 'Donor DNA', 'Splicing', 'Hybrids', 'Marine tanks', 'Thunder Dome', 'Virtual zones'],
+    blurb: 'An advanced tour: a monorail over the enclosures, a donor gene spliced into a dinosaur, a hybrid, and (when available) a marine tank, the Aviary and a virtual tagged zone.',
+    topics: ['Monorail', 'Donor DNA', 'Splicing', 'Hybrids', 'Marine tanks', 'Aviary', 'Virtual zones'],
     start: { seed: 101, map: 'fern_meadow', difficulty: 'normal', money: 700000 },
     setup: function (V) {
       V.midgame({ star: 5, money: 700000, rating: 3.4 });
@@ -148,7 +148,7 @@ window.Z = window.Z || {}; var Z = window.Z;
           { cam: { rect: [8, 18, 16, 26], pad: 1 }, act: [['spawn', 'ichthyosaurus', 10, 21, 3], ['put', 'fish_feeder', 11, 20, 0], ['put', 'kelp_bed', 12, 22, 0], ['walk', 10, 21, 13, 21, 'tunnel']],
             say: ['A viewing tunnel', 'A glass tunnel through the tank lets guests walk among the Ichthyosaurus.', 'A tunnel is the best view in the park, and a strong draw for guests.'], hold: 8 },
           { cam: { rect: [14, 20, 23, 29], pad: 1 }, act: [['realm', 'dome', 'air', 16, 22, 21, 27, { lvl: 1, mesh: 1 }], ['spawn', 'pteranodon', 18, 24, 2]],
-            say: ['The Thunder Dome', 'A mesh dome keeps pterosaurs in. Like the marine reptiles, they are not dinosaurs, so they need an aviary.', 'The dome keeps its strength in a blackout, but door locks may fail, so keep the power on.'], hold: 8 },
+            say: ['The Aviary', 'A tall glass-and-mesh aviary keeps pterosaurs in. Like the marine reptiles, they are not dinosaurs, so they need an aviary.', 'The aviary keeps its strength in a blackout, but door locks may fail, so keep the power on.'], hold: 8 },
           { cam: { rect: [22, 18, 34, 30], pad: 0 }, act: [['tower', 30, 25, true], ['put', 'substation', 32, 28], ['realm', 'virtual', 'land', 24, 20, 29, 25, {}]],
             say: ['A virtual tagged zone', 'No fence at all: animals wear tags, and a powered tagging tower keeps them inside a painted zone.', 'It looks wonderful and costs a lot, and it depends entirely on the power staying on.'] },
           { cam: { rect: [22, 18, 34, 30], pad: 0 }, act: [['spawn', 'triceratops', 25, 22, 3]],
@@ -161,7 +161,7 @@ window.Z = window.Z || {}; var Z = window.Z;
             until: function (V) { return V.looseCount() === 0; }, rate: 40, timeout: 40, soft: true }
         ],
         stats: function (V) { var rs = Z.Sim.realms.stats ? Z.Sim.realms.stats() : {}; return { 'Tunnel guests': rs.tunnelGuests || 0, 'Zone escapes': Z.state.stats.escapes }; },
-        lessons: ['Marine reptiles need tanks or sea pens, not paddocks.', 'A tunnel is a superb view for guests.', 'The Thunder Dome keeps its mesh in a blackout, but its door locks need power.', 'A virtual zone is only as reliable as its power.', 'Check each barrier type before you rely on it.'] }
+        lessons: ['Marine reptiles need tanks or sea pens, not paddocks.', 'A tunnel is a superb view for guests.', 'The Aviary keeps its mesh in a blackout, but its door locks need power.', 'A virtual zone is only as reliable as its power.', 'Check each barrier type before you rely on it.'] }
     ]
   });
 })();

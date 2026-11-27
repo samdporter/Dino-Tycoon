@@ -12,7 +12,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     { id: 'moats', star: 2, title: 'New: moats', text: 'A ditch keeps animals in without a fence, and water makes it stronger. See the Guide, and ' + MC1 + '.', go: guide('moats') },
     { id: 'monorail', star: 2, title: 'New: monorail', text: 'An elevated line carries guests over fences and rivers. See the Guide, and ' + MC2 + '.', go: guide('monorail') },
     { id: 'marine', star: 2, title: 'New: marine reptiles', text: 'Sea animals are not dinosaurs: they need tanks or sea pens. See the Guide, and ' + MC2 + '.', go: guide('sea') },
-    { id: 'aviary', star: 3, title: 'New: aviary', text: 'Pterosaurs need the Thunder Dome. See the Guide, and ' + MC2 + '.', go: guide('air') },
+    { id: 'aviary', star: 3, title: 'New: aviary', text: 'Pterosaurs need an Aviary. See the Guide, and ' + MC2 + '.', go: guide('air') },
     { id: 'tagging', star: 3, title: 'New: tagging', text: 'Virtual zones hold animals with no fence, if the power holds. See the Guide, and ' + MC2 + '.', go: guide('tags') },
     { id: 'safari', star: 3, title: 'New: safari', text: 'Take guests into a zone by truck, boat or balloon. See the Guide, and ' + MC2 + '.', go: guide('safari') },
     { id: 'themepark', star: 1, title: 'New: Theme Park & Coasters', text: 'Build custom rollercoasters, prebuilt rides, arcade stalls and fairground treats from Guests → Theme Park & Coasters.', go: function () { UI.openCat && UI.openCat('themepark'); } },
