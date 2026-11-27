@@ -2230,11 +2230,12 @@ function updateEntities(dt, dtGame) {
 var STOPPED_RIDES = { carousel: 1, ferris_wheel: 1, wooden_coaster: 1, loop_coaster: 1, mine_coaster: 1, log_flume: 1 };
 function updateBuildings(dtGame) {
   var t = G.t;
+  var parkOpen = !(Z.Sim && Z.Sim.isOpenNow) || Z.Sim.isOpenNow();
   for (var k = 0; k < bldList.length; k++) {
     var r = bldList[k], dx = r.x - view.x, dz = r.z - view.z;
     if (dx * dx + dz * dz > 130 * 130 && (G.frameNo & 7)) continue;
     var o = r.obj;
-    if (o && STOPPED_RIDES[r.type] && (o.off || o.broken || o.paused)) continue;
+    if (o && STOPPED_RIDES[r.type] && (o.off || o.broken || o.paused || !parkOpen)) continue;
     if (r.group && r.group.userData) r.group.userData.obj = o;
     try { r.upd.call(r.group.userData, dtGame, t, r.group, o); } catch (e) { r.upd = null; }
   }

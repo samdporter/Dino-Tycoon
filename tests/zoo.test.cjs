@@ -2764,6 +2764,7 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   const { z } = zoo();
   z.Sim.newGame({ seed: 1002, money: 250000 });
   z.state.unlocked.star = 3;
+  z.state.time = 0.4;
   const N = z.N;
   const tidx = (i, j) => i + j * N;
 
@@ -2894,6 +2895,7 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   // Verify live train physics: accelerates down drops, decelerates up hills, and rolls back on unpowered climbs (never constant-speed uphill)
   z.Sim.newGame({ seed: 1007, money: 250000 });
   z.state.unlocked.star = 4;
+  z.state.time = 0.4;
   for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
     const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
     const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
@@ -2928,6 +2930,7 @@ test('Zoo Custom Rollercoasters: track loop, height hills, unlockable specials, 
   // Now test unpowered hill stall & rollback: start flat oval, dispatch train, then raise tall unpowered hill ahead of it
   z.Sim.newGame({ seed: 1008, money: 250000 });
   z.state.unlocked.star = 4;
+  z.state.time = 0.4;
   for (let j = 28; j <= 42; j++) for (let i = 16; i <= 32; i++) {
     const t = tidx(i, j); z.state.terrain[t] = 0; z.state.path[t] = 0;
     const oid = z.state.tileObj[t]; if (oid) { const o = z.state.objects.find(x => x.id === oid); if (o) z.Sim.bulldoze(o.i, o.j); }
@@ -2968,6 +2971,7 @@ test('Zoo Custom Rollercoasters: guests ride trains, earn revenue, and breakdown
   const { z } = zoo();
   z.Sim.newGame({ seed: 1003, money: 250000 });
   z.state.unlocked.star = 3;
+  z.state.time = 0.4;
   const N = z.N;
   const tidx = (i, j) => i + j * N;
 

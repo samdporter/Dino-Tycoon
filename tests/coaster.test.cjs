@@ -758,6 +758,7 @@ test('Dino Coasters: overhauled gravity physics — drop acceleration, unpowered
 
   // 2) Unpowered hill without Chain Lift or Boost: train stalls and rolls backward (v < 0) under gravity, then resets to station
   z.Sim.newGame({ seed: 2022, money: 500000 });
+  z.state.time = 0.4;
   z.state.unlocked.star = 4;
   clearFlatArea(z, 14, 24, 34, 42);
   const st2 = z.Sim.placeObject('coaster_steel', 20, 35, 0);
@@ -811,6 +812,7 @@ test('Dino Coasters: overhauled gravity physics — drop acceleration, unpowered
 test('Dino Coasters: Chain Lift engages on elev>=1 hills from station exit, tall hills, and emits status toasts', () => {
   const z = game();
   z.Sim.newGame({ seed: 2023, money: 500000 });
+  z.state.time = 0.4;
   z.state.unlocked.star = 5;
   const N = z.N;
   const tidx = (i, j) => i + j * N;

@@ -636,10 +636,12 @@
 
   function plan(g, key) {
     if (!piers.length) return null;
+    var leaving = g.state === 'leave';
+    if (!leaving && !C.openNow()) return null;
     var RT = C.getRT(), tiles = C.sourcesFor(key), dest = {};
     if (!tiles) return null;
     tiles.forEach(function (t) { dest[RT.comp[t]] = true; });
-    var leaving = g.state === 'leave', best = null;
+    var best = null;
     piers.forEach(function (a) {
       if (!a.guest) return;
       var fare = leaving ? 0 : fareOf(a.o), f = C.getField('t' + a.front);
@@ -674,11 +676,12 @@
     var RT = C.getRT(), pend = g.pend, A = oById(g.gid), B = pend && oById(pend.b);
     var pa = A ? pierById(A.id) : null, pb = B ? pierById(B.id) : null;
     var r = pa && pb && pa.guest && pb.guest && pa.net === pb.net && route(pa, pb);
-    var fare = pend && pend.state === 'leave' ? 0 : (A ? fareOf(A) : 0);
-    if (!r || g.money < fare) {
-      g.gt = pend && pend.state === 'leave' ? 'exit' : '';
+    var leaving = !!(pend && pend.state === 'leave');
+    var fare = leaving ? 0 : (A ? fareOf(A) : 0);
+    if (!r || g.money < fare || (!leaving && !C.openNow())) {
+      g.gt = leaving ? 'exit' : '';
       g.dk = g.gt ? 'exit' : '';
-      g.state = pend && pend.state === 'leave' ? 'leave' : 'walk';
+      g.state = leaving ? 'leave' : 'walk';
       g.pend = null; g.ni = -1;
       return;
     }
@@ -815,6 +818,10 @@
     }
   }
 
+  function isLeavingQueuedGuest(g) {
+    return !!(g && (g.state === 'leave' || (g.pend && g.pend.state === 'leave')));
+  }
+
   function countFerryStaffAt(pier) {
     var n = 0;
     for (var k = 0; k < ferryStaffQueue.length; k++) if (ferryStaffQueue[k].a === pier) n++;
@@ -824,6 +831,34 @@
   function ferryQueueSize(pier) {
     var RT = C.getRT(), q = RT.bq[pier.o.id];
     return (q ? q.q.length : 0) + countFerryStaffAt(pier);
+  }
+
+  function nightFerryQueueSize(pier) {
+    var RT = C.getRT(), q = RT.bq[pier.o.id], n = countFerryStaffAt(pier);
+    if (q && q.q.length) {
+      for (var k = 0; k < q.q.length; k++) {
+        var g = RT.gById.get(q.q[k]);
+        if (g && g.state === 'queue' && isLeavingQueuedGuest(g)) n++;
+      }
+    }
+    return n;
+  }
+
+  function releaseNonLeavingPierQueue(pierId) {
+    var RT = C.getRT(), q = RT.bq[pierId];
+    if (!q || !q.q.length) return;
+    for (var k = q.q.length - 1; k >= 0; k--) {
+      var qg = RT.gById.get(q.q[k]);
+      if (!qg || qg.state !== 'queue' || qg.gt !== 'pier' || qg.gid !== pierId) {
+        q.q.splice(k, 1);
+        continue;
+      }
+      if (!isLeavingQueuedGuest(qg)) {
+        q.q.splice(k, 1);
+        qg.gt = ''; qg.dk = ''; qg.state = 'walk';
+        qg.pend = null; qg.gid = 0; qg.ni = -1; qg.glide = 0; qg.boatY = 0;
+      }
+    }
   }
 
   function departFerry(f, toPier) {
@@ -843,7 +878,11 @@
   }
 
   function stepFerries(dt) {
-    var S = C.getS(), RT = C.getRT(), k, i;
+    var S = C.getS(), RT = C.getRT(), open = C.openNow(), k, i;
+
+    if (!open) {
+      for (k = 0; k < piers.length; k++) if (piers[k].guest) releaseNonLeavingPierQueue(piers[k].o.id);
+    }
 
     // Clean stale staff in ferryStaffQueue
     for (k = ferryStaffQueue.length - 1; k >= 0; k--) {
@@ -883,12 +922,18 @@
             var qg = RT.gById.get(gid);
             if (!qg || qg.state !== 'queue' || qg.gt !== 'pier' || qg.gid !== atP.o.id) continue;
             var pend = qg.pend, B = pend && oById(pend.b), pb = B ? pierById(B.id) : null;
+            var leaving = isLeavingQueuedGuest(qg);
+            if (!open && !leaving) {
+              qg.gt = ''; qg.dk = ''; qg.state = 'walk';
+              qg.pend = null; qg.gid = 0; qg.ni = -1; qg.glide = 0; qg.boatY = 0;
+              continue;
+            }
             var r = pb && pb !== atP && pb.guest && pb.net === f.net && route(atP, pb);
-            var fare = pend && pend.state === 'leave' ? 0 : fareOf(atP.o);
+            var fare = leaving ? 0 : fareOf(atP.o);
             if (!r || qg.money < fare) {
-              qg.gt = pend && pend.state === 'leave' ? 'exit' : '';
+              qg.gt = leaving ? 'exit' : '';
               qg.dk = qg.gt ? 'exit' : '';
-              qg.state = pend && pend.state === 'leave' ? 'leave' : 'walk';
+              qg.state = leaving ? 'leave' : 'walk';
               qg.pend = null; qg.gid = 0; qg.ni = -1; qg.glide = 0; qg.boatY = 0;
               continue;
             }
@@ -939,7 +984,7 @@
           for (i = 0; i < piers.length; i++) {
             var p = piers[i];
             if (!p.guest || p.net !== f.net || p === atP) continue;
-            var pq = ferryQueueSize(p);
+            var pq = open ? ferryQueueSize(p) : nightFerryQueueSize(p);
             if (pq <= 0) continue;
             var served = false;
             for (var j = 0; j < ferries.length; j++) {

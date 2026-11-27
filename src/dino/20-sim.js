@@ -5655,7 +5655,8 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     earn: earn, spend: spend, msg: msg, say: say, recordRatingRide: recordRatingRide,
     jBegin: jBegin, jOp: jOp, jEnd: jEnd,
     afterWorldChange: afterWorldChange,
-    fail: fail, okr: okr, dryOf: dryOf
+    fail: fail, okr: okr, dryOf: dryOf,
+    openNow: openNow, isNight: isNight, OPEN_T: OPEN_T, CLOSE_T: CLOSE_T
   };
 
   // Context for the shared luxury resort package (src/shared/22-sim-resort.js).

@@ -589,6 +589,9 @@ window.Z = window.Z || {}; var Z = window.Z;
     for (k = 0; k < cap; k++) if (!used[k]) return k;
     return f.pax.length % seats.length;
   }
+  function isLeavingFerryGuest(g, plan) {
+    return !!(g && (g.state === 'leave' || g.rleave || (plan && plan.leave)));
+  }
   function hasStaffWaitingAt(pierId) {
     for (var k = 0; k < X.staffFerryQ.length; k++) if (X.staffFerryQ[k].fromPier.o.id === pierId) return true;
     return false;
@@ -597,6 +600,30 @@ window.Z = window.Z || {}; var Z = window.Z;
     var q = RT().bq[pierId], n = q ? q.q.length : 0;
     for (var k = 0; k < X.staffFerryQ.length; k++) if (X.staffFerryQ[k].fromPier.o.id === pierId) n++;
     return n;
+  }
+  function countNightWaitingAtPier(pierId) {
+    var rt = RT(), q = rt.bq[pierId], n = 0, k;
+    if (q && q.q.length) {
+      for (k = 0; k < q.q.length; k++) {
+        var g = rt.gById.get(q.q[k]);
+        if (g && g.state === 'queue' && isLeavingFerryGuest(g, X.plans[g.id])) n++;
+      }
+    }
+    for (k = 0; k < X.staffFerryQ.length; k++) if (X.staffFerryQ[k].fromPier.o.id === pierId) n++;
+    return n;
+  }
+  function releaseNonLeavingPierQueue(pierId) {
+    var rt = RT(), q = rt.bq[pierId];
+    if (!q || !q.q.length) return;
+    for (var k = q.q.length - 1; k >= 0; k--) {
+      var g = rt.gById.get(q.q[k]);
+      if (!g || g.state !== 'queue' || g.gid !== pierId) { q.q.splice(k, 1); continue; }
+      if (!isLeavingFerryGuest(g, X.plans[g.id])) {
+        q.q.splice(k, 1);
+        delete X.plans[g.id];
+        g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.gid = 0; g.ni = -1;
+      }
+    }
   }
   function ferryServingPier(body, pier, excludeFerry) {
     for (var k = 0; k < X.ferries.length; k++) {
@@ -617,18 +644,26 @@ window.Z = window.Z || {}; var Z = window.Z;
   }
   function boardFerryFromPier(f) {
     var rt = RT(), pier = f.atPier, q = rt.bq[pier.o.id], cap = f.cap || ferryCapForBody(f.body), seats = f.large ? LARGE_FERRY_SEATS : FERRY_SEATS;
+    var open = C.openNow();
     if (q && q.q.length) {
       while (f.pax.length < cap && q.q.length) {
         var gid = q.q.shift(), g = rt.gById.get(gid);
         if (!g || g.state !== 'queue' || g.gid !== pier.o.id) continue;
         var plan = X.plans[g.id], Bt = plan && termOfId(plan.to);
-        if (!Bt || Bt.body !== f.body || Bt.o.id === pier.o.id || !fareOK(g, pier.o)) {
+        var leaving = isLeavingFerryGuest(g, plan);
+        if (!open && !leaving) {
           delete X.plans[g.id];
           g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.gid = 0; g.ni = -1;
-          if (Bt && Bt.body === f.body && !fareOK(g, pier.o)) { g.mood -= 1.5; C.say(g, 'expensive'); }
+          continue;
+        }
+        if (!Bt || Bt.body !== f.body || Bt.o.id === pier.o.id || (!leaving && !fareOK(g, pier.o))) {
+          delete X.plans[g.id];
+          g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.gid = 0; g.ni = -1;
+          if (Bt && Bt.body === f.body && !leaving && !fareOK(g, pier.o)) { g.mood -= 1.5; C.say(g, 'expensive'); }
           continue;
         }
         var fare = fareOf(pier.o);
+        if (fare > 0 && leaving && g.money < fare) fare = 0;
         if (fare > 0) {
           g.money -= fare; g.spent = (g.spent || 0) + fare;
           C.earn(fare, 'shops', g.x, g.z);
@@ -643,6 +678,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         f.pax.push({ e: g, isStaff: false, to: Bt.o.id, plan: plan, seat: gSeat, seatY: gSeatY });
         if (f.pax.length === 1) f.dwell = BC.ferryDwell;
       }
+      if (!open) releaseNonLeavingPierQueue(pier.o.id);
     }
     // Staff waiting at this guest_pier board for free
     for (var si = 0; si < X.staffFerryQ.length && f.pax.length < cap; ) {
@@ -662,7 +698,10 @@ window.Z = window.Z || {}; var Z = window.Z;
     }
   }
   function stepFerries(dt) {
-    var rt = RT(), s = S(), tNow = s.day + s.time, k, q;
+    var rt = RT(), s = S(), tNow = s.day + s.time, open = C.openNow(), k, q;
+    if (!open) {
+      for (k = 0; k < X.terms.length; k++) if (X.terms[k].kind === 'guest') releaseNonLeavingPierQueue(X.terms[k].o.id);
+    }
     // Prune invalid staff waiting for ferry
     for (k = X.staffFerryQ.length - 1; k >= 0; k--) {
       var sq = X.staffFerryQ[k], sm = rt.sById.get(sq.id);
@@ -703,7 +742,7 @@ window.Z = window.Z || {}; var Z = window.Z;
           var peers = guestTermsOnBody(f.body), bestPeer = null, bestQ = 0;
           for (q = 0; q < peers.length; q++) {
             var p = peers[q]; if (p === f.atPier) continue;
-            var wc = countWaitingAtPier(p.o.id);
+            var wc = open ? countWaitingAtPier(p.o.id) : countNightWaitingAtPier(p.o.id);
             if (wc > bestQ && !ferryServingPier(f.body, p, f)) { bestQ = wc; bestPeer = p; }
           }
           if (bestPeer) departFerryTo(f, bestPeer);
@@ -1021,7 +1060,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   // ---- guests
   // a guest who cannot walk to an exhibit is taken by ferry: walk to a pier on the same water as a pier beside the exhibit's paths
   B.shortcut = function (g, spot, e, f) {
-    if (g.state !== 'walk' || !X.gEdges.length || (f && f[g.ti] < INF)) return false;
+    if (!C.openNow() || g.state !== 'walk' || !X.gEdges.length || (f && f[g.ti] < INF)) return false;
     var comp = RT().comp, fromC = comp[g.ti], toC = comp[spot]; if (!fromC || !toC || fromC === toC) return false;
     var best = null, bd = INF, T = X.terms, k, j;
     for (k = 0; k < T.length; k++) {
@@ -1043,10 +1082,12 @@ window.Z = window.Z || {}; var Z = window.Z;
     var plan = X.plans[g.id], A = termOf(o);
     if (g.vip && g.hleave && o.type === 'vip_helipad') { delete X.plans[g.id]; departVip(g, o); return; }
     if (!A || A.kind !== 'guest' || !plan) { delete X.plans[g.id]; g.gt = ''; g.dk = ''; return; }
+    var leaving = isLeavingFerryGuest(g, plan);
+    if (!C.openNow() && !leaving) { delete X.plans[g.id]; g.gt = ''; g.dk = ''; g.gid = 0; g.ni = -1; return; }
     var Bt = termOfId(plan.to);
-    if (!Bt || Bt.body !== A.body || !fareOK(g, o)) {
+    if (!Bt || Bt.body !== A.body || (!leaving && !fareOK(g, o))) {
       delete X.plans[g.id]; g.gt = ''; g.dk = '';
-      g.mood -= 1.5; C.say(g, 'expensive');
+      if (!leaving) { g.mood -= 1.5; C.say(g, 'expensive'); }
       return;
     }
     var q = RT().bq[o.id] || (RT().bq[o.id] = { use: 0, q: [] });

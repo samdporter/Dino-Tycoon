@@ -2165,14 +2165,17 @@ function updateEntities(dt, dtGame) {
   }
   G.entStats = { visible: n, impostors: nG + nATot, meshes: Math.round(totalMc) };
 }
+var STOPPED_RIDES = { carousel: 1, ferris_wheel: 1, wooden_coaster: 1, loop_coaster: 1, mine_coaster: 1, log_flume: 1 };
 function updateBuildings(dtGame) {
   var t = G.t;
   var powerCut = !!(Z.Sim && Z.Sim.powerCutActive && Z.Sim.powerCutActive());
+  var parkOpen = !(Z.Sim && Z.Sim.isOpenNow) || Z.Sim.isOpenNow();
   for (var k = 0; k < bldList.length; k++) {
     var r = bldList[k], dx = r.x - view.x, dz = r.z - view.z;
     if (!r.upd) continue;
     if (r.obj && (r.obj.broken || r.obj.paused)) continue;
     if (powerCut && r.powered) continue;
+    if (!parkOpen && (STOPPED_RIDES[r.type] || r.coasterStation)) continue;
     if (r.coasterStation && Z.Coaster && Z.Coaster.stationInfo) {
       var stInfo = Z.Coaster.stationInfo(r.obj.id);
       if (stInfo && (stInfo.broken || stInfo.paused)) continue;

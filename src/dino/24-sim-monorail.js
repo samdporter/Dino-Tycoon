@@ -661,7 +661,33 @@ window.Z = window.Z || {}; var Z = window.Z;
 
   // ============================================================ the train state machine
   function weatherK() { var s = S(); return MD.weatherSpeed[s.weather && s.weather.type] || 1; }
-  function opHours() { var t = S().time; return t >= C.OPEN_T - 0.03 && t < C.CLOSE_T + 0.07; }
+  function opHours() { return C.openNow(); }
+  function isLeavingGuest(g) { return !!(g && (g.rleave || (g.rthen && g.rthen.gt === 'leave'))); }
+  function stationHasLeavingWaiters(o) {
+    var q = C.RT().bq[o.id];
+    if (!q || !q.q.length) return false;
+    for (var k = 0; k < q.q.length; k++) {
+      var g = guestById(q.q[k]);
+      if (g && g.state === 'queue' && isLeavingGuest(g)) return true;
+    }
+    return false;
+  }
+  function lineHasLeavingWaiters(L) {
+    for (var k = 0; k < L.stops.length; k++) if (stationHasLeavingWaiters(L.stops[k].o)) return true;
+    return false;
+  }
+  function releaseNonLeavingQueue(o) {
+    var q = C.RT().bq[o.id];
+    if (!q || !q.q.length) return;
+    for (var k = q.q.length - 1; k >= 0; k--) {
+      var g = guestById(q.q[k]);
+      if (!g || g.state !== 'queue') { q.q.splice(k, 1); continue; }
+      if (!isLeavingGuest(g)) {
+        q.q.splice(k, 1);
+        g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.rdst = 0; g.rthen = null;
+      }
+    }
+  }
   function nextStop(L, T) {   // {k, dist, dir} of the stop the train will reach next in direction dir
     var n = L.stops.length, s = T.s, dir = T.dir, len = L.len, best = -1, bd = 1e9, rt = TR[T.id], skip = rt && rt.skipK !== undefined ? rt.skipK : -1;
     if (!n) return null;
@@ -748,12 +774,14 @@ window.Z = window.Z || {}; var Z = window.Z;
     rt.faultAcc = (rt.faultAcc || 0) + dt;
     if (rt.faultAcc >= 1) {
       rt.faultAcc -= 1;
-      var hourSec = C.DAY_SECONDS / 24, wt = s.weather && s.weather.type;
-      if (T.st !== 'stuck') {
-        if (!powered && T.st === 'run') strand(T, 'power');
-        else if (powered) {
-          if (wt === 'storm' && rng.next() < MD.lightningPerHour / hourSec) strand(T, 'lightning');
-          else if (T.st === 'run' && rng.next() < MD.breakdownPerHour * (wt === 'storm' ? 2 : 1) / hourSec) strand(T, 'fault');
+      if (!(!opHours() && T.st === 'dwell' && !hasPax(T))) {
+        var hourSec = C.DAY_SECONDS / 24, wt = s.weather && s.weather.type;
+        if (T.st !== 'stuck') {
+          if (!powered && T.st === 'run') strand(T, 'power');
+          else if (powered) {
+            if (wt === 'storm' && rng.next() < MD.lightningPerHour / hourSec) strand(T, 'lightning');
+            else if (T.st === 'run' && rng.next() < MD.breakdownPerHour * (wt === 'storm' ? 2 : 1) / hourSec) strand(T, 'fault');
+          }
         }
       }
     }
@@ -768,16 +796,18 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (T.st === 'dwell') {
       var stop = L.stops[T.at]; if (!stop) { T.at = 0; stop = L.stops[0]; }
       T.dw += dt; T.v = 0;
-      var o = stop.o, maxDw = MD.dwell + 11, paused = !!o.mpause || L.paused;
-      rt.door += (((T.dw > 0.8 && !rt.closing && (opHours() || hasPax(T))) ? 1 : 0) - rt.door) * Math.min(1, dt * 3);
+      var o = stop.o, maxDw = MD.dwell + 11, paused = !!o.mpause || L.paused, open = opHours();
+      if (!open) releaseNonLeavingQueue(o);
+      var leaveWait = !open && stationHasLeavingWaiters(o);
+      rt.door += (((T.dw > 0.8 && !rt.closing && (open || hasPax(T) || leaveWait)) ? 1 : 0) - rt.door) * Math.min(1, dt * 3);
       // alight, then board
       rt.alightT -= dt; rt.boardT -= dt;
       var did = false;
       if (T.dw > 0.9 && rt.alightT <= 0) { did = alightOne(T, L, o); if (did) rt.alightT = 0.22; }
-      if (T.dw > 1.4 && rt.boardT <= 0 && !paused && powered && opHours()) { if (boardOne(T, L, o)) rt.boardT = 0.22; }   // doors work both ways at once
+      if (T.dw > 1.4 && rt.boardT <= 0 && !paused && powered && (open || leaveWait)) { if (boardOne(T, L, o, !open)) rt.boardT = 0.22; }   // doors work both ways at once
       var waiting = pendingBoarders(T, L, o);
       var ready = T.dw >= MD.dwell && !did && (T.dw >= maxDw || !(waiting > 0 && freeSeats(T) > 0 && !paused));
-      if (!opHours() && !hasPax(T)) ready = false;
+      if (!open && !hasPax(T) && !lineHasLeavingWaiters(L)) ready = false;
       if (paused || !powered) ready = false;
       if (ready) rt.closing = (rt.closing || 0) + dt; else rt.closing = 0;
       if (ready && rt.closing >= 1.1) {
@@ -909,11 +939,16 @@ window.Z = window.Z || {}; var Z = window.Z;
     var n = 0; for (var k = 0; k < q.q.length; k++) { var g = guestById(q.q[k]); if (g && g.state === 'queue' && eligible(g, T, L, T.at)) n++; }
     return n;
   }
-  function boardOne(T, L, o) {
+  function boardOne(T, L, o, leaveOnly) {
     var rt = TR[T.id], q = C.RT().bq[o.id]; if (!q || !q.q.length || freeSeats(T) <= 0) return false;
     for (var k = 0; k < q.q.length; k++) {
       var g = guestById(q.q[k]);
       if (!g || g.state !== 'queue') { q.q.splice(k, 1); k--; continue; }
+      if (leaveOnly && !isLeavingGuest(g)) {
+        q.q.splice(k, 1); k--;
+        g.state = 'walk'; g.glide = 0; g.gt = ''; g.dk = ''; g.ni = -1; g.rdst = 0; g.rthen = null;
+        continue;
+      }
       if (!eligible(g, T, L, T.at)) continue;
       var fare = fareOf(o), WX = C.WX(), isLeave = !!(g.rthen && g.rthen.gt === 'leave');
       if (fare > 0 && !isLeave && (fare > g.money * 0.85 || fare > MD.fareRef * g.tol * clamp(WX.spend, 0.5, 1.6) * 1.2)) {
@@ -1183,7 +1218,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   M.arrive = function (g, o) {
     var L = lineOfStationId(o.id), q = C.RT().bq[o.id] || (C.RT().bq[o.id] = { use: 0, q: [] });
     var isLeave = !!(g.rthen && g.rthen.gt === 'leave');
-    if (!L || !L.ok || L.paused || !linePowered() || !stationPowered(o) || !L.trains.length) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; g.rleave = 0; return; }
+    if (!L || !L.ok || L.paused || !linePowered() || !stationPowered(o) || !L.trains.length || (!opHours() && !isLeave)) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; g.rleave = 0; return; }
     if (q.q.length >= (isLeave ? 80 : 18)) { g.gt = ''; g.dk = ''; g.rdst = 0; g.rthen = null; g.rleave = 0; if (!isLeave) { C.say(g, 'crowded'); g.mood -= 1; } return; }
     g.state = 'queue'; g.wt = 0; q.q.push(g.id); g.speed = 0; C.gxPlace(g, false);
     var c = C.objCentre(o); g.hd = Math.atan2(c.x - g.x, c.z - g.z);

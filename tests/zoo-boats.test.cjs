@@ -141,6 +141,7 @@ test('a guest crossing by boat pays the fare and arrives on the far shore', () =
 test('a free pier charges nothing and an unaffordable fare is refused', () => {
   const h = setup(), { z, S } = h;
   landLayout(h);
+  S.time = 0.5;
   const west = build(z, 'guest_pier', WEST_PIER); build(z, 'guest_pier', EAST_PIER);
   const g = addGuest(z, h.tile(30, ROW)), target = h.tile(47, ROW);
   z.Sim.setPrice(west, 30);

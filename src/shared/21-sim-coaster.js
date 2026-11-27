@@ -1580,7 +1580,18 @@
     return true;
   }
 
+  function opHours() {
+    if (typeof C.openNow === 'function') return !!C.openNow();
+    var s = C.getS();
+    if (!s) return true;
+    if (s.open === false) return false;
+    var oT = isFinite(C.OPEN_T) ? C.OPEN_T : 8 / 24;
+    var cT = isFinite(C.CLOSE_T) ? C.CLOSE_T : 20 / 24;
+    return s.time >= oT && s.time < cT;
+  }
+
   function boardFromQueue(T, L) {
+    if (!opHours()) return;
     var s = C.getS(), RT = C.getRT(), rt = TR[T.id];
     var o = L.station.obj;
     if (o.paused || !L.ready) return;
@@ -1683,6 +1694,12 @@
     if (rt.state === 'dwell') {
       rt.v = T.v = 0;
       rt.stalled = false;
+      if (!opHours()) {
+        if (rt.riders.length > 0) ejectAll(T, false);
+        rt.dwell = T.dwell = CD.dwell;
+        placeRiders(T, L);
+        return;
+      }
       if (L.ready && (!stObj || !stObj.broken)) boardFromQueue(T, L);
       rt.dwell -= dt;
       T.dwell = rt.dwell;
