@@ -7,7 +7,14 @@
   var K = M.kit, B = K.B, mesh = K.mesh, grp = K.grp, shade = K.shade, PI = Math.PI;
   var DEF = { substation: [2, 2], power_pylon: [1, 1], diesel_gen: [2, 2], solar_field: [3, 3], wind_turbine: [1, 1], battery_bank: [2, 2], backup_gen: [2, 2], geothermal_plant: [4, 4] };
   var MODELS = {};
-  function spin(g, fn) { var prev = g.userData.update; g.userData.update = function (dt, t, gr) { if (prev) prev.call(this, dt, t, gr); fn.call(this, dt, t || 0, gr || g); }; }
+  function spin(g, fn) {
+    var prev = g.userData.update;
+    g.userData.update = function (dt, t, gr, obj) {
+      if (prev) prev.call(this, dt, t, gr, obj);
+      var o = obj || (gr && gr.userData && gr.userData.obj) || (g.userData && g.userData.obj) || (this && this.obj);
+      fn.call(this, dt, t || 0, gr || g, o);
+    };
+  }
   function genState(gr) { return Z.Power && Z.Power.genAt ? Z.Power.genAt(gr.position.x, gr.position.z) : null; }
   var steel = 0x8a949c, dark = 0x3b4248, conc = 0x9a968c;
 
@@ -50,27 +57,64 @@
     b.box(0.5, 0.5, 0.05, 1.6, 0.9, 1.88, 0xf2c230);
     g.add(mesh(b.build()));
   };
-  MODELS.power_pylon = function (g) {   // 2 x 2 m: lattice pylon with angled truss crossarms and ceramic insulator strings
+  MODELS.power_pylon = function (g, opts) {   // 2 x 2 m: lattice pylon with angled truss crossarms and ceramic insulator strings (or floating buoy at sea)
+    var sea = !!(opts && opts.sea);
     var b = B();
-    b.lathe([[0.54, 0], [0.50, 0.10], [0.40, 0.18], [0, 0.18]], conc, { seg: 8, cap0: true });
+    var bob = sea ? grp('bob') : null, target = sea ? bob : g, yOff = sea ? 0.48 : 0;
+    if (sea) {
+      g.add(bob);
+      // submerged dark ballast/keel cylinder (-0.35..0.02)
+      b.cyl(0.72, 0.60, 0.37, 0, -0.165, 0, 0x262c32, { seg: 16 });
+      // safety-orange / red-orange chamfered buoy hull (-0.04..0.38)
+      b.lathe([[0.72, -0.04], [0.88, 0.06], [0.88, 0.30], [0.78, 0.38]], 0xe45724, { seg: 18, cap0: true, cap1: true });
+      // crisp white/yellow hazard band (0.14..0.24)
+      b.cyl(0.892, 0.892, 0.10, 0, 0.19, 0, 0xf4f2ea, { seg: 18 });
+      // 4 dark rubber bumper fenders
+      for (var f = 0; f < 4; f++) {
+        var fa = f * PI / 2 + PI / 4;
+        b.bevelBox(0.32, 0.15, 0.12, 0.025, Math.sin(fa) * 0.89, 0.19, Math.cos(fa) * 0.89, 0x22262a, { rot: [0, fa, 0] });
+      }
+      // steel deck plate (0.38..0.48)
+      b.cyl(0.76, 0.78, 0.10, 0, 0.43, 0, steel, { seg: 18 });
+      // 4 corner/perimeter safety railing posts and top rail
+      var rRail = 0.70, nRail = 4;
+      for (var rp = 0; rp < nRail; rp++) {
+        var ra0 = rp / nRail * PI * 2 + PI / 4, ra1 = (rp + 1) / nRail * PI * 2 + PI / 4;
+        var rx0 = Math.cos(ra0) * rRail, rz0 = Math.sin(ra0) * rRail;
+        var rx1 = Math.cos(ra1) * rRail, rz1 = Math.sin(ra1) * rRail;
+        b.cyl(0.025, 0.025, 0.42, rx0, 0.69, rz0, 0xd8dee2, { seg: 6 });
+        b.limb(rx0, 0.89, rz0, rx1, 0.89, rz1, 0.022, 0.022, 0xf2c838, { seg: 6 });
+      }
+      b.lathe([[0.48, yOff], [0.45, yOff + 0.08], [0.38, yOff + 0.15], [0, yOff + 0.15]], dark, { seg: 8, cap0: true });
+    } else {
+      b.lathe([[0.54, 0], [0.50, 0.10], [0.40, 0.18], [0, 0.18]], conc, { seg: 8, cap0: true });
+    }
     for (var s = -1; s <= 1; s += 2) {
-      b.limb(s * 0.36, 0.14, s * 0.22, s * 0.08, 3.65, 0.02, 0.05, 0.035, steel, { seg: 5 });
-      b.limb(s * 0.36, 0.14, -s * 0.22, s * 0.08, 3.65, -0.02, 0.05, 0.035, steel, { seg: 5 });
+      b.limb(s * 0.36, yOff + 0.14, s * 0.22, s * 0.08, yOff + 3.65, 0.02, 0.05, 0.035, steel, { seg: 5 });
+      b.limb(s * 0.36, yOff + 0.14, -s * 0.22, s * 0.08, yOff + 3.65, -0.02, 0.05, 0.035, steel, { seg: 5 });
       // X-bracing
-      b.limb(s * 0.32, 0.45, 0.19, -s * 0.24, 1.25, 0.14, 0.02, 0.02, shade(steel, 0.85), { seg: 4 });
-      b.limb(s * 0.24, 1.25, 0.14, -s * 0.16, 2.20, 0.09, 0.02, 0.02, shade(steel, 0.85), { seg: 4 });
+      b.limb(s * 0.32, yOff + 0.45, 0.19, -s * 0.24, yOff + 1.25, 0.14, 0.02, 0.02, shade(steel, 0.85), { seg: 4 });
+      b.limb(s * 0.24, yOff + 1.25, 0.14, -s * 0.16, yOff + 2.20, 0.09, 0.02, 0.02, shade(steel, 0.85), { seg: 4 });
     }
-    b.box(0.68, 0.05, 0.38, 0, 1.25, 0, steel); b.box(0.48, 0.05, 0.26, 0, 2.20, 0, steel);
+    b.box(0.68, 0.05, 0.38, 0, yOff + 1.25, 0, steel); b.box(0.48, 0.05, 0.26, 0, yOff + 2.20, 0, steel);
     // angled tapered truss crossarms
-    b.extrude([[-1.18, 0.03], [1.18, 0.03], [0.22, 0.24], [-0.22, 0.24]], 0.10, 0, 3.24, 0, [0, 0, 0], steel, { bev: 0.015 });
-    b.extrude([[-0.86, 0.03], [0.86, 0.03], [0.20, 0.20], [-0.20, 0.20]], 0.10, 0, 2.64, 0, [0, 0, 0], steel, { bev: 0.015 });
+    b.extrude([[-1.18, 0.03], [1.18, 0.03], [0.22, 0.24], [-0.22, 0.24]], 0.10, 0, yOff + 3.24, 0, [0, 0, 0], steel, { bev: 0.015 });
+    b.extrude([[-0.86, 0.03], [0.86, 0.03], [0.20, 0.20], [-0.20, 0.20]], 0.10, 0, yOff + 2.64, 0, [0, 0, 0], steel, { bev: 0.015 });
     for (var e = -1; e <= 1; e += 2) {
-      insulatorBell(b, e * 1.08, 2.94, 0, 0.34, 0.075);
-      insulatorBell(b, e * 0.78, 2.34, 0, 0.34, 0.075);
+      insulatorBell(b, e * 1.08, yOff + 2.94, 0, 0.34, 0.075);
+      insulatorBell(b, e * 0.78, yOff + 2.34, 0, 0.34, 0.075);
     }
-    b.cyl(0.02, 0.03, 0.35, 0, 3.80, 0, steel, { seg: 4 });
-    b.sph(0.10, 0.10, 0.10, 0, 3.96, 0, 0xcf3a2a, { s: [6, 4] });
-    g.add(mesh(b.build()));
+    b.cyl(0.02, 0.03, 0.35, 0, yOff + 3.80, 0, steel, { seg: 4 });
+    b.sph(0.10, 0.10, 0.10, 0, yOff + 3.96, 0, 0xcf3a2a, { s: [6, 4] });
+    target.add(mesh(b.build()));
+    if (sea) {
+      spin(g, function (dt, t, gr, o) {
+        var phase = o ? o.id * 1.13 : 0;
+        bob.position.y = Math.sin(t * 1.6 + phase) * 0.045;
+        bob.rotation.x = Math.sin(t * 1.15 + phase) * 0.03;
+        bob.rotation.z = Math.cos(t * 1.0 + phase) * 0.03;
+      });
+    }
   };
   function genBody(b, col, stripe) {
     b.bevelBox(3.8, 0.14, 3.8, 0.04, 0, 0.07, 0, conc);
@@ -230,8 +274,8 @@
   };
 
   var oc = M.createBuilding, of = M.buildingFootprint;
-  M.createBuilding = function (id) {
-    if (MODELS[id]) { var g = grp(id); g.userData.buildingId = id; MODELS[id](g); g.userData.footprint = { w: DEF[id][0], h: DEF[id][1] }; return g; }
+  M.createBuilding = function (id, opts) {
+    if (MODELS[id]) { var g = grp(id); g.userData.buildingId = id; MODELS[id](g, opts); g.userData.footprint = { w: DEF[id][0], h: DEF[id][1] }; return g; }
     return oc.apply(this, arguments);
   };
   M.buildingFootprint = function (id) { return DEF[id] ? { w: DEF[id][0], h: DEF[id][1] } : of.apply(this, arguments); };

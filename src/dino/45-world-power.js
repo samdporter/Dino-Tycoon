@@ -44,7 +44,7 @@
     nodes.forEach(function (n) {
       var r = n.r * T, col = n.alive ? 0x4fc3f7 : 0xe0574a;
       var disc = new THREE.Mesh(new THREE.CircleGeometry(r, 40), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.12, depthWrite: false }));
-      disc.rotation.x = -Math.PI / 2; disc.position.set(n.i * T, 0, n.j * T); disc.position.y = (Z.World.groundY ? Z.World.groundY(n.i * T, n.j * T) : 0) + 0.35; disc.renderOrder = 3;
+      disc.rotation.x = -Math.PI / 2; disc.position.set(n.i * T, 0, n.j * T); disc.position.y = Math.max(Z.World.groundY ? Z.World.groundY(n.i * T, n.j * T) : 0, -0.1) + 0.35; disc.renderOrder = 3;
       var edge, emat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.55, depthWrite: false });
       if (n.alive) edge = new THREE.Mesh(new THREE.RingGeometry(r - 0.12, r, 48), emat);
       else { edge = new THREE.Group(); for (var dk = 0; dk < 14; dk++) edge.add(new THREE.Mesh(new THREE.RingGeometry(r - 0.3, r, 6, 1, dk * Math.PI * 2 / 14, Math.PI * 2 / 14 * 0.5), emat)); }   // dashed fat ring = out of power (not colour alone)

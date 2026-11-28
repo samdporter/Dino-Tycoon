@@ -1332,12 +1332,25 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
       var x = fp.i0 + a, y = fp.j0 + b;
       if (!Z.inb(x, y) || !inMap(x, y)) return fail('Outside your land');
     }
+    var allSea = false;
+    if (dk.kind === 'building' && def.allowSea) {
+      var seaCount = 0, waterCount = 0, sm = seaMask();
+      for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
+        var st = (fp.i0 + a) + (fp.j0 + b) * N;
+        if (S.terrain[st] === WATER) { waterCount++; if (sm[st]) seaCount++; }
+      }
+      if (waterCount > 0 && seaCount < fp.w * fp.h) {
+        if (waterCount === seaCount) return fail('Place either on dry land or at sea');
+        return fail('Needs flat dry land or open sea');
+      }
+      if (seaCount === fp.w * fp.h) allSea = true;
+    }
     for (a = 0; a < fp.w; a++) for (b = 0; b < fp.h; b++) {
       var t = (fp.i0 + a) + (fp.j0 + b) * N;
       if (S.tileObj[t]) return fail('Something is already here');
       if (S.path[t]) return fail('Clear the path first');
       if (S.ditch[t]) return fail('Fill the ditch in first');
-      if (S.terrain[t] === WATER && type !== 'ice_floe' && !(def.aquatic && S.tileEnc[t])) {
+      if (S.terrain[t] === WATER && !allSea && type !== 'ice_floe' && !(def.aquatic && S.tileEnc[t])) {
         if (pierOh && pierOh.msg) return fail(pierOh.msg);
         if (!(pierOh && pierOh.wet)) return fail('Needs flat dry land');
       }   // realms package: kelp, reefs and feeders go in the water
@@ -1346,7 +1359,7 @@ var window = typeof window!=='undefined' ? window : globalThis; window.Z = windo
     }
     if ((fp.w > 1 || fp.h > 1) && fenceInside(fp)) return fail('Blocked by a fence');
     if (dk.kind === 'building') {
-      if (!footprintFlat(fp, def.realm === 'gallery' ? 3.2 : 1, pierOh && pierOh.wet)) return fail('Too steep \u2014 level the ground first');
+      if (!allSea && !footprintFlat(fp, def.realm === 'gallery' ? 3.2 : 1, pierOh && pierOh.wet)) return fail('Too steep \u2014 level the ground first');
       if (inEnc && !def.inEnclosure) return fail("Buildings can't go inside an enclosure");
       if (!def.utility && !def.safariReserve && !frontHasPath(fp)) warn = 'Entrance not on a path yet';
       if (def.boats && Z.Boats) { var bt = Z.Boats.placeCheck(type, fp); if (bt && bt.msg) return fail(bt.msg); }   // boats package: piers touch water, every pier and pad needs a path at its entrance

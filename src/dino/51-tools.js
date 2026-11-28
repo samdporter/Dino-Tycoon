@@ -355,6 +355,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       for (var jj = 0; jj < r0.h; jj++) for (var ii = 0; ii < r0.w; ii++) {
         var b = tileBlocked(r0.i + ii, r0.j + jj);
         if (b && poh && poh.wet && poh.wet[ii + jj * r0.w] && !Z.state.tileObj[(r0.i + ii) + (r0.j + jj) * N]) b = false;
+        if (b && def && def.allowSea && Z.inb(r0.i + ii, r0.j + jj) && !Z.state.tileObj[(r0.i + ii) + (r0.j + jj) * N] && Z.Sim.isSea && Z.Sim.isSea(r0.i + ii, r0.j + jj)) b = false;
         if (b) anyBad = true; tok.push(!b);
       }
       if (!r.ok && !anyBad) tok = tok.map(function () { return false; });

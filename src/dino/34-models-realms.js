@@ -106,19 +106,71 @@
     b.box(0.5, 2.6, 0.06, 0, 1.4, 1.1, 0x5a4a38, { rot: [-0.45, 0, 0] });
     g.add(mesh(b.build()));
   };
-  MODELS.tagging_tower = function (g) {   // 4 x 4 m: lattice mast with a dish array and a status light
+  MODELS.tagging_tower = function (g, opts) {   // 4 x 4 m: lattice mast with a dish array and a status light (or floating buoy at sea)
+    var sea = !!(opts && opts.sea);
     var b = B(), pale = 0xd8dde0;
-    b.box(3.6, 0.2, 3.6, 0, 0.1, 0, conc);
-    b.box(1.6, 1.1, 1.4, 0, 0.75, 0.9, 0x6d7d88); b.box(1.7, 0.1, 1.5, 0, 1.35, 0.9, 0x4a5760);
-    for (var sx = -1; sx <= 1; sx += 2) for (var sz = -1; sz <= 1; sz += 2) b.limb(sx * 0.6, 0.2, sz * 0.6 - 0.5, sx * 0.18, 7.2, sz * 0.18 - 0.5, 0.07, 0.05, pale, { seg: 5 });
-    for (var h = 1; h <= 6; h++) { var k = 0.6 - 0.42 * h / 7; b.box(k * 2, 0.04, 0.04, 0, h, -0.5 + k, pale); b.box(k * 2, 0.04, 0.04, 0, h, -0.5 - k, pale); b.box(0.04, 0.04, k * 2, k, h, -0.5, pale); b.box(0.04, 0.04, k * 2, -k, h, -0.5, pale); }
-    b.cyl(0.02, 0.02, 1.3, 0, 7.8, -0.5, pale, { seg: 4 });
-    for (var d = 0; d < 3; d++) { var a = d / 3 * PI * 2 + 0.4; b.cyl(0.45, 0.12, 0.2, Math.cos(a) * 0.55, 5.2 + d * 0.5, -0.5 + Math.sin(a) * 0.55, white, { seg: 10, rot: [PI / 2 - 0.3, -a + PI / 2, 0] }); }
-    g.add(mesh(b.build()));
-    var rot = grp('rot'), rb = B(); rb.cyl(0.7, 0.2, 0.22, 0, 0, 0, orange, { seg: 10 }); rb.box(0.06, 0.5, 0.06, 0, 0.3, 0, steel);
-    rot.add(mesh(rb.build())); rot.position.set(0, 7.0, -0.5); g.add(rot);
-    var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0xffffff, { s: [6, 4] }); var lampMesh = mesh(lb.build(), towerLampMat(false)); lamp.add(lampMesh); lamp.position.set(0, 7.45, -0.5); g.add(lamp);
+    var bob = sea ? grp('bob') : null, target = sea ? bob : g;
+    if (sea) {
+      g.add(bob);
+      // submerged dark ballast/keel cylinder (-0.45..0.02)
+      b.cyl(1.35, 1.15, 0.47, 0, -0.215, 0, 0x262c32, { seg: 20 });
+      // wide safety-orange / red-orange chamfered buoy hull (-0.05..0.55)
+      b.lathe([[1.35, -0.05], [1.65, 0.08], [1.65, 0.45], [1.48, 0.55]], 0xe45724, { seg: 20, cap0: true, cap1: true });
+      // crisp white/yellow hazard stripe band (0.22..0.38)
+      b.cyl(1.665, 1.665, 0.16, 0, 0.30, 0, 0xf4f2ea, { seg: 20 });
+      // 4 dark rubber bumper fenders around the rim
+      for (var f = 0; f < 4; f++) {
+        var fa = f * PI / 2 + PI / 4;
+        b.bevelBox(0.54, 0.24, 0.18, 0.04, Math.sin(fa) * 1.66, 0.30, Math.cos(fa) * 1.66, 0x22262a, { rot: [0, fa, 0] });
+      }
+      // steel deck plate (0.55..0.68)
+      b.cyl(1.45, 1.48, 0.13, 0, 0.615, 0, steel, { seg: 20 });
+      // perimeter safety railing posts and top rail
+      var rRail = 1.36, nRail = 8;
+      for (var rp = 0; rp < nRail; rp++) {
+        var ra0 = rp / nRail * PI * 2, ra1 = (rp + 1) / nRail * PI * 2;
+        var rx0 = Math.cos(ra0) * rRail, rz0 = Math.sin(ra0) * rRail;
+        var rx1 = Math.cos(ra1) * rRail, rz1 = Math.sin(ra1) * rRail;
+        b.cyl(0.035, 0.035, 0.64, rx0, 1.00, rz0, 0xd8dee2, { seg: 6 });
+        b.limb(rx0, 1.31, rz0, rx1, 1.31, rz1, 0.032, 0.032, 0xf2c838, { seg: 6 });
+        b.limb(rx0, 1.02, rz0, rx1, 1.02, rz1, 0.022, 0.022, 0xd8dee2, { seg: 5 });
+      }
+      // small solar & battery equipment boxes on the deck
+      b.bevelBox(0.48, 0.42, 0.44, 0.03, -0.82, 0.89, -0.22, 0x4a5760);
+      b.box(0.36, 0.06, 0.34, -0.82, 1.12, -0.22, dark);
+      b.cyl(0.045, 0.055, 0.34, 0.82, 0.85, -0.22, steel, { seg: 6 });
+      b.bevelBox(0.68, 0.05, 0.50, 0.015, 0.82, 1.04, -0.22, 0x2b343b, { rot: [0.42, 0, 0] });
+      b.box(0.60, 0.02, 0.42, 0.82, 1.065, -0.23, 0x1d4b7a, { rot: [0.42, 0, 0] });
+      // tagging tower mounted on buoy deck (yOffset = 0.68)
+      var yOff = 0.68, mz = -0.38;
+      b.box(1.25, 0.95, 1.05, 0, yOff + 0.475, 0.48, 0x6d7d88); b.box(1.35, 0.08, 1.15, 0, yOff + 0.99, 0.48, 0x4a5760);
+      for (var sx = -1; sx <= 1; sx += 2) for (var sz = -1; sz <= 1; sz += 2) b.limb(sx * 0.52, yOff, sz * 0.52 + mz, sx * 0.16, yOff + 6.8, sz * 0.16 + mz, 0.065, 0.045, pale, { seg: 5 });
+      for (var h = 1; h <= 6; h++) { var k = 0.52 - 0.36 * h / 6.8, yy = yOff + h; b.box(k * 2, 0.04, 0.04, 0, yy, mz + k, pale); b.box(k * 2, 0.04, 0.04, 0, yy, mz - k, pale); b.box(0.04, 0.04, k * 2, k, yy, mz, pale); b.box(0.04, 0.04, k * 2, -k, yy, mz, pale); }
+      b.cyl(0.02, 0.02, 1.2, 0, yOff + 7.4, mz, pale, { seg: 4 });
+      for (var d = 0; d < 3; d++) { var a = d / 3 * PI * 2 + 0.4; b.cyl(0.42, 0.11, 0.18, Math.cos(a) * 0.52, yOff + 4.9 + d * 0.48, mz + Math.sin(a) * 0.52, white, { seg: 10, rot: [PI / 2 - 0.3, -a + PI / 2, 0] }); }
+      target.add(mesh(b.build()));
+      var rot = grp('rot'), rb = B(); rb.cyl(0.7, 0.2, 0.22, 0, 0, 0, orange, { seg: 10 }); rb.box(0.06, 0.5, 0.06, 0, 0.3, 0, steel);
+      rot.add(mesh(rb.build())); rot.position.set(0, yOff + 6.6, mz); target.add(rot);
+      var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0xffffff, { s: [6, 4] }); var lampMesh = mesh(lb.build(), towerLampMat(false)); lamp.add(lampMesh); lamp.position.set(0, yOff + 7.05, mz); target.add(lamp);
+    } else {
+      b.box(3.6, 0.2, 3.6, 0, 0.1, 0, conc);
+      b.box(1.6, 1.1, 1.4, 0, 0.75, 0.9, 0x6d7d88); b.box(1.7, 0.1, 1.5, 0, 1.35, 0.9, 0x4a5760);
+      for (var sx = -1; sx <= 1; sx += 2) for (var sz = -1; sz <= 1; sz += 2) b.limb(sx * 0.6, 0.2, sz * 0.6 - 0.5, sx * 0.18, 7.2, sz * 0.18 - 0.5, 0.07, 0.05, pale, { seg: 5 });
+      for (var h = 1; h <= 6; h++) { var k = 0.6 - 0.42 * h / 7; b.box(k * 2, 0.04, 0.04, 0, h, -0.5 + k, pale); b.box(k * 2, 0.04, 0.04, 0, h, -0.5 - k, pale); b.box(0.04, 0.04, k * 2, k, h, -0.5, pale); b.box(0.04, 0.04, k * 2, -k, h, -0.5, pale); }
+      b.cyl(0.02, 0.02, 1.3, 0, 7.8, -0.5, pale, { seg: 4 });
+      for (var d = 0; d < 3; d++) { var a = d / 3 * PI * 2 + 0.4; b.cyl(0.45, 0.12, 0.2, Math.cos(a) * 0.55, 5.2 + d * 0.5, -0.5 + Math.sin(a) * 0.55, white, { seg: 10, rot: [PI / 2 - 0.3, -a + PI / 2, 0] }); }
+      target.add(mesh(b.build()));
+      var rot = grp('rot'), rb = B(); rb.cyl(0.7, 0.2, 0.22, 0, 0, 0, orange, { seg: 10 }); rb.box(0.06, 0.5, 0.06, 0, 0.3, 0, steel);
+      rot.add(mesh(rb.build())); rot.position.set(0, 7.0, -0.5); target.add(rot);
+      var lamp = grp('lamp'), lb = B(); lb.sph(0.13, 0.13, 0.13, 0, 0, 0, 0xffffff, { s: [6, 4] }); var lampMesh = mesh(lb.build(), towerLampMat(false)); lamp.add(lampMesh); lamp.position.set(0, 7.45, -0.5); target.add(lamp);
+    }
     spin(g, function (dt, t, gr, o) {
+      if (sea) {
+        var phase = o ? o.id * 1.37 : 0;
+        bob.position.y = Math.sin(t * 1.45 + phase) * 0.055;
+        bob.rotation.x = Math.sin(t * 1.1 + phase) * 0.025;
+        bob.rotation.z = Math.cos(t * 0.95 + phase) * 0.025;
+      }
       var off = !!(o && (o.off || o.broken));
       lampMesh.material = towerLampMat(off);
       if (off) return;
@@ -242,8 +294,8 @@
   };
 
   var oc = M.createBuilding, of = M.buildingFootprint, os = M.createScenery;
-  M.createBuilding = function (id) {
-    if (MODELS[id]) { var g = grp(id); g.userData.buildingId = id; MODELS[id](g); g.userData.footprint = { w: DEF[id][0], h: DEF[id][1] }; return g; }
+  M.createBuilding = function (id, opts) {
+    if (MODELS[id]) { var g = grp(id); g.userData.buildingId = id; MODELS[id](g, opts); g.userData.footprint = { w: DEF[id][0], h: DEF[id][1] }; return g; }
     return oc.apply(this, arguments);
   };
   M.buildingFootprint = function (id) { return DEF[id] ? { w: DEF[id][0], h: DEF[id][1] } : of.apply(this, arguments); };

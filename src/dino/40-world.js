@@ -1649,13 +1649,22 @@ function getInst(id) {
 }
 function sceneryMeta(id) { return findIn(D.scenery, id) || { kind: 'deco' }; }
 function buildingMeta(id) { return findIn(D.buildings, id) || { w: 1, h: 1 }; }
+function isSeaBuilding(type, i, j, w, h) {
+  var bm = buildingMeta(type), s = Z.state;
+  if (!bm || !bm.allowSea || !s || !s.terrain || waterIdx < 0 || !Z.Sim || !Z.Sim.isSea) return false;
+  for (var b = 0; b < h; b++) for (var a = 0; a < w; a++) {
+    var ii = i + a, jj = j + b;
+    if (!Z.inb(ii, jj) || s.terrain[ii + jj * N] !== waterIdx || !Z.Sim.isSea(ii, jj)) return false;
+  }
+  return true;
+}
 
 function makeSceneryGroup(id) {
   try { var g = M().createScenery && M().createScenery(id); if (g && g.isObject3D) return g; } catch (e) { }
   return fallbackScenery(id);
 }
-function makeBuildingGroup(id) {
-  try { var g = M().createBuilding && M().createBuilding(id); if (g && g.isObject3D) return g; } catch (e) { }
+function makeBuildingGroup(id, opts) {
+  try { var g = M().createBuilding && M().createBuilding(id, opts); if (g && g.isObject3D) return g; } catch (e) { }
   return fallbackBuilding(id);
 }
 function collectLampMats(g) {
@@ -1689,7 +1698,14 @@ function enableShadows(obj, cast, recv) {
   });
 }
 function placeBuilding(rec) {
-  var o = rec.obj, wet = pierWet(o.type, o.i, o.j, rec.w, rec.h);
+  var o = rec.obj;
+  if (rec.sea || isSeaBuilding(o.type, o.i, o.j, rec.w, rec.h)) {
+    rec.y = SEA_Y; rec.group.position.y = SEA_Y;
+    if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
+    if (rec.posts) { objGroup.remove(rec.posts); rec.posts = null; }
+    return;
+  }
+  var wet = pierWet(o.type, o.i, o.j, rec.w, rec.h);
   var base = wet ? footBaseWet(o.i, o.j, rec.w, rec.h, wet) : footBase(o.i, o.j, rec.w, rec.h), low = footLow(o.i, o.j, rec.w, rec.h);
   rec.y = base; rec.group.position.y = base;
   if (rec.skirt) { objGroup.remove(rec.skirt); rec.skirt = null; }
@@ -1736,17 +1752,21 @@ function syncObjects() {
   var poolsDirty = false;
   for (var k = 0; k < arr.length; k++) {
     var o = arr[k], rec = objRecs.get(o.id);
-    var key = o.kind + '|' + o.type + '|' + o.i + '|' + o.j + '|' + (o.rot | 0);
+    var rot = (o.rot | 0) & 3;
+    var seaB = false, w = 1, h = 1;
+    if (o.kind === 'building') {
+      var bm = buildingMeta(o.type); w = bm.w || 1; h = bm.h || 1;
+      if ((rot & 1) && w !== h) { var t0 = w; w = h; h = t0; }
+      seaB = isSeaBuilding(o.type, o.i, o.j, w, h);
+    }
+    var key = o.kind + '|' + o.type + '|' + o.i + '|' + o.j + '|' + (o.rot | 0) + (seaB ? '|sea' : '');
     if (rec && rec.key === key) { rec.obj = o; rec.gen = gen; continue; }
     if (rec) { removeRec(rec); if (rec.inst) poolsDirty = true; objRecs.delete(o.id); }
-    rec = { id: o.id, key: key, obj: o, kind: o.kind, type: o.type, gen: gen, group: null, inst: null, upd: null, lamp: false };
-    var rot = (o.rot | 0) & 3;
+    rec = { id: o.id, key: key, obj: o, kind: o.kind, type: o.type, gen: gen, group: null, inst: null, upd: null, lamp: false, sea: seaB };
     if (o.kind === 'building') {
-      var bm = buildingMeta(o.type), w = bm.w || 1, h = bm.h || 1;
-      if ((rot & 1) && w !== h) { var t0 = w; w = h; h = t0; }
       rec.w = w; rec.h = h;
       rec.x = (o.i + w / 2) * T; rec.z = (o.j + h / 2) * T; rec.y = 0;
-      var g = makeBuildingGroup(o.type);
+      var g = makeBuildingGroup(o.type, seaB ? { sea: true } : undefined);
       enableShadows(g, true, true);
       g.position.set(rec.x, 0, rec.z); g.rotation.y = rot * PI / 2;
       objGroup.add(g); rec.group = g;
@@ -2859,13 +2879,13 @@ function fillEdges(mesh, list, cap, hh, thick) {
   }
   mesh.count = n; mesh.visible = n > 0; mesh.instanceMatrix.needsUpdate = true;
 }
-function ghostMake(kind, id) {
-  var key = kind + ':' + id, c = pv.ghostCache[key];
+function ghostMake(kind, id, sea) {
+  var key = kind + ':' + id + (sea ? ':sea' : ''), c = pv.ghostCache[key];
   if (c) return c;
   var g = null, upd = null;
   try {
     var m = M();
-    if (kind === 'building') g = makeBuildingGroup(id);
+    if (kind === 'building') g = makeBuildingGroup(id, sea ? { sea: true } : undefined);
     else if (kind === 'scenery') g = makeSceneryGroup(id);
     else if (kind === 'animal') { var v = m.createAnimal ? m.createAnimal(id, {}) : null; if (v && v.group) { g = v.group; upd = v.update; } else g = fallbackAnimal(id).group; }
     else if (kind === 'staff') { var v2 = m.createStaff ? m.createStaff(id) : null; if (v2 && v2.group) { g = v2.group; upd = v2.update; } else g = fallbackStaff(id).group; }
@@ -2988,10 +3008,11 @@ function setPreview(spec) {
       var off = rot === 0 ? [0, 1] : rot === 2 ? [0, -1] : rot === 1 ? [1, 0] : [-1, 0];
       pv.label.position.set(lx + off[0] * T * 0.55, gy0 + 1.7, lz + off[1] * T * 0.55); pv.label.scale.set(4.2, 1.05, 1); pv.label.visible = true;
     }
-    var gh = ghostMake(kind, spec.id);
+    var gsea = kind === 'building' ? isSeaBuilding(spec.id, spec.i, spec.j, w, h) : false;
+    var gh = ghostMake(kind, spec.id, gsea);
     var cx = (spec.i + w / 2) * T, cz = (spec.j + h / 2) * T;
-    var gwet = kind === 'building' ? pierWet(spec.id, spec.i, spec.j, w, h) : null;
-    gh.group.position.set(cx, kind === 'building' ? (gwet ? footBaseWet(spec.i, spec.j, w, h, gwet) : footBase(spec.i, spec.j, w, h)) : groundY(cx, cz), cz);
+    var gwet = kind === 'building' && !gsea ? pierWet(spec.id, spec.i, spec.j, w, h) : null;
+    gh.group.position.set(cx, kind === 'building' ? (gsea ? SEA_Y : (gwet ? footBaseWet(spec.i, spec.j, w, h, gwet) : footBase(spec.i, spec.j, w, h))) : groundY(cx, cz), cz);
     gh.group.rotation.y = rot * PI / 2;
     if (gh.ok !== ok) {
       gh.ok = ok;
