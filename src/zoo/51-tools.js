@@ -129,7 +129,7 @@ window.Z = window.Z || {}; var Z = window.Z;
       }
     }
     var prev = UI.tool;
-    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
+    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: UI.prefs.bmode || 'things', aid: spec.aid };
     if (UI.tool.kind === 'scenery' || UI.tool.kind === 'building') rerollRot();
     if (UI.Panel) UI.Panel.hide(true);
     clearPreview(); hover = null; drag = null;
@@ -164,7 +164,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function buildStrip() {
     var t = UI.tool, s = el.strip; s.innerHTML = ''; if (!t) return;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
-    var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
+    var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : t.bmode === 'fences' ? 'Tap or drag along fence panels.' : 'Drag a rectangle to demolish items, paths and fences. 50% refund.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
     else if (t.kind === 'staff') {
       if (t.id === 'keeper' || t.id === 'vet') {
@@ -189,7 +189,7 @@ window.Z = window.Z || {}; var Z = window.Z;
         shp.setAttribute('aria-label', 'Level sharpness'); s.appendChild(shp);
       }
     }
-    if (t.kind === 'bulldoze') s.appendChild(seg([['things', 'Things'], ['fences', 'Fences']], t.bmode, function (v) { t.bmode = v; clearPreview(); }));
+    if (t.kind === 'bulldoze') s.appendChild(seg([['things', 'Things'], ['fences', 'Fences'], ['area', 'Area']], t.bmode, function (v) { t.bmode = UI.prefs.bmode = v; clearPreview(); }));
     if (t.kind === 'building' || t.kind === 'scenery') { if (manualRot()) s.appendChild(h('button.btn.sm.alt', { html: ic('rot') + 'Rotate<small class="kb">R</small>', on: { click: function () { Tools.rotate(); UI.snd('click'); } } })); }
     s.appendChild(h('button.btn.sm' + (t.move ? '' : '.alt'), { html: ic('hand') + (t.move ? 'Tool' : 'Move'), 'aria-label': 'Move the camera', on: { click: function () { Tools.toggleMove(); UI.snd('click'); } } }));
     s.appendChild(h('button.btn.sm.warn', { html: ic('check') + 'Done', on: { click: function () { Tools.cancel(); UI.snd('click'); } } }));
@@ -421,12 +421,53 @@ window.Z = window.Z || {}; var Z = window.Z;
       edges.forEach(function (e) { var r = Z.Sim.removeFence(e, { dry: true }); if (r.ok) { ok.push(e); refund -= r.cost; } });
       return { spec: { type: 'edges', edges: ok.length ? ok : edges, ok: ok.length > 0, height: 1.1 }, ok: ok.length > 0, cost: -refund, n: ok.length, msg: ok.length ? '' : 'No fence here', label: ok.length > 1 ? ok.length + ' panels' : '',
         run: function () { var n = 0, c = 0; ok.forEach(function (e) { var r = Z.Sim.removeFence(e); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
+    } else if (t.bmode === 'area') {
+      var a = d.a, b = d.b || d.a;
+      var i0 = Math.min(a.i, b.i), i1 = Math.max(a.i, b.i), j0 = Math.min(a.j, b.j), j1 = Math.max(a.j, b.j);
+      var rectTiles = [], rm = [], okEdges = [], seenObj = {}, refund = 0, i, j;
+      for (j = j0; j <= j1; j++) {
+        for (i = i0; i <= i1; i++) {
+          if (!Z.inb(i, j)) continue;
+          rectTiles.push({ i: i, j: j });
+          var oid = S.tileObj[i + j * N];
+          if (oid) {
+            if (seenObj[oid]) continue;
+            seenObj[oid] = 1;
+          }
+          var r = Z.Sim.bulldoze(i, j, { dry: true });
+          if (r.ok) { rm.push({ i: i, j: j }); refund -= r.cost; }
+        }
+      }
+      for (i = Math.max(0, i0); i <= Math.min(N - 1, i1); i++) {
+        for (j = Math.max(0, j0); j <= Math.min(N, j1 + 1); j++) {
+          var ex = { axis: 'x', i: i, j: j };
+          var rx = Z.Sim.removeFence(ex, { dry: true });
+          if (rx.ok) { okEdges.push(ex); refund -= rx.cost; }
+        }
+      }
+      for (i = Math.max(0, i0); i <= Math.min(N, i1 + 1); i++) {
+        for (j = Math.max(0, j0); j <= Math.min(N - 1, j1); j++) {
+          var ez = { axis: 'z', i: i, j: j };
+          var rz = Z.Sim.removeFence(ez, { dry: true });
+          if (rz.ok) { okEdges.push(ez); refund -= rz.cost; }
+        }
+      }
+      var totalN = rm.length + okEdges.length;
+      var w = i1 - i0 + 1, h = j1 - j0 + 1;
+      var label = (w > 1 || h > 1) ? (w + '×' + h + (totalN ? ' · ' + totalN + ' item' + (totalN === 1 ? '' : 's') : '')) : (totalN > 1 ? totalN + ' items' : '');
+      return { spec: { type: 'area', tiles: rectTiles, edges: okEdges, ok: totalN > 0, height: 1.1 }, ok: totalN > 0, cost: -refund, n: totalN, msg: totalN ? '' : 'Nothing to remove here', label: label,
+        run: function () { var n = 0, c = 0; rm.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j); if (r.ok) { n++; c += r.cost; } }); okEdges.forEach(function (e) { var r = Z.Sim.removeFence(e); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
     }
-    var pts = d.pts || [d.a], seen = {}, tiles = [], rm = [], refund2 = 0;
+    var pts = d.pts || [d.a], seen = {}, seenObj2 = {}, tiles = [], rm2 = [], refund2 = 0;
     pts.forEach(function (q) { var k = q.i + ',' + q.j; if (!seen[k]) { seen[k] = 1; tiles.push(q); } });
-    tiles.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j, { dry: true }); if (r.ok) { rm.push(q); refund2 -= r.cost; } });
-    return { spec: { type: 'tiles', tiles: rm.length ? expandObjTiles(rm) : tiles, ok: rm.length > 0 }, ok: rm.length > 0, cost: -refund2, n: rm.length, msg: rm.length ? '' : 'Nothing to remove here', label: rm.length > 1 ? rm.length + ' tiles' : '',
-      run: function () { var n = 0, c = 0; rm.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
+    tiles.forEach(function (q) {
+      var oid = Z.inb(q.i, q.j) ? S.tileObj[q.i + q.j * N] : 0;
+      if (oid) { if (seenObj2[oid]) return; seenObj2[oid] = 1; }
+      var r = Z.Sim.bulldoze(q.i, q.j, { dry: true });
+      if (r.ok) { rm2.push(q); refund2 -= r.cost; }
+    });
+    return { spec: { type: 'tiles', tiles: rm2.length ? expandObjTiles(rm2) : tiles, ok: rm2.length > 0 }, ok: rm2.length > 0, cost: -refund2, n: rm2.length, msg: rm2.length ? '' : 'Nothing to remove here', label: rm2.length > 1 ? rm2.length + ' tiles' : '',
+      run: function () { var n = 0, c = 0; rm2.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
   };
   function expandObjTiles(list) {
     var S = Z.state, out = [], seen = {};
@@ -527,7 +568,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (k === 'path') return 'path';
     if (k === 'terrain') return t.name.toLowerCase() + ' terrain';
     if (k === 'sculpt') return t.name.toLowerCase().replace(/ \(.*\)/, '');
-    if (k === 'bulldoze') return 'bulldoze';
+    if (k === 'bulldoze') return t.bmode === 'area' ? 'demolish area' : 'bulldoze';
     return (t.name || t.id || k).toLowerCase();
   }
   function toolAbort() {

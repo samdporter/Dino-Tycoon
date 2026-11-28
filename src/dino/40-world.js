@@ -2960,6 +2960,7 @@ function setPreview(spec) {
   pv.tileMat.color.copy(ok ? pv.okCol : pv.badCol); pv.barMat.color.copy(ok ? pv.okCol : pv.badCol);
   if (spec.type === 'tiles') { fillTiles(pv.tiles, spec.tiles || [], 1200); pv.bars.visible = false; }
   else if (spec.type === 'edges') { fillEdges(pv.bars, spec.edges || [], 600, spec.height || 1.1, 0.22); pv.tiles.visible = false; }
+  else if (spec.type === 'area') { fillTiles(pv.tiles, spec.tiles || [], 1200); if (spec.edges && spec.edges.length) fillEdges(pv.bars, spec.edges, 600, spec.height || 1.1, 0.22); else pv.bars.visible = false; }
   else if (spec.type === 'object') {
     pv.bars.visible = false;
     var kind = spec.kind, rot = (spec.rot | 0) & 3, w = 1, h = 1;

@@ -122,7 +122,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   };
   Tools.start = function (spec) {
     var prev = UI.tool;
-    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: 'things', aid: spec.aid };
+    UI.tool = { kind: spec.kind, id: spec.id, name: spec.name || (spec.kind === 'bulldoze' ? 'Bulldoze' : spec.id), def: spec.def, tip: spec.tip, specId: spec.specId, rot: 0, move: false, brush: spec.kind === 'sculpt' ? (UI.prefs.sbrush || 2) : (UI.prefs.brush || 2), mode: UI.prefs.fenceMode || 'rect', bmode: UI.prefs.bmode || 'things', aid: spec.aid };
     if (UI.tool.kind === 'scenery' || UI.tool.kind === 'building') rerollRot();
     if (UI.Panel) UI.Panel.hide(true);
     clearPreview(); hover = null; drag = null;
@@ -157,7 +157,7 @@ window.Z = window.Z || {}; var Z = window.Z;
   function buildStrip() {
     var t = UI.tool, s = el.strip; s.innerHTML = ''; if (!t) return;
     var name = t.kind === 'bulldoze' ? 'Bulldoze' : t.kind === 'animalmove' ? 'Move animal' : (t.kind === 'terrain' ? 'Paint ' : t.kind === 'staff' ? 'Hire ' : '') + t.name;
-    var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : 'Tap or drag along fence panels.') : HINTS[t.kind] || '';
+    var hint = t.kind === 'sculpt' ? (t.def && t.def.tip ? t.def.tip : HINTS.sculpt) : t.kind === 'fence' ? (t.mode === 'rect' ? 'Drag a rectangle to fence it in.' : 'Drag along a line of panels.') : t.kind === 'bulldoze' ? (t.bmode === 'things' ? 'Tap or drag over items and paths. 50% refund.' : t.bmode === 'fences' ? 'Tap or drag along fence panels.' : 'Drag a rectangle to demolish items, paths and fences. 50% refund.') : HINTS[t.kind] || '';
     if (t.move) hint = 'Camera mode: drag to look around.';
     else if (t.kind === 'staff') {
       if (t.id === 'keeper' || t.id === 'vet') {
@@ -179,7 +179,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (t.kind === 'fence') s.appendChild(seg([['rect', 'Enclosure', 'rect'], ['line', 'Line', 'line']], t.mode, function (v) { t.mode = UI.prefs.fenceMode = v; clearPreview(); if (UI.Tutorial) UI.Tutorial.onFenceMode && UI.Tutorial.onFenceMode(v); }));
     if (t.kind === 'terrain') s.appendChild(seg([[1, 'S'], [2, 'M'], [3, 'L']], t.brush, function (v) { t.brush = UI.prefs.brush = v; clearPreview(); }));
     if (t.kind === 'sculpt') { var sg2 = seg([[1, '1'], [2, '2'], [3, '3'], [5, '5']], t.brush, function (v) { t.brush = UI.prefs.sbrush = v; clearPreview(); }); sg2.classList.add('sc'); sg2.setAttribute('aria-label', 'Brush size in tiles'); s.appendChild(sg2); }
-    if (t.kind === 'bulldoze') s.appendChild(seg([['things', 'Things'], ['fences', 'Fences']], t.bmode, function (v) { t.bmode = v; clearPreview(); }));
+    if (t.kind === 'bulldoze') s.appendChild(seg([['things', 'Things'], ['fences', 'Fences'], ['area', 'Area']], t.bmode, function (v) { t.bmode = UI.prefs.bmode = v; clearPreview(); }));
     if (t.kind === 'building' || t.kind === 'scenery') { if (manualRot()) s.appendChild(h('button.btn.sm.alt', { html: ic('rot') + 'Rotate<small class="kb">R</small>', on: { click: function () { Tools.rotate(); UI.snd('click'); } } })); }
     s.appendChild(h('button.btn.sm' + (t.move ? '' : '.alt'), { html: ic('hand') + (t.move ? 'Tool' : 'Move'), 'aria-label': 'Move the camera', on: { click: function () { Tools.toggleMove(); UI.snd('click'); } } }));
     s.appendChild(h('button.btn.sm.warn', { html: ic('check') + 'Done', on: { click: function () { Tools.cancel(); UI.snd('click'); } } }));
@@ -438,9 +438,54 @@ window.Z = window.Z || {}; var Z = window.Z;
       return { spec: { type: 'edges', edges: ok.length ? ok : edges, ok: ok.length > 0, height: 1.1 }, ok: ok.length > 0, cost: -refund, n: ok.length, msg: ok.length ? '' : 'No fence here', label: ok.length > 1 ? ok.length + ' panels' : '',
         run: function () { var n = 0, c = 0; ok.forEach(function (e) { var r = Z.Sim.removeFence(e); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
     }
-    var pts = d.pts || [d.a], seen = {}, tiles = [], rm = [], refund2 = 0;
+    else if (t.bmode === 'area') {
+      var a2 = d.a, b2 = d.b || d.a;
+      var i0 = Math.min(a2.i, b2.i), i1 = Math.max(a2.i, b2.i), j0 = Math.min(a2.j, b2.j), j1 = Math.max(a2.j, b2.j);
+      var rectTiles = [], rmArea = [], seenObj = {}, refundArea = 0;
+      for (var j = j0; j <= j1; j++) {
+        for (var i = i0; i <= i1; i++) {
+          if (!Z.inb(i, j)) continue;
+          rectTiles.push({ i: i, j: j });
+          var oid = S.tileObj[i + j * N];
+          if (oid) { if (seenObj[oid]) continue; seenObj[oid] = 1; }
+          var rTile = Z.Sim.bulldoze(i, j, { dry: true });
+          if (rTile.ok) { rmArea.push({ i: i, j: j }); refundArea -= rTile.cost; }
+        }
+      }
+      var okEdges = [];
+      function checkEdge(axis, ei, ej) {
+        var e = { axis: axis, i: ei, j: ej };
+        var rEdge = Z.Sim.removeFence(e, { dry: true });
+        if (rEdge.ok) { okEdges.push(e); refundArea -= rEdge.cost; }
+      }
+      for (var ej = Math.max(0, j0); ej <= Math.min(N, j1 + 1); ej++) {
+        for (var ei = Math.max(0, i0); ei <= Math.min(N - 1, i1); ei++) checkEdge('x', ei, ej);
+      }
+      for (var ej2 = Math.max(0, j0); ej2 <= Math.min(N - 1, j1); ej2++) {
+        for (var ei2 = Math.max(0, i0); ei2 <= Math.min(N, i1 + 1); ei2++) checkEdge('z', ei2, ej2);
+      }
+      var totalN = rmArea.length + okEdges.length;
+      var rw = i1 - i0 + 1, rh = j1 - j0 + 1;
+      var label = (rw > 1 || rh > 1) ? (rw + '×' + rh + (totalN ? ' · ' + totalN + ' item' + (totalN === 1 ? '' : 's') : '')) : (totalN > 1 ? totalN + ' items' : '');
+      return {
+        spec: { type: 'area', tiles: rectTiles, edges: okEdges, ok: totalN > 0, height: 1.1 },
+        ok: totalN > 0, cost: -refundArea, n: totalN, msg: totalN ? '' : 'Nothing to remove here', label: label,
+        run: function () {
+          var n = 0, c = 0;
+          rmArea.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j); if (r.ok) { n++; c += r.cost; } });
+          okEdges.forEach(function (e) { var r = Z.Sim.removeFence(e); if (r.ok) { n++; c += r.cost; } });
+          return { n: n, cost: c };
+        }
+      };
+    }
+    var pts = d.pts || [d.a], seen = {}, seenObj2 = {}, tiles = [], rm = [], refund2 = 0;
     pts.forEach(function (q) { var k = q.i + ',' + q.j; if (!seen[k]) { seen[k] = 1; tiles.push(q); } });
-    tiles.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j, { dry: true }); if (r.ok) { rm.push(q); refund2 -= r.cost; } });
+    tiles.forEach(function (q) {
+      var oid = Z.inb(q.i, q.j) ? S.tileObj[q.i + q.j * N] : 0;
+      if (oid) { if (seenObj2[oid]) return; seenObj2[oid] = 1; }
+      var r = Z.Sim.bulldoze(q.i, q.j, { dry: true });
+      if (r.ok) { rm.push(q); refund2 -= r.cost; }
+    });
     return { spec: { type: 'tiles', tiles: rm.length ? expandObjTiles(rm) : tiles, ok: rm.length > 0 }, ok: rm.length > 0, cost: -refund2, n: rm.length, msg: rm.length ? '' : 'Nothing to remove here', label: rm.length > 1 ? rm.length + ' tiles' : '',
       run: function () { var n = 0, c = 0; rm.forEach(function (q) { var r = Z.Sim.bulldoze(q.i, q.j); if (r.ok) { n++; c += r.cost; } }); return { n: n, cost: c }; } };
   };
@@ -541,7 +586,7 @@ window.Z = window.Z || {}; var Z = window.Z;
     if (k === 'path') return 'path';
     if (k === 'terrain') return t.name.toLowerCase() + ' terrain';
     if (k === 'sculpt') return t.name.toLowerCase().replace(/ \(.*\)/, '');
-    if (k === 'bulldoze') return 'bulldoze';
+    if (k === 'bulldoze') return t.bmode === 'area' ? 'demolish area' : 'bulldoze';
     return (t.name || t.id || k).toLowerCase();
   }
   function toolAbort() { sculptStop(); drag = null; clearPreview(); }
